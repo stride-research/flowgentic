@@ -11,7 +11,71 @@ Flowgentic provides two main integration layers:
 
 ## Installation
 
-### Development
+### Using uv (Recommended)
+
+```bash
+# Install uv if you haven't already
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install the package
+uv add flowgentic
+```
+
+### Development Setup with uv
+
+```bash
+git clone https://github.com/your-username/flowgentic.git
+cd flowgentic
+
+# Create virtual environment and install dependencies
+uv sync
+
+# Activate the virtual environment
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+```
+
+### Common uv Workflows
+
+```bash
+# Add a new dependency
+uv add requests
+
+# Add a development dependency
+uv add --dev pytest
+
+# Update lockfile after dependency changes
+uv lock
+
+# Sync dependencies (install from lockfile)
+uv sync
+
+# Install in development mode
+uv pip install -e .
+
+# Run scripts defined in pyproject.toml
+uv run ruff check
+uv run ruff format
+```
+
+### Linting and Formatting
+
+This project uses [ruff](https://docs.astral.sh/ruff/) for linting and formatting:
+
+```bash
+# Check for linting issues
+uv run ruff check
+
+# Fix linting issues automatically
+uv run ruff check --fix
+
+# Format code
+uv run ruff format
+
+# Check formatting without changes
+uv run ruff format --check
+```
+
+### Traditional pip (Alternative)
 
 ```bash
 git clone https://github.com/your-username/flowgentic.git
