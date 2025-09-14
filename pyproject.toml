@@ -9,13 +9,18 @@ authors = [
     { name = "Javier Dominguez", email = "jdominguez.ieu2023@student.ie.edu"},
     { name = "Matteo Turilli", email = "mturilli@faculty.ie.edu"}
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.9"
 dependencies = [
     "academy-py",
     "langgraph>=0.6.6",
     "radical-asyncflow",
-    "ruff>=0.12.11",
 ]
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.12.11"
+]
+
+
 
 [project.scripts]
 flowgentic = "flowgentic:main"
