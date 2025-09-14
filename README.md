@@ -83,6 +83,12 @@ cd flowgentic
 make install-pip
 ```
 
+## ENVIRONMENTAL VARIABLES
+1. Create a .env at the root level
+2. Fill in:
+  - OPEN_ROUTER_API_KEY: 
+  - 
+
 ## Academy Integration
 
 Bridge Academy agents with AsyncFlow workflows.
