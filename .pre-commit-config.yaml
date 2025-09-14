@@ -1,0 +1,17 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.11
+    hooks:
+      # - id: ruff # ACTIVATE THE LINTER LATER ON DEVELOPEMENT PROCESS
+      #   args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.5
+    hooks:
+        - id: bandit
+          args: ["-r", "-c", "pyproject.toml", "-ll"] # two level security vulnerability
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: detect-private-key        # Detects private keys
+      - id: check-added-large-files   # Prevents large files

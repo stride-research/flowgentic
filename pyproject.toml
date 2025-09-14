@@ -11,30 +11,67 @@ authors = [
 ]
 requires-python = ">=3.9"
 dependencies = [
-    "academy-py",
     "langgraph>=0.6.6",
+    "radical.asyncflow @ git+https://github.com/radical-cybertools/radical.asyncflow.git@main",
+    "langchain-openai",
+    "langchain-core",
+    "langchain-community",
     "radical-asyncflow",
+    "python-dotenv",
+    "academy-py",
     "pydantic>=2.0.0",
-    "dotenv>=0.9.9",
-    "langchain-openai>=0.3.33",
 ]
+
 [project.optional-dependencies]
 dev = [
-    "ruff>=0.12.11"
+    "ruff>=0.12.11",
+    "pre-commit"
 ]
 
 [project.scripts]
 flowgentic = "flowgentic:main"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.uv.sources]
 academy-py = { git = "https://github.com/proxystore/academy" }
 radical-asyncflow = { git = "https://github.com/radical-cybertools/radical.asyncflow.git" }
 
-[dependency-groups]
-dev = [
-    "pydantic>=2.11.7",
+[tool.ruff]
+line-length = 88
+include = ["./src/*", ]
+
+[tool.ruff.format]
+indent-style = "tab"
+quote-style = "double"
+docstring-code-format = true
+
+[tool.ruff.lint]
+select = [
+      "N",
+      "ANN",
+      "TID",
+      "E",
+      "C4",
+      "G",
+      "FAST001",
+      "FAST002",
+      "FAST003",
+      "ASYNC100",
+      "S101",
+      "S105",
+      "S106",
+      "S107",
+      "S310",
+      "S311",
+      "I", # isort
 ]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
