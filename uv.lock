@@ -261,17 +261,27 @@ source = { editable = "." }
 dependencies = [
     { name = "academy-py" },
     { name = "langgraph" },
+    { name = "pydantic" },
     { name = "radical-asyncflow" },
     { name = "ruff" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pydantic" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "academy-py", git = "https://github.com/proxystore/academy" },
     { name = "langgraph", specifier = ">=0.6.6" },
+    { name = "pydantic", specifier = ">=2.0.0" },
     { name = "radical-asyncflow", git = "https://github.com/radical-cybertools/radical.asyncflow.git" },
     { name = "ruff", specifier = ">=0.12.11" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pydantic", specifier = ">=2.11.7" }]
 
 [[package]]
 name = "frozenlist"
