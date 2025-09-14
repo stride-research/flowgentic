@@ -80,7 +80,7 @@ uv run ruff format --check
 ```bash
 git clone https://github.com/your-username/flowgentic.git
 cd flowgentic
-pip install -e .
+make install-pip
 ```
 
 ## Academy Integration
