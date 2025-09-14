@@ -20,8 +20,6 @@ dev = [
     "ruff>=0.12.11"
 ]
 
-
-
 [project.scripts]
 flowgentic = "flowgentic:main"
 
