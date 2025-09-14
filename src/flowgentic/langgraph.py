@@ -4,8 +4,7 @@ with built-in retries, backoff, and timeouts.
 
 Key features:
 - Define AsyncFlow tasks with `@flow.function_task`
-- Expose as LangChain tools via `@integration.asyncflow_tool(...)` or
-  `integration.to_langgraph_tool(task, ...)`
+- Expose as LangChain tools via `@integration.asyncflow_tool(...)`
 - Sensible defaults for fault tolerance (no config required)
 """
 
@@ -168,24 +167,7 @@ class LangGraphIntegration:
             return decorate(func)
         return decorate
 
-    def to_langgraph_tool(self, asyncflow_task: Callable, *, retry: Optional[RetryConfig] = None) -> Callable:
-        """Create a LangChain tool from an existing AsyncFlow task with retries with optional retry logic.
 
-        Args:
-            asyncflow_task: An already decorated AsyncFlow task
-            retry: Optional per-tool retry config (defaults applied if None)
-        """
-        retry_cfg = retry or self.default_retry
-
-        @wraps(asyncflow_task)
-        async def wrapper(*args, **kwargs):
-            async def _call():
-                future = asyncflow_task(*args, **kwargs)
-                return await future
-
-            return await _retry_async(_call, retry_cfg, name=asyncflow_task.__name__)
-
-        return tool(wrapper)
 
 
 # Minimal usage example (not executed):
@@ -197,10 +179,5 @@ class LangGraphIntegration:
 #     await asyncio.sleep(0.5)
 #     return f"Weather in {city} is sunny"
 #
-# @flow.function_task
-# async def existing_task(param: str) -> str:
-#     return f"Processed: {param}"
-#
-# tool_from_task = integration.to_langgraph_tool(existing_task)
-# tools = [get_weather, tool_from_task]
+# tools = [get_weather]
 """
