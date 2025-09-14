@@ -18,8 +18,8 @@ dist/
 # Virtual environments
 .venv/
 .env
-.env.local
-.env.*.local
+.env
+.env.*
 
 # AI/ML & LangGraph
 *.pkl

@@ -10,3 +10,8 @@ repos:
     hooks:
         - id: bandit
           args: ["-r", "-c", "pyproject.toml", "-ll"] # two level security vulnerability
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: detect-private-key        # Detects private keys
+      - id: check-added-large-files   # Prevents large files
