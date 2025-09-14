@@ -16,6 +16,7 @@ dist/
 *.egg
 
 # Virtual environments
+
 .venv/
 .env
 .env
@@ -39,4 +40,4 @@ logs/
 
 # Temporary files
 *.tmp
-*.temp
+
