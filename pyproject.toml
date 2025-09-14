@@ -11,10 +11,16 @@ authors = [
 ]
 requires-python = ">=3.9"
 dependencies = [
-    "academy-py",
     "langgraph>=0.6.6",
+    "radical.asyncflow @ git+https://github.com/radical-cybertools/radical.asyncflow.git@main",
+    "langchain-openai",
+    "langchain-core",
+    "langchain-community",
     "radical-asyncflow",
+    "python-dotenv",
+    "academy-py" 
 ]
+
 [project.optional-dependencies]
 dev = [
     "ruff>=0.12.11"
@@ -24,8 +30,11 @@ dev = [
 flowgentic = "flowgentic:main"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.uv.sources]
 academy-py = { git = "https://github.com/proxystore/academy" }
