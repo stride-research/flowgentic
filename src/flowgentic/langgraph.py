@@ -86,8 +86,7 @@ async def _retry_async(call: Callable[[], Any], config: RetryConfig, name: str) 
     for attempt in range(1, max(1, config.max_attempts) + 1):
         try:
             if config.timeout_sec is not None and config.timeout_sec > 0:
-                async with asyncio.timeout(config.timeout_sec):
-                    return await call()
+                return await asyncio.wait_for(call(), timeout=config.timeout_sec)
             else:
                 return await call()
         except Exception as e:  # pylint: disable=broad-except
