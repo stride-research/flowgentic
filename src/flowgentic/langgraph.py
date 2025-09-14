@@ -150,7 +150,7 @@ class LangGraphIntegration:
             async def f(...): ...
         """
 
-        def decorate(f: Callable) -> Callable:
+        def decorate(f: Callable) -> Callable: 
             asyncflow_func = self.flow.function_task(f)
             retry_cfg = retry or self.default_retry
 
@@ -162,14 +162,14 @@ class LangGraphIntegration:
 
                 return await _retry_async(_call, retry_cfg, name=f.__name__)
 
-            return tool(wrapper)
+            return tool(wrapper) # Wrapping the wrapper in 'tool()' in order to be used with Langchain's agents
 
         if func is not None:
             return decorate(func)
         return decorate
 
     def to_langgraph_tool(self, asyncflow_task: Callable, *, retry: Optional[RetryConfig] = None) -> Callable:
-        """Create a LangChain tool from an existing AsyncFlow task with retries.
+        """Create a LangChain tool from an existing AsyncFlow task with retries with optional retry logic.
 
         Args:
             asyncflow_task: An already decorated AsyncFlow task
