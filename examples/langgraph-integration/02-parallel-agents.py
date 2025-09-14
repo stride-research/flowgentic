@@ -25,7 +25,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from concurrent.futures import ThreadPoolExecutor
 from radical.asyncflow import ConcurrentExecutionBackend, WorkflowEngine
 
-from flowcademy.langgraph import LangGraphIntegration, RetryConfig
+from flowgentic.langgraph import LangGraphIntegration, RetryConfig
 from radical.asyncflow.logging import init_default_logger
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ load_dotenv()
 # Enhanced state for parallel agents
 class MultiAgentState(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
-    
+
     messages: Annotated[List[BaseMessage], add_messages]
     agent_results: Dict[str, Any] = {}
     task_assignments: Dict[str, str] = {}
@@ -298,7 +298,7 @@ async def main():
     # --- LangGraph Coordinator Node ---
     async def coordinator_node(state: MultiAgentState):
         """Coordinates the parallel agents and synthesizes results."""
-        messages = state["messages"]
+        messages = state.messages
         last_message = messages[-1].content
 
         # Parse the user request
@@ -332,7 +332,8 @@ async def main():
 
             return {
                 "messages": [final_response],
-                "agent_results": agent_results
+                "agent_results": agent_results,
+                "task_assignments": {}
             }
 
         # Fallback for other requests
@@ -346,7 +347,7 @@ async def main():
         )
 
         response = await simple_llm.ainvoke(messages)
-        return {"messages": [response]}
+        return {"messages": [response], "agent_results": {}, "task_assignments": {}}
 
     # --- Build LangGraph Workflow ---
     workflow = StateGraph(MultiAgentState)
@@ -379,7 +380,7 @@ async def main():
         "messages": [HumanMessage(content=user_message)],
         "agent_results": {},
         "task_assignments": {}
-    })
+    }, config={"configurable": {"thread_id": "trip-planning-session-1"}})
 
     end_time = asyncio.get_event_loop().time()
 
