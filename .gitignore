@@ -1,12 +1,42 @@
-.idea
-# Python-generated files
+# IDE
+.idea/
+.vscode/
+.DS_Store
+
+# Python
 __pycache__/
-*.py[oc]
+*.py[cod]
+*.pyo
+*.pyd
+.Python
 build/
 dist/
-wheels/
-*.egg-info
+*.egg-info/
+.eggs/
+*.egg
 
 # Virtual environments
-.venv
+.venv/
 .env
+.env.local
+.env.*.local
+
+# AI/ML & LangGraph
+*.pkl
+*.pickle
+*.model
+*.weights
+*.ckpt
+*.pth
+*.bin
+wandb/
+mlruns/
+.mlflow/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
