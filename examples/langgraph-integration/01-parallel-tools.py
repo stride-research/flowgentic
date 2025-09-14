@@ -9,7 +9,8 @@ This example shows:
 
 import asyncio
 import os
-from typing import List, TypedDict, Annotated
+from typing import List, Annotated
+from pydantic import BaseModel
 import logging
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
@@ -34,7 +35,9 @@ init_default_logger(logging.INFO)
 load_dotenv()
 
 # State
-class State(TypedDict):
+class State(BaseModel):
+    model_config = {"arbitrary_types_allowed": True}
+    
     messages: Annotated[List[BaseMessage], add_messages]
 
 async def main():

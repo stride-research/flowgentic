@@ -18,7 +18,9 @@ dependencies = [
     "langchain-community",
     "radical-asyncflow",
     "python-dotenv",
-    "academy-py" 
+    "academy-py",
+    "pydantic>=2.0.0",
+
 ]
 
 [project.optional-dependencies]
@@ -73,3 +75,4 @@ select = [
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
