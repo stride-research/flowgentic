@@ -80,6 +80,8 @@ uv run ruff format --check
 ```bash
 git clone https://github.com/your-username/flowgentic.git
 cd flowgentic
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -e .
 ```
 
