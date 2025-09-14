@@ -225,12 +225,9 @@ async def flaky_api_call(endpoint: str) -> dict:
 Convert existing AsyncFlow tasks to LangChain tools:
 
 ```python
-@flow.function_task
+@integration.asyncflow_tool
 async def existing_task(data: str) -> str:
     return f"Processed: {data}"
-
-# Convert to LangChain tool
-tool = integration.to_langgraph_tool(existing_task)
 ```
 
 ## Examples
@@ -273,10 +270,6 @@ Create a complete workflow from a chain of Academy agents.
 #### `asyncflow_tool(func=None, retry=None)`
 
 Decorator to register an async function as both AsyncFlow task and LangChain tool.
-
-#### `to_langgraph_tool(asyncflow_task, retry=None)`
-
-Convert an existing AsyncFlow task to a LangChain tool.
 
 ### RetryConfig
 
