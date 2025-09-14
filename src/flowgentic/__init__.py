@@ -1,2 +1,2 @@
 def main() -> None:
-    print("Hello from flowgentic!")
+	print("Hello from flowgentic!")

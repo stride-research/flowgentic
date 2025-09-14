@@ -23,7 +23,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "ruff>=0.12.11"
+    "ruff>=0.12.11",
+    "pre-commit"
 ]
 
 [project.scripts]
@@ -39,3 +40,36 @@ where = ["src"]
 [tool.uv.sources]
 academy-py = { git = "https://github.com/proxystore/academy" }
 radical-asyncflow = { git = "https://github.com/radical-cybertools/radical.asyncflow.git" }
+
+[tool.ruff]
+line-length = 88
+include = ["./src/*", ]
+
+[tool.ruff.format]
+indent-style = "tab"
+quote-style = "double"
+docstring-code-format = true
+
+[tool.ruff.lint]
+select = [
+      "N",
+      "ANN",
+      "TID",
+      "E",
+      "C4",
+      "G",
+      "FAST001",
+      "FAST002",
+      "FAST003",
+      "ASYNC100",
+      "S101",
+      "S105",
+      "S106",
+      "S107",
+      "S310",
+      "S311",
+      "I", # isort
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
