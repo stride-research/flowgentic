@@ -10,7 +10,8 @@ This example shows:
 
 import asyncio
 import os
-from typing import List, TypedDict, Annotated, Dict, Any
+from typing import List, Annotated, Dict, Any
+from pydantic import BaseModel
 import logging
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
@@ -32,10 +33,12 @@ init_default_logger(logging.INFO)
 load_dotenv()
 
 # Enhanced state for parallel agents
-class MultiAgentState(TypedDict):
+class MultiAgentState(BaseModel):
+    model_config = {"arbitrary_types_allowed": True}
+    
     messages: Annotated[List[BaseMessage], add_messages]
-    agent_results: Dict[str, Any]
-    task_assignments: Dict[str, str]
+    agent_results: Dict[str, Any] = {}
+    task_assignments: Dict[str, str] = {}
 
 async def main():
     # Initialize AsyncFlow
