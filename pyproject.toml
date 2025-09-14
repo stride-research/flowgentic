@@ -15,6 +15,7 @@ dependencies = [
     "langgraph>=0.6.6",
     "radical-asyncflow",
     "ruff>=0.12.11",
+    "pydantic>=2.0.0",
 ]
 
 [project.scripts]
@@ -27,3 +28,8 @@ build-backend = "hatchling.build"
 [tool.uv.sources]
 academy-py = { git = "https://github.com/proxystore/academy" }
 radical-asyncflow = { git = "https://github.com/radical-cybertools/radical.asyncflow.git" }
+
+[dependency-groups]
+dev = [
+    "pydantic>=2.11.7",
+]
