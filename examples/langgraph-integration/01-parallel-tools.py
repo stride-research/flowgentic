@@ -23,7 +23,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from concurrent.futures import ThreadPoolExecutor
 from radical.asyncflow import ConcurrentExecutionBackend, WorkflowEngine
 
-from flowcademy.langgraph import LangGraphIntegration, RetryConfig
+from flowgentic.langgraph import LangGraphIntegration, RetryConfig
 
 from radical.asyncflow.logging import init_default_logger
 
@@ -81,7 +81,7 @@ async def main():
         """LLM decides what to do and calls tools."""
         llm = ChatOpenAI(
             temperature=0.3,
-            model="deepseek/deepseek-chat-v3-0324:free",
+            model="google/gemini-2.5-pro",
             openai_api_base="https://openrouter.ai/api/v1",
             openai_api_key=os.getenv("OPEN_ROUTER_API_KEY"),
             max_retries=3,
@@ -109,8 +109,7 @@ async def main():
     workflow.add_edge("tools", "llm")
 
     # Enable checkpointing so the graph can resume gracefully
-    checkpointer = MemorySaver()
-    app = workflow.compile(checkpointer=checkpointer)
+    app = workflow.compile()
 
     # Test the parallel execution
     logger.info("🚀 Testing parallel tool execution...")
