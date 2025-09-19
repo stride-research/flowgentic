@@ -1,0 +1,93 @@
+# ChemCrow-HPC Configuration for HPC Environments
+# This file contains settings for high-performance computing clusters
+
+# HPC Scheduler Settings
+scheduler: slurm                    # Options: slurm, pbs, local
+partition: gpu                      # SLURM partition/queue
+nodes: 4                           # Number of compute nodes
+tasks_per_node: 32                 # Tasks per node (CPUs)
+time_limit: "24:00:00"              # Maximum runtime
+memory_per_node: "128G"             # Memory per node
+gpu_enabled: true                 # Enable GPU acceleration
+gpus_per_node: 4                  # GPUs per node (if gpu_enabled)
+
+# Execution Backend Settings
+execution_backend:
+  type: concurrent                  # Options: concurrent, thread, process
+  max_workers: 128                  # Maximum parallel workers
+  thread_pool_size: 64               # Thread pool size for I/O operations
+  process_pool_size: 16            # Process pool size for CPU-intensive tasks
+
+# Fault Tolerance Configuration
+fault_tolerance:
+  enabled: true
+  max_attempts: 5                 # Maximum retry attempts
+  base_backoff_sec: 1.0             # Base backoff time
+  max_backoff_sec: 30.0             # Maximum backoff time
+  timeout_sec: 60.0                 # Task timeout
+  jitter: 0.25                      # Jitter factor for backoff
+  retryable_exceptions:             # Exceptions to retry
+    - ConnectionError
+    - TimeoutError
+    - OSError
+    - asyncio.TimeoutError
+
+# Checkpointing Configuration
+checkpointing:
+  enabled: true
+  interval: 3600                    # Checkpoint interval in seconds
+  directory: "/scratch/checkpoints" # Directory for checkpoint files
+  compression: true               # Compress checkpoint files
+  max_checkpoints: 10               # Maximum number of checkpoints to keep
+
+# Resource Management
+resource_management:
+  memory_limit: "120G"              # Memory limit per worker
+  cpu_limit: 0.9                    # CPU usage limit (fraction)
+  gpu_memory_fraction: 0.8          # GPU memory usage fraction
+  cleanup_interval: 300             # Cleanup interval in seconds
+
+# Database and API Settings
+database:
+  connection_pool_size: 20
+  timeout: 30                       # Database timeout in seconds
+  max_retries: 3
+  retry_delay: 1.0
+
+# Logging Configuration
+logging:
+  level: "INFO"                     # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "/scratch/logs/chemcrow-hpc.log"
+  max_size: "100MB"
+  backup_count: 5
+
+# Performance Tuning
+performance:
+  batch_size: 1000                  # Batch size for processing
+  prefetch_factor: 2                 # Prefetch factor for data loading
+  cache_size: 10000                 # Cache size for results
+  enable_profiling: false            # Enable performance profiling
+  profile_output: "/scratch/profiles"
+
+# Security Settings
+security:
+  enable_ssl: true
+  verify_certificates: true
+  api_key_rotation: false          # Rotate API keys automatically
+  secure_logging: true            # Mask sensitive data in logs
+
+# Environment Variables
+environment:
+  OPENAI_API_KEY: "${OPENAI_API_KEY}"
+  CHEMSPACE_API_KEY: "${CHEMSPACE_API_KEY}"
+  SERP_API_KEY: "${SERP_API_KEY}"
+  RXN4CHEM_API_KEY: "${RXN4CHEM_API_KEY}"
+  SEMANTIC_SCHOLAR_API_KEY: "${SEMANTIC_SCHOLAR_API_KEY}"
+
+# Custom Settings
+custom:
+  # Add any custom configuration here
+  enable_advanced_analysis: true
+  max_compounds_per_batch: 5000
+  enable_structure_validation: true

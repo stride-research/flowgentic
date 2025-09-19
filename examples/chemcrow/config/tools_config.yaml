@@ -1,0 +1,165 @@
+# ChemCrow-HPC Tools Configuration
+# Configuration for chemical analysis tools and APIs
+
+# API Keys (use environment variables for security)
+api_keys:
+  openai: "${OPENAI_API_KEY}"
+  chemspace: "${CHEMSPACE_API_KEY}"
+  serp: "${SERP_API_KEY}"
+  rxn4chem: "${RXN4CHEM_API_KEY}"
+  semantic_scholar: "${SEMANTIC_SCHOLAR_API_KEY}"
+
+# Chemical Database Settings
+chemical_databases:
+  pubchem:
+    name: "PubChem"
+    base_url: "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
+    timeout: 30                       # seconds
+    max_retries: 3
+    retry_delay: 1.0
+    batch_size: 100
+    
+  chemspace:
+    name: "ChemSpace"
+    base_url: "https://api.chem-space.com"
+    timeout: 45
+    max_retries: 5
+    retry_delay: 2.0
+    batch_size: 50
+    
+  rdkit:
+    name: "RDKit"
+    enable_gmDescriptors: true
+    enable_mordred: true
+    timeout: 10
+
+# Reaction Prediction Services
+reaction_services:
+  rxn4chem:
+    enabled: true
+    local_mode: false                 # Use local Docker containers if true
+    base_url: "https://rxn.res.ibm.com"
+    timeout: 120                      # Longer timeout for complex reactions
+    max_retries: 3
+    
+  local_containers:
+    retrosynthesis:
+      enabled: false
+      port: 8052
+      gpu_enabled: true
+      image: "doncamilom/retrosynthesis:latest"
+      
+    reaction_prediction:
+      enabled: false
+      port: 8051
+      gpu_enabled: true
+      image: "doncamilom/rxnpred:latest"
+
+# Safety and Toxicity Analysis
+safety_analysis:
+  enabled: true
+  explosive_check: true
+  toxicity_check: true
+  environmental_check: true
+  controlled_substance_check: true
+  
+  databases:
+    clintox:
+      enabled: true
+      url: "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/clintox.csv.gz"
+      
+    ghs_classification:
+      enabled: true
+      source: "pubchem"
+      
+    molbloom:
+      enabled: true
+      filters:
+        - "surechembl"
+        - "zinc"
+
+# Search and Information Retrieval
+search_services:
+  web_search:
+    enabled: true
+    provider: "serp"                  # serp, duckduckgo, google
+    max_results: 10
+    timeout: 15
+    
+  academic_search:
+    enabled: true
+    provider: "semantic_scholar"
+    max_results: 20
+    timeout: 30
+    
+  patent_search:
+    enabled: true
+    provider: "surechembl"
+    max_results: 5
+    timeout: 20
+
+# Machine Learning Models
+ml_models:
+  llm:
+    provider: "openai"
+    model: "gpt-4"
+    temperature: 0.1
+    max_tokens: 1000
+    timeout: 60
+    
+  embeddings:
+    provider: "openai"
+    model: "text-embedding-ada-002"
+    timeout: 10
+
+# Performance Settings
+performance:
+  cache_enabled: true
+  cache_size: 10000                 # Number of items to cache
+  cache_ttl: 3600                   # Cache TTL in seconds
+  parallel_requests: 10             # Maximum parallel API requests
+  request_rate_limit: 100          # Requests per minute
+  connection_pool_size: 20
+  
+# Validation and Quality Control
+validation:
+  smiles_validation: true
+  structure_sanitization: true
+  duplicate_removal: true
+  minimum_molecular_weight: 50
+  maximum_molecular_weight: 2000
+  
+# Output and Reporting
+output:
+  formats:
+    - "json"
+    - "csv"
+    - "sdf"
+    - "png"                          # For molecular structures
+  
+  reporting:
+    generate_summary: true
+    include_structures: true
+    include_references: true
+    max_report_length: 1000
+
+# Error Handling
+error_handling:
+  graceful_degradation: true        # Continue on individual failures
+  max_failures: 10                # Maximum failures before stopping
+  failure_notification: true        # Notify on failures
+  detailed_logging: true          # Log detailed error information
+
+# Security Settings
+security:
+  encrypt_api_keys: true
+  rotate_api_keys: false
+  audit_logging: true
+  sanitize_inputs: true
+
+# Custom Tool Configuration
+custom_tools:
+  # Add configuration for custom tools here
+  enable_advanced_analysis: false
+  enable_structure_prediction: false
+  enable_property_optimization: false
