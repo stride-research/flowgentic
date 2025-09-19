@@ -20,25 +20,40 @@ from radical.asyncflow import WorkflowEngine
 
 
 class RetryConfig(BaseModel):
-    """Configuration for retry/backoff and timeouts.
+	"""Configuration for retry/backoff and timeouts.
 
-    Attributes:
-        max_attempts: Total attempts including the first try.
-        base_backoff_sec: Base delay used for exponential backoff.
-        max_backoff_sec: Upper bound for backoff delay.
-        jitter: Randomization factor [0.0-1.0] applied to backoff.
-        timeout_sec: Per-attempt timeout (None disables timeout).
-        retryable_exceptions: Tuple of exception classes considered transient.
-        raise_on_failure: If True, raise after final failure; otherwise return an error payload.
-    """
+	Attributes:
+	    max_attempts: Total attempts including the first try.
+	    base_backoff_sec: Base delay used for exponential backoff.
+	    max_backoff_sec: Upper bound for backoff delay.
+	    jitter: Randomization factor [0.0-1.0] applied to backoff.
+	    timeout_sec: Per-attempt timeout (None disables timeout).
+	    retryable_exceptions: Tuple of exception classes considered transient.
+	    raise_on_failure: If True, raise after final failure; otherwise return an error payload.
+	"""
 
-    max_attempts: int = Field(default=3, description="Total attempts including the first try")
-    base_backoff_sec: float = Field(default=0.5, description="Base delay used for exponential backoff")
-    max_backoff_sec: float = Field(default=8.0, description="Upper bound for backoff delay")
-    jitter: float = Field(default=0.25, description="Randomization factor [0.0-1.0] applied to backoff")
-    timeout_sec: Optional[float] = Field(default=30.0, description="Per-attempt timeout (None disables timeout)")
-    retryable_exceptions: Tuple[type, ...] = Field(default=(), description="Tuple of exception classes considered transient")
-    raise_on_failure: bool = Field(default=True, description="If True, raise after final failure; otherwise return an error payload")
+	max_attempts: int = Field(
+		default=3, description="Total attempts including the first try"
+	)
+	base_backoff_sec: float = Field(
+		default=0.5, description="Base delay used for exponential backoff"
+	)
+	max_backoff_sec: float = Field(
+		default=8.0, description="Upper bound for backoff delay"
+	)
+	jitter: float = Field(
+		default=0.25, description="Randomization factor [0.0-1.0] applied to backoff"
+	)
+	timeout_sec: Optional[float] = Field(
+		default=30.0, description="Per-attempt timeout (None disables timeout)"
+	)
+	retryable_exceptions: Tuple[type, ...] = Field(
+		default=(), description="Tuple of exception classes considered transient"
+	)
+	raise_on_failure: bool = Field(
+		default=True,
+		description="If True, raise after final failure; otherwise return an error payload",
+	)
 
 
 def _default_retryable_exceptions() -> Tuple[type, ...]:
