@@ -4,8 +4,9 @@
 
 ## RADICAL ASYNCFLOW
 [] Add radical API for tool execution
-      [] Examples working
-      [] Add abstraction
+      [x] Examples working
+      [x] Add abstraction
+            - Can u add abstraction at the agent level?
 
 
 ## IMPORTANT TO HAVE
@@ -13,6 +14,8 @@
 - Structured outputs 
 - Memory 
 - Ollama support
+- Logs 
+      - Conversation history
 
 ## DOCUMENTATION
 - Mkdocs
@@ -25,3 +28,4 @@
 - Web search
 - Graph visualization
 - Streaming token by token
+- Evaluation / guardrails

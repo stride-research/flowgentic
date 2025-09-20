@@ -10,16 +10,24 @@ Key features:
 
 import asyncio
 import contextlib
+import os
 import random
+from langgraph.graph import add_messages
 from pydantic import BaseModel, Field
 from functools import wraps
-from typing import Any, Callable, Optional, Sequence, Tuple
+from typing import Annotated, Any, Callable, Dict, List, Optional, Sequence, Tuple
 
-from langchain_core.tools import tool
+from langchain_core.tools import BaseTool, tool
 from radical.asyncflow import WorkflowEngine
 from radical.asyncflow.workflow_manager import BaseExecutionBackend
 
 
+# TYPES SECTION
+class BaseLLMAgentState(BaseModel):
+	messages: Annotated[list, add_messages]
+
+
+# Fault tolerance section
 class RetryConfig(BaseModel):
 	"""Configuration for retry/backoff and timeouts.
 
@@ -164,10 +172,13 @@ class LangGraphIntegration:
 	async def __aexit__(self, exc_type, exc, tb):
 		await self.flow.shutdown()
 
+	# TOOLS SECTION
+
 	def asyncflow_tool(
 		self,
 		func: Optional[Callable] = None,
 		*,
+		agent_id: Optional[int] = None,
 		retry: Optional[RetryConfig] = None,
 	) -> Callable:
 		"""Decorator to register an async function as AsyncFlow task and LangChain tool.
@@ -179,7 +190,6 @@ class LangGraphIntegration:
 		    @integration.asyncflow_tool(retry=RetryConfig(...))
 		    async def f(...): ...
 		"""
-		print(dir(self))
 
 		def decorate(f: Callable) -> Callable:
 			asyncflow_func = self.flow.function_task(f)
@@ -193,13 +203,21 @@ class LangGraphIntegration:
 
 				return await _retry_async(_call, retry_cfg, name=f.__name__)
 
-			return tool(
-				wrapper
-			)  # Wrapping the wrapper in 'tool()' in order to be used with Langchain's agents
+			langraph_tool = tool(wrapper)
+			return langraph_tool
 
 		if func is not None:
 			return decorate(func)
 		return decorate
+
+	@staticmethod
+	async def needs_tool_invokation(state: BaseLLMAgentState) -> str:
+		last_message = state.messages[-1]
+		if (
+			hasattr(last_message, "tool_calls") and last_message.tool_calls
+		):  # Ensuring there is a tool call attr and is not empty
+			return "true"
+		return "false"
 
 
 # Minimal usage example (not executed):

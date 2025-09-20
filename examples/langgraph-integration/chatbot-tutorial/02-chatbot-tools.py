@@ -13,14 +13,18 @@ import os
 from typing import Annotated
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
-from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel
 from radical.asyncflow import ConcurrentExecutionBackend, WorkflowEngine
 
-from flowgentic.langgraph import LangGraphIntegration, RetryConfig
+from flowgentic import (
+	ChatLLMProvider,
+	LangGraphIntegration,
+	RetryConfig,
+	BaseLLMAgentState,
+)
 
 
 from dotenv import load_dotenv
@@ -28,19 +32,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-class WorkflowState(BaseModel):
-	messages: Annotated[list, add_messages]
+class WorkflowState(BaseLLMAgentState): ...
 
 
 async def start_app():
 	backend = await ConcurrentExecutionBackend(ThreadPoolExecutor())
 
 	async with LangGraphIntegration(backend=backend) as orchestrator:
-		llm = ChatOpenAI(
-			model="google/gemini-2.5-flash",
-			openai_api_base="https://openrouter.ai/api/v1",
-			openai_api_key=os.getenv("OPEN_ROUTER_API_KEY"),
-		)
+		llm = ChatLLMProvider(provider="OpenRouter", model="google/gemini-2.5-flash")
 
 		@orchestrator.asyncflow_tool()
 		async def weather_extractor(city: str):
@@ -57,20 +56,14 @@ async def start_app():
 			response = await llm_with_tools.ainvoke(state.messages)
 			return WorkflowState(messages=[response])
 
-		async def needs_tool_invokation(state: WorkflowState) -> str:
-			last_message = state.messages[-1]
-			if (
-				hasattr(last_message, "tool_calls") and last_message.tool_calls
-			):  # Ensuring there is a tool call attr and is not empty
-				return "true"
-			return "false"
-
 		workflow = StateGraph(WorkflowState)
 		workflow.add_node("chatbot", invoke_llm)
 		workflow.set_entry_point("chatbot")
 		workflow.add_node("tools", ToolNode(tools))
 		workflow.add_conditional_edges(
-			"chatbot", needs_tool_invokation, {"true": "tools", "false": END}
+			"chatbot",
+			orchestrator.needs_tool_invokation,
+			{"true": "tools", "false": END},
 		)
 		workflow.add_edge("tools", "chatbot")
 
@@ -108,14 +101,13 @@ import os
 from typing import Annotated
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
-from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel
 from radical.asyncflow import ConcurrentExecutionBackend, WorkflowEngine
 
-from flowgentic.langgraph import LangGraphIntegration, RetryConfig
+from flowgentic import ChatOpenRouter, LangGraphIntegration, RetryConfig
 
 
 from dotenv import load_dotenv
@@ -132,11 +124,7 @@ async def start_app():
 	flow = await WorkflowEngine.create(backend=backend)
 	integration = LangGraphIntegration(flow)
 
-	llm = ChatOpenAI(
-		model="google/gemini-2.5-flash",
-		openai_api_base="https://openrouter.ai/api/v1",
-		openai_api_key=os.getenv("OPEN_ROUTER_API_KEY"),
-	)
+	llm = ChatOpenRouter(model="google/gemini-2.5-flash")
 
 	@integration.asyncflow_tool()
 	async def weather_extractor(city: str):
