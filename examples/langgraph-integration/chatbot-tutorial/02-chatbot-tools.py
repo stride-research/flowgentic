@@ -18,7 +18,6 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, create_react_agent
 from pydantic import BaseModel
 from radical.asyncflow import ConcurrentExecutionBackend, WorkflowEngine
-from langchain_core.runnables.graph_mermaid import MermaidDrawMethod
 
 from flowgentic import (
 	ChatLLMProvider,
@@ -68,14 +67,13 @@ async def start_app():
 			return WorkflowState(messages=[response])
 
 		workflow = StateGraph(WorkflowState)
-		create_react_agent
 
 		# Nodes
 		workflow.add_node("chatbot", invoke_llm)
 		workflow.add_node(
 			"response_synthetizer",
 			orchestrator.structured_final_response(
-				llm=llm, response_schena=DayVerdict, graph_state_schema=WorkflowState
+				llm=llm, response_schema=DayVerdict, graph_state_schema=WorkflowState
 			),
 		)
 		workflow.set_entry_point("chatbot")

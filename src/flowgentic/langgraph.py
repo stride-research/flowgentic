@@ -236,9 +236,9 @@ class LangGraphIntegration:
 	# Synthetiszer node
 	@staticmethod
 	def structured_final_response(
-		llm: BaseChatModel, response_schena: BaseModel, graph_state_schema: type
+		llm: BaseChatModel, response_schema: BaseModel, graph_state_schema: type
 	):
-		formatter_llm = llm.with_structured_output(response_schena)
+		formatter_llm = llm.with_structured_output(response_schema)
 
 		async def response_structurer(current_graph_state):
 			result = await formatter_llm.ainvoke(current_graph_state.messages)
