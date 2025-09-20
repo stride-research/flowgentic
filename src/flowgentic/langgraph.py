@@ -17,28 +17,44 @@ from typing import Any, Callable, Optional, Sequence, Tuple
 
 from langchain_core.tools import tool
 from radical.asyncflow import WorkflowEngine
+from radical.asyncflow.workflow_manager import BaseExecutionBackend
 
 
 class RetryConfig(BaseModel):
-    """Configuration for retry/backoff and timeouts.
+	"""Configuration for retry/backoff and timeouts.
 
-    Attributes:
-        max_attempts: Total attempts including the first try.
-        base_backoff_sec: Base delay used for exponential backoff.
-        max_backoff_sec: Upper bound for backoff delay.
-        jitter: Randomization factor [0.0-1.0] applied to backoff.
-        timeout_sec: Per-attempt timeout (None disables timeout).
-        retryable_exceptions: Tuple of exception classes considered transient.
-        raise_on_failure: If True, raise after final failure; otherwise return an error payload.
-    """
+	Attributes:
+	    max_attempts: Total attempts including the first try.
+	    base_backoff_sec: Base delay used for exponential backoff.
+	    max_backoff_sec: Upper bound for backoff delay.
+	    jitter: Randomization factor [0.0-1.0] applied to backoff.
+	    timeout_sec: Per-attempt timeout (None disables timeout).
+	    retryable_exceptions: Tuple of exception classes considered transient.
+	    raise_on_failure: If True, raise after final failure; otherwise return an error payload.
+	"""
 
-    max_attempts: int = Field(default=3, description="Total attempts including the first try")
-    base_backoff_sec: float = Field(default=0.5, description="Base delay used for exponential backoff")
-    max_backoff_sec: float = Field(default=8.0, description="Upper bound for backoff delay")
-    jitter: float = Field(default=0.25, description="Randomization factor [0.0-1.0] applied to backoff")
-    timeout_sec: Optional[float] = Field(default=30.0, description="Per-attempt timeout (None disables timeout)")
-    retryable_exceptions: Tuple[type, ...] = Field(default=(), description="Tuple of exception classes considered transient")
-    raise_on_failure: bool = Field(default=True, description="If True, raise after final failure; otherwise return an error payload")
+	max_attempts: int = Field(
+		default=3, description="Total attempts including the first try"
+	)
+	base_backoff_sec: float = Field(
+		default=0.5, description="Base delay used for exponential backoff"
+	)
+	max_backoff_sec: float = Field(
+		default=8.0, description="Upper bound for backoff delay"
+	)
+	jitter: float = Field(
+		default=0.25, description="Randomization factor [0.0-1.0] applied to backoff"
+	)
+	timeout_sec: Optional[float] = Field(
+		default=30.0, description="Per-attempt timeout (None disables timeout)"
+	)
+	retryable_exceptions: Tuple[type, ...] = Field(
+		default=(), description="Tuple of exception classes considered transient"
+	)
+	raise_on_failure: bool = Field(
+		default=True,
+		description="If True, raise after final failure; otherwise return an error payload",
+	)
 
 
 def _default_retryable_exceptions() -> Tuple[type, ...]:
@@ -92,8 +108,7 @@ async def _retry_async(call: Callable[[], Any], config: RetryConfig, name: str) 
 	for attempt in range(1, max(1, config.max_attempts) + 1):
 		try:
 			if config.timeout_sec is not None and config.timeout_sec > 0:
-				async with asyncio.timeout(config.timeout_sec):
-					return await call()
+				return await asyncio.wait_for(call(), config.timeout_sec)
 			else:
 				return await call()
 		except Exception as e:  # pylint: disable=broad-except
@@ -137,10 +152,17 @@ class LangGraphIntegration:
 	"""
 
 	def __init__(
-		self, flow: WorkflowEngine, default_retry: Optional[RetryConfig] = None
+		self, backend: BaseExecutionBackend, default_retry: Optional[RetryConfig] = None
 	):
-		self.flow = flow
+		self.backend = backend
 		self.default_retry = default_retry or RetryConfig()
+
+	async def __aenter__(self):
+		self.flow: WorkflowEngine = await WorkflowEngine.create(backend=self.backend)
+		return self
+
+	async def __aexit__(self, exc_type, exc, tb):
+		await self.flow.shutdown()
 
 	def asyncflow_tool(
 		self,
@@ -157,6 +179,7 @@ class LangGraphIntegration:
 		    @integration.asyncflow_tool(retry=RetryConfig(...))
 		    async def f(...): ...
 		"""
+		print(dir(self))
 
 		def decorate(f: Callable) -> Callable:
 			asyncflow_func = self.flow.function_task(f)
