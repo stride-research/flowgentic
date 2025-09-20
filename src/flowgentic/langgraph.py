@@ -10,8 +10,11 @@ Key features:
 
 import asyncio
 import contextlib
+import json
 import os
 import random
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage
 from langgraph.graph import add_messages
 from pydantic import BaseModel, Field
 from functools import wraps
@@ -20,6 +23,8 @@ from typing import Annotated, Any, Callable, Dict, List, Optional, Sequence, Tup
 from langchain_core.tools import BaseTool, tool
 from radical.asyncflow import WorkflowEngine
 from radical.asyncflow.workflow_manager import BaseExecutionBackend
+
+from flowgentic.llm_providers import ChatLLMProvider
 
 
 # TYPES SECTION
@@ -173,7 +178,6 @@ class LangGraphIntegration:
 		await self.flow.shutdown()
 
 	# TOOLS SECTION
-
 	def asyncflow_tool(
 		self,
 		func: Optional[Callable] = None,
@@ -218,6 +222,20 @@ class LangGraphIntegration:
 		):  # Ensuring there is a tool call attr and is not empty
 			return "true"
 		return "false"
+
+	# Synthetiszer node
+	@staticmethod
+	def structured_final_response(
+		llm: BaseChatModel, respponse_schema: BaseModel, graph_state_schema
+	):
+		formatter_llm = llm.with_structured_output(respponse_schema)
+
+		async def response_structurer(current_graph_state):
+			result = await formatter_llm.ainvoke(current_graph_state.messages)
+			payload = result.model_dump()
+			return graph_state_schema(messages=[AIMessage(content=json.dumps(payload))])
+
+		return response_structurer
 
 
 # Minimal usage example (not executed):

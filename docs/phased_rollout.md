@@ -2,8 +2,10 @@
 
 --------------
 
+# SINGLE AGENT 
+
 ## RADICAL ASYNCFLOW
-[] Add radical API for tool execution
+[x] Add radical API for tool execution
       [x] Examples working
       [x] Add abstraction
             - Can u add abstraction at the agent level?
@@ -11,9 +13,9 @@
 
 ## IMPORTANT TO HAVE
 - Checkpointing + Fault tolerance mechanism 
-- Structured outputs 
-- Memory 
-- Ollama support
+[] Structured outputs - chatbot level
+[] Memory 
+[x] Ollama support
 - Logs 
       - Conversation history
 
@@ -29,3 +31,10 @@
 - Graph visualization
 - Streaming token by token
 - Evaluation / guardrails
+
+## GREAT TO HAVE
+- Observe telemetry
+- Multiple responses selection
+
+----
+# MULTIPLE AGENT 

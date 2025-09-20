@@ -1,3 +1,4 @@
+from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 from typing import Optional
@@ -38,7 +39,7 @@ class ChatOpenRouter(ChatOpenAI):
 		)
 
 
-def ChatLLMProvider(provider: str, *args, **kwargs):
+def ChatLLMProvider(provider: str, *args, **kwargs) -> BaseChatModel:
 	"""Simple factory to simply provider import"""
 	provider_lower = provider.lower()
 	if provider_lower == "openrouter":
