@@ -10,9 +10,11 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import json
 import os
+import random
 from typing import Annotated
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, create_react_agent
@@ -87,7 +89,11 @@ async def start_app():
 		workflow.add_edge("tools", "chatbot")
 		workflow.add_edge("response_synthetizer", END)
 
-		app = workflow.compile()
+		checkpointer = InMemorySaver()
+		app = workflow.compile(checkpointer=checkpointer)
+		thread_id = random.randint(0, 10)
+		config = {"configurable": {"thread_id": thread_id}}
+
 		await orchestrator.render_graph(app)
 
 		while True:
@@ -96,9 +102,11 @@ async def start_app():
 				print(f"Goodbye!")
 				return
 
-			initial_state = WorkflowState(messages=[HumanMessage(content=user_input)])
+			current_state = WorkflowState(messages=[HumanMessage(content=user_input)])
 
-			async for chunk in app.astream(initial_state, stream_mode="values"):
+			async for chunk in app.astream(
+				current_state, stream_mode="values", config=config
+			):
 				if chunk["messages"]:
 					last_msg = chunk["messages"][-1]
 					if isinstance(last_msg, AIMessage):

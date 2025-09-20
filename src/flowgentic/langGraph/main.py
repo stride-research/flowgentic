@@ -29,6 +29,9 @@ from radical.asyncflow import WorkflowEngine
 from radical.asyncflow.workflow_manager import BaseExecutionBackend
 
 from flowgentic.llm_providers import ChatLLMProvider
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # TYPES SECTION
