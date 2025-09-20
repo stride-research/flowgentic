@@ -31,6 +31,8 @@ from flowgentic import (
 
 from dotenv import load_dotenv
 
+from flowgentic.langGraph.workflowLogger import AgentLogger
+
 load_dotenv()
 
 
@@ -100,6 +102,11 @@ async def start_app():
 			user_input = input("User: ").lower()
 			if user_input in ["quit", "q", "-q", "exit"]:
 				print(f"Goodbye!")
+				last_state = app.get_state(config)
+				print(f"Last state: {last_state}")
+				AgentLogger.flush_agent_conversation(
+					conversation_history=last_state.values.get("messages", [])
+				)
 				return
 
 			current_state = WorkflowState(messages=[HumanMessage(content=user_input)])
