@@ -3,7 +3,9 @@
 --------------
 
 ## RADICAL ASYNCFLOW
-- Add radical API for tool execution
+[] Add radical API for tool execution
+      [] Examples working
+      [] Add abstraction
 
 
 ## IMPORTANT TO HAVE
