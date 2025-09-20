@@ -27,7 +27,7 @@ import os
 from typing import Annotated
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
-from langchain_openai import ChatOpenAI
+from flowgentic import ChatOpenRouter
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
@@ -44,11 +44,7 @@ class WorkflowState(BaseModel):
 	messages: Annotated[list, add_messages]
 
 
-llm = ChatOpenAI(
-	model="google/gemini-2.5-flash",
-	openai_api_base="https://openrouter.ai/api/v1",
-	openai_api_key=os.getenv("OPEN_ROUTER_API_KEY"),
-)
+llm = ChatOpenRouter(model="google/gemini-2.5-flash")
 
 
 @tool
