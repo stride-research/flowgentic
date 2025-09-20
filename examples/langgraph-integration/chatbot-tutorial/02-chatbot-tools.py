@@ -66,27 +66,13 @@ async def start_app():
 			response = await llm_with_tools.ainvoke(state.messages)
 			return WorkflowState(messages=[response])
 
-		# formatter_llm = llm.with_structured_output(DayVerdict)
-		# async def response_synthetizer(state: WorkflowState):
-
-		# 	result = await formatter_llm.ainvoke(state.messages)
-
-		# 	payload = result.model_dump()  # -> {"looks_like_a_good_day": ..., "reason": "..."}
-		# 	# Put the JSON as the final AI message content so your stream prints it
-
-		# 	return WorkflowState(messages=
-		# 				[AIMessage(
-		# 						content=json.dumps(payload),
-		# 						)]
-		# 				)
-
 		workflow = StateGraph(WorkflowState)
 		# Nodes
 		workflow.add_node("chatbot", invoke_llm)
 		workflow.add_node(
 			"response_synthetizer",
 			orchestrator.structured_final_response(
-				llm=llm, respponse_schema=DayVerdict, graph_state_schema=WorkflowState
+				llm=llm, response_schena=DayVerdict, graph_state_schema=WorkflowState
 			),
 		)
 		workflow.set_entry_point("chatbot")

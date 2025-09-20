@@ -13,11 +13,11 @@
 
 ## IMPORTANT TO HAVE
 - Checkpointing + Fault tolerance mechanism 
-[] Structured outputs - chatbot level
+[x] Structured outputs - chatbot level
 [] Memory 
 [x] Ollama support
-- Logs 
-      - Conversation history
+[] Logs 
+      [] Conversation history
 
 ## DOCUMENTATION
 - Mkdocs

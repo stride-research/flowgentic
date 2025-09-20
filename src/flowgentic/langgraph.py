@@ -182,7 +182,6 @@ class LangGraphIntegration:
 		self,
 		func: Optional[Callable] = None,
 		*,
-		agent_id: Optional[int] = None,
 		retry: Optional[RetryConfig] = None,
 	) -> Callable:
 		"""Decorator to register an async function as AsyncFlow task and LangChain tool.
@@ -226,9 +225,9 @@ class LangGraphIntegration:
 	# Synthetiszer node
 	@staticmethod
 	def structured_final_response(
-		llm: BaseChatModel, respponse_schema: BaseModel, graph_state_schema
+		llm: BaseChatModel, response_schena: BaseModel, graph_state_schema: type
 	):
-		formatter_llm = llm.with_structured_output(respponse_schema)
+		formatter_llm = llm.with_structured_output(response_schena)
 
 		async def response_structurer(current_graph_state):
 			result = await formatter_llm.ainvoke(current_graph_state.messages)
