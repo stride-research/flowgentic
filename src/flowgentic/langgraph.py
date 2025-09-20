@@ -17,6 +17,7 @@ from typing import Any, Callable, Optional, Sequence, Tuple
 
 from langchain_core.tools import tool
 from radical.asyncflow import WorkflowEngine
+from radical.asyncflow.workflow_manager import BaseExecutionBackend
 
 
 class RetryConfig(BaseModel):
@@ -151,10 +152,17 @@ class LangGraphIntegration:
 	"""
 
 	def __init__(
-		self, flow: WorkflowEngine, default_retry: Optional[RetryConfig] = None
+		self, backend: BaseExecutionBackend, default_retry: Optional[RetryConfig] = None
 	):
-		self.flow = flow
+		self.backend = backend
 		self.default_retry = default_retry or RetryConfig()
+
+	async def __aenter__(self):
+		self.flow: WorkflowEngine = await WorkflowEngine.create(backend=self.backend)
+		return self
+
+	async def __aexit__(self, exc_type, exc, tb):
+		await self.flow.shutdown()
 
 	def asyncflow_tool(
 		self,
@@ -171,6 +179,7 @@ class LangGraphIntegration:
 		    @integration.asyncflow_tool(retry=RetryConfig(...))
 		    async def f(...): ...
 		"""
+		print(dir(self))
 
 		def decorate(f: Callable) -> Callable:
 			asyncflow_func = self.flow.function_task(f)
