@@ -2,7 +2,7 @@
 
 # DECORATORS
 - Block => fan-out / fin-in. Grouping several parallel stuff that needs to be await at a given checkpoint. 
-- Function task => defining steps of workflow. Build stuff indepedently. For instance: creating ageny.
+- Function task => defining steps of workflow. Build stuff indepedently. For instance: creating ageny. FUNCTION TO BE EXECUTED IN HPC THAT DOESNT BELONG TO THE AGENT
 - Langraph integration => agent tools 
 
 # DEV DOCUMENTATION
