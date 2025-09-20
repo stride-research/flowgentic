@@ -8,14 +8,18 @@ Key features:
 - Sensible defaults for fault tolerance (no config required)
 """
 
+from abc import abstractmethod
 import asyncio
 import contextlib
+from fileinput import filename
 import json
 import os
 import random
+import uuid
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langgraph.graph import add_messages
+from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel, Field
 from functools import wraps
 from typing import Annotated, Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -212,6 +216,13 @@ class LangGraphIntegration:
 		if func is not None:
 			return decorate(func)
 		return decorate
+
+	async def render_graph(
+		self,
+		app: CompiledStateGraph,
+		file_name: str = f"workflow_graph_{uuid.uuid4()}.png",
+	):
+		await asyncio.to_thread(app.get_graph().draw_png, file_name)
 
 	@staticmethod
 	async def needs_tool_invokation(state: BaseLLMAgentState) -> str:

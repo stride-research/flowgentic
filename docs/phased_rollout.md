@@ -12,7 +12,11 @@
 
 
 ## IMPORTANT TO HAVE
-- Checkpointing + Fault tolerance mechanism 
+[] Checkpointing + Fault tolerance mechanism 
+      [x] tool level
+      [ ] toolkit level
+      [] Checkpointing
+
 [x] Structured outputs - chatbot level
 [] Memory 
 [x] Ollama support

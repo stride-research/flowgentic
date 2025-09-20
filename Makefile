@@ -4,9 +4,16 @@ VENV_PATH =  ./.venv
 VENV_ACTIVATE = source $(VENV_PATH)/bin/activate
 
 install: #Install dependencies with pip
+	brew install graphviz
 	python3.9 -m venv $(VENV_PATH)
 	$(VENV_ACTIVATE) && pip install -e ".[dev]"
 	$(VENV_ACTIVATE) &&  pre-commit install
+	pip install --config-settings="--global-option=build_ext" \
+		--config-settings="--global-option=-I$(brew --prefix graphviz)/include/" \
+		--config-settings="--global-option=-L$(brew --prefix graphviz)/lib/" \
+		pygraphviz
+
+	
 
 format:
 	$(VENV_ACTIVATE) && ruff format .
