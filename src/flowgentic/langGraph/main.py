@@ -18,17 +18,19 @@ import random
 import uuid
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
-from langgraph.graph import add_messages
+from langgraph.graph import add_messages, StateGraph, START, END
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel, Field
 from functools import wraps
-from typing import Annotated, Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Annotated, Any, Callable, Dict, List, Optional, Sequence, Tuple, Literal
 
 from langchain_core.tools import BaseTool, tool
 from radical.asyncflow import WorkflowEngine
 from radical.asyncflow.workflow_manager import BaseExecutionBackend
 
 from flowgentic.llm_providers import ChatLLMProvider
+from flowgentic.langGraph.memory import MemoryManager, MemoryConfig, MemoryEnabledState
 import logging
 
 logger = logging.getLogger(__name__)
@@ -236,29 +238,181 @@ class LangGraphIntegration:
 			return "true"
 		return "false"
 
-	# Synthetiszer node
+	# Synthesizer node
 	@staticmethod
 	def structured_final_response(
-		llm: BaseChatModel, response_schema: BaseModel, graph_state_schema: type
+		llm: BaseChatModel, response_schema: type, graph_state_schema: type
 	):
 		formatter_llm = llm.with_structured_output(response_schema)
 
 		async def response_structurer(current_graph_state):
 			result = await formatter_llm.ainvoke(current_graph_state.messages)
-			payload = result.model_dump()
+			payload = result.model_dump() if hasattr(result, 'model_dump') else dict(result)
 			return graph_state_schema(messages=[AIMessage(content=json.dumps(payload))])
 
 		return response_structurer
 
 
+class MemoryEnabledLangGraphIntegration(LangGraphIntegration):
+	"""Enhanced LangGraph integration with memory management capabilities.
+
+	Extends the base integration with memory-aware operations for enhanced
+	agent capabilities and conversation continuity.
+	"""
+
+	def __init__(
+		self,
+		backend: BaseExecutionBackend,
+		memory_manager: MemoryManager,
+		llm: Optional[BaseChatModel] = None,
+		default_retry: Optional[RetryConfig] = None
+	):
+		super().__init__(backend, default_retry)
+		self.memory_manager = memory_manager
+		self.llm = llm
+
+	async def invoke_with_memory(
+		self,
+		state: MemoryEnabledState,
+		user_id: str,
+		tools: List[Callable] = None
+	) -> MemoryEnabledState:
+		"""Enhanced invocation with memory context integration."""
+		# Get relevant memory context
+		last_message = state.messages[-1] if state.messages else None
+		query = last_message.content if last_message and hasattr(last_message, 'content') else ""
+		memory_context = await self.memory_manager.get_relevant_context(
+			user_id=user_id,
+			query=str(query) if query else ""
+
+		)
+
+		# Update state with memory context
+		enhanced_state = state.model_copy(update={"memory_context": memory_context})
+
+		# Add interaction to memory
+		await self.memory_manager.add_interaction(
+			user_id=user_id,
+			messages=state.messages,
+			metadata={"tool_calls": len(state.messages)}
+		)
+
+		return enhanced_state
+
+	@staticmethod
+	async def needs_tool_invokation_with_memory(
+		state: MemoryEnabledState,
+		memory_manager: MemoryManager,
+		user_id: str
+	) -> str:
+		"""Memory-aware tool invocation decision making."""
+		last_message = state.messages[-1]
+
+		# Check if we need tools based on memory context
+		if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+			return "true"
+
+		# Basic fallback to standard logic
+		return await LangGraphIntegration.needs_tool_invokation(
+			BaseLLMAgentState(messages=state.messages)
+		)
+
+	@staticmethod
+	def structured_final_response_with_memory(
+		llm: BaseChatModel,
+		response_schema: type,
+		graph_state_schema: type,
+		memory_manager: MemoryManager
+	):
+		"""Enhanced structured response with memory context integration."""
+		formatter_llm = llm.with_structured_output(response_schema)
+
+		async def response_structurer(current_graph_state: MemoryEnabledState):
+			# Get memory context to inform response
+			user_id = current_graph_state.user_id
+			memory_context = await memory_manager.get_relevant_context(user_id)
+
+			# Use memory context in response generation
+			enhanced_messages = current_graph_state.messages.copy()
+
+			# Add relevant memories to context if needed
+			if memory_context.get("memory_stats", {}).get("total_messages", 0) > 0:
+				context_message = f"Recent conversation: {memory_context['memory_stats']['total_messages']} messages"
+				enhanced_messages.insert(0, AIMessage(content=context_message))
+
+			result = await formatter_llm.ainvoke(enhanced_messages)
+			payload = result.model_dump() if hasattr(result, 'model_dump') else result
+			return graph_state_schema(messages=[AIMessage(content=json.dumps(payload))])
+
+		return response_structurer
+
+
+def create_memory_enabled_graph(
+	integration: MemoryEnabledLangGraphIntegration,
+	memory_manager: MemoryManager,
+	tools: List[Callable],
+	llm: Optional[BaseChatModel] = None
+):
+	"""Create a memory-enabled LangGraph workflow."""
+
+	async def memory_enhanced_chatbot(state: MemoryEnabledState):
+		"""Memory-enhanced chatbot node."""
+		user_id = state.user_id
+
+		# Add interaction to memory
+		await memory_manager.add_interaction(
+			user_id=user_id,
+			messages=state.messages
+		)
+
+		# Use memory-enhanced LLM invocation
+		enhanced_state = await integration.invoke_with_memory(state, user_id, tools)
+		return enhanced_state
+
+	async def memory_context_provider(state: MemoryEnabledState):
+		"""Provide memory context for next steps."""
+		user_id = state.user_id
+		memory_context = await memory_manager.get_relevant_context(user_id)
+		return {"memory_context": memory_context}
+
+	# Build graph with memory nodes
+	workflow = StateGraph(MemoryEnabledState)
+	workflow.add_node("memory_context", memory_context_provider)
+	workflow.add_node("chatbot", memory_enhanced_chatbot)
+	workflow.add_node("tools", ToolNode(tools))
+
+	workflow.add_edge(START, "memory_context")
+	workflow.add_edge("memory_context", "chatbot")
+	workflow.add_conditional_edges(
+		"chatbot",
+		lambda s: integration.needs_tool_invokation_with_memory(s, memory_manager, s.user_id),
+		{"true": "tools", "false": END}
+	)
+	workflow.add_edge("tools", "chatbot")
+
+	return workflow.compile()
+
+
 # Minimal usage example (not executed):
 """
-# integration = LangGraphIntegration(flow)
-#
-# @integration.asyncflow_tool
-# async def get_weather(city: str) -> str:
-#     await asyncio.sleep(0.5)
-#     return f"Weather in {city} is sunny"
-#
-# tools = [get_weather]
+# Setup with memory and summarization
+memory_config = MemoryConfig(
+    max_short_term_messages=50,
+    short_term_strategy="summarize",
+    enable_summarization=True
+)
+memory_manager = MemoryManager(memory_config, llm=llm)  # Pass LLM for summarization
+
+# Enhanced integration
+integration = MemoryEnabledLangGraphIntegration(backend, memory_manager, llm=llm)
+
+# Create memory-enabled graph
+app = create_memory_enabled_graph(integration, memory_manager, tools, llm=llm)
+
+# Use with user context
+config = {"configurable": {"thread_id": "1", "user_id": "user123"}}
+result = app.invoke(
+    {"messages": [HumanMessage(content="Hello")], "user_id": "user123"},
+    config=config
+)
 """
