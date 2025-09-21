@@ -23,7 +23,6 @@ from pydantic import BaseModel, Field
 
 class MemoryConfig:
     """Configuration for memory management strategies."""
-
     def __init__(
         self,
         max_short_term_messages: int = 50,
@@ -196,8 +195,8 @@ class ShortTermMemoryManager:
         other_msgs = [m for m in self.message_history if not isinstance(m, SystemMessage)]
 
         # Calculate how many messages to keep unsummarized (most recent)
-        keep_unsummarized = max(5, self.config.max_short_term_messages // 3)  # Keep at least 1/3 for recent context
         keep_total = self.config.max_short_term_messages - len(system_msgs)
+        keep_unsummarized = min(max(2, keep_total // 2), keep_total)  # Keep at least half for recent context, but not more than total allowed
 
         if keep_total <= 0:
             return cast(List[BaseMessage], system_msgs)

@@ -284,6 +284,7 @@ class MemoryEnabledLangGraphIntegration(LangGraphIntegration):
 		memory_context = await self.memory_manager.get_relevant_context(
 			user_id=user_id,
 			query=str(query) if query else ""
+
 		)
 
 		# Update state with memory context
