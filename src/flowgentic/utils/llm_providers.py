@@ -40,7 +40,7 @@ class ChatOpenRouter(ChatOpenAI):
 
 
 def ChatLLMProvider(provider: str, *args, **kwargs) -> BaseChatModel:
-	"""Simple factory to simply provider import"""
+	"""Simple factory to simplify provider import"""
 	provider_lower = provider.lower()
 	if provider_lower == "openrouter":
 		return ChatOpenRouter(*args, **kwargs)
