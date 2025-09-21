@@ -28,14 +28,11 @@ class AgentLogger:
 		markdown_content = AgentLogger._generate_markdown_report(analysis, timestamp)
 
 		# Write to file (append mode to keep historical data)
-		with open(
-			f"./agent_run_data/agent_interactions_{uuid4()}.md", "w", encoding="utf-8"
-		) as f:
+		file_name = f"./agent_run_data/agent_interactions_{uuid4()}.md"
+		with open(file_name, "w", encoding="utf-8") as f:
 			f.write(markdown_content)
 
-		print(
-			f"✅ Agent conversation logged to ./agent_run_data/agent_interactions_{uuid4()}.md"
-		)
+		print(f"✅ Agent conversation logged to {file_name}")
 		print(
 			f"📊 Session summary: {analysis['total_messages']} messages, {analysis['total_tokens']} tokens"
 		)
