@@ -385,7 +385,7 @@ def create_memory_enabled_graph(
 	workflow.add_edge("memory_context", "chatbot")
 	workflow.add_conditional_edges(
 		"chatbot",
-		lambda s: integration.needs_tool_invokation_with_memory(s, memory_manager, s["user_id"]),
+		lambda s: integration.needs_tool_invokation_with_memory(s, memory_manager, s.user_id),
 		{"true": "tools", "false": END}
 	)
 	workflow.add_edge("tools", "chatbot")
