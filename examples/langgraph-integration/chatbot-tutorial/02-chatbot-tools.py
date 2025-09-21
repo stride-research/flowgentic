@@ -1,9 +1,7 @@
 """
-
 FEATURES:
       [x] Tools
       [] Memory
-
 """
 
 import asyncio
@@ -32,7 +30,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-class WorkflowState(BaseLLMAgentState): ...
+class WorkflowState(BaseLLMAgentState):
+	pass
 
 
 class DayVerdict(BaseModel):
@@ -59,6 +58,29 @@ async def start_app():
 			"""Extracts the amount of traffic for any given city"""
 			return {"traffic_percentage": 90}  # Dummy example
 
+		# Define the task within the asyncflow context
+		@agents_manager.agents.flow.function_task
+		async def deterministic_task_internal():
+			file_path = "im-working.txt"
+			with open(file_path, "w") as f:
+				f.write("Hello world!")
+			return {"status": "file_written", "path": file_path}
+
+		# Create a wrapper function that properly bridges to asyncflow
+		async def deterministic_task_node(state: WorkflowState):
+			"""Node wrapper that executes the asyncflow task and returns state"""
+			try:
+				# Execute the asyncflow task
+				task_future = deterministic_task_internal()
+				result = await task_future
+
+				# Return the state (LangGraph expects state to be returned)
+				return state
+			except Exception as e:
+				print(f"Error in deterministic_task: {e}")
+				# Return state even on error to prevent workflow failure
+				return state
+
 		tools = [weather_extractor, traffic_extractor]
 		llm_with_tools = llm.bind_tools(tools)
 
@@ -78,6 +100,10 @@ async def start_app():
 		)
 		workflow.set_entry_point("chatbot")
 		workflow.add_node("tools", ToolNode(tools))
+
+		# Use the async wrapper instead of the decorated function directly
+		workflow.add_node("deterministic_task", deterministic_task_node)
+
 		# Edges
 		workflow.add_conditional_edges(
 			"chatbot",
@@ -85,7 +111,8 @@ async def start_app():
 			{"true": "tools", "false": "response_synthetizer"},
 		)
 		workflow.add_edge("tools", "chatbot")
-		workflow.add_edge("response_synthetizer", END)
+		workflow.add_edge("response_synthetizer", "deterministic_task")
+		workflow.add_edge("deterministic_task", END)
 
 		checkpointer = InMemorySaver()
 		app = workflow.compile(checkpointer=checkpointer)
@@ -121,4 +148,5 @@ async def start_app():
 				print("=" * 30)
 
 
-asyncio.run(start_app())
+if __name__ == "__main__":
+	asyncio.run(start_app())

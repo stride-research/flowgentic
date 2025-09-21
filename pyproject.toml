@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "A library to enable running agentic frameworks on HPC environments."
 readme = "README.md"
 authors = [
-    { name = "Aymen Alsaadi", email = "aymen.alsaadi@rutgers.edu" },
     { name = "Yousef Amirghofran", email = "yamirghofran.ieu2023@student.ie.edu" },
     { name = "Javier Dominguez", email = "jdominguez.ieu2023@student.ie.edu"},
     { name = "Matteo Turilli", email = "mturilli@faculty.ie.edu"}
