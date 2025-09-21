@@ -1,6 +1,6 @@
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END, add_messages
-from typing import Annotated, TypedDict
+from typing import Annotated
 from pydantic import BaseModel, Field
 
 from flowgentic.llm_providers import ChatLLMProvider
@@ -29,7 +29,7 @@ structured_llm = llm.with_structured_output(Decision)
 
 def decision_node(state: AgentState):
 	# Your agent logic here (tool calls, reasoning, etc.)
-	messages = state["messages"]
+	messages = state.messages
 
 	# After all tool usage and reasoning, make final structured decision
 	result = structured_llm.invoke(
