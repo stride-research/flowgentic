@@ -19,9 +19,9 @@ FEATURES:
 
 import asyncio
 from typing import List, cast
-from unittest.mock import Mock
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage
 from langchain_core.language_models import BaseChatModel
+from langchain_core.outputs import ChatResult, ChatGeneration
 
 # Import our memory components
 from flowgentic.langGraph.memory import (
@@ -35,20 +35,23 @@ class MockSummarizationLLM(BaseChatModel):
 
     model_name: str = "mock-summarizer"
 
+    @property
+    def _llm_type(self) -> str:
+        return "mock-summarizer"
+
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
         # Check if this is a summarization request
         if messages and "conversation excerpt" in messages[0].content:
             summary = "Summary: User discussed food preferences, asked about weather, and inquired about recipes. Key topics: pizza, pasta, Italian cuisine, weather information."
-            return type('Response', (), {'content': summary})()
         else:
-            return type('Response', (), {'content': "Mock response"})()
+            summary = "Mock response"
+        return ChatResult(
+            generations=[ChatGeneration(text=summary, message=AIMessage(content=summary))],
+            llm_output={}
+        )
 
     async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
-        response = self._generate(messages, stop, run_manager, **kwargs)
-        return type('AsyncResponse', (), {
-            'generations': [type('Generation', (), {'text': response.content, 'message': AIMessage(content=response.content)})()],
-            'llm_output': {}
-        })()
+        return self._generate(messages, stop, run_manager, **kwargs)
 
 
 async def demonstrate_summarization():
@@ -131,7 +134,8 @@ async def demonstrate_summarization():
 
     for i, msg in enumerate(final_messages):
         msg_type = type(msg).__name__
-        content_preview = msg.content[:60] + "..." if len(msg.content) > 60 else msg.content
+        content = str(msg.content) if msg.content else ""
+        content_preview = content[:60] + "..." if len(content) > 60 else content
         print(f"  {i+1}. {msg_type}: {content_preview}")
 
     # Example 4: Test context retrieval with summarization
@@ -235,6 +239,10 @@ async def demonstrate_summarization_fallback():
     # Create a failing LLM mock
     class FailingLLM(BaseChatModel):
         model_name: str = "failing-llm"
+
+        @property
+        def _llm_type(self) -> str:
+            return "failing-llm"
 
         def _generate(self, messages, stop=None, run_manager=None, **kwargs):
             raise Exception("LLM service unavailable")

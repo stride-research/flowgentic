@@ -29,15 +29,15 @@ from flowgentic.langGraph.memory import (
 )
 
 
+
+
+
 async def demonstrate_memory_strategies():
     """Demonstrate different memory trimming strategies."""
 
     print("=" * 60)
     print("FlowGentic Memory Management Examples")
     print("=" * 60)
-
-    # Initialize mock LLM
-    llm = MockLLM()
 
     # Example 1: Basic memory with trim_last strategy
     print("\n1. TRIM_LAST Strategy")
@@ -49,90 +49,139 @@ async def demonstrate_memory_strategies():
         context_window_buffer=2
     )
 
-    memory_manager = MemoryManager(memory_config)
-    integration = MemoryEnabledLangGraphIntegration(None, memory_manager)
-    app = create_memory_enabled_graph(integration, memory_manager, [])
+    manager = ShortTermMemoryManager(memory_config)
 
-    # Simulate a conversation that exceeds memory limits
-    messages = []
-    for i in range(8):  # More than max_short_term_messages
-        messages.append(HumanMessage(content=f"Message {i+1}: {' '.join(['word'] * (i+1) * 10)}"))  # Longer messages
-        messages.append(AIMessage(content=f"Response to message {i+1}"))
+    # Add some messages
+    messages = cast(List[BaseMessage], [
+        SystemMessage(content="You are a helpful assistant"),
+        HumanMessage(content="Hello, how are you?"),
+        AIMessage(content="I'm doing well, thank you for asking!"),
+        HumanMessage(content="Can you help me with a task?"),
+        AIMessage(content="Of course! I'd be happy to help."),
+        HumanMessage(content="Tell me about memory management"),  # This will trigger trimming
+        AIMessage(content="Memory management is crucial for AI systems..."),
+        HumanMessage(content="What are the different strategies?"),
+    ])
 
-        # Add to memory
-        await memory_manager.add_interaction("user123", messages[-2:])
+    print(f"Adding {len(messages)} messages to memory...")
+    final_messages = manager.add_messages(messages)
 
-    stats = memory_manager.get_memory_health()
-    print(f"Total messages in memory: {stats['total_messages']}")
-    print(f"Memory efficiency: {stats['memory_efficiency']:.2%}")
-    print(f"Strategy: {memory_config.short_term_strategy}")
+    print(f"Memory now contains {len(final_messages)} messages:")
+    for i, msg in enumerate(final_messages):
+        msg_type = type(msg).__name__
+        content = str(msg.content) if msg.content else ""
+        preview = content[:50] + "..." if len(content) > 50 else content
+        print(f"  {i+1}. {msg_type}: {preview}")
 
-    # Example 2: Importance-based trimming
-    print("\n2. IMPORTANCE_BASED Strategy")
-    print("-" * 30)
+    # Get memory statistics
+    stats = manager.get_memory_stats()
+    print(f"\nMemory Statistics:")
+    print(f"  Total messages: {stats['total_messages']}")
+    print(f"  System messages: {stats['system_messages']}")
+    print(f"  Human messages: {stats['human_messages']}")
+    print(f"  AI messages: {stats['ai_messages']}")
+    print(f"  Interaction count: {stats['interaction_count']}")
 
-    memory_config_importance = MemoryConfig(
+    # Example 2: trim_middle strategy
+    print("\n\n2. TRIM_MIDDLE Strategy")
+    print("-" * 32)
+
+    memory_config = MemoryConfig(
         max_short_term_messages=5,
+        short_term_strategy="trim_middle",  # Keep beginning and end, remove middle
+        context_window_buffer=2
+    )
+
+    manager = ShortTermMemoryManager(memory_config)
+
+    # Add the same messages
+    final_messages = manager.add_messages(messages)
+
+    print(f"Memory now contains {len(final_messages)} messages:")
+    for i, msg in enumerate(final_messages):
+        msg_type = type(msg).__name__
+        content = str(msg.content) if msg.content else ""
+        preview = content[:50] + "..." if len(content) > 50 else content
+        print(f"  {i+1}. {msg_type}: {preview}")
+
+    # Example 3: importance_based strategy
+    print("\n\n3. IMPORTANCE_BASED Strategy")
+    print("-" * 34)
+
+    memory_config = MemoryConfig(
+        max_short_term_messages=5,
+        short_term_strategy="importance_based",  # Keep most important messages
+        context_window_buffer=2
+    )
+
+    manager = ShortTermMemoryManager(memory_config)
+
+    # Add the same messages
+    final_messages = manager.add_messages(messages)
+
+    print(f"Memory now contains {len(final_messages)} messages:")
+    for i, msg in enumerate(final_messages):
+        msg_type = type(msg).__name__
+        content = str(msg.content) if msg.content else ""
+        preview = content[:50] + "..." if len(content) > 50 else content
+        print(f"  {i+1}. {msg_type}: {preview}")
+
+    # Show memory items with importance scores
+    print(f"\nMemory items with importance scores:")
+    for i, item in enumerate(manager.memory_items[-5:]):  # Show last 5
+        print(f"  {i+1}. {item.message_type}: {item.importance:.2f} - {item.content[:40]}...")
+
+    # Example 4: Memory Manager with health monitoring
+    print("\n\n4. MEMORY MANAGER with Health Monitoring")
+    print("-" * 42)
+
+    memory_config = MemoryConfig(
+        max_short_term_messages=10,
         short_term_strategy="importance_based",
-        context_window_buffer=2
+        context_window_buffer=2,
+        memory_update_threshold=3
     )
 
-    memory_manager_importance = MemoryManager(memory_config_importance)
-    integration_importance = MemoryEnabledLangGraphIntegration(None, memory_manager_importance)
-    app_importance = create_memory_enabled_graph(integration_importance, memory_manager_importance, [])
+    memory_manager = MemoryManager(memory_config)
 
-    # Reset and add messages again
-    messages = []
-    for i in range(8):
-        msg_type = HumanMessage if i % 2 == 0 else AIMessage
-        content = f"Message {i+1}: {' '.join(['word'] * (i+1) * 10)}"
-        messages.append(msg_type(content=content))
-        await memory_manager_importance.add_interaction("user123", messages[-1:])
+    # Simulate multiple interactions
+    for i in range(3):
+        interaction_messages = cast(List[BaseMessage], [
+            HumanMessage(content=f"Interaction {i+1}: Question {j+1}")
+            for j in range(3)
+        ] + [
+            AIMessage(content=f"Interaction {i+1}: Response {j+1}")
+            for j in range(3)
+        ])
+        await memory_manager.add_interaction(f"user_{i+1}", interaction_messages)
 
-    stats_importance = memory_manager_importance.get_memory_health()
-    print(f"Total messages in memory: {stats_importance['total_messages']}")
-    print(f"Average importance score: {stats_importance['average_importance']:.2f}")
-    print(f"Strategy: {memory_config_importance.short_term_strategy}")
+    # Get memory health
+    health = memory_manager.get_memory_health()
+    print("Memory Health Report:")
+    print(f"  Configuration: max_messages={health['config']['max_short_term_messages']}, strategy={health['config']['short_term_strategy']}")
+    print(f"  Memory Efficiency: {health['memory_efficiency']:.1%}")
+    print(f"  Average Importance: {health['average_importance']:.2f}")
+    print(f"  Total Interactions: {health['interaction_count']}")
 
-    # Example 3: Trim middle strategy
-    print("\n3. TRIM_MIDDLE Strategy")
+    # Example 5: Context retrieval
+    print("\n\n5. SMART CONTEXT RETRIEVAL")
     print("-" * 30)
 
-    memory_config_middle = MemoryConfig(
-        max_short_term_messages=6,
-        short_term_strategy="trim_middle",
-        context_window_buffer=2
-    )
+    # Get relevant context for a user
+    context = await memory_manager.get_relevant_context("user_1", query="Question")
 
-    memory_manager_middle = MemoryManager(memory_config_middle)
-    integration_middle = MemoryEnabledLangGraphIntegration(None, memory_manager_middle)
-    app_middle = create_memory_enabled_graph(integration_middle, memory_manager_middle, [])
+    print("Retrieved Context:")
+    print(f"  Short-term messages: {len(context['short_term'])}")
+    print(f"  Relevant messages: {len(context['relevant_messages'])}")
+    print(f"  Memory stats: {context['memory_stats']}")
 
-    # Add many messages to trigger trimming
-    messages = []
-    for i in range(12):
-        messages.append(HumanMessage(content=f"Middle trim test message {i+1}"))
-        await memory_manager_middle.add_interaction("user123", messages[-1:])
+    print("\nRelevant messages:")
+    for i, msg in enumerate(context['relevant_messages'][:3]):  # Show first 3
+        msg_type = type(msg).__name__
+        preview = msg.content[:50] + "..." if len(msg.content) > 50 else msg.content
+        print(f"  {i+1}. {msg_type}: {preview}")
 
-    stats_middle = memory_manager_middle.get_memory_health()
-    print(f"Total messages in memory: {stats_middle['total_messages']}")
-    print(f"Strategy: {memory_config_middle.short_term_strategy}")
-    print("Note: Keeps beginning and end messages, removes middle")
 
-    # Example 4: Memory consolidation
-    print("\n4. Memory Consolidation")
-    print("-" * 30)
-
-    consolidation_result = await memory_manager.consolidate_memory()
-    print(f"Consolidation completed: {consolidation_result}")
-
-    print("\n" + "=" * 60)
-    print("Memory Strategy Comparison Summary:")
-    print("=" * 60)
-    print(f"Trim Last     : {stats['total_messages']} messages, efficiency: {stats['memory_efficiency']:.1%}")
-    print(f"Importance    : {stats_importance['total_messages']} messages, avg importance: {stats_importance['average_importance']:.2f}")
-    print(f"Trim Middle   : {stats_middle['total_messages']} messages")
-    print("\nEach strategy balances memory usage with information preservation differently.")
 
 
 async def interactive_memory_demo():
@@ -152,8 +201,6 @@ async def interactive_memory_demo():
     )
 
     memory_manager = MemoryManager(memory_config)
-    llm = MockLLM()
-    integration = MemoryEnabledLangGraphIntegration(None, memory_manager, llm)
 
     conversation_history = []
 
@@ -166,7 +213,7 @@ async def interactive_memory_demo():
 
         if user_input.lower() == 'stats':
             stats = memory_manager.get_memory_health()
-            print(f"\nMemory Statistics:")
+            print("\nMemory Statistics:")
             print(f"- Total messages: {stats['total_messages']}")
             print(f"- Memory efficiency: {stats['memory_efficiency']:.1%}")
             print(f"- Average importance: {stats['average_importance']:.2f}")

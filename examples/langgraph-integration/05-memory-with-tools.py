@@ -19,7 +19,7 @@ FEATURES:
 
 import asyncio
 import os
-from typing import Annotated, List, Dict, Any
+from typing import Annotated, List, Dict, Any, Optional
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
@@ -54,7 +54,7 @@ class ToolMemoryState(BaseModel):
 
 # Define AsyncFlow tools with memory awareness
 @tool
-async def weather_tool(city: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
+async def weather_tool(city: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Get weather information for a city with memory context."""
     await asyncio.sleep(0.1)  # Simulate API call
 
@@ -82,7 +82,7 @@ async def weather_tool(city: str, context: Dict[str, Any] = None) -> Dict[str, A
 
 
 @tool
-async def calculator_tool(expression: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
+async def calculator_tool(expression: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Calculate mathematical expressions with memory context."""
     await asyncio.sleep(0.05)  # Simulate calculation
 
@@ -103,7 +103,7 @@ async def calculator_tool(expression: str, context: Dict[str, Any] = None) -> Di
 
 
 @tool
-async def memory_search_tool(query: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
+async def memory_search_tool(query: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Search memory for relevant information."""
     # This tool demonstrates accessing memory context
     memory_data = context.get("memory_stats", {}) if context else {}
@@ -133,7 +133,8 @@ async def create_memory_enabled_workflow():
     memory_manager = MemoryManager(memory_config)
 
     # Create memory-enabled integration
-    integration = MemoryEnabledLangGraphIntegration(flow, memory_manager)
+    integration = MemoryEnabledLangGraphIntegration(backend, memory_manager)
+    integration.flow = flow  # Manually set the flow since we already created it
 
     # Register tools
     @integration.asyncflow_tool
