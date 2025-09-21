@@ -1,7 +1,7 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import create_react_agent
 from pydantic import BaseModel, Field
@@ -9,8 +9,13 @@ from typing import Dict, Any, List, Optional
 
 from radical.asyncflow import ConcurrentExecutionBackend, WorkflowEngine
 
+from flowgentic.langGraph.agents import AsyncFlowType
 from flowgentic.langGraph.main import LangraphIntegration
 from flowgentic.utils.llm_providers import ChatLLMProvider
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class ValidationData(BaseModel):
@@ -73,15 +78,15 @@ class WorkflowState(BaseModel):
 async def start_app():
 	backend = await ConcurrentExecutionBackend(ThreadPoolExecutor())
 
-	async with LangraphIntegration(backend=backend) as agent_manager:
+	async with LangraphIntegration(backend=backend) as agents_manager:
 		# REGISTERING AGENTS TOOLS:
-		@agent_manager.agents.asyncflow_tool()
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.TOOL)
 		async def web_search_tool(query: str) -> str:
 			"""Search the web for information."""
 			await asyncio.sleep(1)  # Simulate network delay
 			return f"Search results for '{query}': Found relevant information about renewable energy storage, including battery technologies, grid integration, and market trends."
 
-		@agent_manager.agents.asyncflow_tool()
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.TOOL)
 		async def data_analysis_tool(data: str) -> Dict[str, Any]:
 			"""Analyze data and return insights."""
 			await asyncio.sleep(0.5)
@@ -96,7 +101,7 @@ async def start_app():
 				"market_size": "$12.1B by 2025",
 			}
 
-		@agent_manager.agents.asyncflow_tool()
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.TOOL)
 		async def document_generator_tool(content: Dict[str, Any]) -> str:
 			"""Generate a formatted document from analysis results."""
 			await asyncio.sleep(0.3)
@@ -104,7 +109,7 @@ async def start_app():
 			return f"Executive Summary: Generated comprehensive report covering {len(key_points)} critical insights with {content.get('confidence', 0) * 100:.0f}% confidence level."
 
 		# REGISTERING DETERMINISTC TASKS
-		@agent_manager.agents.flow.function_task
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.FUTURE)
 		async def validate_input_task(user_input: str) -> ValidationData:
 			"""Validate and preprocess user input - deterministic operation."""
 			validation_result = ValidationData(
@@ -123,7 +128,7 @@ async def start_app():
 			)
 			return validation_result
 
-		@agent_manager.agents.flow.function_task
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.FUTURE)
 		async def prepare_context_task(
 			research_output: AgentOutput, validation_data: ValidationData
 		) -> ContextData:
@@ -143,7 +148,7 @@ async def start_app():
 			)
 			return context
 
-		@agent_manager.agents.flow.function_task
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.FUTURE)
 		async def format_final_output_task(
 			synthesis_output: AgentOutput, context: ContextData
 		) -> str:
@@ -174,7 +179,7 @@ async def start_app():
 			return formatted_output.strip()
 
 		# CREATING (SUBGRAPH) NODES IN THE GRAPH
-		@agent_manager.agents.flow.block
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.BLOCK)
 		async def preprocess_node(state: WorkflowState) -> WorkflowState:
 			"""Preprocessing node with parallel validation and metadata extraction."""
 			print("🔄 Preprocessing Node: Starting input validation...")
@@ -205,7 +210,7 @@ async def start_app():
 
 			return state
 
-		@agent_manager.agents.flow.block
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.BLOCK)
 		async def research_agent_node(state: WorkflowState) -> WorkflowState:
 			"""Research agent execution node."""
 			print("🔍 Research Agent Node: Starting research and analysis...")
@@ -215,15 +220,21 @@ async def start_app():
 
 				# Create research agent with tools
 				research_agent = create_react_agent(
-					llm=ChatLLMProvider(
+					model=ChatLLMProvider(
 						provider="OpenRouter", model="google/gemini-2.5-flash"
 					),
 					tools=[web_search_tool, data_analysis_tool],
-					state_modifier="You are a research agent specializing in technology analysis. Your job is to gather comprehensive information, analyze data, and provide detailed insights. Always use your tools to get the most current and accurate information.",
 				)
 
 				# Execute research agent
-				research_state = {"messages": [HumanMessage(content=state.user_input)]}
+				research_state = {
+					"messages": [
+						SystemMessage(
+							content="You are a research agent specializing in technology analysis. Your job is to gather comprehensive information, analyze data, and provide detailed insights. Always use your tools to get the most current and accurate information."
+						),
+						HumanMessage(content=state.user_input),
+					]
+				}
 				research_result = await research_agent.ainvoke(research_state)
 
 				execution_time = asyncio.get_event_loop().time() - start_time
@@ -260,7 +271,7 @@ async def start_app():
 
 			return state
 
-		@agent_manager.agents.flow.block
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.BLOCK)
 		async def context_preparation_node(state: WorkflowState) -> WorkflowState:
 			"""Context preparation node - runs in parallel with other deterministic tasks."""
 			print(
@@ -286,7 +297,7 @@ async def start_app():
 
 			return state
 
-		@agent_manager.agents.flow.block
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.BLOCK)
 		async def synthesis_agent_node(state: WorkflowState) -> WorkflowState:
 			"""Synthesis agent execution node."""
 			print("🏗️ Synthesis Agent Node: Creating final deliverables...")
@@ -296,11 +307,10 @@ async def start_app():
 
 				# Create synthesis agent
 				synthesis_agent = create_react_agent(
-					llm=ChatLLMProvider(
+					model=ChatLLMProvider(
 						provider="OpenRouter", model="google/gemini-2.5-flash"
 					),
 					tools=[document_generator_tool],
-					state_modifier="You are a synthesis agent specializing in creating comprehensive reports and deliverables. Your job is to take research findings and create polished, actionable documents with clear recommendations.",
 				)
 
 				# Prepare enriched input for synthesis agent
@@ -313,7 +323,14 @@ async def start_app():
                         """
 
 				# Execute synthesis agent
-				synthesis_state = {"messages": [HumanMessage(content=synthesis_input)]}
+				synthesis_state = {
+					"messages": [
+						SystemMessage(
+							content="You are a synthesis agent specializing in creating comprehensive reports and deliverables. Your job is to take research findings and create polished, actionable documents with clear recommendations."
+						),
+						HumanMessage(content=synthesis_input),
+					]
+				}
 				synthesis_result = await synthesis_agent.ainvoke(synthesis_state)
 
 				execution_time = asyncio.get_event_loop().time() - start_time
@@ -347,7 +364,7 @@ async def start_app():
 
 			return state
 
-		@agent_manager.agents.flow.block
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.BLOCK)
 		async def finalize_output_node(state: WorkflowState) -> WorkflowState:
 			"""Final output formatting node."""
 			print("📄 Finalize Output Node: Formatting final results...")
@@ -372,7 +389,7 @@ async def start_app():
 
 			return state
 
-		@agent_manager.agents.flow.block
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.BLOCK)
 		async def error_handler_node(state: WorkflowState) -> WorkflowState:
 			"""Handle errors in the workflow."""
 			print(f"❌ Error Handler: {'; '.join(state.errors)}")
@@ -458,50 +475,41 @@ async def start_app():
 
 		app = workflow.compile()
 
-		await agent_manager.utils.render_graph(app)
+		await agents_manager.utils.render_graph(app)
 
-		return app
+		# Initial state
+		initial_state = WorkflowState(
+			user_input="""
+			I need to research the latest developments in renewable energy storage technologies 
+			and create a comprehensive report with recommendations for a clean energy startup 
+			focusing on battery technologies, grid integration, and market opportunities.
+			"""
+		)
 
-
-async def run_workflow_example():
-	"""Run the sequential ReAct agent workflow."""
-
-	# Create workflow
-	app = await start_app()
-
-	# Initial state
-	initial_state = WorkflowState(
-		user_input="""
-            I need to research the latest developments in renewable energy storage technologies 
-            and create a comprehensive report with recommendations for a clean energy startup 
-            focusing on battery technologies, grid integration, and market opportunities.
-            """
-	)
-
-	print("🚀 Starting Sequential ReAct Agent Workflow")
-	print("=" * 60)
-
-	try:
-		# Execute workflow
-		final_state = await app.ainvoke(initial_state)
-
-		# Display results
-		print("\n" + "=" * 60)
-		print("WORKFLOW EXECUTION SUMMARY:")
+		print("🚀 Starting Sequential ReAct Agent Workflow")
 		print("=" * 60)
-		print(f"Final Stage: {final_state.current_stage}")
-		print(f"Workflow Complete: {final_state.workflow_complete}")
-		if final_state.errors:
-			print(f"Errors: {final_state.errors}")
 
-		print("\n" + "=" * 60)
-		print("FINAL WORKFLOW RESULT:")
-		print("=" * 60)
-		print(final_state.final_output)
+		try:
+			# Execute workflow
+			async for chunk in app.astream(initial_state, stream_mode="values"):
+				print(f"Chunk: {chunk}\n")
 
-	except Exception as e:
-		print(f"❌ Workflow execution failed: {str(e)}")
+			# Display results
+			# print("\n" + "=" * 60)
+			# print("WORKFLOW EXECUTION SUMMARY:")
+			# print("=" * 60)
+			# print(f"Final Stage: {final_state.current_stage}")
+			# print(f"Workflow Complete: {final_state.workflow_complete}")
+			# if final_state.errors:
+			# 	print(f"Errors: {final_state.errors}")
+
+			# print("\n" + "=" * 60)
+			# print("FINAL WORKFLOW RESULT:")
+			# print("=" * 60)
+			# print(final_state.final_output)
+
+		except Exception as e:
+			print(f"❌ Workflow execution failed: {str(e)}")
 
 
-if __name__ == "__main__":
-	asyncio.run(run_workflow_example())
+asyncio.run(start_app())

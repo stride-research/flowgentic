@@ -108,6 +108,7 @@ class AsyncFlowType(Enum):
 	TOOL = "tool"  # LangChain tool with @tool wrapper
 	NODE = "node"  # LangGraph node that receives state and returns state
 	FUTURE = "future"  # Simple asyncflow task with *args, **kwargs
+	BLOCK = "block"
 
 
 class LangraphAgents:
@@ -236,6 +237,17 @@ class LangraphAgents:
 				logger.info(f"Successfully created AsyncFlow future for '{f.__name__}'")
 				return future_wrapper
 
+			elif flow_type == AsyncFlowType.BLOCK:
+
+				@wraps(f)
+				async def block_wrapper(state):
+					"""LangGraph node: receives state, executes block, returns updated state"""
+					# Execute the AsyncFlow block with state
+					future = asyncflow_func(state)
+					block_result = await future
+					return block_result
+
+				return block_wrapper
 			else:
 				raise ValueError(f"Unsupported AsyncFlow flow_type: {flow_type}")
 
@@ -243,7 +255,7 @@ class LangraphAgents:
 			return decorate(func)
 		return decorate
 
-	# # ADVANCED STUFF
+	# # ADVANCED STUFF FOR THE HIEARHCY DESIGN PATTERN (TBI)
 
 	# def create_parallel_react_executor(self, agent_configs: List[ReactAgentConfig]):
 	# 	"""Create AsyncFlow blocks for parallel React agent execution."""
