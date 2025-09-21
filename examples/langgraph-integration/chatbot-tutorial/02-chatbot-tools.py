@@ -21,17 +21,13 @@ from langgraph.prebuilt import ToolNode, create_react_agent
 from pydantic import BaseModel
 from radical.asyncflow import ConcurrentExecutionBackend, WorkflowEngine
 
-from flowgentic import (
-	ChatLLMProvider,
-	LangGraphIntegration,
-	RetryConfig,
-	BaseLLMAgentState,
-)
-
+from flowgentic.langGraph.utils import LangraphUtils
+from flowgentic.utils.llm_providers import ChatLLMProvider
+from flowgentic.langGraph.agent_logger import AgentLogger
+from flowgentic.langGraph.main import LangraphIntegration
+from flowgentic.langGraph.agents import BaseLLMAgentState, LangraphAgents
 
 from dotenv import load_dotenv
-
-from flowgentic.langGraph.workflowLogger import AgentLogger
 
 load_dotenv()
 
@@ -47,10 +43,10 @@ class DayVerdict(BaseModel):
 async def start_app():
 	backend = await ConcurrentExecutionBackend(ThreadPoolExecutor())
 
-	async with LangGraphIntegration(backend=backend) as orchestrator:
+	async with LangraphIntegration(backend=backend) as agents_manager:
 		llm = ChatLLMProvider(provider="OpenRouter", model="google/gemini-2.5-flash")
 
-		@orchestrator.asyncflow_tool()
+		@agents_manager.agents.asyncflow_tool()
 		async def weather_extractor(city: str):
 			"""Extracts the weather for any given city"""
 			return {
@@ -58,7 +54,7 @@ async def start_app():
 				"humidity_percentage": 40,
 			}  # Dummy example
 
-		@orchestrator.asyncflow_tool()
+		@agents_manager.agents.asyncflow_tool()
 		async def traffic_extractor(city: str):
 			"""Extracts the amount of traffic for any given city"""
 			return {"traffic_percentage": 90}  # Dummy example
@@ -76,7 +72,7 @@ async def start_app():
 		workflow.add_node("chatbot", invoke_llm)
 		workflow.add_node(
 			"response_synthetizer",
-			orchestrator.structured_final_response(
+			agents_manager.utils.structured_final_response(
 				llm=llm, response_schema=DayVerdict, graph_state_schema=WorkflowState
 			),
 		)
@@ -85,7 +81,7 @@ async def start_app():
 		# Edges
 		workflow.add_conditional_edges(
 			"chatbot",
-			orchestrator.needs_tool_invokation,
+			agents_manager.utils.needs_tool_invokation,
 			{"true": "tools", "false": "response_synthetizer"},
 		)
 		workflow.add_edge("tools", "chatbot")
@@ -96,7 +92,7 @@ async def start_app():
 		thread_id = random.randint(0, 10)
 		config = {"configurable": {"thread_id": thread_id}}
 
-		await orchestrator.render_graph(app)
+		await agents_manager.utils.render_graph(app)
 
 		while True:
 			user_input = input("User: ").lower()
@@ -104,7 +100,7 @@ async def start_app():
 				print(f"Goodbye!")
 				last_state = app.get_state(config)
 				print(f"Last state: {last_state}")
-				AgentLogger.flush_agent_conversation(
+				agents_manager.agent_logger.flush_agent_conversation(
 					conversation_history=last_state.values.get("messages", [])
 				)
 				return

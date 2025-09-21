@@ -41,6 +41,8 @@
 
 ----
 # MULTIPLE AGENT 
+[] Decouple single agent, set-up, MAS code
 [] Code examples
       [] Supervisor
+      [] Sequential
 [] Abstractions (for common architectural patterns )
