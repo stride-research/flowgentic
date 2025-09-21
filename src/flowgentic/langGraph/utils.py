@@ -21,7 +21,7 @@ class LangraphUtils:
 	async def render_graph(app: CompiledStateGraph, file_name: str = None):
 		"""Render graph visualization."""
 		if file_name is None:
-			file_name = f"workflow_graph_{uuid.uuid4()}.png"
+			file_name = f"workflow_graph.png"
 		dir_name = "agent_run_data"
 		if not os.path.exists(dir_name):
 			os.makedirs(dir_name)

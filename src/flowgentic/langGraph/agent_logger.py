@@ -28,7 +28,7 @@ class AgentLogger:
 		markdown_content = AgentLogger._generate_markdown_report(analysis, timestamp)
 
 		# Write to file (append mode to keep historical data)
-		file_name = f"./agent_run_data/agent_interactions_{uuid4()}.md"
+		file_name = f"./agent_run_data/agent_interactions.md"
 		with open(file_name, "w", encoding="utf-8") as f:
 			f.write(markdown_content)
 

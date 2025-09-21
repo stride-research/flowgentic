@@ -6,6 +6,7 @@ FEATURES:
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from functools import wraps
 import json
 import os
 import random
@@ -39,6 +40,11 @@ class DayVerdict(BaseModel):
 	reason: str
 
 
+"""
+A wrapper that returns a task future output, but registers it first
+"""
+
+
 async def start_app():
 	backend = await ConcurrentExecutionBackend(ThreadPoolExecutor())
 
@@ -59,27 +65,12 @@ async def start_app():
 			return {"traffic_percentage": 90}  # Dummy example
 
 		# Define the task within the asyncflow context
-		@agents_manager.agents.flow.function_task
-		async def deterministic_task_internal():
+		@agents_manager.agents.asyncflow_node()
+		async def deterministic_task_internal(state: WorkflowState):
 			file_path = "im-working.txt"
 			with open(file_path, "w") as f:
 				f.write("Hello world!")
 			return {"status": "file_written", "path": file_path}
-
-		# Create a wrapper function that properly bridges to asyncflow
-		async def deterministic_task_node(state: WorkflowState):
-			"""Node wrapper that executes the asyncflow task and returns state"""
-			try:
-				# Execute the asyncflow task
-				task_future = deterministic_task_internal()
-				result = await task_future
-
-				# Return the state (LangGraph expects state to be returned)
-				return state
-			except Exception as e:
-				print(f"Error in deterministic_task: {e}")
-				# Return state even on error to prevent workflow failure
-				return state
 
 		tools = [weather_extractor, traffic_extractor]
 		llm_with_tools = llm.bind_tools(tools)
@@ -100,9 +91,7 @@ async def start_app():
 		)
 		workflow.set_entry_point("chatbot")
 		workflow.add_node("tools", ToolNode(tools))
-
-		# Use the async wrapper instead of the decorated function directly
-		workflow.add_node("deterministic_task", deterministic_task_node)
+		workflow.add_node("deterministic_task", deterministic_task_internal)
 
 		# Edges
 		workflow.add_conditional_edges(

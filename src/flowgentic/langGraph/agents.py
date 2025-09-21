@@ -110,7 +110,6 @@ class LangraphAgents:
 		self.fault_tolerance_mechanism = LangraphToolFaultTolerance()
 		self.react_agents: Dict[str, Any] = {}
 
-	# TOOLS SECTION - Your existing implementation
 	def asyncflow_tool(
 		self,
 		func: Optional[Callable] = None,
@@ -162,26 +161,68 @@ class LangraphAgents:
 			return decorate(func)
 		return decorate
 
-	# REACT AGENT ABSTRACTIONS
-	def create_react_agent(self, config: ReactAgentConfig) -> Any:
-		"""Create a React agent with AsyncFlow-integrated tools."""
-		if not self.flow:
-			raise RuntimeError(
-				"LangGraphIntegration must be used within async context manager"
+	def asyncflow_node(
+		self,
+		func: Optional[Callable] = None,
+		*,
+		retry: Optional[RetryConfig] = None,
+	) -> Callable:
+		"""Decorator to register an async function as AsyncFlow task and LangGraph node."""
+
+		def decorate(f: Callable) -> Callable:
+			logger.info(
+				f"Registering function '{f.__name__}' as AsyncFlow task and LangGraph node"
 			)
 
-		logger.info(f"Creating React agent: {config.name}")
+			if not self.flow:
+				raise RuntimeError(
+					"LangGraphIntegration must be used within async context manager"
+				)
 
-		# Create the React agent using LangGraph's native API
-		agent = create_react_agent(
-			model=config.llm, tools=config.tools, state_modifier=config.system_prompt
-		)
+			asyncflow_func = self.flow.function_task(f)
+			retry_cfg = retry or self.fault_tolerance_mechanism.default_cfg
+			logger.debug(
+				f"Using retry config for '{f.__name__}': {retry_cfg.model_dump()}"
+			)
 
-		# Store for later reference
-		self.react_agents[config.name] = {"agent": agent, "config": config}
+			@wraps(f)
+			async def node_wrapper(state):
+				"""LangGraph node wrapper that executes the asyncflow task and returns state"""
+				logger.debug(
+					f"Node '{f.__name__}' called with state keys: {list(state.keys()) if isinstance(state, dict) else type(state)}"
+				)
 
-		logger.info(f"✅ React agent '{config.name}' created successfully")
-		return agent
+				async def _call():
+					logger.debug(f"Executing AsyncFlow task for '{f.__name__}'")
+					# Execute the asyncflow task - pass state as argument to the original function
+					future = asyncflow_func(state)
+					result = await future
+					logger.debug(
+						f"AsyncFlow task '{f.__name__}' completed successfully with result: {type(result)}"
+					)
+					return result
+
+				try:
+					# Execute with retry mechanism
+					await self.fault_tolerance_mechanism.retry_async(
+						_call, retry_cfg, name=f.__name__
+					)
+					logger.debug(f"Node '{f.__name__}' completed successfully")
+
+					# Always return the state for LangGraph
+					return state
+
+				except Exception as e:
+					logger.error(f"Error in node '{f.__name__}': {e}")
+					# Return state even on error to prevent workflow failure
+				return state
+
+			logger.info(f"Successfully created LangGraph node for '{f.__name__}'")
+			return node_wrapper
+
+		if func is not None:
+			return decorate(func)
+		return decorate
 
 	def create_parallel_react_executor(self, agent_configs: List[ReactAgentConfig]):
 		"""Create AsyncFlow blocks for parallel React agent execution."""

@@ -2,7 +2,7 @@
 ---
 
 ## Agent Conversation Session
-**Timestamp:** 2025-09-21 12:59:47  
+**Timestamp:** 2025-09-21 14:57:54  
 **Total Duration:** Session completed  
 **Thread ID:** Available in state metadata  
 
@@ -13,9 +13,9 @@
 | Metric | Value |
 |--------|-------|
 | **Total Messages** | 6 |
-| **Total Tokens** | 253 |
+| **Total Tokens** | 290 |
 | **Tool Calls Made** | 0 |
-| **Models Used** | google/gemini-2.5-flash, unknown |
+| **Models Used** | unknown, google/gemini-2.5-flash |
 
 ### 📈 Message Breakdown
 
@@ -30,9 +30,9 @@
 
 | Token Type | Count |
 |------------|-------|
-| **Input Tokens** | 214 |
-| **Output Tokens** | 39 |
-| **Total Tokens** | 253 |
+| **Input Tokens** | 221 |
+| **Output Tokens** | 69 |
+| **Total Tokens** | 290 |
 
 ### 💬 Conversation Flow
 
@@ -43,28 +43,28 @@
 
 **2.** 🤖 **Ai** (98 tokens)
    ```
-   Hello Javi, how can I help you?
+   Hi Javi, how can I help you?
 
    ```
 
 **3.** 🤖 **Ai**
    ```
-   {"looks_like_a_good_day": true, "reason": "Weather is sunny"}
+   {"looks_like_a_good_day": true, "reason": "Weather is good, and I'm feeling positive."}
    ```
 
 **4.** 👤 **Human**
    ```
-   what is my name 
+   whats my name
    ```
 
-**5.** 🤖 **Ai** (155 tokens)
+**5.** 🤖 **Ai** (192 tokens)
    ```
-   I don't know your name. You told me "my name is javi" but I don't have memory of past conversations.
+   I'm sorry, I don't have access to that information. I only know that you told me your name is Javi. ...
    ```
 
 **6.** 🤖 **Ai**
    ```
-   {"looks_like_a_good_day": true, "reason": "It's always a good day when learning new things!"}
+   {"looks_like_a_good_day": true, "reason": "It's a beautiful day, and I'm ready to learn more about y...
    ```
 
 ---
