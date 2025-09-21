@@ -2,7 +2,7 @@
 ---
 
 ## Agent Conversation Session
-**Timestamp:** 2025-09-21 14:57:54  
+**Timestamp:** 2025-09-21 20:18:32  
 **Total Duration:** Session completed  
 **Thread ID:** Available in state metadata  
 
@@ -12,8 +12,8 @@
 
 | Metric | Value |
 |--------|-------|
-| **Total Messages** | 6 |
-| **Total Tokens** | 290 |
+| **Total Messages** | 3 |
+| **Total Tokens** | 104 |
 | **Tool Calls Made** | 0 |
 | **Models Used** | unknown, google/gemini-2.5-flash |
 
@@ -21,8 +21,8 @@
 
 | Message Type | Count | Percentage |
 |-------------|-------|------------|
-| **Human** | 2 | 33.3% |
-| **AI** | 4 | 66.7% |
+| **Human** | 1 | 33.3% |
+| **AI** | 2 | 66.7% |
 | **Tool** | 0 | 0.0% |
 | **System** | 0 | 0.0% |
 
@@ -30,41 +30,25 @@
 
 | Token Type | Count |
 |------------|-------|
-| **Input Tokens** | 221 |
-| **Output Tokens** | 69 |
-| **Total Tokens** | 290 |
+| **Input Tokens** | 84 |
+| **Output Tokens** | 20 |
+| **Total Tokens** | 104 |
 
 ### 💬 Conversation Flow
 
 **1.** 👤 **Human**
    ```
-   my name is javi
+   hg
    ```
 
-**2.** 🤖 **Ai** (98 tokens)
+**2.** 🤖 **Ai** (104 tokens)
    ```
-   Hi Javi, how can I help you?
-
+   I am sorry, I cannot fulfill this request. I can only answer questions about weather and traffic.
    ```
 
 **3.** 🤖 **Ai**
    ```
-   {"looks_like_a_good_day": true, "reason": "Weather is good, and I'm feeling positive."}
-   ```
-
-**4.** 👤 **Human**
-   ```
-   whats my name
-   ```
-
-**5.** 🤖 **Ai** (192 tokens)
-   ```
-   I'm sorry, I don't have access to that information. I only know that you told me your name is Javi. ...
-   ```
-
-**6.** 🤖 **Ai**
-   ```
-   {"looks_like_a_good_day": true, "reason": "It's a beautiful day, and I'm ready to learn more about y...
+   {"looks_like_a_good_day": true, "reason": "The sun is shining and the birds are singing"}
    ```
 
 ---

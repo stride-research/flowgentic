@@ -53,6 +53,10 @@ from langgraph.prebuilt import create_react_agent, ToolNode
 from langgraph.types import Command
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel
+from enum import Enum
+from typing import Optional, Callable, Union
+from functools import wraps
+from langchain.tools import tool
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +102,14 @@ class SupervisorConfig(BaseModel):
 	enable_parallel_execution: bool = True
 
 
+class AsyncFlowType(Enum):
+	"""Enum defining the flow_type of AsyncFlow decoration"""
+
+	TOOL = "tool"  # LangChain tool with @tool wrapper
+	NODE = "node"  # LangGraph node that receives state and returns state
+	FUTURE = "future"  # Simple asyncflow task with *args, **kwargs
+
+
 class LangraphAgents:
 	"""Enhanced integration between AsyncFlow WorkflowEngine and LangChain tools.
 
@@ -110,17 +122,27 @@ class LangraphAgents:
 		self.fault_tolerance_mechanism = LangraphToolFaultTolerance()
 		self.react_agents: Dict[str, Any] = {}
 
-	def asyncflow_tool(
+	def asyncflow(
 		self,
 		func: Optional[Callable] = None,
 		*,
+		flow_type: AsyncFlowType = AsyncFlowType.FUTURE,
 		retry: Optional[RetryConfig] = None,
 	) -> Callable:
-		"""Decorator to register an async function as AsyncFlow task and LangChain tool."""
+		"""
+		Unified decorator to register async functions as AsyncFlow tasks with different behaviors.
+
+		Args:
+			flow_type: AsyncFlowType enum specifying the decoration behavior:
+				- TOOL: Creates a LangChain tool (with @tool wrapper)
+				- NODE: Creates a LangGraph node (receives state, returns state)
+				- FUTURE: Creates a simple asyncflow task (with *args, **kwargs)
+			retry: Optional retry configuration
+		"""
 
 		def decorate(f: Callable) -> Callable:
 			logger.info(
-				f"Registering function '{f.__name__}' as AsyncFlow task and LangChain tool"
+				f"Registering function '{f.__name__}' as AsyncFlow {flow_type.value}"
 			)
 
 			if not self.flow:
@@ -134,346 +156,345 @@ class LangraphAgents:
 				f"Using retry config for '{f.__name__}': {retry_cfg.model_dump()}"
 			)
 
-			@wraps(f)
-			async def wrapper(*args, **kwargs):
-				logger.debug(
-					f"Tool '{f.__name__}' called with args: {len(args)} positional, {list(kwargs.keys())} keyword"
-				)
-
-				async def _call():
-					logger.debug(f"Executing AsyncFlow task for '{f.__name__}'")
-					future = asyncflow_func(*args, **kwargs)
-					result = await future
+			if flow_type == AsyncFlowType.TOOL:
+				# Tool behavior: *args, **kwargs input, with @tool wrapper
+				@wraps(f)
+				async def tool_wrapper(*args, **kwargs):
 					logger.debug(
-						f"AsyncFlow task '{f.__name__}' completed successfully"
+						f"Tool '{f.__name__}' called with args: {len(args)} positional, {list(kwargs.keys())} keyword"
 					)
-					return result
 
-				return await self.fault_tolerance_mechanism.retry_async(
-					_call, retry_cfg, name=f.__name__
-				)
+					async def _call():
+						logger.debug(f"Executing AsyncFlow task for '{f.__name__}'")
+						future = asyncflow_func(*args, **kwargs)
+						result = await future
+						logger.debug(
+							f"AsyncFlow task '{f.__name__}' completed successfully"
+						)
+						return result
 
-			langraph_tool = tool(wrapper)
-			logger.info(f"Successfully created LangChain tool for '{f.__name__}'")
-			return langraph_tool
-
-		if func is not None:
-			return decorate(func)
-		return decorate
-
-	def asyncflow_node(
-		self,
-		func: Optional[Callable] = None,
-		*,
-		retry: Optional[RetryConfig] = None,
-	) -> Callable:
-		"""Decorator to register an async function as AsyncFlow task and LangGraph node."""
-
-		def decorate(f: Callable) -> Callable:
-			logger.info(
-				f"Registering function '{f.__name__}' as AsyncFlow task and LangGraph node"
-			)
-
-			if not self.flow:
-				raise RuntimeError(
-					"LangGraphIntegration must be used within async context manager"
-				)
-
-			asyncflow_func = self.flow.function_task(f)
-			retry_cfg = retry or self.fault_tolerance_mechanism.default_cfg
-			logger.debug(
-				f"Using retry config for '{f.__name__}': {retry_cfg.model_dump()}"
-			)
-
-			@wraps(f)
-			async def node_wrapper(state):
-				"""LangGraph node wrapper that executes the asyncflow task and returns state"""
-				logger.debug(
-					f"Node '{f.__name__}' called with state keys: {list(state.keys()) if isinstance(state, dict) else type(state)}"
-				)
-
-				async def _call():
-					logger.debug(f"Executing AsyncFlow task for '{f.__name__}'")
-					# Execute the asyncflow task - pass state as argument to the original function
-					future = asyncflow_func(state)
-					result = await future
-					logger.debug(
-						f"AsyncFlow task '{f.__name__}' completed successfully with result: {type(result)}"
-					)
-					return result
-
-				try:
-					# Execute with retry mechanism
-					await self.fault_tolerance_mechanism.retry_async(
+					return await self.fault_tolerance_mechanism.retry_async(
 						_call, retry_cfg, name=f.__name__
 					)
-					logger.debug(f"Node '{f.__name__}' completed successfully")
 
-					# Always return the state for LangGraph
-					return state
+				langraph_tool = tool(tool_wrapper)
+				logger.info(f"Successfully created LangChain tool for '{f.__name__}'")
+				return langraph_tool
 
-				except Exception as e:
-					logger.error(f"Error in node '{f.__name__}': {e}")
-					# Return state even on error to prevent workflow failure
-				return state
+			elif flow_type == AsyncFlowType.NODE:
+				# Node behavior: state input, state output, error handling
+				@wraps(f)
+				async def node_wrapper(state):
+					"""LangGraph node wrapper that executes the asyncflow task and returns state"""
+					logger.debug(
+						f"Node '{f.__name__}' called with state keys: {list(state.keys()) if isinstance(state, dict) else (state)}"
+					)
 
-			logger.info(f"Successfully created LangGraph node for '{f.__name__}'")
-			return node_wrapper
+					async def _call():
+						logger.debug(f"Executing AsyncFlow task for '{f.__name__}'")
+						future = asyncflow_func(state)
+						result = await future
+						logger.debug(
+							f"AsyncFlow task '{f.__name__}' completed successfully with result: {result}"
+						)
+						return result
+
+					try:
+						await self.fault_tolerance_mechanism.retry_async(
+							_call, retry_cfg, name=f.__name__
+						)
+						logger.debug(f"Node '{f.__name__}' completed successfully")
+						return state
+					except Exception as e:
+						logger.error(f"Error in node '{f.__name__}': {e}")
+						return state
+
+				logger.info(f"Successfully created LangGraph node for '{f.__name__}'")
+				return node_wrapper
+
+			elif flow_type == AsyncFlowType.FUTURE:
+				# Future behavior: simple *args, **kwargs asyncflow task
+				@wraps(f)
+				async def future_wrapper(*args, **kwargs):
+					logger.debug(
+						f"Future '{f.__name__}' called with args: {len(args)} positional, {list(kwargs.keys())} keyword"
+					)
+
+					async def _call():
+						logger.debug(f"Executing AsyncFlow task for '{f.__name__}'")
+						future = asyncflow_func(*args, **kwargs)
+						result = await future
+						logger.debug(
+							f"AsyncFlow task '{f.__name__}' completed successfully"
+						)
+						return result
+
+					return await self.fault_tolerance_mechanism.retry_async(
+						_call, retry_cfg, name=f.__name__
+					)
+
+				logger.info(f"Successfully created AsyncFlow future for '{f.__name__}'")
+				return future_wrapper
+
+			else:
+				raise ValueError(f"Unsupported AsyncFlow flow_type: {flow_type}")
 
 		if func is not None:
 			return decorate(func)
 		return decorate
 
-	def create_parallel_react_executor(self, agent_configs: List[ReactAgentConfig]):
-		"""Create AsyncFlow blocks for parallel React agent execution."""
-		if not self.flow:
-			raise RuntimeError(
-				"LangGraphIntegration must be used within async context manager"
-			)
+	# # ADVANCED STUFF
 
-		@self.flow.function_task
-		async def execute_react_agent(
-			agent_name: str, messages: List[BaseMessage]
-		) -> Dict[str, Any]:
-			"""Execute a single React agent as AsyncFlow task."""
-			logger.info(f"[AsyncFlow Task] Executing React agent: {agent_name}")
+	# def create_parallel_react_executor(self, agent_configs: List[ReactAgentConfig]):
+	# 	"""Create AsyncFlow blocks for parallel React agent execution."""
+	# 	if not self.flow:
+	# 		raise RuntimeError(
+	# 			"LangGraphIntegration must be used within async context manager"
+	# 		)
 
-			if agent_name not in self.react_agents:
-				raise ValueError(
-					f"React agent '{agent_name}' not found. Available: {list(self.react_agents.keys())}"
-				)
+	# 	@self.flow.function_task
+	# 	async def execute_react_agent(
+	# 		agent_name: str, messages: List[BaseMessage]
+	# 	) -> Dict[str, Any]:
+	# 		"""Execute a single React agent as AsyncFlow task."""
+	# 		logger.info(f"[AsyncFlow Task] Executing React agent: {agent_name}")
 
-			agent_info = self.react_agents[agent_name]
-			agent = agent_info["agent"]
+	# 		if agent_name not in self.react_agents:
+	# 			raise ValueError(
+	# 				f"React agent '{agent_name}' not found. Available: {list(self.react_agents.keys())}"
+	# 			)
 
-			# Execute the React agent
-			state = {"messages": messages}
-			result = await agent.ainvoke(state)
+	# 		agent_info = self.react_agents[agent_name]
+	# 		agent = agent_info["agent"]
 
-			return {
-				"agent": agent_name,
-				"messages": result["messages"],
-				"result": result["messages"][-1].content if result["messages"] else "",
-				"success": True,
-			}
+	# 		# Execute the React agent
+	# 		state = {"messages": messages}
+	# 		result = await agent.ainvoke(state)
 
-		@self.flow.block
-		async def parallel_react_execution(
-			messages: List[BaseMessage], task_context: str = ""
-		) -> Dict[str, Any]:
-			"""Execute multiple React agents in parallel."""
-			logger.info(
-				f"[AsyncFlow Block] Starting parallel React agents execution - Context: {task_context}"
-			)
+	# 		return {
+	# 			"agent": agent_name,
+	# 			"messages": result["messages"],
+	# 			"result": result["messages"][-1].content if result["messages"] else "",
+	# 			"success": True,
+	# 		}
 
-			# Launch all agents in parallel
-			futures = {}
-			for config in agent_configs:
-				agent_messages = messages + [
-					HumanMessage(
-						content=f"Focus on your specialization. Context: {task_context}"
-					)
-				]
-				futures[config.name] = execute_react_agent(config.name, agent_messages)
+	# 	@self.flow.block
+	# 	async def parallel_react_execution(
+	# 		messages: List[BaseMessage], task_context: str = ""
+	# 	) -> Dict[str, Any]:
+	# 		"""Execute multiple React agents in parallel."""
+	# 		logger.info(
+	# 			f"[AsyncFlow Block] Starting parallel React agents execution - Context: {task_context}"
+	# 		)
 
-			# Wait for all agents to complete
-			results = {}
-			for agent_name, future in futures.items():
-				try:
-					results[agent_name] = await future
-					logger.info(f"✅ Agent '{agent_name}' completed successfully")
-				except Exception as e:
-					logger.error(f"❌ Agent '{agent_name}' failed: {e}")
-					results[agent_name] = {
-						"agent": agent_name,
-						"result": f"Agent failed: {str(e)}",
-						"success": False,
-					}
+	# 		# Launch all agents in parallel
+	# 		futures = {}
+	# 		for config in agent_configs:
+	# 			agent_messages = messages + [
+	# 				HumanMessage(
+	# 					content=f"Focus on your specialization. Context: {task_context}"
+	# 				)
+	# 			]
+	# 			futures[config.name] = execute_react_agent(config.name, agent_messages)
 
-			return {
-				"results": results,
-				"execution_mode": "parallel",
-				"agents_count": len(agent_configs),
-				"successful_agents": [
-					name for name, result in results.items() if result.get("success")
-				],
-			}
+	# 		# Wait for all agents to complete
+	# 		results = {}
+	# 		for agent_name, future in futures.items():
+	# 			try:
+	# 				results[agent_name] = await future
+	# 				logger.info(f"✅ Agent '{agent_name}' completed successfully")
+	# 			except Exception as e:
+	# 				logger.error(f"❌ Agent '{agent_name}' failed: {e}")
+	# 				results[agent_name] = {
+	# 					"agent": agent_name,
+	# 					"result": f"Agent failed: {str(e)}",
+	# 					"success": False,
+	# 				}
 
-		return parallel_react_execution
+	# 		return {
+	# 			"results": results,
+	# 			"execution_mode": "parallel",
+	# 			"agents_count": len(agent_configs),
+	# 			"successful_agents": [
+	# 				name for name, result in results.items() if result.get("success")
+	# 			],
+	# 		}
 
-	def create_supervisor_graph(
-		self,
-		agent_configs: List[ReactAgentConfig],
-		supervisor_config: SupervisorConfig,
-		state_class: type = MessagesState,
-	) -> Any:
-		"""Create a supervisor graph with Command API routing."""
+	# 	return parallel_react_execution
 
-		# Create React agents first
-		for config in agent_configs:
-			self.create_react_agent(config)
+	# def create_supervisor_graph(
+	# 	self,
+	# 	agent_configs: List[ReactAgentConfig],
+	# 	supervisor_config: SupervisorConfig,
+	# 	state_class: type = MessagesState,
+	# ) -> Any:
+	# 	"""Create a supervisor graph with Command API routing."""
 
-		# Agent node names
-		agent_names = [config.name for config in agent_configs]
-		parallel_executor = self.create_parallel_react_executor(agent_configs)
+	# 	# Create React agents first
+	# 	for config in agent_configs:
+	# 		self.create_react_agent(config)
 
-		def supervisor(state: state_class) -> None:
-			"""Supervisor decides routing using Command API."""
-			messages = state.get("messages", [])
-			completed = getattr(state, "completed_agents", [])
+	# 	# Agent node names
+	# 	agent_names = [config.name for config in agent_configs]
+	# 	parallel_executor = self.create_parallel_react_executor(agent_configs)
 
-			last_message = messages[-1].content.lower() if messages else ""
+	# 	def supervisor(state: state_class) -> None:
+	# 		"""Supervisor decides routing using Command API."""
+	# 		messages = state.get("messages", [])
+	# 		completed = getattr(state, "completed_agents", [])
 
-			logger.info(
-				f"[Supervisor] Analyzing request, completed agents: {completed}"
-			)
+	# 		last_message = messages[-1].content.lower() if messages else ""
 
-			# Decision logic for parallel execution
-			if supervisor_config.enable_parallel_execution and not completed:
-				# Check if request needs multiple agents
-				agent_keywords = {
-					config.name: config.name.split("_") for config in agent_configs
-				}
-				matching_agents = []
+	# 		logger.info(
+	# 			f"[Supervisor] Analyzing request, completed agents: {completed}"
+	# 		)
 
-				for agent_name, keywords in agent_keywords.items():
-					if any(keyword in last_message for keyword in keywords):
-						matching_agents.append(agent_name)
+	# 		# Decision logic for parallel execution
+	# 		if supervisor_config.enable_parallel_execution and not completed:
+	# 			# Check if request needs multiple agents
+	# 			agent_keywords = {
+	# 				config.name: config.name.split("_") for config in agent_configs
+	# 			}
+	# 			matching_agents = []
 
-				if len(matching_agents) > 1:  # Multiple agents needed
-					logger.info(
-						f"[Supervisor] Routing to parallel execution for agents: {matching_agents}"
-					)
-					return Command(
-						goto="parallel_executor",
-						update={
-							"current_task": "parallel_execution",
-							"target_agents": matching_agents,
-						},
-					)
+	# 			for agent_name, keywords in agent_keywords.items():
+	# 				if any(keyword in last_message for keyword in keywords):
+	# 					matching_agents.append(agent_name)
 
-			# Sequential routing for single agent requests
-			for config in agent_configs:
-				if config.name in last_message and config.name not in completed:
-					logger.info(f"[Supervisor] Routing to agent: {config.name}")
-					return Command(goto=config.name)
+	# 			if len(matching_agents) > 1:  # Multiple agents needed
+	# 				logger.info(
+	# 					f"[Supervisor] Routing to parallel execution for agents: {matching_agents}"
+	# 				)
+	# 				return Command(
+	# 					goto="parallel_executor",
+	# 					update={
+	# 						"current_task": "parallel_execution",
+	# 						"target_agents": matching_agents,
+	# 					},
+	# 				)
 
-			# Default to synthesizer or end
-			if completed:
-				return Command(goto="synthesizer")
+	# 		# Sequential routing for single agent requests
+	# 		for config in agent_configs:
+	# 			if config.name in last_message and config.name not in completed:
+	# 				logger.info(f"[Supervisor] Routing to agent: {config.name}")
+	# 				return Command(goto=config.name)
 
-			logger.info("[Supervisor] No specific routing - ending")
-			return Command(goto=END)
+	# 		# Default to synthesizer or end
+	# 		if completed:
+	# 			return Command(goto="synthesizer")
 
-		def create_agent_node(config: ReactAgentConfig):
-			"""Create a Command-compatible node for a React agent."""
+	# 		logger.info("[Supervisor] No specific routing - ending")
+	# 		return Command(goto=END)
 
-			def agent_node(state: state_class) -> Command[Literal["supervisor"]]:
-				logger.info(f"[{config.name}] Processing request...")
+	# 	def create_agent_node(config: ReactAgentConfig):
+	# 		"""Create a Command-compatible node for a React agent."""
 
-				agent_info = self.react_agents[config.name]
-				agent = agent_info["agent"]
+	# 		def agent_node(state: state_class) -> Command[Literal["supervisor"]]:
+	# 			logger.info(f"[{config.name}] Processing request...")
 
-				# Execute React agent
-				messages = state.get("messages", [])
-				result = agent.invoke({"messages": messages})
+	# 			agent_info = self.react_agents[config.name]
+	# 			agent = agent_info["agent"]
 
-				# Update completed agents
-				completed = list(getattr(state, "completed_agents", []))
-				if config.name not in completed:
-					completed.append(config.name)
+	# 			# Execute React agent
+	# 			messages = state.get("messages", [])
+	# 			result = agent.invoke({"messages": messages})
 
-				return Command(
-					goto="supervisor",
-					update={
-						"messages": result["messages"][-1:],
-						"completed_agents": completed,
-						"agent_results": {
-							**getattr(state, "agent_results", {}),
-							config.name: result,
-						},
-					},
-				)
+	# 			# Update completed agents
+	# 			completed = list(getattr(state, "completed_agents", []))
+	# 			if config.name not in completed:
+	# 				completed.append(config.name)
 
-			return agent_node
+	# 			return Command(
+	# 				goto="supervisor",
+	# 				update={
+	# 					"messages": result["messages"][-1:],
+	# 					"completed_agents": completed,
+	# 					"agent_results": {
+	# 						**getattr(state, "agent_results", {}),
+	# 						config.name: result,
+	# 					},
+	# 				},
+	# 			)
 
-		async def parallel_executor_node(
-			state: state_class,
-		) -> Command[Literal["synthesizer"]]:
-			"""Execute React agents in parallel."""
-			logger.info("[Parallel Executor] Running React agents in parallel...")
+	# 		return agent_node
 
-			messages = state.get("messages", [])
-			task_context = getattr(state, "current_task", "")
+	# 	async def parallel_executor_node(
+	# 		state: state_class,
+	# 	) -> Command[Literal["synthesizer"]]:
+	# 		"""Execute React agents in parallel."""
+	# 		logger.info("[Parallel Executor] Running React agents in parallel...")
 
-			results = await parallel_executor(messages, task_context)
+	# 		messages = state.get("messages", [])
+	# 		task_context = getattr(state, "current_task", "")
 
-			return Command(
-				goto="synthesizer",
-				update={
-					"agent_results": results["results"],
-					"completed_agents": list(results["results"].keys()),
-					"execution_stats": {
-						"mode": results["execution_mode"],
-						"agents_count": results["agents_count"],
-						"successful_agents": results["successful_agents"],
-					},
-				},
-			)
+	# 		results = await parallel_executor(messages, task_context)
 
-		def synthesizer_node(state: state_class) -> Command[Literal[END]]:
-			"""Synthesize results from multiple agents."""
-			logger.info("[Synthesizer] Combining agent results...")
+	# 		return Command(
+	# 			goto="synthesizer",
+	# 			update={
+	# 				"agent_results": results["results"],
+	# 				"completed_agents": list(results["results"].keys()),
+	# 				"execution_stats": {
+	# 					"mode": results["execution_mode"],
+	# 					"agents_count": results["agents_count"],
+	# 					"successful_agents": results["successful_agents"],
+	# 				},
+	# 			},
+	# 		)
 
-			agent_results = getattr(state, "agent_results", {})
+	# 	def synthesizer_node(state: state_class) -> Command[Literal[END]]:
+	# 		"""Synthesize results from multiple agents."""
+	# 		logger.info("[Synthesizer] Combining agent results...")
 
-			if not agent_results:
-				return Command(
-					goto=END,
-					update={
-						"messages": [
-							AIMessage(content="No agent results to synthesize.")
-						]
-					},
-				)
+	# 		agent_results = getattr(state, "agent_results", {})
 
-			# Create synthesis prompt
-			synthesis_content = "Based on specialist agent analysis:\n\n"
-			for agent_name, result in agent_results.items():
-				if isinstance(result, dict) and "result" in result:
-					synthesis_content += (
-						f"**{agent_name.upper()}**: {result['result']}\n\n"
-					)
+	# 		if not agent_results:
+	# 			return Command(
+	# 				goto=END,
+	# 				update={
+	# 					"messages": [
+	# 						AIMessage(content="No agent results to synthesize.")
+	# 					]
+	# 				},
+	# 			)
 
-			synthesis_content += "Please provide a comprehensive response that integrates all this specialist knowledge."
+	# 		# Create synthesis prompt
+	# 		synthesis_content = "Based on specialist agent analysis:\n\n"
+	# 		for agent_name, result in agent_results.items():
+	# 			if isinstance(result, dict) and "result" in result:
+	# 				synthesis_content += (
+	# 					f"**{agent_name.upper()}**: {result['result']}\n\n"
+	# 				)
 
-			# Use synthesizer LLM or default to routing LLM
-			synth_llm = (
-				supervisor_config.synthesizer_llm or supervisor_config.routing_llm
-			)
-			final_response = synth_llm.invoke([HumanMessage(content=synthesis_content)])
+	# 		synthesis_content += "Please provide a comprehensive response that integrates all this specialist knowledge."
 
-			return Command(goto=END, update={"messages": [final_response]})
+	# 		# Use synthesizer LLM or default to routing LLM
+	# 		synth_llm = (
+	# 			supervisor_config.synthesizer_llm or supervisor_config.routing_llm
+	# 		)
+	# 		final_response = synth_llm.invoke([HumanMessage(content=synthesis_content)])
 
-		# Build the supervisor graph
-		builder = StateGraph(state_class)
+	# 		return Command(goto=END, update={"messages": [final_response]})
 
-		# Add supervisor
-		builder.add_node("supervisor", supervisor)
+	# 	# Build the supervisor graph
+	# 	builder = StateGraph(state_class)
 
-		# Add agent nodes
-		for config in agent_configs:
-			builder.add_node(config.name, create_agent_node(config))
+	# 	# Add supervisor
+	# 	builder.add_node("supervisor", supervisor)
 
-		# Add parallel executor and synthesizer
-		builder.add_node("parallel_executor", parallel_executor_node)
-		builder.add_node("synthesizer", synthesizer_node)
+	# 	# Add agent nodes
+	# 	for config in agent_configs:
+	# 		builder.add_node(config.name, create_agent_node(config))
 
-		# Set entry point
-		builder.add_edge(START, "supervisor")
+	# 	# Add parallel executor and synthesizer
+	# 	builder.add_node("parallel_executor", parallel_executor_node)
+	# 	builder.add_node("synthesizer", synthesizer_node)
 
-		# Compile with checkpointing
-		compiled_graph = builder.compile(checkpointer=MemorySaver())
+	# 	# Set entry point
+	# 	builder.add_edge(START, "supervisor")
 
-		logger.info("✅ Supervisor graph created with Command API routing")
-		return compiled_graph
+	# 	# Compile with checkpointing
+	# 	compiled_graph = builder.compile(checkpointer=MemorySaver())
+
+	# 	logger.info("✅ Supervisor graph created with Command API routing")
+	# 	return compiled_graph

@@ -24,7 +24,7 @@ from flowgentic.langGraph.utils import LangraphUtils
 from flowgentic.utils.llm_providers import ChatLLMProvider
 from flowgentic.langGraph.agent_logger import AgentLogger
 from flowgentic.langGraph.main import LangraphIntegration
-from flowgentic.langGraph.agents import BaseLLMAgentState, LangraphAgents
+from flowgentic.langGraph.agents import AsyncFlowType, BaseLLMAgentState, LangraphAgents
 
 from dotenv import load_dotenv
 
@@ -51,7 +51,7 @@ async def start_app():
 	async with LangraphIntegration(backend=backend) as agents_manager:
 		llm = ChatLLMProvider(provider="OpenRouter", model="google/gemini-2.5-flash")
 
-		@agents_manager.agents.asyncflow_tool()
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.TOOL)
 		async def weather_extractor(city: str):
 			"""Extracts the weather for any given city"""
 			return {
@@ -59,13 +59,13 @@ async def start_app():
 				"humidity_percentage": 40,
 			}  # Dummy example
 
-		@agents_manager.agents.asyncflow_tool()
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.TOOL)
 		async def traffic_extractor(city: str):
 			"""Extracts the amount of traffic for any given city"""
 			return {"traffic_percentage": 90}  # Dummy example
 
 		# Define the task within the asyncflow context
-		@agents_manager.agents.asyncflow_node()
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.NODE)
 		async def deterministic_task_internal(state: WorkflowState):
 			file_path = "im-working.txt"
 			with open(file_path, "w") as f:
@@ -89,9 +89,9 @@ async def start_app():
 				llm=llm, response_schema=DayVerdict, graph_state_schema=WorkflowState
 			),
 		)
-		workflow.set_entry_point("chatbot")
-		workflow.add_node("tools", ToolNode(tools))
 		workflow.add_node("deterministic_task", deterministic_task_internal)
+		workflow.set_entry_point("deterministic_task")
+		workflow.add_node("tools", ToolNode(tools))
 
 		# Edges
 		workflow.add_conditional_edges(
@@ -100,7 +100,7 @@ async def start_app():
 			{"true": "tools", "false": "response_synthetizer"},
 		)
 		workflow.add_edge("tools", "chatbot")
-		workflow.add_edge("response_synthetizer", "deterministic_task")
+		workflow.add_edge("deterministic_task", "chatbot")
 		workflow.add_edge("deterministic_task", END)
 
 		checkpointer = InMemorySaver()
