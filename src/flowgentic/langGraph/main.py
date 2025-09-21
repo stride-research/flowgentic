@@ -8,14 +8,18 @@ Key features:
 - Sensible defaults for fault tolerance (no config required)
 """
 
+from abc import abstractmethod
 import asyncio
 import contextlib
+from fileinput import filename
 import json
 import os
 import random
+import uuid
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langgraph.graph import add_messages
+from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel, Field
 from functools import wraps
 from typing import Annotated, Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -25,6 +29,9 @@ from radical.asyncflow import WorkflowEngine
 from radical.asyncflow.workflow_manager import BaseExecutionBackend
 
 from flowgentic.llm_providers import ChatLLMProvider
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # TYPES SECTION
@@ -182,7 +189,6 @@ class LangGraphIntegration:
 		self,
 		func: Optional[Callable] = None,
 		*,
-		agent_id: Optional[int] = None,
 		retry: Optional[RetryConfig] = None,
 	) -> Callable:
 		"""Decorator to register an async function as AsyncFlow task and LangChain tool.
@@ -214,6 +220,13 @@ class LangGraphIntegration:
 			return decorate(func)
 		return decorate
 
+	async def render_graph(
+		self,
+		app: CompiledStateGraph,
+		file_name: str = f"workflow_graph_{uuid.uuid4()}.png",
+	):
+		await asyncio.to_thread(app.get_graph().draw_png, file_name)
+
 	@staticmethod
 	async def needs_tool_invokation(state: BaseLLMAgentState) -> str:
 		last_message = state.messages[-1]
@@ -226,9 +239,9 @@ class LangGraphIntegration:
 	# Synthetiszer node
 	@staticmethod
 	def structured_final_response(
-		llm: BaseChatModel, respponse_schema: BaseModel, graph_state_schema
+		llm: BaseChatModel, response_schema: BaseModel, graph_state_schema: type
 	):
-		formatter_llm = llm.with_structured_output(respponse_schema)
+		formatter_llm = llm.with_structured_output(response_schema)
 
 		async def response_structurer(current_graph_state):
 			result = await formatter_llm.ainvoke(current_graph_state.messages)

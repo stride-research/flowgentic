@@ -10,12 +10,14 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import json
 import os
+import random
 from typing import Annotated
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode
+from langgraph.prebuilt import ToolNode, create_react_agent
 from pydantic import BaseModel
 from radical.asyncflow import ConcurrentExecutionBackend, WorkflowEngine
 
@@ -66,27 +68,14 @@ async def start_app():
 			response = await llm_with_tools.ainvoke(state.messages)
 			return WorkflowState(messages=[response])
 
-		# formatter_llm = llm.with_structured_output(DayVerdict)
-		# async def response_synthetizer(state: WorkflowState):
-
-		# 	result = await formatter_llm.ainvoke(state.messages)
-
-		# 	payload = result.model_dump()  # -> {"looks_like_a_good_day": ..., "reason": "..."}
-		# 	# Put the JSON as the final AI message content so your stream prints it
-
-		# 	return WorkflowState(messages=
-		# 				[AIMessage(
-		# 						content=json.dumps(payload),
-		# 						)]
-		# 				)
-
 		workflow = StateGraph(WorkflowState)
+
 		# Nodes
 		workflow.add_node("chatbot", invoke_llm)
 		workflow.add_node(
 			"response_synthetizer",
 			orchestrator.structured_final_response(
-				llm=llm, respponse_schema=DayVerdict, graph_state_schema=WorkflowState
+				llm=llm, response_schema=DayVerdict, graph_state_schema=WorkflowState
 			),
 		)
 		workflow.set_entry_point("chatbot")
@@ -100,7 +89,12 @@ async def start_app():
 		workflow.add_edge("tools", "chatbot")
 		workflow.add_edge("response_synthetizer", END)
 
-		app = workflow.compile()
+		checkpointer = InMemorySaver()
+		app = workflow.compile(checkpointer=checkpointer)
+		thread_id = random.randint(0, 10)
+		config = {"configurable": {"thread_id": thread_id}}
+
+		await orchestrator.render_graph(app)
 
 		while True:
 			user_input = input("User: ").lower()
@@ -108,9 +102,11 @@ async def start_app():
 				print(f"Goodbye!")
 				return
 
-			initial_state = WorkflowState(messages=[HumanMessage(content=user_input)])
+			current_state = WorkflowState(messages=[HumanMessage(content=user_input)])
 
-			async for chunk in app.astream(initial_state, stream_mode="values"):
+			async for chunk in app.astream(
+				current_state, stream_mode="values", config=config
+			):
 				if chunk["messages"]:
 					last_msg = chunk["messages"][-1]
 					if isinstance(last_msg, AIMessage):

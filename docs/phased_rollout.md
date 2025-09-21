@@ -12,12 +12,16 @@
 
 
 ## IMPORTANT TO HAVE
-- Checkpointing + Fault tolerance mechanism 
-[] Structured outputs - chatbot level
-[] Memory 
+[x] Checkpointing + Fault tolerance mechanism 
+      [x] tool level
+      [x] toolkit level
+      [x] Checkpointing
+
+[x] Structured outputs - chatbot level
+[x] Memory 
 [x] Ollama support
-- Logs 
-      - Conversation history
+[] Logs 
+      [] Conversation history
 
 ## DOCUMENTATION
 - Mkdocs
@@ -28,7 +32,7 @@
 - Human in the loop
 - Multimedia file support 
 - Web search
-- Graph visualization
+[x] Graph visualization
 - Streaming token by token
 - Evaluation / guardrails
 
