@@ -3,6 +3,7 @@ Unit tests for memory management system.
 """
 
 import asyncio
+import pytest
 from typing import List, cast
 from datetime import datetime
 from unittest.mock import Mock
@@ -143,6 +144,8 @@ def test_short_term_memory_manager():
     assert manager.interaction_count == 0
 
 
+@pytest.mark.asyncio
+@pytest.mark.asyncio
 async def test_memory_manager():
     """Test MemoryManager class."""
     # Test manager initialization
