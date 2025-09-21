@@ -14,6 +14,7 @@ dependencies = [
     "langgraph>=0.6.6",
     "radical.asyncflow @ git+https://github.com/radical-cybertools/radical.asyncflow.git@main",
     "langchain-openai",
+    "langchain-ollama",
     "langchain-core",
     "langchain-community",
     "radical-asyncflow",
@@ -36,7 +37,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "ruff>=0.12.11",
-    "pre-commit"
+    "pre-commit",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0"
 ]
 
 [project.scripts]
@@ -85,4 +88,10 @@ select = [
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
+]
 

@@ -24,7 +24,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from concurrent.futures import ThreadPoolExecutor
 from radical.asyncflow import ConcurrentExecutionBackend, WorkflowEngine
 
-from flowgentic.langgraph import LangGraphIntegration, RetryConfig
+from flowgentic.langGraph import LangGraphIntegration, RetryConfig
 
 from radical.asyncflow.logging import init_default_logger
 
@@ -37,7 +37,7 @@ load_dotenv()
 # State
 class State(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
-    
+
     messages: Annotated[List[BaseMessage], add_messages]
 
 async def main():
