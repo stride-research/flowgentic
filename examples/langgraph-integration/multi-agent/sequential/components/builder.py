@@ -5,12 +5,14 @@ from .toolkit.tool_registry import ToolsRegistry
 from .nodes import WorkflowNodes
 from .edges import WorkflowEdges
 
+from flowgentic.langGraph.base_components import BaseWorkflowBuilder
 
-class WorkflowBuilder:
+
+class WorkflowBuilder(BaseWorkflowBuilder):
 	"""Builds and configures the complete workflow graph."""
 
 	def __init__(self, agents_manager):
-		self.agents_manager = agents_manager
+		super().__init__(self, agents_manager)
 		self.tools_registry = ToolsRegistry(agents_manager)
 		self.nodes = WorkflowNodes(agents_manager, self.tools_registry)
 		self.edges = WorkflowEdges()

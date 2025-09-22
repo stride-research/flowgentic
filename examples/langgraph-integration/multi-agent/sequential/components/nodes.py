@@ -1,3 +1,6 @@
+from typing import Dict
+
+from flowgentic.langGraph.main import LangraphIntegration
 from ..utils.schemas import WorkflowState, AgentOutput
 from .toolkit.tool_registry import ToolsRegistry
 
@@ -6,20 +9,22 @@ from flowgentic.langGraph.agents import AsyncFlowType
 from flowgentic.utils.llm_providers import ChatLLMProvider
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage, SystemMessage
+from flowgentic.langGraph.base_components import BaseWorkflowNodes
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
-class WorkflowNodes:
+class WorkflowNodes(BaseWorkflowNodes):
 	"""Contains all workflow nodes with access to agents_manager and tools."""
 
-	def __init__(self, agents_manager, tools_registry: ToolsRegistry):
-		self.agents_manager = agents_manager
-		self.tools = tools_registry
+	def __init__(
+		self, agents_manager: LangraphIntegration, tools_registry: ToolsRegistry
+	) -> None:
+		super().__init__(agents_manager, tools_registry)
 
-	def get_all_nodes(self):
+	def get_all_nodes(self) -> Dict[str, callable]:
 		"""Return all node functions for graph registration."""
 		return {
 			"preprocess": self.preprocess_node,
@@ -30,7 +35,7 @@ class WorkflowNodes:
 			"error_handler": self.error_handler_node,
 		}
 
-	@property
+	@property  # CAN THIS BE DELETED?
 	def preprocess_node(self):
 		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.BLOCK)
 		async def _preprocess_node(state: WorkflowState) -> WorkflowState:
@@ -38,9 +43,9 @@ class WorkflowNodes:
 			print("🔄 Preprocessing Node: Starting input validation...")
 
 			try:
-				validation_task = self.tools.get_task_by_name("validate_input")(
-					state.user_input
-				)
+				validation_task = self.tools_registry.get_task_by_name(
+					"validate_input"
+				)(state.user_input)
 				validation_data = await validation_task
 
 				state.validation_data = validation_data
@@ -70,8 +75,8 @@ class WorkflowNodes:
 				start_time = asyncio.get_event_loop().time()
 
 				tools = [
-					self.tools.get_tool_by_name("web_search"),
-					self.tools.get_tool_by_name("data_analysis"),
+					self.tools_registry.get_tool_by_name("web_search"),
+					self.tools_registry.get_tool_by_name("data_analysis"),
 				]
 
 				research_agent = create_react_agent(
@@ -131,7 +136,7 @@ class WorkflowNodes:
 			)
 
 			try:
-				context_task = self.tools.get_task_by_name("prepare_context")(
+				context_task = self.tools_registry.get_task_by_name("prepare_context")(
 					state.research_agent_output, state.validation_data
 				)
 				context = await context_task
@@ -159,7 +164,7 @@ class WorkflowNodes:
 			try:
 				start_time = asyncio.get_event_loop().time()
 
-				tools = [self.tools.get_tool_by_name("document_generator")]
+				tools = [self.tools_registry.get_tool_by_name("document_generator")]
 
 				synthesis_agent = create_react_agent(
 					model=ChatLLMProvider(
@@ -224,9 +229,9 @@ Please create a comprehensive synthesis with clear recommendations for a clean e
 			print("📄 Finalize Output Node: Formatting final results...")
 
 			try:
-				final_output_task = self.tools.get_task_by_name("format_final_output")(
-					state.synthesis_agent_output, state.context
-				)
+				final_output_task = self.tools_registry.get_task_by_name(
+					"format_final_output"
+				)(state.synthesis_agent_output, state.context)
 				final_output = await final_output_task
 
 				state.final_output = final_output

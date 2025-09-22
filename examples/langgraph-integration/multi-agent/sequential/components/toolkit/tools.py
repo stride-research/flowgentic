@@ -4,13 +4,14 @@ from typing import Dict, Any
 
 from ...utils.schemas import ValidationData, AgentOutput, ContextData, WorkflowState
 
+from flowgentic.langGraph.base_components import BaseAgentTools, BaseUtilsTasks
 
-class ResearchTools:
+
+class ResearchTools(BaseAgentTools):
 	"""Research-specific agent tools."""
 
 	def __init__(self, agents_manager):
-		self.agents_manager = agents_manager
-		self.tools = {}
+		super().__init__(agents_manager)
 
 	def register_tools(self):
 		"""Register research agent tools."""
@@ -43,12 +44,11 @@ class ResearchTools:
 		return self.tools
 
 
-class SynthesisTools:
+class SynthesisTools(BaseAgentTools):
 	"""Synthesis-specific agent tools."""
 
 	def __init__(self, agents_manager):
-		self.agents_manager = agents_manager
-		self.tools = {}
+		super().__init__(agents_manager)
 
 	def register_tools(self):
 		"""Register synthesis agent tools."""
@@ -73,12 +73,11 @@ class SynthesisTools:
 		return self.tools
 
 
-class ValidationTasks:
+class ValidationTasks(BaseUtilsTasks):
 	"""Input validation and preprocessing tasks."""
 
 	def __init__(self, agents_manager):
-		self.agents_manager = agents_manager
-		self.tasks = {}
+		super().__init__(agents_manager)
 
 	def register_tasks(self):
 		"""Register validation tasks."""
@@ -120,12 +119,11 @@ class ValidationTasks:
 		return self.tasks
 
 
-class ContextTasks:
+class ContextTasks(BaseUtilsTasks):
 	"""Context preparation and management tasks."""
 
 	def __init__(self, agents_manager):
-		self.agents_manager = agents_manager
-		self.tasks = {}
+		super().__init__(agents_manager)
 
 	def register_tasks(self):
 		"""Register context management tasks."""
@@ -166,12 +164,11 @@ class ContextTasks:
 		return self.tasks
 
 
-class FormattingTasks:
+class FormattingTasks(BaseUtilsTasks):
 	"""Output formatting and finalization tasks."""
 
 	def __init__(self, agents_manager):
-		self.agents_manager = agents_manager
-		self.tasks = {}
+		super().__init__(agents_manager)
 
 	def register_tasks(self):
 		"""Register formatting tasks."""

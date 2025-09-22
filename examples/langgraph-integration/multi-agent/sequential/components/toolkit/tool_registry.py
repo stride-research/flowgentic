@@ -7,12 +7,14 @@ from .tools import (
 	FormattingTasks,
 )
 
+from flowgentic.langGraph.base_components import BaseToolRegistry
 
-class ToolsRegistry:
-	"""Unified interface for all workflow tools and tasks."""
+
+class ToolsRegistry(BaseToolRegistry):
+	"""Unified interface for all workflow tools and tasks for the given usecase"""
 
 	def __init__(self, agents_manager):
-		self.agents_manager = agents_manager
+		self.__init__(agents_manager)
 
 		# Initialize specialized tool/task managers
 		self.research_tools = ResearchTools(agents_manager)
@@ -21,11 +23,7 @@ class ToolsRegistry:
 		self.context_tasks = ContextTasks(agents_manager)
 		self.formatting_tasks = FormattingTasks(agents_manager)
 
-		# Unified interfaces
-		self.agent_tools = {}
-		self.deterministic_tasks = {}
-
-	def register_all_tools(self):
+	def _register_all_tools(self):
 		"""Register all tools and tasks through the unified interface."""
 		self._register_agent_tools()
 		self._register_utility_tasks()
@@ -55,23 +53,3 @@ class ToolsRegistry:
 				**formatting_tasks,
 			}
 		)
-
-	def get_task_by_name(self, tool_name: str):
-		"""Get a specific tool by name."""
-		if tool_name in self.deterministic_tasks:
-			return self.deterministic_tasks[tool_name]
-		else:
-			raise ValueError(f"Task '{tool_name}' not found")
-
-	def get_tool_by_name(self, tool_name: str):
-		"""Get a specific tool by name."""
-		if tool_name in self.agent_tools:
-			return self.agent_tools[tool_name]
-		else:
-			raise ValueError(f"Tool '{tool_name}' not found")
-
-	def get_toolset(self):
-		return {
-			"agent_tools": self.agent_tools,
-			"deterministic_tasks": self.deterministic_tasks,
-		}
