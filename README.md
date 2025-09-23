@@ -20,6 +20,10 @@
 
 Enable agentic frameworks on HPC. This package provides building blocks to run agent workflows on High-Performance Computing (HPC) schedulers and workflow engines. It focuses on developer ergonomics and composability with modern agent frameworks.
 
+### Get started
+
+Read the documentation: [stride-research.github.io/flowgentic](https://stride-research.github.io/flowgentic/)
+
 ---
 
 ### What is it?
