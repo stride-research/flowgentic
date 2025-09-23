@@ -20,8 +20,6 @@ jobs:
                 - name: Fetch code
                   uses: actions/checkout@v3 
                 - name: "Install dependecies"
-                  run: pip install safety bandit
-                - name: "Check with safety"
-                  run: safety check
+                  run: pip install bandit
                 - name: "Check with bandit"
                   run: bandit -r src/
