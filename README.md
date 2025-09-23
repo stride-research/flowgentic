@@ -50,21 +50,18 @@ Current and planned integrations. ✅ available, 🚧 planned.
 Requirements: Python >= 3.9
 
 ```bash
-pip install flowgentic
-# or with uv
-uv pip install flowgentic
+pip install '.'
 ```
 
 Dev extras (linting, docs, tests):
 
 ```bash
-pip install 'flowgentic[dev]'
+pip install '.[dev]'
 ```
 
 Environment variables for LLM providers:
 
 - **OPEN_ROUTER_API_KEY**: required if you use the OpenRouter-backed LLM provider.
-- Optionally configure other LangChain-compatible providers (e.g., OpenAI, Ollama). See `src/flowgentic/utils/llm_providers.py`.
 - `.env` files are supported via `python-dotenv` if you call `load_dotenv()`.
 
 ```bash
@@ -102,7 +99,7 @@ Browse the docs in `docs/`:
 If you use MkDocs locally:
 
 ```bash
-pip install 'flowgentic[dev]'
+pip install '.[dev]'
 mkdocs serve
 ```
 
