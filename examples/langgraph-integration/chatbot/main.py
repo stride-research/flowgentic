@@ -1,13 +1,12 @@
 """
-
 FEATURES:
       [x] Tools
       [] Memory
-
 """
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from functools import wraps
 import json
 import os
 import random
@@ -21,20 +20,19 @@ from langgraph.prebuilt import ToolNode, create_react_agent
 from pydantic import BaseModel
 from radical.asyncflow import ConcurrentExecutionBackend, WorkflowEngine
 
-from flowgentic import (
-	ChatLLMProvider,
-	LangGraphIntegration,
-	RetryConfig,
-	BaseLLMAgentState,
-)
-
+from flowgentic.langGraph.utils import LangraphUtils
+from flowgentic.utils.llm_providers import ChatLLMProvider
+from flowgentic.langGraph.agent_logger import AgentLogger
+from flowgentic.langGraph.main import LangraphIntegration
+from flowgentic.langGraph.agents import AsyncFlowType, BaseLLMAgentState, LangraphAgents
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
-class WorkflowState(BaseLLMAgentState): ...
+class WorkflowState(BaseLLMAgentState):
+	pass
 
 
 class DayVerdict(BaseModel):
@@ -42,13 +40,18 @@ class DayVerdict(BaseModel):
 	reason: str
 
 
+"""
+A wrapper that returns a task future output, but registers it first
+"""
+
+
 async def start_app():
 	backend = await ConcurrentExecutionBackend(ThreadPoolExecutor())
 
-	async with LangGraphIntegration(backend=backend) as orchestrator:
+	async with LangraphIntegration(backend=backend) as agents_manager:
 		llm = ChatLLMProvider(provider="OpenRouter", model="google/gemini-2.5-flash")
 
-		@orchestrator.asyncflow_tool()
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.TOOL)
 		async def weather_extractor(city: str):
 			"""Extracts the weather for any given city"""
 			return {
@@ -56,10 +59,18 @@ async def start_app():
 				"humidity_percentage": 40,
 			}  # Dummy example
 
-		@orchestrator.asyncflow_tool()
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.TOOL)
 		async def traffic_extractor(city: str):
 			"""Extracts the amount of traffic for any given city"""
 			return {"traffic_percentage": 90}  # Dummy example
+
+		# Define the task within the asyncflow context
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.NODE)
+		async def deterministic_task_internal(state: WorkflowState):
+			file_path = "im-working.txt"
+			with open(file_path, "w") as f:
+				f.write("Hello world!")
+			return {"status": "file_written", "path": file_path}
 
 		tools = [weather_extractor, traffic_extractor]
 		llm_with_tools = llm.bind_tools(tools)
@@ -74,32 +85,40 @@ async def start_app():
 		workflow.add_node("chatbot", invoke_llm)
 		workflow.add_node(
 			"response_synthetizer",
-			orchestrator.structured_final_response(
+			agents_manager.utils.structured_final_response(
 				llm=llm, response_schema=DayVerdict, graph_state_schema=WorkflowState
 			),
 		)
-		workflow.set_entry_point("chatbot")
+		workflow.add_node("deterministic_task", deterministic_task_internal)
+		workflow.set_entry_point("deterministic_task")
 		workflow.add_node("tools", ToolNode(tools))
+
 		# Edges
 		workflow.add_conditional_edges(
 			"chatbot",
-			orchestrator.needs_tool_invokation,
+			agents_manager.utils.needs_tool_invokation,
 			{"true": "tools", "false": "response_synthetizer"},
 		)
 		workflow.add_edge("tools", "chatbot")
-		workflow.add_edge("response_synthetizer", END)
+		workflow.add_edge("deterministic_task", "chatbot")
+		workflow.add_edge("deterministic_task", END)
 
 		checkpointer = InMemorySaver()
 		app = workflow.compile(checkpointer=checkpointer)
 		thread_id = random.randint(0, 10)
 		config = {"configurable": {"thread_id": thread_id}}
 
-		await orchestrator.render_graph(app)
+		await agents_manager.utils.render_graph(app)
 
 		while True:
 			user_input = input("User: ").lower()
 			if user_input in ["quit", "q", "-q", "exit"]:
 				print(f"Goodbye!")
+				last_state = app.get_state(config)
+				print(f"Last state: {last_state}")
+				agents_manager.agent_logger.flush_agent_conversation(
+					conversation_history=last_state.values.get("messages", [])
+				)
 				return
 
 			current_state = WorkflowState(messages=[HumanMessage(content=user_input)])
@@ -118,4 +137,5 @@ async def start_app():
 				print("=" * 30)
 
 
-asyncio.run(start_app())
+if __name__ == "__main__":
+	asyncio.run(start_app())

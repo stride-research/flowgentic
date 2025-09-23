@@ -18,10 +18,9 @@
       [x] Checkpointing
 
 [x] Structured outputs - chatbot level
-[x] Memory 
 [x] Ollama support
-[] Logs 
-      [] Conversation history
+[x] Logs 
+      [x] Conversation history
 
 ## DOCUMENTATION
 - Mkdocs
@@ -42,3 +41,8 @@
 
 ----
 # MULTIPLE AGENT 
+[] Decouple single agent, set-up, MAS code
+[] Code examples
+      [] Supervisor
+      [] Sequential
+[] Abstractions (for common architectural patterns )

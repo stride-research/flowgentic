@@ -1,33 +1,16 @@
-# FAULT TOLERANCE
-## LANGRAPH
-### TOOL EXECUTION LEVEL
-#### How It Works
+# Fault Tolerance
 
-1.  **Retry on Failure**: When a tool invocation fails with a specific type of error (like a network timeout or connection issue -- note: you can modify which are the retryable exceptions), the system doesn't immediately give up. Instead, it classifies the error as "retryable" and schedules another attempt. This is crucial for handling transient issues that might resolve themselves quickly.
+Keep agents resilient with retries, timeouts, and failure isolation.
 
-2.  **Exponential Backoff**: To avoid overwhelming a struggling service, the system waits for a progressively longer period between each retry. For example, the first retry might be after 1 second, the second after 2, the third after 4, and so on. This gives the external service time to recover and prevents the agent from contributing to a cascade of failures.
+- Configurable retry/backoff policies
+- Fault boundaries between nodes
+- Clear logging and error propagation
 
-3.  **Jitter**: To prevent multiple agents from all retrying at the exact same moment (a "thundering herd" problem), a small, random amount of time is added to the backoff delay. This "jitter" spreads out the retry attempts, reducing the chance of creating a new bottleneck.
+## Concepts
 
-4.  **Timeouts**: Each tool invocation is wrapped in a timeout. If the tool's `future` does not complete within the specified time limit, the attempt is aborted, and a `TimeoutError` is raised. This prevents the agent from waiting indefinitely for a non-responsive tool, allowing the retry logic to kick in or the agent to move on.
+- Retry policy: attempts, backoff, jitter
+- Boundary: isolates node failures from cascading
 
-5.  **Error Handling**: If all retries are exhausted or the error is not considered retryable, the system either raises the exception (if configured to `raise_on_failure`) or returns a structured error payload. This allows the AI agent to understand that the tool failed and to potentially handle the error gracefully, for example, by trying an alternative tool or informing the user of the failure.
+## API
 
-### TOOLSET LEVEL
-ToolNode already catches tool exceptions and returns them to the model as messages so the agent can fix inputs and try again. This is the default behavior. 
-LangChain AI
-
-Key points:
-
-Works out of the box with ToolNode([...]).
-
-Lets the LLM self-correct (e.g., change argument casing, fill missing fields).
-
-You can explicitly control this with handle_tool_errors (default True). 
-LangChain AI
-
-from langgraph.prebuilt import ToolNode
-tool_node = ToolNode([tool_a, tool_b])                        # handle_tool_errors=True by default
-
-
-If you want exceptions to bubble up (to trigger a hard fallback), set handle_tool_errors=False and use the next section. Create a TollMessage with error and reattempt (if sys prompt indicates to do so)
+::: flowgentic.langGraph.fault_tolerance

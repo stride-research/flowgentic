@@ -1,0 +1,17 @@
+name: Publish mkdocks to github pages
+on:
+      push:
+            branches: [main]
+
+jobs:
+      publishing_docs:
+            runs-on: ubuntu-latest 
+            steps:
+                  - name: Fetch code
+                    uses: actions/checkout@v3
+                  - name: Set up python
+                    uses: actions/setup-python@v4
+                  - name: Install dependencies
+                    run: pip install mkdocs-material mkdocstrings[python] pymdown-extensions mkdocs_gen_files mkdocs-literate-nav
+                  - name: Push the docs
+                    run: mkdocs gh-deploy --force
