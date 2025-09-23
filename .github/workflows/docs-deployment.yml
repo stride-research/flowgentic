@@ -12,6 +12,6 @@ jobs:
                   - name: Set up python
                     uses: actions/setup-python@v4
                   - name: Install dependencies
-                    run: pip install mkdocs-material mkdocstrings[python] pymdown-extensions mkdocs_gen_files mkdocs-literate-nav
+                    run:  pip install mkdocs-material mkdocstrings[python] pymdown-extensions mkdocs_gen_files mkdocs-literate-nav mkdocs-section-index
                   - name: Push the docs
                     run: mkdocs gh-deploy --force
