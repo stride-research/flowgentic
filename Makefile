@@ -1,4 +1,4 @@
-.PHONY: install format lint
+.PHONY: install format lint docs
 
 VENV_PATH =  ./.venv
 VENV_ACTIVATE = source $(VENV_PATH)/bin/activate
@@ -19,3 +19,6 @@ format:
 
 lint:
 	$(VENV_ACTIVATE) && ruff check --fix .
+
+docs:	
+	$(VENV_ACTIVATE) &&  mkdocs serve

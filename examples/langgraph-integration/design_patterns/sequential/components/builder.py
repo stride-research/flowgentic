@@ -12,7 +12,7 @@ class WorkflowBuilder(BaseWorkflowBuilder):
 	"""Builds and configures the complete workflow graph."""
 
 	def __init__(self, agents_manager):
-		super().__init__(self, agents_manager)
+		super().__init__(agents_manager)
 		self.tools_registry = ToolsRegistry(agents_manager)
 		self.nodes = WorkflowNodes(agents_manager, self.tools_registry)
 		self.edges = WorkflowEdges()
@@ -20,7 +20,7 @@ class WorkflowBuilder(BaseWorkflowBuilder):
 	def build_workflow(self) -> StateGraph:
 		"""Build and return the complete workflow graph."""
 		# Register all tools first
-		self.tools_registry.register_all_tools()
+		self.tools_registry._register_toolkit()
 
 		# Create state graph
 		workflow = StateGraph(WorkflowState)

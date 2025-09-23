@@ -14,7 +14,7 @@ class ToolsRegistry(BaseToolRegistry):
 	"""Unified interface for all workflow tools and tasks for the given usecase"""
 
 	def __init__(self, agents_manager):
-		self.__init__(agents_manager)
+		super().__init__(agents_manager)
 
 		# Initialize specialized tool/task managers
 		self.research_tools = ResearchTools(agents_manager)
@@ -23,7 +23,7 @@ class ToolsRegistry(BaseToolRegistry):
 		self.context_tasks = ContextTasks(agents_manager)
 		self.formatting_tasks = FormattingTasks(agents_manager)
 
-	def _register_all_tools(self):
+	def _register_toolkit(self):
 		"""Register all tools and tasks through the unified interface."""
 		self._register_agent_tools()
 		self._register_utility_tasks()
