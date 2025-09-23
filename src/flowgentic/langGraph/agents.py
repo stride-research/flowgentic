@@ -73,35 +73,6 @@ class BaseLLMAgentState(BaseModel):
 	messages: Annotated[list, add_messages]
 
 
-class EnhancedMultiAgentState(MessagesState):
-	"""Enhanced state for multi-agent coordination with React agents."""
-
-	agent_results: Dict[str, Any] = {}
-	current_task: str = ""
-	completed_agents: List[str] = []
-	execution_stats: Dict[str, Any] = {}
-	target_agents: List[str] = []
-
-
-class ReactAgentConfig(BaseModel):
-	"""Configuration for a React agent."""
-
-	name: str
-	system_prompt: str
-	tools: List[Callable]
-	llm: BaseChatModel
-	temperature: float = 0.1
-
-
-class SupervisorConfig(BaseModel):
-	"""Configuration for supervisor-style orchestration."""
-
-	routing_llm: BaseChatModel
-	routing_prompt: str = "You are a supervisor routing requests to specialized agents."
-	synthesizer_llm: Optional[BaseChatModel] = None
-	enable_parallel_execution: bool = True
-
-
 class AsyncFlowType(Enum):
 	"""Enum defining the flow_type of AsyncFlow decoration"""
 

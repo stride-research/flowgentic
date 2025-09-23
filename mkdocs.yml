@@ -1,7 +1,7 @@
 site_name: Flowgentic
-site_description: Agentic frameworks on HPC with minimal dev overhead between LangGraph and Radical AsyncFlow
-site_url: https://example.com
-repo_url: https://github.com/STRIDE-Lab/flowgentic
+site_url: https://github.com/stride-research/flowgentic
+site_description: Agentic frameworks for HPC
+repo_url: https://github.com/stride-research/flowgentic
 repo_name: STRIDE-Lab/flowgentic
 
 nav:
@@ -17,11 +17,7 @@ nav:
       - Phased rollout: features/phased_rollout.md
   - Comparisons:
       - LangGraph vs Radical AsyncFlow: compare.md
-  - API Reference:
-      - flowgentic: api/index.md
-      - langGraph: api/langGraph.md
-      - utils: api/utils.md
-      - academy integration: api/academy.md
+  - API Reference: api/
   - Examples:
       - LangGraph Chatbot: examples/chatbot.md
       - Sequential pattern: examples/sequential.md
@@ -32,18 +28,26 @@ theme:
     - navigation.tabs
     - navigation.sections
     - navigation.top
+    - navigation.expand
     - content.tabs.link
     - toc.follow
     - search.suggest
     - search.highlight
     - content.code.copy
+    - content.code.annotate
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
       primary: deep purple
       accent: deep purple
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
+      toggle:
+          icon: material/weather-sunny
+          name: Switch to light mode
       primary: indigo
       accent: deep purple
   logo: assets/logo.png
@@ -63,7 +67,11 @@ markdown_extensions:
       custom_fences:
         - name: mermaid
           class: mermaid
-  - pymdownx.highlight
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
   - pymdownx.critic
@@ -72,18 +80,41 @@ markdown_extensions:
   - pymdownx.tabbed:
       alternate_style: true
   - attr_list
+  - md_in_html
 
 plugins:
   - search
+  - gen-files:
+      scripts:
+        - docs/generate_api_reference.py
+  - literate-nav:
+      nav_file: SUMMARY.md
+  - section-index
   - mkdocstrings:
+      default_handler: python
       handlers:
         python:
           options:
-            show_root_heading: true
-            show_source: true
             docstring_style: google
-            separate_signature: true
-            members_order: source
+            docstring_options:
+              ignore_init_summary: true
+            merge_init_into_class: true
+            show_inheritance_diagram: false
+            show_source: false
             inherited_members: true
-            filters: ["!^__.*__$"]
-            heading_level: 2
+            members_order: source
+            separate_signature: true
+            show_object_full_path: false
+            show_root_full_path: false
+            show_root_heading: true
+            show_root_members_full_path: false
+            show_root_toc_entry: true
+            show_signature_annotations: true
+            show_submodules: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            signature_crossrefs: true
+            summary: true
+
+extra_javascript:
+  - https://unpkg.com/mermaid@10/dist/mermaid.min.js

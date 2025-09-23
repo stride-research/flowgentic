@@ -20,5 +20,5 @@ format:
 lint:
 	$(VENV_ACTIVATE) && ruff check --fix .
 
-docs:
-	mkdocs serve
+docs:	
+	$(VENV_ACTIVATE) &&  mkdocs serve

@@ -1,0 +1,16 @@
+name: Lints and formats code
+on: [push, pull_request]
+
+jobs:
+      linter_formatter:
+            runs-on: ubuntu-latest 
+            steps:
+                  - name: Fetch code
+                    uses: actions/checkout@v3
+                  - name: Check formatter
+                    uses: astral-sh/ruff-action@v1
+                    with:
+                        args: "check"
+                  - uses: astral-sh/ruff-action@v1
+                    with:
+                        args: "format --check"

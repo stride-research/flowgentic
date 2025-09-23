@@ -30,7 +30,10 @@ dev = [
     "pre-commit",
     "mkdocs-material",
     "mkdocstrings[python]",
-    "pymdown-extensions"
+    "pymdown-extensions",
+    "mkdocs_gen_files",
+    "mkdocs-literate-nav",
+    "mkdocs-section-index"
 ]
 
 [project.scripts]
