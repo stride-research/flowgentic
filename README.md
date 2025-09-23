@@ -1,3 +1,6 @@
+
+<img width="1920" height="1080" alt="FLOWGENTIC" src="https://github.com/user-attachments/assets/9fc877a6-1c61-4b7e-bd14-00f4befd9e27" />
+
 <p align="center">
   <a href="https://opensource.org/licenses/MIT">
     <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT">
