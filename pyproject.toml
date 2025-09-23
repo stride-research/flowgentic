@@ -27,7 +27,10 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "ruff>=0.12.11",
-    "pre-commit"
+    "pre-commit",
+    "mkdocs-material",
+    "mkdocstrings[python]",
+    "pymdown-extensions"
 ]
 
 [project.scripts]

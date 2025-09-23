@@ -1,0 +1,89 @@
+site_name: Flowgentic
+site_description: Agentic frameworks on HPC with minimal dev overhead between LangGraph and Radical AsyncFlow
+site_url: https://example.com
+repo_url: https://github.com/STRIDE-Lab/flowgentic
+repo_name: STRIDE-Lab/flowgentic
+
+nav:
+  - Home: index.md
+  - Architecture:
+      - Overview: architecture.md
+      - Design Patterns:
+          - Sequential: design_patterns/sequential.md
+  - Features:
+      - Memory: features/memory.md
+      - Fault tolerance: features/fault_tolerance.md
+      - Chatbot: features/chatbot.md
+      - Phased rollout: features/phased_rollout.md
+  - Comparisons:
+      - LangGraph vs Radical AsyncFlow: compare.md
+  - API Reference:
+      - flowgentic: api/index.md
+      - langGraph: api/langGraph.md
+      - utils: api/utils.md
+      - academy integration: api/academy.md
+  - Examples:
+      - LangGraph Chatbot: examples/chatbot.md
+      - Sequential pattern: examples/sequential.md
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - content.tabs.link
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: deep purple
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: deep purple
+  logo: assets/logo.png
+  favicon: assets/favicon.png
+
+extra_css:
+  - styles/overrides.css
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - tables
+  - def_list
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.critic
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.tabbed:
+      alternate_style: true
+  - attr_list
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_root_heading: true
+            show_source: true
+            docstring_style: google
+            separate_signature: true
+            members_order: source
+            inherited_members: true
+            filters: ["!^__.*__$"]
+            heading_level: 2

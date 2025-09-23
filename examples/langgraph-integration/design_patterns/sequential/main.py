@@ -4,6 +4,7 @@ from flowgentic.langGraph.main import LangraphIntegration
 from .components.builder import WorkflowBuilder
 from .utils.schemas import WorkflowState
 import asyncio
+from langgraph.checkpoint.memory import InMemorySaver
 
 
 async def start_app():
@@ -15,7 +16,8 @@ async def start_app():
 		workflow = workflow_builder.build_workflow()
 
 		# Compile the app
-		app = workflow.compile()
+		memory = InMemorySaver()
+		app = workflow.compile(checkpointer=memory)
 
 		# Render graph (optional)
 		await agents_manager.utils.render_graph(app)
@@ -34,7 +36,10 @@ async def start_app():
 
 		try:
 			# Execute workflow
-			async for chunk in app.astream(initial_state, stream_mode="values"):
+			config = {"configurable": {"thread_id": "1"}}
+			async for chunk in app.astream(
+				initial_state, config=config, stream_mode="values"
+			):
 				print(f"Chunk: {chunk}\n")
 
 		except Exception as e:

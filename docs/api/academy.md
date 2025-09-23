@@ -1,0 +1,3 @@
+# flowgentic.academy
+
+::: flowgentic.academy
