@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, Tuple, Callable, Any
 import logging
 import asyncio
-import random
+import secrets
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ class LangraphToolFaultTolerance:
 				]
 			)
 		except Exception:
-			pass
+			raise
 		# Try to include aiohttp timeouts if present
 		try:
 			import aiohttp  # type: ignore
@@ -81,7 +81,7 @@ class LangraphToolFaultTolerance:
 				]
 			)
 		except Exception:
-			pass
+			raise
 		return tuple(set(ex))
 
 	async def retry_async(
@@ -160,7 +160,9 @@ class LangraphToolFaultTolerance:
 				if config.jitter:
 					# jitter within +/- jitter * backoff
 					delta = backoff * config.jitter
-					backoff = max(0.0, backoff + random.uniform(-delta, delta))
+					backoff = max(
+						0.0, backoff + secrets.SystemRandom().uniform(-delta, delta)
+					)
 
 				logger.info(
 					f"Retrying '{name}' in {backoff:.2f}s (attempt {attempt + 1}/{config.max_attempts})"

@@ -1,0 +1,25 @@
+name: Lints, formats, and checks vulnerabilities in the code
+on: [push, pull_request]
+
+jobs:
+      lint_and_format:
+            runs-on: ubuntu-latest 
+            steps:
+                  - name: Fetch code
+                    uses: actions/checkout@v3
+                  # - name: Check linting 
+                  #   uses: astral-sh/ruff-action@v1
+                  #   with:
+                  #       args: "check"
+                  - uses: astral-sh/ruff-action@v1
+                    with:
+                        args: "format --check"
+      vulnerability_analysis:
+          runs-on: ubuntu-latest
+          steps:
+                - name: Fetch code
+                  uses: actions/checkout@v3 
+                - name: "Install dependecies"
+                  run: pip install bandit
+                - name: "Check with bandit"
+                  run: bandit -r src/
