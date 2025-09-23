@@ -33,7 +33,9 @@ dev = [
     "pymdown-extensions",
     "mkdocs_gen_files",
     "mkdocs-literate-nav",
-    "mkdocs-section-index"
+    "mkdocs-section-index",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0"
 ]
 
 [project.scripts]
@@ -82,4 +84,10 @@ select = [
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
+]
 
