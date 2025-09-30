@@ -25,7 +25,8 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, Base
 from flowgentic.langGraph.memory import (
     MemoryManager,
     MemoryConfig,
-    ShortTermMemoryManager
+    ShortTermMemoryManager,
+    LangraphMemoryManager
 )
 
 
@@ -142,7 +143,7 @@ async def demonstrate_memory_strategies():
         memory_update_threshold=3
     )
 
-    memory_manager = MemoryManager(memory_config)
+    memory_manager = LangraphMemoryManager(memory_config)
 
     # Simulate multiple interactions
     for i in range(3):
@@ -200,7 +201,7 @@ async def interactive_memory_demo():
         context_window_buffer=3
     )
 
-    memory_manager = MemoryManager(memory_config)
+    memory_manager = LangraphMemoryManager(memory_config)
 
     conversation_history = []
 
