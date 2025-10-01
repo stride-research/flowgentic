@@ -5,6 +5,7 @@ This module provides memory management capabilities for LangGraph integrations:
 - Short-term memory: Thread-scoped conversation history management
 - Memory configuration: Configurable memory strategies and limits
 - Integration hooks: Memory-aware graph construction and execution
+- Facade pattern: Simple interface following the established component pattern
 
 Initial implementation focuses on short-term memory management.
 Long-term memory features will be added in future iterations.
@@ -586,6 +587,116 @@ class MemoryEnabledState(BaseModel):
 	messages: List[BaseMessage]
 	user_id: str
 	memory_context: Dict[str, Any]
+
+
+# Facade class following the established pattern for LangGraph integration
+class LangraphMemoryManager:
+	"""Facade for memory management in LangGraph integration.
+	
+	Follows the same pattern as LangraphToolFaultTolerance and AgentLogger,
+	providing a simple interface for memory operations within the LangraphIntegration.
+	"""
+
+	def __init__(self, config: Optional[MemoryConfig] = None, llm: Optional[BaseChatModel] = None) -> None:
+		"""Initialize the memory manager facade.
+		
+		Args:
+		    config: Memory configuration. If None, uses default configuration.
+		    llm: Language model for summarization features. Optional.
+		"""
+		self.config = config or MemoryConfig()
+		self.llm = llm
+		self._memory_manager: Optional[MemoryManager] = None
+		logger.info(f"Initialized LangraphMemoryManager with strategy: {self.config.short_term_strategy}")
+
+	def _get_memory_manager(self) -> MemoryManager:
+		"""Lazy initialization of the underlying MemoryManager."""
+		if self._memory_manager is None:
+			self._memory_manager = MemoryManager(self.config, self.llm)
+			logger.debug("Created underlying MemoryManager instance")
+		return self._memory_manager
+
+	async def add_interaction(
+		self,
+		user_id: str,
+		messages: List[BaseMessage],
+		metadata: Optional[Dict[str, Any]] = None,
+	) -> Dict[str, Any]:
+		"""Add an interaction to memory and track statistics.
+		
+		Args:
+		    user_id: Identifier for the user/conversation thread
+		    messages: List of messages to add to memory
+		    metadata: Optional metadata for the interaction
+			
+		Returns:
+		    Dictionary with memory statistics and operation results
+		"""
+		logger.debug(f"Adding interaction for user '{user_id}' with {len(messages)} messages")
+		memory_manager = self._get_memory_manager()
+		return await memory_manager.add_interaction(user_id, messages, metadata)
+
+	async def get_relevant_context(
+		self, user_id: str, query: Optional[str] = None
+	) -> Dict[str, Any]:
+		"""Get relevant context from memory with smart retrieval.
+		
+		Args:
+		    user_id: Identifier for the user/conversation thread
+		    query: Optional query string for semantic search
+			
+		Returns:
+		    Dictionary containing relevant context and memory statistics
+		"""
+		logger.debug(f"Getting relevant context for user '{user_id}'")
+		memory_manager = self._get_memory_manager()
+		return await memory_manager.get_relevant_context(user_id, query)
+
+	def get_short_term_messages(self) -> List[BaseMessage]:
+		"""Get current short-term messages.
+		
+		Returns:
+		    List of current messages in short-term memory
+		"""
+		memory_manager = self._get_memory_manager()
+		return memory_manager.get_short_term_messages()
+
+	def clear_short_term_memory(self) -> None:
+		"""Clear short-term memory."""
+		logger.debug("Clearing short-term memory")
+		memory_manager = self._get_memory_manager()
+		memory_manager.clear_short_term_memory()
+
+	async def consolidate_memory(self) -> Dict[str, Any]:
+		"""Consolidate and optimize all memory systems.
+		
+		Returns:
+		    Dictionary with consolidation results and statistics
+		"""
+		logger.debug("Consolidating memory")
+		memory_manager = self._get_memory_manager()
+		return await memory_manager.consolidate_memory()
+
+	def get_memory_health(self) -> Dict[str, Any]:
+		"""Get overall memory system health and statistics.
+		
+		Returns:
+		    Dictionary with memory health metrics and configuration
+		"""
+		memory_manager = self._get_memory_manager()
+		return memory_manager.get_memory_health()
+
+	def update_config(self, config: MemoryConfig) -> None:
+		"""Update memory configuration.
+		
+		Args:
+		    config: New memory configuration to apply
+		"""
+		logger.info(f"Updating memory configuration to strategy: {config.short_term_strategy}")
+		self.config = config
+		# Force recreation of memory manager with new config
+		if self._memory_manager is not None:
+			self._memory_manager = MemoryManager(self.config, self.llm)
 
 
 # Legacy compatibility - keep the old interface for backward compatibility
