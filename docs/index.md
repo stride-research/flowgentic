@@ -4,27 +4,44 @@ title: Flowgentic
 
 # Flowgentic
 
-Build and run modern agentic workflows on HPC with minimal overhead. Flowgentic bridges LangGraph and Radical AsyncFlow, so you can prototype locally and scale to clusters without rewrites.
+Build and run modern agentic workflows on HPC with minimal overhead. Flowgentic bridges HPC workflow engines and agent orchestration frameworks, so you can prototype locally and scale to clusters without rewrites.
 
-- Fast prototyping with LangGraph-compatible components
-- Seamless execution on HPC using Radical AsyncFlow
-- Batteries-included: memory, fault tolerance, phased rollout, chatbot builder
+### What can I use this for?
+
+- **HPC execution of agent workflows**: Run multiagent graphs (e.g., langraph) on HPC via multiple HPC workflow engines (e.g., Radical Asyncflow)
+- **Concurrent tool and agent blocks**: Offload parallelizable work to HPC backends.
+- **Production-oriented patterns**: Start from examples that implement sequential patterns with typed state, tool registries, and error handling.
+
 
 ## Quickstart
+### 1) Installation
+```bash
+# 1) pyproject.toml
+dependencies = [
+    ...,
+    "flowgentic @ git+https://github.com/stride-research/flowgentic/flowgentic.git@main",
+    ...
+
+]
+# 2) pip3 
+pip3 install "git+https://github.com/stride-research/flowgentic.git@main#egg=flowgentic"
+
+# 3) cloning this repo
+pip install '.' # no dev dependencies
+pip install '.[dev]' # dev dependencies
+
+```
+### 2) Environmental variables
+- **OPEN_ROUTER_API_KEY**: required if you use the OpenRouter-backed LLM provider.
+- `.env` files are supported via `python-dotenv` if you call `load_dotenv()`.
 
 ```bash
-pip install mkdocs-material mkdocstrings[python]
-# in repo root
-mkdocs serve
+export OPEN_ROUTER_API_KEY=sk-or-...
 ```
 
-## Why Flowgentic
 
-- Minimal dev friction between ecosystems (LangGraph ↔ Radical AsyncFlow)
-- Production-minded primitives: logging, memory, retries, fault boundaries
-- Works in both interactive notebooks and batch schedulers
 
-## Architecture snapshot
+## Architecture overview
 
 ```mermaid
 flowchart LR
@@ -40,3 +57,5 @@ flowchart LR
 ```
 
 Explore the sections on the left for patterns, features, API reference, and examples.
+
+

@@ -82,7 +82,7 @@ class ValidationTasks(BaseUtilsTasks):
 	def register_tasks(self):
 		"""Register validation tasks."""
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.FUTURE)
+		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.UTISL_TASK)
 		async def validate_input_task(user_input: str) -> ValidationData:
 			"""Validate and preprocess user input - deterministic operation."""
 			validation_result = ValidationData(
@@ -101,7 +101,7 @@ class ValidationTasks(BaseUtilsTasks):
 			)
 			return validation_result
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.FUTURE)
+		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.UTISL_TASK)
 		async def security_scan_task(user_input: str) -> Dict[str, Any]:
 			"""Perform security scanning on user input."""
 			await asyncio.sleep(0.1)
@@ -128,7 +128,7 @@ class ContextTasks(BaseUtilsTasks):
 	def register_tasks(self):
 		"""Register context management tasks."""
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.FUTURE)
+		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.UTISL_TASK)
 		async def prepare_context_task(
 			research_output: AgentOutput, validation_data: ValidationData
 		) -> ContextData:
@@ -148,7 +148,7 @@ class ContextTasks(BaseUtilsTasks):
 			)
 			return context
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.FUTURE)
+		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.UTISL_TASK)
 		async def enrich_context_task(
 			context: ContextData, additional_data: Dict[str, Any]
 		) -> ContextData:
@@ -173,7 +173,7 @@ class FormattingTasks(BaseUtilsTasks):
 	def register_tasks(self):
 		"""Register formatting tasks."""
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.FUTURE)
+		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.UTISL_TASK)
 		async def format_final_output_task(
 			synthesis_output: AgentOutput, context: ContextData
 		) -> str:
@@ -203,7 +203,7 @@ Total Processing Time: {synthesis_output.execution_time + context.additional_con
 """
 			return formatted_output.strip()
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.FUTURE)
+		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.UTISL_TASK)
 		async def generate_summary_task(workflow_state: WorkflowState) -> str:
 			"""Generate a workflow execution summary."""
 			await asyncio.sleep(0.1)

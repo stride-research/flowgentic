@@ -78,7 +78,7 @@ class AsyncFlowType(Enum):
 
 	TOOL = "tool"  # LangChain tool with @tool wrapper
 	NODE = "node"  # LangGraph node that receives state and returns state
-	FUTURE = "future"  # Simple asyncflow task with *args, **kwargs
+	UTISL_TASK = "future"  # Simple asyncflow task with *args, **kwargs
 	BLOCK = "block"
 
 
@@ -98,7 +98,7 @@ class LangraphAgents:
 		self,
 		func: Optional[Callable] = None,
 		*,
-		flow_type: AsyncFlowType = AsyncFlowType.FUTURE,
+		flow_type: AsyncFlowType = AsyncFlowType.UTISL_TASK,
 		retry: Optional[RetryConfig] = None,
 	) -> Callable:
 		"""
@@ -108,7 +108,7 @@ class LangraphAgents:
 			flow_type: AsyncFlowType enum specifying the decoration behavior:
 				- TOOL: Creates a LangChain tool (with @tool wrapper)
 				- NODE: Creates a LangGraph node (receives state, returns state)
-				- FUTURE: Creates a simple asyncflow task (with *args, **kwargs)
+				- UTISL_TASK: Creates a simple asyncflow task (with *args, **kwargs)
 			retry: Optional retry configuration
 		"""
 
@@ -184,7 +184,7 @@ class LangraphAgents:
 				logger.info(f"Successfully created LangGraph node for '{f.__name__}'")
 				return node_wrapper
 
-			elif flow_type == AsyncFlowType.FUTURE:
+			elif flow_type == AsyncFlowType.UTISL_TASK:
 				# Future behavior: simple *args, **kwargs asyncflow task
 				@wraps(f)
 				async def future_wrapper(*args, **kwargs):

@@ -1,3 +1,4 @@
+import sys
 from typing import Dict
 
 from flowgentic.langGraph.main import LangraphIntegration
@@ -35,7 +36,7 @@ class WorkflowNodes(BaseWorkflowNodes):
 			"error_handler": self.error_handler_node,
 		}
 
-	@property  # CAN THIS BE DELETED?
+	@property
 	def preprocess_node(self):
 		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.BLOCK)
 		async def _preprocess_node(state: WorkflowState) -> WorkflowState:
@@ -97,6 +98,11 @@ class WorkflowNodes(BaseWorkflowNodes):
 				research_result = await research_agent.ainvoke(research_state)
 				execution_time = asyncio.get_event_loop().time() - start_time
 
+				if "messages" in research_result and isinstance(
+					research_result["messages"], list
+				):
+					state.messages.extend(research_result["messages"])
+
 				agent_output = AgentOutput(
 					agent_name="Research Agent",
 					output_content=research_result["messages"][-1].content,
@@ -109,6 +115,8 @@ class WorkflowNodes(BaseWorkflowNodes):
 				state.current_stage = "research_complete"
 
 				print(f"✅ Research Agent complete in {execution_time:.2f}s")
+
+				return state
 
 			except Exception as e:
 				error_msg = f"Research agent error: {str(e)}"
@@ -178,7 +186,7 @@ Based on the research findings: {state.research_agent_output.output_content}
 
 Context: {state.context.dict() if state.context else "No context available"}
 
-Please create a comprehensive synthesis with clear recommendations for a clean energy startup focusing on renewable energy storage technologies.
+Please create a comprehensive synthesis with clear recommendations for a clean energy startup focusing on renewable energy storage technologies. Create a document for this synthesis.
 """
 
 				synthesis_state = {

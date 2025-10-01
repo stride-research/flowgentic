@@ -14,7 +14,11 @@
   <a href="https://github.com/radical-cybertools/radical.asyncflow/actions/workflows/docs.yml">
     <img src="https://github.com/radical-cybertools/radical.asyncflow/actions/workflows/docs.yml/badge.svg" alt="Documentation">
   </a>
+  <a href="https://pypi.org/project/flowgentic/">
+    <img src="https://img.shields.io/badge/PyPI-not%20available-red.svg" alt="PyPI: Not Available">
+  </a>
 </p>
+
 
 ### flowgentic
 

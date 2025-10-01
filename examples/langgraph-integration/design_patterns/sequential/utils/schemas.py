@@ -1,5 +1,7 @@
+from langchain_core.messages import BaseMessage
+from langgraph.graph import add_messages
 from pydantic import BaseModel, Field
-from typing import Any, Dict, Optional, List
+from typing import Annotated, Any, Dict, Optional, List
 
 
 class ValidationData(BaseModel):
@@ -46,6 +48,7 @@ class WorkflowState(BaseModel):
 	# Agent execution results
 	research_agent_output: Optional[AgentOutput] = None
 	synthesis_agent_output: Optional[AgentOutput] = None
+	messages: Annotated[List[BaseMessage], add_messages] = []
 
 	# Context and intermediate data
 	context: Optional[ContextData] = None

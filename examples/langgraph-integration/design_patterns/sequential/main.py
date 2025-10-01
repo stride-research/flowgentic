@@ -5,14 +5,18 @@ from .components.builder import WorkflowBuilder
 from .utils.schemas import WorkflowState
 import asyncio
 from langgraph.checkpoint.memory import InMemorySaver
+from .components.introspection import GraphIntrospector
 
 
 async def start_app():
 	backend = await ConcurrentExecutionBackend(ThreadPoolExecutor())
 
 	async with LangraphIntegration(backend=backend) as agents_manager:
+		# Introspector
+		introspector = GraphIntrospector()
+
 		# Build workflow
-		workflow_builder = WorkflowBuilder(agents_manager)
+		workflow_builder = WorkflowBuilder(agents_manager, introspector=introspector)
 		workflow = workflow_builder.build_workflow()
 
 		# Compile the app
@@ -31,7 +35,7 @@ async def start_app():
             """
 		)
 
-		print("🚀 Starting Sequential ReAct Agent Workflow")
+		print("🚀 Starting Sequential Agent Worklof")
 		print("=" * 60)
 
 		try:
@@ -43,7 +47,10 @@ async def start_app():
 				print(f"Chunk: {chunk}\n")
 
 		except Exception as e:
+			raise
 			print(f"❌ Workflow execution failed: {str(e)}")
+		finally:
+			introspector.generate_report()
 
 
 if __name__ == "__main__":
