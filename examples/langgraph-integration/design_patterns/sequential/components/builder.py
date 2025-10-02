@@ -6,7 +6,7 @@ from .nodes import WorkflowNodes
 from .edges import WorkflowEdges
 
 from flowgentic.langGraph.base_components import BaseWorkflowBuilder
-from .introspection import GraphIntrospector
+from flowgentic.langGraph.telemetry import GraphIntrospector
 
 
 class WorkflowBuilder(BaseWorkflowBuilder):

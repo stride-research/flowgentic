@@ -37,6 +37,11 @@ dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0"
 ]
+tests = [
+   "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov",
+]
 
 [project.scripts]
 flowgentic = "flowgentic:main"
@@ -91,3 +96,5 @@ dev = [
     "pytest-asyncio>=1.2.0",
 ]
 
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

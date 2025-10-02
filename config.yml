@@ -1,0 +1,4 @@
+agent_execution:
+  results_directory: agent_execution_results
+  execution_summary_path: agent_execution_results/execution_summary.md
+  graph_image_path: agent_execution_results/agent_graph.png

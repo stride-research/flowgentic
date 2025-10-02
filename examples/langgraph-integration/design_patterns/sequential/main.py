@@ -5,7 +5,7 @@ from .components.builder import WorkflowBuilder
 from .utils.schemas import WorkflowState
 import asyncio
 from langgraph.checkpoint.memory import InMemorySaver
-from .components.introspection import GraphIntrospector
+from flowgentic.langGraph.telemetry import GraphIntrospector
 
 
 async def start_app():
@@ -22,9 +22,6 @@ async def start_app():
 		# Compile the app
 		memory = InMemorySaver()
 		app = workflow.compile(checkpointer=memory)
-
-		# Render graph (optional)
-		await agents_manager.utils.render_graph(app)
 
 		# Initial state
 		initial_state = WorkflowState(
@@ -51,6 +48,7 @@ async def start_app():
 			print(f"❌ Workflow execution failed: {str(e)}")
 		finally:
 			introspector.generate_report()
+			await agents_manager.utils.render_graph(app)
 
 
 if __name__ == "__main__":

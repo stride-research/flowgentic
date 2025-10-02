@@ -176,7 +176,7 @@ class WorkflowNodes(BaseWorkflowNodes):
 
 				synthesis_agent = create_react_agent(
 					model=ChatLLMProvider(
-						provider="OpenRouter", model="google/gemini-2.5-flash"
+						provider="OpenRouter", model="google/gemini-2.5-pro"
 					),
 					tools=tools,
 				)
@@ -184,9 +184,8 @@ class WorkflowNodes(BaseWorkflowNodes):
 				synthesis_input = f"""
 Based on the research findings: {state.research_agent_output.output_content}
 
-Context: {state.context.dict() if state.context else "No context available"}
-
-Please create a comprehensive synthesis with clear recommendations for a clean energy startup focusing on renewable energy storage technologies. Create a document for this synthesis.
+Please create a comprehensive synthesis with clear recommendations for a clean energy startup focusing on renewable energy storage technologies. Create a document for this synthesis. 
+You must use the tools provided to you. If you cant use the given tools explain why
 """
 
 				synthesis_state = {
@@ -207,6 +206,8 @@ Please create a comprehensive synthesis with clear recommendations for a clean e
 					tools_used=["document_generator_tool"],
 					success=True,
 				)
+
+				print(f"Snytheis agent output: {synthesis_result}")
 
 				state.synthesis_agent_output = agent_output
 				state.current_stage = "synthesis_complete"

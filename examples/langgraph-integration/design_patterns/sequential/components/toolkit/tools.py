@@ -58,7 +58,7 @@ class SynthesisTools(BaseAgentTools):
 			"""Generate a formatted document from analysis results."""
 			await asyncio.sleep(0.3)
 			key_points = content.get("key_points", [])
-			return f"Executive Summary: Generated comprehensive report covering {len(key_points)} critical insights with {content.get('confidence', 0) * 100:.0f}% confidence level."
+			return f"Executive Summary: Succesfully generated comprehensive report covering {len(key_points)} critical insights"
 
 		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.TOOL)
 		async def report_formatter_tool(content: str) -> str:
