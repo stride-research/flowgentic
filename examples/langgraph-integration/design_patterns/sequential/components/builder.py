@@ -8,6 +8,10 @@ from .edges import WorkflowEdges
 from flowgentic.langGraph.base_components import BaseWorkflowBuilder
 from flowgentic.langGraph.telemetry import GraphIntrospector
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class WorkflowBuilder(BaseWorkflowBuilder):
 	"""Builds and configures the complete workflow graph."""
@@ -18,6 +22,11 @@ class WorkflowBuilder(BaseWorkflowBuilder):
 		self.nodes = WorkflowNodes(agents_manager, self.tools_registry)
 		self.edges = WorkflowEdges()
 		self.introspector = introspector
+
+	def _register_nodes_to_introspector(self):
+		all_nodes = list(self.nodes.get_all_nodes().keys())
+		logger.debug(f"ALL NODES: {all_nodes}")
+		self.introspector._all_nodes = all_nodes
 
 	def build_workflow(self) -> StateGraph:
 		"""Build and return the complete workflow graph."""
@@ -31,8 +40,11 @@ class WorkflowBuilder(BaseWorkflowBuilder):
 		all_nodes = self.nodes.get_all_nodes()
 		for node_name, node_function in all_nodes.items():
 			if self.introspector:
-				node_function = self.introspector.introspect_node(node_function)
+				node_function = self.introspector.introspect_node(
+					node_function, node_name=node_name
+				)
 			workflow.add_node(node_name, node_function)
+		self._register_nodes_to_introspector()
 
 		# Add conditional edges
 		workflow.add_conditional_edges(

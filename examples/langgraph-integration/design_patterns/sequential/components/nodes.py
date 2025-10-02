@@ -12,9 +12,13 @@ from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage, SystemMessage
 from flowgentic.langGraph.base_components import BaseWorkflowNodes
 
+import logging
+
+
 from dotenv import load_dotenv
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 
 class WorkflowNodes(BaseWorkflowNodes):
@@ -90,7 +94,7 @@ class WorkflowNodes(BaseWorkflowNodes):
 				research_state = {
 					"messages": [
 						SystemMessage(
-							content="You are a research agent specializing in technology analysis. Your job is to gather comprehensive information, analyze data, and provide detailed insights. Always use your tools to get the most current and accurate information."
+							content="You are a research agent specializing in technology analysis. Your job is to gather comprehensive information, analyze data, and provide detailed insights. Always use your tools to get the most current and accurate information. Dont do more than 3 queries. Every time you want to invoke tool, explain your planning planning strategy beforehand"
 						),
 						HumanMessage(content=state.user_input),
 					]
@@ -191,7 +195,7 @@ You must use the tools provided to you. If you cant use the given tools explain 
 				synthesis_state = {
 					"messages": [
 						SystemMessage(
-							content="You are a synthesis agent specializing in creating comprehensive reports and deliverables. Your job is to take research findings and create polished, actionable documents with clear recommendations."
+							content="You are a synthesis agent specializing in creating comprehensive reports and deliverables. Your job is to take research findings and create polished, actionable documents with clear recommendations. Every time you want to invoke tool, explain your planning planning strategy beforehand"
 						),
 						HumanMessage(content=synthesis_input),
 					]
@@ -207,7 +211,10 @@ You must use the tools provided to you. If you cant use the given tools explain 
 					success=True,
 				)
 
-				print(f"Snytheis agent output: {synthesis_result}")
+				print(
+					f"Snytheis agent output: {synthesis_result} with type: {type(synthesis_result)}"
+				)
+				state.messages.extend(synthesis_result["messages"])
 
 				state.synthesis_agent_output = agent_output
 				state.current_stage = "synthesis_complete"
@@ -215,6 +222,10 @@ You must use the tools provided to you. If you cant use the given tools explain 
 				print(f"✅ Synthesis Agent complete in {execution_time:.2f}s")
 
 			except Exception as e:
+				logger.debug(
+					f"Snytheis agent output: {synthesis_result} with type: {type(synthesis_result)}"
+				)
+
 				error_msg = f"Synthesis agent error: {str(e)}"
 				state.errors.append(error_msg)
 				state.synthesis_agent_output = AgentOutput(

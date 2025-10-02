@@ -42,8 +42,9 @@ class GraphIntrospector:
 
 	def __init__(self):
 		self._start_time = datetime.now()
-		self._records: List[NodeExecutionRecord] = []
+		self._records: Dict[str, NodeExecutionRecord] = {}
 		self._final_state: Optional[BaseModel[str, Any]] = None
+		self._all_nodes: List[str] = None
 
 	def _get_state_diff(self, before_state, after_state) -> Dict:
 		"""Calculates the difference between two state objects (Pydantic models or dicts)."""
@@ -134,6 +135,7 @@ class GraphIntrospector:
 
 	def _state_extraction(
 		self,
+		node_name: str,
 		state_before: BaseModel,
 		state_after: BaseModel,
 		total_messages_before: int,
@@ -155,7 +157,7 @@ class GraphIntrospector:
 
 		# --- Data Extraction ---
 		model_metadata = None
-		reasoning = None
+		final_response = None
 		tool_calls_info: List[ToolCallInfo] = []
 		tool_execution_info: List[ToolExecutionInfo] = []
 		token_usage = TokenUsage()
@@ -182,8 +184,6 @@ class GraphIntrospector:
 								final_response = msg.content
 							else:
 								interleaved_thinking.append(msg.content)
-						else:
-							final_response = ""
 						tool_calls = msg.additional_kwargs.get("tool_calls")
 						if tool_calls:
 							for tc in tool_calls:
@@ -239,7 +239,7 @@ class GraphIntrospector:
 
 		# Create and store the execution record
 		record = NodeExecutionRecord(
-			node_name=node_func.__name__,
+			node_name=node_name,
 			description=inspect.getdoc(node_func),
 			start_time=start_time,
 			end_time=end_time,
@@ -257,10 +257,10 @@ class GraphIntrospector:
 			state_diff=self._get_state_diff(state_before, state_after),
 			state_keys=state_keys,
 		)
-		self._records.append(record)
+		self._records[node_name] = record
 		self._final_state = state_after  # Continuously update the final state
 
-	def introspect_node(self, node_func: Callable) -> Callable:
+	def introspect_node(self, node_func: Callable, node_name: str) -> Callable:
 		"""
 		Decorator to wrap a LangGraph node function for introspection.
 
@@ -288,6 +288,7 @@ class GraphIntrospector:
 
 			end_time = datetime.now()
 			self._state_extraction(
+				node_name=node_name,
 				state_before=state_before,
 				state_after=state_after,
 				total_messages_before=total_messages_before,
@@ -302,8 +303,13 @@ class GraphIntrospector:
 
 	def generate_report(self) -> None:
 		"""Generates a human-readable Markdown report of the entire graph execution."""
-		report_generator = ReportGenerator(
-			final_state=self._final_state,
-			records=self._records,
-			start_time=self._start_time,
-		).generate_report()
+		if not self._all_nodes:
+			raise ValueError(
+				"You need to provide the the nodes for the graph to the inspector"
+			)
+		else:
+			report_generator = ReportGenerator(
+				final_state=self._final_state,
+				records=self._records,
+				start_time=self._start_time,
+			).generate_report(all_nodes=self._all_nodes)

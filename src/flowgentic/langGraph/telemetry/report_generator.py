@@ -1,6 +1,6 @@
 from datetime import datetime
 import sys
-from typing import List
+from typing import Dict, List
 
 from pydantic import BaseModel
 
@@ -14,28 +14,36 @@ logger = logging.getLogger(__name__)
 
 class ReportGenerator:
 	def __init__(
-		self, final_state: BaseModel, records: List[NodeExecutionRecord], start_time
+		self,
+		final_state: BaseModel,
+		records: Dict[str, NodeExecutionRecord],
+		start_time,
 	) -> None:
 		self._start_time = start_time
 		self._final_state = final_state
 		self._records = records
+		self._records_values = list(self._records.values())
 
-	def generate_report(self):
+	def generate_report(self, all_nodes: List[str]):
 		"""Generates a human-readable Markdown report of the entire graph execution."""
 		end_time = datetime.now()
 
 		# Calculate aggregate statistics
 		total_tokens = sum(
-			(r.token_usage.total_tokens if r.token_usage else 0) for r in self._records
+			(r.token_usage.total_tokens if r.token_usage else 0)
+			for r in self._records_values
 		)
-		total_tool_calls = sum(len(r.tool_calls) for r in self._records)
-		total_tool_executions = sum(len(r.tool_executions) for r in self._records)
-		print(f"TOTAL TOOL_EXECUTIONS IS: {total_tool_executions}")
-		total_messages = self._records[-1].total_messages_after if self._records else 0
+		total_tool_calls = sum(len(r.tool_calls) for r in self._records_values)
+		total_tool_executions = sum(
+			len(r.tool_executions) for r in self._records_values
+		)
+		total_messages = (
+			self._records_values[-1].total_messages_after if self._records_values else 0
+		)
 		models_used = list(
 			set(
 				r.model_metadata.model_name
-				for r in self._records
+				for r in self._records_values
 				if r.model_metadata and r.model_metadata.model_name
 			)
 		)
@@ -46,7 +54,7 @@ class ReportGenerator:
 			total_duration_seconds=round(
 				(end_time - self._start_time).total_seconds(), 4
 			),
-			node_records=self._records,
+			node_records=self._records_values,
 			final_state=self._final_state.model_dump(),
 			total_tokens_used=total_tokens,
 			total_tool_calls=total_tool_calls,
@@ -86,12 +94,24 @@ class ReportGenerator:
 			f.write(
 				"|---------------------|--------------|--------|-------|---------------|\n"
 			)
-			for record in report_data.node_records:
-				tools_count = len(record.tool_calls)
-				tokens = record.token_usage.total_tokens if record.token_usage else 0
-				f.write(
-					f"| `{record.node_name}` | {record.duration_seconds:<12.4f} | {tokens:<6} | {tools_count:<5} | {record.new_messages_count:<13} |\n"
+			for node_name in all_nodes:
+				logger.debug(
+					f"Node name is: {node_name}, list to search in is: {list(self._records.keys())}"
 				)
+				if node_name in list(self._records.keys()):
+					record = self._records[node_name]
+					tools_count = len(record.tool_calls)
+					tokens = (
+						record.token_usage.total_tokens if record.token_usage else 0
+					)
+					f.write(
+						f"| `{record.node_name}` | {record.duration_seconds:<12.4f} | {tokens:<6} | {tools_count:<5} | {record.new_messages_count:<13} |\n"
+					)
+				else:
+					f.write(
+						f"| `{node_name}` | not visited | {'<n/a>':<6} | {'<n/a>':<5} | {'<n/a>':<13} |\n"
+					)
+
 			f.write("\n\n")
 
 			f.write("## 🔍 Node Details\n\n")
@@ -168,7 +188,7 @@ class ReportGenerator:
 						f"\n**🧠 Thinking Process ({len(record.interleaved_thinking)} steps):**\n"
 					)
 					for idx, thinking_step in enumerate(record.interleaved_thinking, 1):
-						f.write(f"{idx}. {thinking_step}\n")
+						f.write(f"{idx}. =>  _{thinking_step}_\n")
 
 				if record.state_diff:
 					f.write(f"\n**🔄 State Changes:**\n")
@@ -179,7 +199,9 @@ class ReportGenerator:
 					f.write("\n```\n\n")
 
 				if record.messages_added:
-					f.write("\n ** FULL CONVERSATION HISTORY: **\n")
+					f.write(
+						f"\n **FULL CONVERSATION HISTORY FOR {record.node_name}:**\n"
+					)
 					f.write(
 						f"\n**💬 Messages Added ({len(record.messages_added)}):**\n"
 					)
