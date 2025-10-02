@@ -185,18 +185,12 @@ class ReportGenerator:
 
 				if record.interleaved_thinking:
 					f.write(
-						f"\n**🧠 Thinking Process ({len(record.interleaved_thinking)} steps):**\n"
+						f"\n**🧠 Thinking Process ({len(record.interleaved_thinking)} steps):**\n\n"
 					)
-					for idx, thinking_step in enumerate(record.interleaved_thinking, 1):
-						f.write(f"{idx}. =>  _{thinking_step}_\n")
-
-				if record.state_diff:
-					f.write(f"\n**🔄 State Changes:**\n")
-					f.write("```json\n")
-					import json
-
-					f.write(json.dumps(record.state_diff, indent=2))
-					f.write("\n```\n\n")
+					for idx, thinking_step in enumerate(record.interleaved_thinking):
+						# Clean up the thinking step
+						cleaned = thinking_step.strip()
+						f.write(f"---\n\n {idx}){cleaned}\n\n")
 
 				if record.messages_added:
 					f.write(
@@ -219,6 +213,13 @@ class ReportGenerator:
 						f.write(
 							f"   - **Content:** `{msg.content[:200]}{'...' if len(msg.content) > 200 else ''}`\n"
 						)
+				if record.state_diff:
+					f.write(f"\n**🔄 State Changes:**\n")
+					f.write("```json\n")
+					import json
+
+					f.write(json.dumps(record.state_diff, indent=2))
+					f.write("\n```\n\n")
 
 			f.write(f"--- \n\n")
 			f.write("## ✅ Final State Summary\n\n")
