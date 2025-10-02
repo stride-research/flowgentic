@@ -29,7 +29,7 @@ jobs:
         needs: lint_and_format
         strategy:
           matrix:
-            python-version: ['3.8', '3.9', '3.10', '3.11']
+            python-version: ['3.9', '3.10', '3.11']
         steps:
           - name: Fetch code
             uses: actions/checkout@v3 
@@ -54,7 +54,7 @@ jobs:
           
           - name: Run python tests with coverage
             run: |
-                pytest -vv -s --cov=. --cov-report=html:coverage_report --cov-report=term-missing
+                pytest -vv  --cov=. --cov-report=html:coverage_report --cov-report=term-missing
           
           - name: Upload results of test coverage
             uses: actions/upload-artifact@v4
