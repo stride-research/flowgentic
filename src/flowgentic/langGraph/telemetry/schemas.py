@@ -39,7 +39,7 @@ class ToolExecutionInfo(BaseModel):
 	tool_name: str
 	tool_status: str
 	tool_call_id: str
-	tool_args: Dict[str, Any]
+	tool_response: str
 
 
 class ModelMetadata(BaseModel):
@@ -68,7 +68,8 @@ class NodeExecutionRecord(BaseModel):
 
 	# Model information
 	model_metadata: Optional[ModelMetadata] = None
-	model_reasoning: Optional[str] = None
+	final_response: Optional[str] = None
+	interleaved_thinking: Optional[List[str]] = None
 
 	# Tool usage
 	tool_calls: List[ToolCallInfo] = []
@@ -96,5 +97,6 @@ class GraphExecutionReport(BaseModel):
 	# Aggregate statistics
 	total_tokens_used: int = 0
 	total_tool_calls: int = 0
+	total_tool_executions: int = 0
 	total_messages: int = 0
 	models_used: List[str] = []

@@ -1,4 +1,5 @@
 from datetime import datetime
+import sys
 from typing import List
 
 from pydantic import BaseModel
@@ -6,6 +7,9 @@ from pydantic import BaseModel
 from flowgentic.langGraph.main import LangraphIntegration
 from .schemas import GraphExecutionReport, NodeExecutionRecord
 from flowgentic.settings.extract_settings import APP_SETTINGS
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ReportGenerator:
@@ -25,6 +29,8 @@ class ReportGenerator:
 			(r.token_usage.total_tokens if r.token_usage else 0) for r in self._records
 		)
 		total_tool_calls = sum(len(r.tool_calls) for r in self._records)
+		total_tool_executions = sum(len(r.tool_executions) for r in self._records)
+		print(f"TOTAL TOOL_EXECUTIONS IS: {total_tool_executions}")
 		total_messages = self._records[-1].total_messages_after if self._records else 0
 		models_used = list(
 			set(
@@ -44,6 +50,7 @@ class ReportGenerator:
 			final_state=self._final_state.model_dump(),
 			total_tokens_used=total_tokens,
 			total_tool_calls=total_tool_calls,
+			total_tool_executions=total_tool_executions,
 			total_messages=total_messages,
 			models_used=models_used,
 		)
@@ -61,6 +68,9 @@ class ReportGenerator:
 			f.write("## 📈 Aggregate Statistics\n\n")
 			f.write(f"- **Total Tokens Used:** `{report_data.total_tokens_used:,}`\n")
 			f.write(f"- **Total Tool Calls:** `{report_data.total_tool_calls}`\n")
+			f.write(
+				f"- **Total Tool Executions:** `{report_data.total_tool_executions}`\n"
+			)
 			f.write(f"- **Total Messages:** `{report_data.total_messages}`\n")
 			f.write(
 				f"- **Models Used:** `{', '.join(report_data.models_used) if report_data.models_used else 'None'}`\n"
@@ -131,9 +141,9 @@ class ReportGenerator:
 							f"- **Reasoning Tokens:** `{record.token_usage.reasoning_tokens:,}`\n"
 						)
 
-				if record.model_reasoning:
+				if record.final_response:
 					f.write(
-						f"\n**🤔 Model Reasoning:**\n```text\n{record.model_reasoning}\n```\n"
+						f"\n**🤔 Model Final Response:**\n```text\n{record.final_response}\n```\n"
 					)
 
 				if record.tool_calls:
@@ -143,8 +153,33 @@ class ReportGenerator:
 						if tc.tool_call_id:
 							f.write(f"   - **Call ID:** `{tc.tool_call_id}`\n")
 						f.write(f"   - **Arguments:** `{tc.tool_args}`\n")
+				if record.tool_executions:
+					f.write(
+						f"\n**✅ Tool Executions ({len(record.tool_executions)}):**\n"
+					)
+					for idx, te in enumerate(record.tool_executions, 1):
+						f.write(f"{idx}. **Tool:** `{te.tool_name}`\n")
+						f.write(f"   - **Status:** `{te.tool_status}`\n")
+						f.write(f"   - **Call ID:** `{te.tool_call_id}`\n")
+						f.write(f"   - **Response:** `{te.tool_response}`\n")
+
+				if record.interleaved_thinking:
+					f.write(
+						f"\n**🧠 Thinking Process ({len(record.interleaved_thinking)} steps):**\n"
+					)
+					for idx, thinking_step in enumerate(record.interleaved_thinking, 1):
+						f.write(f"{idx}. {thinking_step}\n")
+
+				if record.state_diff:
+					f.write(f"\n**🔄 State Changes:**\n")
+					f.write("```json\n")
+					import json
+
+					f.write(json.dumps(record.state_diff, indent=2))
+					f.write("\n```\n\n")
 
 				if record.messages_added:
+					f.write("\n ** FULL CONVERSATION HISTORY: **\n")
 					f.write(
 						f"\n**💬 Messages Added ({len(record.messages_added)}):**\n"
 					)
@@ -163,14 +198,6 @@ class ReportGenerator:
 							f"   - **Content:** `{msg.content[:200]}{'...' if len(msg.content) > 200 else ''}`\n"
 						)
 
-				if record.state_diff:
-					f.write(f"\n**🔄 State Changes:**\n")
-					f.write("```json\n")
-					import json
-
-					f.write(json.dumps(record.state_diff, indent=2))
-					f.write("\n```\n\n")
-
 			f.write(f"--- \n\n")
 			f.write("## ✅ Final State Summary\n\n")
 			if self._final_state:
@@ -182,47 +209,6 @@ class ReportGenerator:
 					# Show summary of final state
 					for key in state_keys:
 						value = getattr(self._final_state, key, None)
-						if key == "messages" and isinstance(value, list):
-							f.write(f"- **{key}:** {len(value)} messages\n")
-						elif isinstance(value, (list, dict)):
-							f.write(
-								f"- **{key}:** {type(value).__name__} with {len(value)} items\n"
-							)
-						else:
-							f.write(
-								f"- **{key}:** `{str(value)[:100]}{'...' if len(str(value)) > 100 else ''}`\n"
-							)
-				elif hasattr(self._final_state, "__dict__"):
-					state_dict = vars(self._final_state)
-					state_keys = list(state_dict.keys())
-					f.write(f"**State Keys:** `{', '.join(state_keys)}`\n\n")
-
-					for key, value in state_dict.items():
-						if key == "messages" and isinstance(value, list):
-							f.write(f"- **{key}:** {len(value)} messages\n")
-						elif isinstance(value, (list, dict)):
-							f.write(
-								f"- **{key}:** {type(value).__name__} with {len(value)} items\n"
-							)
-						else:
-							f.write(
-								f"- **{key}:** `{str(value)[:100]}{'...' if len(str(value)) > 100 else ''}`\n"
-							)
-				elif isinstance(self._final_state, dict):
-					f.write(
-						f"**State Keys:** `{', '.join(self._final_state.keys())}`\n\n"
-					)
-
-					for key, value in self._final_state.items():
-						if key == "messages" and isinstance(value, list):
-							f.write(f"- **{key}:** {len(value)} messages\n")
-						elif isinstance(value, (list, dict)):
-							f.write(
-								f"- **{key}:** {type(value).__name__} with {len(value)} items\n"
-							)
-						else:
-							f.write(
-								f"- **{key}:** `{str(value)[:100]}{'...' if len(str(value)) > 100 else ''}`\n"
-							)
+						f.write(f"- **{key}:** {(value)}\n")
 
 		print(f"✅ Introspection report saved to '{output_path}'")

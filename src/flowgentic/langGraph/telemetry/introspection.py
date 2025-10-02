@@ -70,10 +70,10 @@ class GraphIntrospector:
 				diff[key] = {
 					"changed_from": str(before_val)[:300]
 					if not isinstance(before_val, (list, dict))
-					else f"[{type(before_val).__name__}]",
+					else f"[{before_val}]",
 					"changed_to": str(after_val)[:300]
 					if not isinstance(after_val, (list, dict))
-					else f"[{type(after_val).__name__}]",
+					else f"[{after_val}]",
 				}
 		return diff
 
@@ -144,6 +144,7 @@ class GraphIntrospector:
 		if hasattr(state_after, "messages"):
 			messages_after = state_after.messages
 		else:
+			logger.warning(f"State after doesnt have .message attribute")
 			return
 		logger.debug(f"Messages is: {messages_after}")
 
@@ -159,6 +160,7 @@ class GraphIntrospector:
 		tool_execution_info: List[ToolExecutionInfo] = []
 		token_usage = TokenUsage()
 		messages_added = []
+		interleaved_thinking: List[str] = []
 
 		# Extract information from new messages
 		if isinstance(messages_after, list) and new_messages_count > 0:
@@ -166,7 +168,7 @@ class GraphIntrospector:
 				messages_after[-new_messages_count:]
 			)
 
-			for msg in new_messages:
+			for i, msg in enumerate(new_messages):
 				# Extract message info
 				msg_info = self._extract_message_info(msg)
 				messages_added.append(msg_info)
@@ -176,9 +178,12 @@ class GraphIntrospector:
 					# Extract tool invokation info
 					if hasattr(msg, "additional_kwargs") and msg.additional_kwargs:
 						if msg.content:
-							reasoning = msg.content
+							if i == len(new_messages) - 1:
+								final_response = msg.content
+							else:
+								interleaved_thinking.append(msg.content)
 						else:
-							reasoning = ""
+							final_response = ""
 						tool_calls = msg.additional_kwargs.get("tool_calls")
 						if tool_calls:
 							for tc in tool_calls:
@@ -214,27 +219,13 @@ class GraphIntrospector:
 					tool_name = msg.name
 					tool_status = msg.status
 					tool_call_id = msg.tool_call_id
-					tool_args = {}
-					for attr, val in msg.__dict__.items():
-						if attr in [
-							"name",
-							"id",
-							"tool_call_id",
-							"artifact",
-							"status",
-							"type",
-							"response_metadata",
-							"additional_kwargs",
-						]:
-							continue
-						else:
-							tool_args[attr] = val
+					tool_response = msg.content
 					tool_execution_info.append(
 						ToolExecutionInfo(
 							tool_name=tool_name,
 							tool_status=tool_status,
 							tool_call_id=tool_call_id,
-							tool_args=tool_args,
+							tool_response=tool_response,
 						)
 					)
 
@@ -258,7 +249,8 @@ class GraphIntrospector:
 			new_messages_count=new_messages_count,
 			messages_added=messages_added,
 			model_metadata=model_metadata,
-			model_reasoning=reasoning,
+			final_response=final_response,
+			interleaved_thinking=interleaved_thinking,
 			tool_calls=tool_calls_info,
 			tool_executions=tool_execution_info,
 			token_usage=token_usage,
@@ -284,8 +276,6 @@ class GraphIntrospector:
 			# Count messages before execution - handle Pydantic model
 			if hasattr(state_before, "messages"):
 				messages_before = state_before.messages
-			elif isinstance(state_before, dict):
-				messages_before = state_before.get("messages", [])
 			else:
 				messages_before = []
 			total_messages_before = (

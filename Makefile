@@ -1,4 +1,4 @@
-.PHONY: install format lint docs tests examples-sequential
+.PHONY: install format lint docs tests examples-sequential examples-basic
 
 VENV_PATH =  ./.venv
 VENV_ACTIVATE = source $(VENV_PATH)/bin/activate
