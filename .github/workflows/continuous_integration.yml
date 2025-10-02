@@ -29,7 +29,7 @@ jobs:
         needs: lint_and_format
         strategy:
           matrix:
-            python-version: ['3.9', '3.10', '3.11']
+            python-version: ['3.8', '3.9', '3.10', '3.11']
         steps:
           - name: Fetch code
             uses: actions/checkout@v3 
@@ -38,6 +38,7 @@ jobs:
             uses: actions/setup-python@v4
             with:
               python-version: ${{ matrix.python-version }}
+              cache: 'pip'
           
           - name: Cache pip dependencies
             uses: actions/cache@v3
@@ -48,13 +49,34 @@ jobs:
                 ${{ runner.os }}-pip-${{ matrix.python-version }}-
                 ${{ runner.os }}-pip-
           
-          - name: "Install dependecies"
+          - name: "Install dependencies"
             run: | 
-                pip3 install ".[tests]"            
+                pip3 install ".[tests]"
+          
+          - name: "Debug - Check installation and paths"
+            run: |
+                echo "=== Python path ==="
+                python -c "import sys; print('\n'.join(sys.path))"
+                echo "=== Flowgentic location ==="
+                python -c "import flowgentic; print(flowgentic.__file__)"
+                echo "=== Directory structure ==="
+                ls -la
+                ls -la src/ || echo "No src directory"
           
           - name: Run python tests with coverage
             run: |
-                pytest -vv  --cov=src/flowgentic --cov-report=html:coverage_report --cov-report=term-missing
+                pytest -vv -s \
+                  --cov=flowgentic \
+                  --cov-report=html:coverage_report \
+                  --cov-report=term-missing \
+                  --cov-report=term:skip-covered \
+                  tests/
+          
+          - name: "Show coverage summary"
+            if: always()
+            run: |
+                echo "=== Coverage Summary ==="
+                coverage report || echo "Coverage report not available"
           
           - name: Upload results of test coverage
             uses: actions/upload-artifact@v4
