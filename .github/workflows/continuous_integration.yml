@@ -29,24 +29,36 @@ jobs:
         needs: lint_and_format
         strategy:
           matrix:
-            python-version: [3.8, 3.9, 3.10, 3.11]
+            python-version: ['3.8', '3.9', '3.10', '3.11']
         steps:
+          - name: Fetch code
+            uses: actions/checkout@v3 
+          
           - name: Set up python ${{ matrix.python-version }}
             uses: actions/setup-python@v4
             with:
               python-version: ${{ matrix.python-version }}
           
-          - name: Fetch code
-            uses: actions/checkout@v3 
+          - name: Cache pip dependencies
+            uses: actions/cache@v3
+            with:
+              path: ~/.cache/pip
+              key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('setup.py', 'setup.cfg', 'pyproject.toml') }}
+              restore-keys: |
+                ${{ runner.os }}-pip-${{ matrix.python-version }}-
+                ${{ runner.os }}-pip-
           
           - name: "Install dependecies"
             run: | 
                 pip3 install ".[tests]"            
-          - name: Run python tests with  coverage
+          
+          - name: Run python tests with coverage
             run: |
-                pytest --cov=. --cov-report=html:coverage_report
+                pytest -vv -s --cov=. --cov-report=html:coverage_report --cov-report=term-missing
+          
           - name: Upload results of test coverage
             uses: actions/upload-artifact@v4
+            if: always()
             with:
-              path: ./coverage_html_report/index.html
-              name: codecoverage
+              path: ./coverage_report/
+              name: codecoverage-py${{ matrix.python-version }}
