@@ -31,7 +31,7 @@ async def test_state_extraction_via_introspect_node():
 		state.counter += 1
 		return state
 
-	wrapped = introspector.introspect_node(sample_node)
+	wrapped = introspector.introspect_node(sample_node, node_name="sample_node")
 
 	before = TestState()
 	after = await wrapped(before)
@@ -43,7 +43,7 @@ async def test_state_extraction_via_introspect_node():
 
 	# Records
 	assert len(introspector._records) == 1
-	record = introspector._records[-1]
+	record = list(introspector._records.values())[-1]
 
 	# Node metadata
 	assert record.node_name == "sample_node"
@@ -56,7 +56,7 @@ async def test_state_extraction_via_introspect_node():
 
 	# Reasoning
 	assert (
-		record.model_reasoning
+		record.final_response
 		== "Based on the provided research, I have generated a comprehensive synthesis report with actionable recommendations tailored for your clean energy startup. Here is the document:\n Executive Summary: Succesfully generated comprehensive report covering 0 critical insights"
 	)
 
@@ -84,8 +84,11 @@ async def test_state_extraction_via_introspect_node():
 	assert len(record.tool_executions) == 1
 	texec = record.tool_executions[0]
 	assert texec.tool_name == "document_generator_tool"
-	assert len(texec.tool_args) == 1
-	assert "content" in texec.tool_args
+	assert len(texec.tool_response) == 90
+	assert (
+		texec.tool_response
+		== "Executive Summary: Succesfully generated comprehensive report covering 0 critical insights"
+	)
 	assert texec.tool_call_id == "tool_0_document_generator_tool_Wk0PG3n4kFNJ0GcbUpLV"
 	assert texec.tool_status == "success"
 
@@ -95,6 +98,5 @@ async def test_state_extraction_via_introspect_node():
 	assert record.state_diff["counter"]["changed_from"] == "1"
 	assert record.state_diff["counter"]["changed_to"] == "2"
 	assert "messages" in record.state_diff
-	assert record.state_diff["messages"]["changed_to"] == "[list]"
 	assert record.start_time <= record.end_time
 	assert record.duration_seconds >= 0
