@@ -29,7 +29,7 @@ jobs:
         needs: lint_and_format
         strategy:
           matrix:
-            python-version: ['3.8', '3.9', '3.10', '3.11']
+            python-version: ['3.9', '3.10', '3.11']
         steps:
           - name: Fetch code
             uses: actions/checkout@v3 
@@ -53,19 +53,9 @@ jobs:
             run: | 
                 pip3 install ".[tests]"
           
-          - name: "Debug - Check installation and paths"
-            run: |
-                echo "=== Python path ==="
-                python -c "import sys; print('\n'.join(sys.path))"
-                echo "=== Flowgentic location ==="
-                python -c "import flowgentic; print(flowgentic.__file__)"
-                echo "=== Directory structure ==="
-                ls -la
-                ls -la src/ || echo "No src directory"
-          
           - name: Run python tests with coverage
             run: |
-                pytest -vv -s \
+                pytest -vv \
                   --cov=flowgentic \
                   --cov-report=html:coverage_report \
                   --cov-report=term-missing \
