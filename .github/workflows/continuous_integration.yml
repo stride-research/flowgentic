@@ -54,7 +54,7 @@ jobs:
           
           - name: Run python tests with coverage
             run: |
-                pytest -vv  --cov=. --cov-report=html:coverage_report --cov-report=term-missing
+                pytest -vv  --cov=src/flowgentic --cov-report=html:coverage_report --cov-report=term-missing
           
           - name: Upload results of test coverage
             uses: actions/upload-artifact@v4
