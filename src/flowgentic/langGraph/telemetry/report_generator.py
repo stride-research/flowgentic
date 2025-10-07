@@ -163,7 +163,7 @@ class ReportGenerator:
 
 				if record.final_response:
 					f.write(
-						f"\n**🤔 Model Final Response:**\n```text\n{record.final_response}\n```\n"
+						f"\n**📥 Model Final Response:**\n```text\n{record.final_response}\n```\n"
 					)
 
 				if record.tool_calls:

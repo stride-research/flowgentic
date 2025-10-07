@@ -23,11 +23,6 @@ class ToolsRegistry(BaseToolRegistry):
 		self.context_tasks = ContextTasks(agents_manager)
 		self.formatting_tasks = FormattingTasks(agents_manager)
 
-	def _register_toolkit(self):
-		"""Register all tools and tasks through the unified interface."""
-		self._register_agent_tools()
-		self._register_utility_tasks()
-
 	def _register_agent_tools(self):
 		"""Register all agent tools from specialized managers."""
 		research_tools = self.research_tools.register_tools()
@@ -40,11 +35,11 @@ class ToolsRegistry(BaseToolRegistry):
 			}
 		)
 
-	def _register_utility_tasks(self):
+	def _register_function_tasks(self):
 		"""Register all deterministic tasks from specialized managers."""
-		validation_tasks = self.validation_tasks.register_tasks()
-		context_tasks = self.context_tasks.register_tasks()
-		formatting_tasks = self.formatting_tasks.register_tasks()
+		validation_tasks = self.validation_tasks.register_function_tasks()
+		context_tasks = self.context_tasks.register_function_tasks()
+		formatting_tasks = self.formatting_tasks.register_function_tasks()
 
 		self.deterministic_tasks.update(
 			{

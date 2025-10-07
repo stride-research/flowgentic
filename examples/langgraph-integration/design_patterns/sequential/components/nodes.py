@@ -10,7 +10,6 @@ from flowgentic.langGraph.agents import AsyncFlowType
 from flowgentic.utils.llm_providers import ChatLLMProvider
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage, SystemMessage
-from flowgentic.langGraph.base_components import BaseWorkflowNodes
 
 import logging
 
@@ -21,13 +20,14 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
-class WorkflowNodes(BaseWorkflowNodes):
+class WorkflowNodes:
 	"""Contains all workflow nodes with access to agents_manager and tools."""
 
 	def __init__(
 		self, agents_manager: LangraphIntegration, tools_registry: ToolsRegistry
 	) -> None:
-		super().__init__(agents_manager, tools_registry)
+		self.agents_manager = agents_manager
+		self.tools_registry = tools_registry
 
 	def get_all_nodes(self) -> Dict[str, callable]:
 		"""Return all node functions for graph registration."""
@@ -42,13 +42,13 @@ class WorkflowNodes(BaseWorkflowNodes):
 
 	@property
 	def preprocess_node(self):
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.BLOCK)
+		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
 		async def _preprocess_node(state: WorkflowState) -> WorkflowState:
 			"""Preprocessing node with parallel validation and metadata extraction."""
 			print("🔄 Preprocessing Node: Starting input validation...")
 
 			try:
-				validation_task = self.tools_registry.get_task_by_name(
+				validation_task = self.tools_registry.get_function_task_by_name(
 					"validate_input"
 				)(state.user_input)
 				validation_data = await validation_task
@@ -71,7 +71,7 @@ class WorkflowNodes(BaseWorkflowNodes):
 
 	@property
 	def research_agent_node(self):
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.BLOCK)
+		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
 		async def _research_agent_node(state: WorkflowState) -> WorkflowState:
 			"""Research agent execution node."""
 			print("🔍 Research Agent Node: Starting research and analysis...")
@@ -140,7 +140,7 @@ class WorkflowNodes(BaseWorkflowNodes):
 
 	@property
 	def context_preparation_node(self):
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.BLOCK)
+		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
 		async def _context_preparation_node(state: WorkflowState) -> WorkflowState:
 			"""Context preparation node - runs in parallel with other deterministic tasks."""
 			print(
@@ -148,9 +148,9 @@ class WorkflowNodes(BaseWorkflowNodes):
 			)
 
 			try:
-				context_task = self.tools_registry.get_task_by_name("prepare_context")(
-					state.research_agent_output, state.validation_data
-				)
+				context_task = self.tools_registry.get_function_task_by_name(
+					"prepare_context"
+				)(state.research_agent_output, state.validation_data)
 				context = await context_task
 
 				state.context = context
@@ -168,7 +168,7 @@ class WorkflowNodes(BaseWorkflowNodes):
 
 	@property
 	def synthesis_agent_node(self):
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.BLOCK)
+		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
 		async def _synthesis_agent_node(state: WorkflowState) -> WorkflowState:
 			"""Synthesis agent execution node."""
 			print("🏗️ Synthesis Agent Node: Creating final deliverables...")
@@ -243,13 +243,13 @@ You must use the tools provided to you. If you cant use the given tools explain 
 
 	@property
 	def finalize_output_node(self):
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.BLOCK)
+		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
 		async def _finalize_output_node(state: WorkflowState) -> WorkflowState:
 			"""Final output formatting node."""
 			print("📄 Finalize Output Node: Formatting final results...")
 
 			try:
-				final_output_task = self.tools_registry.get_task_by_name(
+				final_output_task = self.tools_registry.get_function_task_by_name(
 					"format_final_output"
 				)(state.synthesis_agent_output, state.context)
 				final_output = await final_output_task
@@ -270,7 +270,7 @@ You must use the tools provided to you. If you cant use the given tools explain 
 
 	@property
 	def error_handler_node(self):
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.BLOCK)
+		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
 		async def _error_handler_node(state: WorkflowState) -> WorkflowState:
 			"""Handle errors in the workflow."""
 			print(f"❌ Error Handler: {'; '.join(state.errors)}")

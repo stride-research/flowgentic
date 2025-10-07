@@ -5,7 +5,6 @@ from .toolkit.tool_registry import ToolsRegistry
 from .nodes import WorkflowNodes
 from .edges import WorkflowEdges
 
-from flowgentic.langGraph.base_components import BaseWorkflowBuilder
 from flowgentic.langGraph.telemetry import GraphIntrospector
 
 import logging
@@ -13,11 +12,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class WorkflowBuilder(BaseWorkflowBuilder):
+class WorkflowBuilder:
 	"""Builds and configures the complete workflow graph."""
 
 	def __init__(self, agents_manager, introspector: GraphIntrospector):
-		super().__init__(agents_manager)
+		self.agents_manager = agents_manager
 		self.tools_registry = ToolsRegistry(agents_manager)
 		self.nodes = WorkflowNodes(agents_manager, self.tools_registry)
 		self.edges = WorkflowEdges()
@@ -25,7 +24,6 @@ class WorkflowBuilder(BaseWorkflowBuilder):
 
 	def _register_nodes_to_introspector(self):
 		all_nodes = list(self.nodes.get_all_nodes().keys())
-		logger.debug(f"ALL NODES: {all_nodes}")
 		self.introspector._all_nodes = all_nodes
 
 	def build_workflow(self) -> StateGraph:

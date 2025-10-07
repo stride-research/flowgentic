@@ -4,25 +4,28 @@ from typing import Dict, Any
 
 from ...utils.schemas import ValidationData, AgentOutput, ContextData, WorkflowState
 
-from flowgentic.langGraph.base_components import BaseAgentTools, BaseUtilsTasks
 
-
-class ResearchTools(BaseAgentTools):
+class ResearchTools:
 	"""Research-specific agent tools."""
 
 	def __init__(self, agents_manager):
-		super().__init__(agents_manager)
+		self.agents_manager = agents_manager
+		self.tools = {}
 
 	def register_tools(self):
 		"""Register research agent tools."""
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.TOOL)
+		@self.agents_manager.agents.asyncflow(
+			flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION
+		)
 		async def web_search_tool(query: str) -> str:
 			"""Search the web for information."""
 			await asyncio.sleep(1)  # Simulate network delay
 			return f"Search results for '{query}': Found relevant information about renewable energy storage, including battery technologies, grid integration, and market trends."
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.TOOL)
+		@self.agents_manager.agents.asyncflow(
+			flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION
+		)
 		async def data_analysis_tool(data: str) -> Dict[str, Any]:
 			"""Analyze data and return insights."""
 			await asyncio.sleep(0.5)
@@ -44,23 +47,28 @@ class ResearchTools(BaseAgentTools):
 		return self.tools
 
 
-class SynthesisTools(BaseAgentTools):
+class SynthesisTools:
 	"""Synthesis-specific agent tools."""
 
 	def __init__(self, agents_manager):
-		super().__init__(agents_manager)
+		self.agents_manager = agents_manager
+		self.tools = {}
 
 	def register_tools(self):
 		"""Register synthesis agent tools."""
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.TOOL)
+		@self.agents_manager.agents.asyncflow(
+			flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION
+		)
 		async def document_generator_tool(content: Dict[str, Any]) -> str:
 			"""Generate a formatted document from analysis results."""
 			await asyncio.sleep(0.3)
 			key_points = content.get("key_points", [])
 			return f"Executive Summary: Succesfully generated comprehensive report covering {len(key_points)} critical insights"
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.TOOL)
+		@self.agents_manager.agents.asyncflow(
+			flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION
+		)
 		async def report_formatter_tool(content: str) -> str:
 			"""Format content into a professional report structure."""
 			await asyncio.sleep(0.2)
@@ -73,16 +81,17 @@ class SynthesisTools(BaseAgentTools):
 		return self.tools
 
 
-class ValidationTasks(BaseUtilsTasks):
+class ValidationTasks:
 	"""Input validation and preprocessing tasks."""
 
 	def __init__(self, agents_manager):
-		super().__init__(agents_manager)
+		self.agents_manager = agents_manager
+		self.tools = {}
 
-	def register_tasks(self):
+	def register_function_tasks(self):
 		"""Register validation tasks."""
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.UTISL_TASK)
+		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.FUNCTION_TASK)
 		async def validate_input_task(user_input: str) -> ValidationData:
 			"""Validate and preprocess user input - deterministic operation."""
 			validation_result = ValidationData(
@@ -101,7 +110,7 @@ class ValidationTasks(BaseUtilsTasks):
 			)
 			return validation_result
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.UTISL_TASK)
+		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.FUNCTION_TASK)
 		async def security_scan_task(user_input: str) -> Dict[str, Any]:
 			"""Perform security scanning on user input."""
 			await asyncio.sleep(0.1)
@@ -119,16 +128,17 @@ class ValidationTasks(BaseUtilsTasks):
 		return self.tasks
 
 
-class ContextTasks(BaseUtilsTasks):
+class ContextTasks:
 	"""Context preparation and management tasks."""
 
 	def __init__(self, agents_manager):
-		super().__init__(agents_manager)
+		self.agents_manager = agents_manager
+		self.tools = {}
 
-	def register_tasks(self):
+	def register_function_tasks(self):
 		"""Register context management tasks."""
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.UTISL_TASK)
+		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.FUNCTION_TASK)
 		async def prepare_context_task(
 			research_output: AgentOutput, validation_data: ValidationData
 		) -> ContextData:
@@ -148,7 +158,7 @@ class ContextTasks(BaseUtilsTasks):
 			)
 			return context
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.UTISL_TASK)
+		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.FUNCTION_TASK)
 		async def enrich_context_task(
 			context: ContextData, additional_data: Dict[str, Any]
 		) -> ContextData:
@@ -164,46 +174,47 @@ class ContextTasks(BaseUtilsTasks):
 		return self.tasks
 
 
-class FormattingTasks(BaseUtilsTasks):
+class FormattingTasks:
 	"""Output formatting and finalization tasks."""
 
 	def __init__(self, agents_manager):
-		super().__init__(agents_manager)
+		self.agents_manager = agents_manager
+		self.tools = {}
 
-	def register_tasks(self):
+	def register_function_tasks(self):
 		"""Register formatting tasks."""
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.UTISL_TASK)
+		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.FUNCTION_TASK)
 		async def format_final_output_task(
 			synthesis_output: AgentOutput, context: ContextData
 		) -> str:
 			"""Format the final output - deterministic operation."""
 			formatted_output = f"""
-=== SEQUENTIAL REACT AGENT WORKFLOW RESULTS ===
-Input processed at: {context.input_metadata.timestamp}
-Word count: {context.input_metadata.word_count}
-Domain: {context.input_metadata.metadata.get("domain", "unknown")}
+				=== SEQUENTIAL REACT AGENT WORKFLOW RESULTS ===
+				Input processed at: {context.input_metadata.timestamp}
+				Word count: {context.input_metadata.word_count}
+				Domain: {context.input_metadata.metadata.get("domain", "unknown")}
 
-=== RESEARCH AGENT OUTPUT ===
-Agent: {context.additional_context.get("research_agent_name", "Research Agent")}
-Tools Used: {", ".join(context.additional_context.get("research_tools_used", []))}
-Execution Time: {context.additional_context.get("research_execution_time", 0):.2f}s
+				=== RESEARCH AGENT OUTPUT ===
+				Agent: {context.additional_context.get("research_agent_name", "Research Agent")}
+				Tools Used: {", ".join(context.additional_context.get("research_tools_used", []))}
+				Execution Time: {context.additional_context.get("research_execution_time", 0):.2f}s
 
-{context.previous_analysis}
+				{context.previous_analysis}
 
-=== SYNTHESIS AGENT OUTPUT ===
-Agent: {synthesis_output.agent_name}
-Tools Used: {", ".join(synthesis_output.tools_used)}
-Execution Time: {synthesis_output.execution_time:.2f}s
+				=== SYNTHESIS AGENT OUTPUT ===
+				Agent: {synthesis_output.agent_name}
+				Tools Used: {", ".join(synthesis_output.tools_used)}
+				Execution Time: {synthesis_output.execution_time:.2f}s
 
-{synthesis_output.output_content}
+				{synthesis_output.output_content}
 
-=== WORKFLOW COMPLETE ===
-Total Processing Time: {synthesis_output.execution_time + context.additional_context.get("research_execution_time", 0):.2f}s
-"""
+				=== WORKFLOW COMPLETE ===
+				Total Processing Time: {synthesis_output.execution_time + context.additional_context.get("research_execution_time", 0):.2f}s
+				"""
 			return formatted_output.strip()
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.UTISL_TASK)
+		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.FUNCTION_TASK)
 		async def generate_summary_task(workflow_state: WorkflowState) -> str:
 			"""Generate a workflow execution summary."""
 			await asyncio.sleep(0.1)
