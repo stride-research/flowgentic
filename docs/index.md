@@ -31,6 +31,13 @@ pip install '.' # no dev dependencies
 pip install '.[dev]' # dev dependencies
 
 ```
+Then install graphviz pluggins:
+```bash
+# For MacOS
+brew install graphviz
+sudo dot -c
+
+```
 ### 2) Environmental variables
 - **OPEN_ROUTER_API_KEY**: required if you use the OpenRouter-backed LLM provider.
 - `.env` files are supported via `python-dotenv` if you call `load_dotenv()`.

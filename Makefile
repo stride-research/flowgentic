@@ -24,7 +24,7 @@ docs:
 	$(VENV_ACTIVATE) &&  mkdocs serve
 tests:
 	$(VENV_ACTIVATE) && python -m pytest -vv -s tests/test_introspection.py
-examples-sequential:
-	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.main 
+examples-sequential-research:
+	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.research_agent.main 
 examples-basic:
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.dummy_example 
