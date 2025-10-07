@@ -1,5 +1,5 @@
 from typing import List
-from .tools import (
+from .actions import (
 	ResearchTools,
 	SynthesisTools,
 	ValidationTasks,
@@ -10,7 +10,7 @@ from .tools import (
 from flowgentic.langGraph.base_components import BaseToolRegistry
 
 
-class ToolsRegistry(BaseToolRegistry):
+class ActionsRegistry(BaseToolRegistry):
 	"""Unified interface for all workflow tools and tasks for the given usecase"""
 
 	def __init__(self, agents_manager):

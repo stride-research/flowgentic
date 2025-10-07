@@ -268,6 +268,7 @@ class GraphIntrospector:
 		and extracts metadata like tool calls and model reasoning from the state.
 		"""
 
+		# ASK AYMEN: DOES THIS NEED TO BE A FUNCTION TASK
 		async def wrapper(state) -> Any:
 			start_time = datetime.now()
 			# Deepcopy to get a snapshot of the state before the node runs

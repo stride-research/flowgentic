@@ -1,3 +1,0 @@
-# Example: Sequential Pattern
-
-## Tut

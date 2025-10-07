@@ -1,5 +1,7 @@
 from typing import Optional, Any, Dict
 
+from flowgentic.langGraph.telemetry.introspection import GraphIntrospector
+
 """
 LangGraph/AsyncFlow Integration: bridge AsyncFlow tasks and LangChain tools
 with built-in retries, backoff, and timeouts.
@@ -65,6 +67,7 @@ class LangraphIntegration:
 			f"Initializing LangGraphIntegration with backend: {type(backend).__name__}"
 		)
 		self.backend = backend
+		self.agent_introspector = GraphIntrospector()
 
 	async def __aenter__(self):
 		logger.info("Creating WorkflowEngine for LangGraphIntegration")

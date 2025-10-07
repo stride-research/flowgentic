@@ -39,6 +39,9 @@ pip install '.[dev]' # dev dependencies
 export OPEN_ROUTER_API_KEY=sk-or-...
 ```
 
+### 3) `config.yml`
+- You can modify the `config.yml` at the top level of this repo in order to adjust different settings affecting the package (e.g., folders names for executions outputs)
+
 
 
 ## Architecture overview

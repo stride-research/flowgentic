@@ -12,11 +12,8 @@ async def start_app():
 	backend = await ConcurrentExecutionBackend(ThreadPoolExecutor())
 
 	async with LangraphIntegration(backend=backend) as agents_manager:
-		# Introspector
-		introspector = GraphIntrospector()
-
 		# Build workflow
-		workflow_builder = WorkflowBuilder(agents_manager, introspector=introspector)
+		workflow_builder = WorkflowBuilder(agents_manager)
 		workflow = workflow_builder.build_workflow()
 
 		# Compile the app
@@ -47,7 +44,7 @@ async def start_app():
 			raise
 			print(f"❌ Workflow execution failed: {str(e)}")
 		finally:
-			introspector.generate_report()
+			agents_manager.agent_introspector.generate_report()
 			await agents_manager.utils.render_graph(app)
 
 

@@ -43,3 +43,25 @@ flowchart TD
     G -.->|State Updates| F
     F -.->|Checkpoints| A
 ```
+
+## Wrappers
+```mermaid
+flowchart TD
+    subgraph "ASYNCFLOW WRAPPERS"
+        A[EXECUTION_BLOCK]
+        subgraph ACTIONS
+            direction LR
+            B[AGENT TOOLS]
+            C[UTIL TASKS]
+            B --> D[AGENT_TOOL_AS_FUNCTION]
+            B --> E[AGENT_TOOL_AS_MCP]
+            B --> F[AGENT_TOOL_AS_SERVICE]
+            C --> G[TASK_FUNCTION]
+            C --> H[TASK_SERVICE]
+        end
+        
+        A -- BLOCKS --> ACTIONS
+        ACTIONS --> B
+        ACTIONS --> C
+    end
+```

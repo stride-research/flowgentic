@@ -17,9 +17,10 @@ nav:
   - Phased rollout:
       - Phased rollout: phased_rollout.md
   - API Reference: api/
-  - Examples:
-      - Chatbot: examples/chatbot.md
-      - Sequential design pattern: examples/sequential.md
+  - Design Patterns:
+      - Chatbot: design_patterns/chatbot.md
+      - Sequential design pattern: design_patterns/sequential.md
+
 
 theme:
   name: material

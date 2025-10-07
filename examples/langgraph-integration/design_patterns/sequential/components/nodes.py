@@ -3,7 +3,7 @@ from typing import Dict
 
 from flowgentic.langGraph.main import LangraphIntegration
 from ..utils.schemas import WorkflowState, AgentOutput
-from .toolkit.tool_registry import ToolsRegistry
+from .utils.actions_registry import ActionsRegistry
 
 import asyncio
 from flowgentic.langGraph.agents import AsyncFlowType
@@ -24,7 +24,7 @@ class WorkflowNodes:
 	"""Contains all workflow nodes with access to agents_manager and tools."""
 
 	def __init__(
-		self, agents_manager: LangraphIntegration, tools_registry: ToolsRegistry
+		self, agents_manager: LangraphIntegration, tools_registry: ActionsRegistry
 	) -> None:
 		self.agents_manager = agents_manager
 		self.tools_registry = tools_registry

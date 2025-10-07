@@ -525,16 +525,6 @@ if __name__ == "__main__":
 
 ---
 
-## Next Steps
-
-Now that you have a working chatbot, explore:
-
-- **[Memory & Summarization](../04-memory-summarization.md)**: Long-term conversation memory
-- **[Design Patterns](../../design_patterns/sequential/)**: Production-ready patterns
-- **[Custom Tools](../tools.md)**: Building domain-specific tools
-- **[Error Handling](../error-handling.md)**: Robust error recovery strategies
-- **[Advanced HPC Features](../../hpc-features.md)**: Parallel execution and resource management
-
 ## Troubleshooting
 
 ### LLM not calling tools
@@ -552,16 +542,9 @@ Now that you have a working chatbot, explore:
 - Check that `@asyncflow` decorator is used correctly
 - Verify async context manager (`async with LangraphIntegration`)
 
-## API Reference Summary
-
-| Component | Purpose | Key Parameters |
-|-----------|---------|----------------|
-| `LangraphIntegration` | Main context manager | `backend`: HPC execution backend |
-| `ChatLLMProvider` | LLM interface | `provider`, `model` |
-| `@asyncflow` | HPC execution decorator | `flow_type`: TOOL, NODE, or AGENT |
-| `structured_final_response()` | Structured outputs | `llm`, `response_schema`, `graph_state_schema` |
-| `needs_tool_invokation` | Conditional routing | Returns "true" or "false" |
-| `InMemorySaver` | Checkpointing | Thread-based memory |
-| `render_graph()` | Visualization | `app`: Compiled graph |
-
 For detailed API documentation, see the [API Reference](../../api/reference.md).
+
+Explore other design patterns:
+- [Sequential/Pipeline Pattern](sequential.md) — Interactive conversational agents
+- [Supervisor Pattern](supervisor.md) — Supervisor agent coordination
+- [Hierarchical Agent Pattern](hierachical.md) — Advanced supervisor design pattern
