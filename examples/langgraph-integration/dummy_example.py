@@ -30,10 +30,8 @@ async def start_app():
 	backend = await ConcurrentExecutionBackend(ThreadPoolExecutor())
 
 	async with LangraphIntegration(backend=backend) as agents_manager:
-		# Introspector
-		introspector = GraphIntrospector()
 
-		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.TOOL)
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION)
 		async def document_generator_tool(document_content: Dict[str, Any]) -> str:
 			"""Generate a formatted document from analysis results."""
 			print(f"Document generatio ntool is being executed...")
@@ -41,7 +39,7 @@ async def start_app():
 			key_points = document_content.get("key_points", [])
 			return f"Executive Summary: Succesfully generated comprehensive report covering {len(key_points)} critical insights"
 
-		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.BLOCK)
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
 		async def _synthesis_agent_node(state: WorkflowState) -> WorkflowState:
 			"""Synthesis agent execution node."""
 			print("🏗️ Synthesis Agent Node: Creating final deliverables...")
@@ -96,7 +94,10 @@ You must use the tools provided to you. If you cant use the given tools explain 
 		# Creating the graph
 		workflow = StateGraph(WorkflowState)
 
-		node_function = introspector.introspect_node(_synthesis_agent_node)
+		node_function = agents_manager.agent_introspector.introspect_node(
+			_synthesis_agent_node, node_name="_synthesis_agent_node"
+		)
+		agents_manager.agent_introspector._all_nodes = ["_synthesis_agent_node"]
 
 		workflow.add_node("synthetizer_agent", node_function)
 		workflow.set_entry_point("synthetizer_agent")
@@ -118,7 +119,7 @@ You must use the tools provided to you. If you cant use the given tools explain 
 		except Exception as e:
 			raise
 		finally:
-			introspector.generate_report()
+			agents_manager.agent_introspector.generate_report()
 			await agents_manager.utils.render_graph(app)
 
 

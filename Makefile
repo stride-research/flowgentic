@@ -1,4 +1,4 @@
-.PHONY: install format lint docs tests examples-sequential examples-basic
+.PHONY: install format lint docs tests examples-sequential-research examples-sequential-financial examples-basic
 
 VENV_PATH =  ./.venv
 VENV_ACTIVATE = source $(VENV_PATH)/bin/activate
@@ -25,6 +25,8 @@ docs:
 tests:
 	$(VENV_ACTIVATE) && python -m pytest -vv -s tests/test_introspection.py
 examples-sequential-research:
-	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.research_agent.main 
+	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.research_agent.main
+examples-sequential-financial:
+	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.financial_advisor.main
 examples-basic:
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.dummy_example 

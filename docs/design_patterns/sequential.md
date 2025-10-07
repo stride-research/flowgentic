@@ -24,6 +24,10 @@ The **sequential pattern** is a design where work progresses through well-define
 
 A research-to-synthesis pipeline that takes a user query, validates it, runs a research agent with tools, prepares context for a synthesis agent, generates a deliverable, formats the output, and tracks everything for introspection.
 
+[See the entire code](https://github.com/stride-research/flowgentic/blob/main/examples/langgraph-integration/design_patterns/sequential/research_agent/main.py) \
+[See other examples](https://github.com/stride-research/flowgentic/tree/main/examples/langgraph-integration/design_patterns/sequential)
+
+
 ---
 
 ## Step 1: Define the State Schema
@@ -628,7 +632,7 @@ The introspection report will show:
 
 The full working example is available in the FlowGentic repository:
 
-[**View Sequential Pattern Example →**](https://github.com/stride-research/flowgentic/blob/main/examples/langgraph-integration/design_patterns/sequential/main.py)
+[**View Sequential Pattern Example →**](https://github.com/stride-research/flowgentic/blob/main/examples/langgraph-integration/design_patterns/sequential/research_agent/main.py)
 
 The example includes:
 - `main.py` — Entry point and orchestration

@@ -4,7 +4,6 @@ from typing import Dict, List
 
 from pydantic import BaseModel
 
-from flowgentic.langGraph.main import LangraphIntegration
 from .schemas import GraphExecutionReport, NodeExecutionRecord
 from flowgentic.settings.extract_settings import APP_SETTINGS
 import logging
