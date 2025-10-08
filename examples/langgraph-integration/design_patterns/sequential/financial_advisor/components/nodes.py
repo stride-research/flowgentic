@@ -6,7 +6,7 @@ from ..utils.schemas import WorkflowState, AgentOutput
 from .utils.actions_registry import ActionsRegistry
 
 import asyncio
-from flowgentic.langGraph.agents import AsyncFlowType
+from flowgentic.langGraph.execution_wrappers import AsyncFlowType
 from flowgentic.utils.llm_providers import ChatLLMProvider
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -43,7 +43,9 @@ class WorkflowNodes:
 
 	@property
 	def validate_input_node(self):
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
+		@self.agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.EXECUTION_BLOCK
+		)
 		async def _validate_input_node(state: WorkflowState) -> WorkflowState:
 			"""Validate and parse investment query."""
 			print("🔄 Validation Node: Parsing investment query...")
@@ -72,7 +74,9 @@ class WorkflowNodes:
 
 	@property
 	def market_research_agent_node(self):
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
+		@self.agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.EXECUTION_BLOCK
+		)
 		async def _market_research_agent_node(state: WorkflowState) -> WorkflowState:
 			"""Market research agent execution node."""
 			print("📊 Market Research Agent: Analyzing market conditions...")
@@ -160,7 +164,9 @@ class WorkflowNodes:
 
 	@property
 	def risk_context_prep_node(self):
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
+		@self.agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.EXECUTION_BLOCK
+		)
 		async def _risk_context_prep_node(state: WorkflowState) -> WorkflowState:
 			"""Prepare context for risk assessment."""
 			print("🔧 Risk Context Prep: Preparing data for risk assessment...")
@@ -186,7 +192,9 @@ class WorkflowNodes:
 
 	@property
 	def risk_assessment_agent_node(self):
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
+		@self.agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.EXECUTION_BLOCK
+		)
 		async def _risk_assessment_agent_node(state: WorkflowState) -> WorkflowState:
 			"""Risk assessment agent execution node."""
 			print("⚠️  Risk Assessment Agent: Evaluating portfolio risks...")
@@ -271,7 +279,9 @@ class WorkflowNodes:
 
 	@property
 	def strategy_context_prep_node(self):
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
+		@self.agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.EXECUTION_BLOCK
+		)
 		async def _strategy_context_prep_node(state: WorkflowState) -> WorkflowState:
 			"""Prepare context for portfolio strategy."""
 			print("🔧 Strategy Context Prep: Preparing data for portfolio strategy...")
@@ -297,7 +307,9 @@ class WorkflowNodes:
 
 	@property
 	def portfolio_strategy_agent_node(self):
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
+		@self.agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.EXECUTION_BLOCK
+		)
 		async def _portfolio_strategy_agent_node(state: WorkflowState) -> WorkflowState:
 			"""Portfolio strategy agent execution node."""
 			print("📈 Portfolio Strategy Agent: Creating investment strategy...")
@@ -390,7 +402,9 @@ class WorkflowNodes:
 
 	@property
 	def finalize_report_node(self):
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
+		@self.agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.EXECUTION_BLOCK
+		)
 		async def _finalize_report_node(state: WorkflowState) -> WorkflowState:
 			"""Final report formatting node."""
 			print("📄 Finalize Report: Formatting comprehensive investment report...")
@@ -425,7 +439,9 @@ class WorkflowNodes:
 
 	@property
 	def error_handler_node(self):
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
+		@self.agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.EXECUTION_BLOCK
+		)
 		async def _error_handler_node(state: WorkflowState) -> WorkflowState:
 			"""Handle errors in the workflow."""
 			print(f"❌ Error Handler: {'; '.join(state.errors)}")

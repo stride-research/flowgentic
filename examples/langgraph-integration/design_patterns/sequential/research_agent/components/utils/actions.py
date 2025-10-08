@@ -1,4 +1,4 @@
-from flowgentic.langGraph.agents import AsyncFlowType
+from flowgentic.langGraph.execution_wrappers import AsyncFlowType
 import asyncio
 from typing import Dict, Any
 
@@ -15,7 +15,7 @@ class ResearchTools:
 	def register_tools(self):
 		"""Register research agent tools."""
 
-		@self.agents_manager.agents.asyncflow(
+		@self.agents_manager.execution_wrappers.asyncflow(
 			flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION
 		)
 		async def web_search_tool(query: str) -> str:
@@ -23,7 +23,7 @@ class ResearchTools:
 			await asyncio.sleep(1)  # Simulate network delay
 			return f"Search results for '{query}': Found relevant information about renewable energy storage, including battery technologies, grid integration, and market trends."
 
-		@self.agents_manager.agents.asyncflow(
+		@self.agents_manager.execution_wrappers.asyncflow(
 			flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION
 		)
 		async def data_analysis_tool(data: str) -> Dict[str, Any]:
@@ -57,7 +57,7 @@ class SynthesisTools:
 	def register_tools(self):
 		"""Register synthesis agent tools."""
 
-		@self.agents_manager.agents.asyncflow(
+		@self.agents_manager.execution_wrappers.asyncflow(
 			flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION
 		)
 		async def document_generator_tool(content: Dict[str, Any]) -> str:
@@ -66,7 +66,7 @@ class SynthesisTools:
 			key_points = content.get("key_points", [])
 			return f"Executive Summary: Succesfully generated comprehensive report covering {len(key_points)} critical insights"
 
-		@self.agents_manager.agents.asyncflow(
+		@self.agents_manager.execution_wrappers.asyncflow(
 			flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION
 		)
 		async def report_formatter_tool(content: str) -> str:
@@ -91,7 +91,9 @@ class ValidationTasks:
 	def register_function_tasks(self):
 		"""Register validation tasks."""
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.FUNCTION_TASK)
+		@self.agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.FUNCTION_TASK
+		)
 		async def validate_input_task(user_input: str) -> ValidationData:
 			"""Validate and preprocess user input - deterministic operation."""
 			validation_result = ValidationData(
@@ -110,7 +112,9 @@ class ValidationTasks:
 			)
 			return validation_result
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.FUNCTION_TASK)
+		@self.agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.FUNCTION_TASK
+		)
 		async def security_scan_task(user_input: str) -> Dict[str, Any]:
 			"""Perform security scanning on user input."""
 			await asyncio.sleep(0.1)
@@ -138,7 +142,9 @@ class ContextTasks:
 	def register_function_tasks(self):
 		"""Register context management tasks."""
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.FUNCTION_TASK)
+		@self.agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.FUNCTION_TASK
+		)
 		async def prepare_context_task(
 			research_output: AgentOutput, validation_data: ValidationData
 		) -> ContextData:
@@ -158,7 +164,9 @@ class ContextTasks:
 			)
 			return context
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.FUNCTION_TASK)
+		@self.agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.FUNCTION_TASK
+		)
 		async def enrich_context_task(
 			context: ContextData, additional_data: Dict[str, Any]
 		) -> ContextData:
@@ -184,7 +192,9 @@ class FormattingTasks:
 	def register_function_tasks(self):
 		"""Register formatting tasks."""
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.FUNCTION_TASK)
+		@self.agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.FUNCTION_TASK
+		)
 		async def format_final_output_task(
 			synthesis_output: AgentOutput, context: ContextData
 		) -> str:
@@ -214,7 +224,9 @@ class FormattingTasks:
 				"""
 			return formatted_output.strip()
 
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.FUNCTION_TASK)
+		@self.agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.FUNCTION_TASK
+		)
 		async def generate_summary_task(workflow_state: WorkflowState) -> str:
 			"""Generate a workflow execution summary."""
 			await asyncio.sleep(0.1)

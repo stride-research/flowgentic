@@ -7,7 +7,7 @@ import json
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langgraph.graph.state import CompiledStateGraph
-from flowgentic.langGraph.agents import BaseLLMAgentState
+from flowgentic.langGraph.execution_wrappers import BaseLLMAgentState
 from flowgentic.settings.extract_settings import APP_SETTINGS
 
 

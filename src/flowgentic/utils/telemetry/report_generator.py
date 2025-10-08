@@ -23,8 +23,28 @@ class ReportGenerator:
 		self._records = records
 		self._records_values = list(self._records.values())
 
+	def _node_was_visited(self, node_name):
+		"""
+		Args:
+			- node_name: name of one node in the graph (without postfix)
+		"""
+		if len(self.categorized_records[node_name]) == 0:
+			return False
+		return True
+
+	def _create_categorized_nodes(self, all_nodes: List[str]):
+		self.categorized_records = {key: [] for key in all_nodes}
+		for record in list(self._records.keys()):
+			cleaned_record_value = self._records[record]
+			cleaned_record_key = record.split("_")[0]
+			self.categorized_records[cleaned_record_key].append(cleaned_record_value)
+		return self.categorized_records
+
 	def generate_report(self, all_nodes: List[str]):
 		"""Generates a human-readable Markdown report of the entire graph execution."""
+		# Initialization procedures
+		self._create_categorized_nodes(all_nodes=all_nodes)
+
 		end_time = datetime.now()
 
 		# Calculate aggregate statistics
@@ -47,6 +67,14 @@ class ReportGenerator:
 			)
 		)
 
+		# Handle case where final_state might be None (e.g., when some nodes aren't introspected)
+		final_state_dict = None
+		if self._final_state is not None:
+			if hasattr(self._final_state, "model_dump"):
+				final_state_dict = self._final_state.model_dump()
+			elif isinstance(self._final_state, dict):
+				final_state_dict = self._final_state
+
 		report_data = GraphExecutionReport(
 			graph_start_time=self._start_time,
 			graph_end_time=end_time,
@@ -54,7 +82,7 @@ class ReportGenerator:
 				(end_time - self._start_time).total_seconds(), 4
 			),
 			node_records=self._records_values,
-			final_state=self._final_state.model_dump(),
+			final_state=final_state_dict,
 			total_tokens_used=total_tokens,
 			total_tool_calls=total_tool_calls,
 			total_tool_executions=total_tool_executions,
@@ -94,17 +122,32 @@ class ReportGenerator:
 				"|---------------------|--------------|--------|-------|---------------|\n"
 			)
 			for node_name in all_nodes:
+				node_category_duration = 0
+				node_category_tokens = 0
+				node_category_tools = 0
+				node_category_messages = 0
 				logger.debug(
 					f"Node name is: {node_name}, list to search in is: {list(self._records.keys())}"
 				)
-				if node_name in list(self._records.keys()):
-					record = self._records[node_name]
-					tools_count = len(record.tool_calls)
-					tokens = (
-						record.token_usage.total_tokens if record.token_usage else 0
-					)
+				if self._node_was_visited(node_name):
+					records: List[NodeExecutionRecord] = self.categorized_records[
+						node_name
+					]
+					for record in records:
+						tools_count = len(record.tool_calls)
+						tokens = (
+							record.token_usage.total_tokens if record.token_usage else 0
+						)
+						node_category_duration += record.duration_seconds
+						node_category_tokens += tokens
+						node_category_tools += tools_count
+						node_category_messages += node_category_messages
+
+						f.write(
+							f"| `{record.node_name}` | {record.duration_seconds:<12.4f} | {tokens:<6} | {tools_count:<5} | {record.new_messages_count:<13} |\n"
+						)
 					f.write(
-						f"| `{record.node_name}` | {record.duration_seconds:<12.4f} | {tokens:<6} | {tools_count:<5} | {record.new_messages_count:<13} |\n"
+						f"| **{node_name} Total** | {node_category_duration:<10.4f} | {node_category_tokens:<4} | {node_category_tools:<3} | {node_category_messages:<11} |\n"
 					)
 				else:
 					f.write(

@@ -25,10 +25,14 @@ from langgraph.graph import add_messages
 from pydantic import BaseModel, Field
 from functools import wraps
 from typing import Annotated, Any, Callable, Dict, List, Optional, Sequence, Tuple
+from langgraph.types import Send
+
 
 from langchain_core.tools import BaseTool, tool
 from radical.asyncflow import WorkflowEngine
 from radical.asyncflow.workflow_manager import BaseExecutionBackend
+
+from flowgentic.utils.telemetry.introspection import GraphIntrospector
 from .fault_tolerance import LangraphToolFaultTolerance, RetryConfig
 
 
@@ -49,7 +53,7 @@ from functools import wraps
 from langchain_core.messages import BaseMessage, AIMessage, HumanMessage
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph, MessagesState, START, END
-from langgraph.prebuilt import create_react_agent, ToolNode
+from langgraph.prebuilt import InjectedState, create_react_agent, ToolNode
 from langgraph.types import Command
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel
@@ -84,17 +88,18 @@ class AsyncFlowType(Enum):
 	EXECUTION_BLOCK = "block"
 
 
-class LangraphAgents:
+class ExecutionWrappersLangraph:
 	"""Enhanced integration between AsyncFlow WorkflowEngine and LangChain tools.
 
 	Supports both traditional workflow patterns and React agent orchestration
 	with supervisor patterns and parallel execution.
 	"""
 
-	def __init__(self, flow: WorkflowEngine) -> None:
+	def __init__(self, flow: WorkflowEngine, instrospector: GraphIntrospector) -> None:
 		self.flow = flow
 		self.fault_tolerance_mechanism = LangraphToolFaultTolerance()
 		self.react_agents: Dict[str, Any] = {}
+		self.introspector = instrospector
 
 	def asyncflow(
 		self,
@@ -102,6 +107,7 @@ class LangraphAgents:
 		*,
 		flow_type: AsyncFlowType = None,
 		retry: Optional[RetryConfig] = None,
+		**kwargs,
 	) -> Callable:
 		"""
 		Unified decorator to register async functions as AsyncFlow tasks with different behaviors.
@@ -155,7 +161,12 @@ class LangraphAgents:
 						_call, retry_cfg, name=f.__name__
 					)
 
-				langraph_tool = tool(tool_wrapper)
+				print(
+					f"passed KWARGS IS: {kwargs}, description is: {kwargs.get('tool_description')}"
+				)
+				langraph_tool = tool(
+					tool_wrapper, description=kwargs.get("tool_description")
+				)
 				logger.info(f"Successfully created LangChain tool for '{f.__name__}'")
 				return langraph_tool
 
@@ -213,3 +224,43 @@ class LangraphAgents:
 		if func is not None:
 			return decorate(func)
 		return decorate
+
+	def create_task_description_handoff_tool(self, agent_name: str, description: str):
+		name = f"transfer_to_{agent_name}"
+		description = description or f"Ask {agent_name} for help."
+
+		# Execute the handoff via HPC by registering as an AsyncFlow function task
+		async def _handoff_task(
+			task_description: str,
+			state: BaseLLMAgentState,
+		) -> Command:
+			self.introspector.record_supervisor_event(
+				state=state,
+				destination=agent_name,
+				task_description=task_description,
+				node_name="supervisor",
+			)
+
+			# Build a plain-mapping payload for Send. Pydantic models are not mappings.
+			task_description_message = HumanMessage(content=task_description)
+			base_state = state.model_dump()
+			agent_input = {**base_state, "messages": [task_description_message]}
+
+			return Command(
+				goto=[Send(agent_name, agent_input)],
+				graph=Command.PARENT,
+			)
+
+		asyncflow_func = self.flow.function_task(_handoff_task)
+
+		@tool(name, description=description)
+		async def handoff_tool(
+			task_description: Annotated[
+				str,
+				"Description of what the next agent should do, including all of the relevant context.",
+			],
+			state: Annotated[BaseLLMAgentState, InjectedState],
+		) -> Command:
+			return await asyncflow_func(task_description, state)
+
+		return handoff_tool

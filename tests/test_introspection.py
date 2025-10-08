@@ -3,11 +3,20 @@ from langgraph.graph import add_messages
 import pytest
 from typing import Annotated, List
 from pydantic import BaseModel, Field
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 
 from flowgentic.langGraph.telemetry.introspection import GraphIntrospector
+from flowgentic.langGraph.telemetry.report_generator import ReportGenerator
+from flowgentic.langGraph.telemetry.schemas import (
+	MessageInfo,
+	ModelMetadata,
+	NodeExecutionRecord,
+	TokenUsage,
+	ToolCallInfo,
+	ToolExecutionInfo,
+)
 
 import logging
 

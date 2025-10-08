@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 import json
 import sys
@@ -12,52 +13,50 @@ from langchain_core.messages import (
 	SystemMessage,
 	ToolMessage,
 )
+from langgraph.types import Command
 from pydantic import BaseModel, Field
+
 from .schemas import (
 	TokenUsage,
 	MessageInfo,
 	ToolCallInfo,
 	ModelMetadata,
 	NodeExecutionRecord,
-	GraphExecutionReport,
 	ToolExecutionInfo,
 )
-from .report_generator import ReportGenerator
 import logging
 
 logger = logging.getLogger(__name__)
 
-# --- Core Introspection Logic ---
 
-
-class GraphIntrospector:
-	"""
-	A class to instrument and report on a LangGraph workflow execution.
-
-	It provides a decorator (`introspect_node`) that wraps each graph node
-	to record execution details seamlessly.
-	"""
-
-	def __init__(self):
-		self._start_time = datetime.now()
-		self._records: Dict[str, NodeExecutionRecord] = {}
-		self._final_state: Optional[BaseModel[str, Any]] = None
-		self._all_nodes: List[str] = None
+class Extractor:
+	def __init__(self) -> None:
+		pass
 
 	def _get_state_diff(self, before_state, after_state) -> Dict:
 		"""Calculates the difference between two state objects (Pydantic models or dicts)."""
 		diff = {}
 
-		# Convert Pydantic models to dicts
-		if hasattr(before_state, "model_dump"):  # If its pydantic  state
+		# Convert Pydantic models to dicts, or use dict directly
+		if hasattr(before_state, "model_dump"):  # If it's a pydantic state
 			before_dict = before_state.model_dump()
+		elif isinstance(before_state, dict):
+			before_dict = before_state
 		else:
-			raise ValueError("Your workflow state should be created with Pydantic")
+			logger.warning(
+				f"State before is neither Pydantic nor dict: {type(before_state)}"
+			)
+			return diff
 
 		if hasattr(after_state, "model_dump"):
 			after_dict = after_state.model_dump()
+		elif isinstance(after_state, dict):
+			after_dict = after_state
 		else:
-			raise ValueError("Your workflow state should be created with Pydantic")
+			logger.warning(
+				f"State after is neither Pydantic nor dict: {type(after_state)}"
+			)
+			return diff
 
 		all_keys = set(before_dict.keys()) | set(
 			after_dict.keys()
@@ -141,10 +140,15 @@ class GraphIntrospector:
 		end_time,
 		node_func: callable,
 	):
+		# Handle both Pydantic models and dicts
 		if hasattr(state_after, "messages"):
 			messages_after = state_after.messages
+		elif isinstance(state_after, dict) and "messages" in state_after:
+			messages_after = state_after["messages"]
 		else:
-			logger.warning(f"State after doesnt have .message attribute")
+			logger.warning(
+				f"State after doesn't have messages attribute/key: {type(state_after)}"
+			)
 			return
 		logger.debug(f"Messages is: {messages_after}")
 
@@ -227,13 +231,16 @@ class GraphIntrospector:
 						)
 					)
 
-		# Get state keys - handle Pydantic model
+		# Get state keys - handle Pydantic model and dicts
 		if hasattr(state_after, "model_fields"):
 			state_keys = list(state_after.model_fields.keys())
+		elif isinstance(state_after, dict):
+			state_keys = list(state_after.keys())
 		else:
-			raise ValueError(
-				f"Model fields keys is not available for state after with type: {type(state_after)}"
+			logger.warning(
+				f"State is neither Pydantic model nor dict. Type: {type(state_after)}"
 			)
+			state_keys = []
 
 		# Create and store the execution record
 		record = NodeExecutionRecord(
@@ -255,60 +262,5 @@ class GraphIntrospector:
 			state_diff=self._get_state_diff(state_before, state_after),
 			state_keys=state_keys,
 		)
-		self._records[node_name] = record
 		self._final_state = state_after  # Continuously update the final state
-
-	def introspect_node(self, node_func: Callable, node_name: str) -> Callable:
-		"""
-		Decorator to wrap a LangGraph node function for introspection.
-
-		This decorator times the node's execution, captures its inputs and outputs,
-		and extracts metadata like tool calls and model reasoning from the state.
-		"""
-
-		# ASK AYMEN: DOES THIS NEED TO BE A FUNCTION TASK
-		async def wrapper(state) -> Any:
-			start_time = datetime.now()
-			# Deepcopy to get a snapshot of the state before the node runs
-			state_before = deepcopy(state)
-
-			# Count messages before execution - handle Pydantic model
-			if hasattr(state_before, "messages"):
-				messages_before = state_before.messages
-			else:
-				messages_before = []
-			total_messages_before = (
-				len(messages_before) if isinstance(messages_before, list) else 0
-			)
-
-			# Execute the original node function
-			state_after = await node_func(state)
-			logger.debug(f"Reasoning after: {state_after}")
-
-			end_time = datetime.now()
-			self._state_extraction(
-				node_name=node_name,
-				state_before=state_before,
-				state_after=state_after,
-				total_messages_before=total_messages_before,
-				start_time=start_time,
-				end_time=end_time,
-				node_func=node_func,
-			)
-
-			return state_after
-
-		return wrapper
-
-	def generate_report(self) -> None:
-		"""Generates a human-readable Markdown report of the entire graph execution."""
-		if not self._all_nodes:
-			raise ValueError(
-				"You need to provide the the nodes for the graph to the inspector"
-			)
-		else:
-			report_generator = ReportGenerator(
-				final_state=self._final_state,
-				records=self._records,
-				start_time=self._start_time,
-			).generate_report(all_nodes=self._all_nodes)
+		return node_name, record

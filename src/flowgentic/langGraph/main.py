@@ -1,6 +1,6 @@
 from typing import Optional, Any, Dict
 
-from flowgentic.langGraph.telemetry.introspection import GraphIntrospector
+from flowgentic.utils.telemetry.introspection import GraphIntrospector
 
 """
 LangGraph/AsyncFlow Integration: bridge AsyncFlow tasks and LangChain tools
@@ -47,7 +47,7 @@ from flowgentic.langGraph.memory import MemoryManager, MemoryConfig, MemoryEnabl
 import logging
 
 from radical.asyncflow.workflow_manager import BaseExecutionBackend, WorkflowEngine
-from flowgentic.langGraph.agents import LangraphAgents
+from flowgentic.langGraph.execution_wrappers import ExecutionWrappersLangraph
 from flowgentic.langGraph.utils import LangraphUtils
 from flowgentic.langGraph.agent_logger import AgentLogger
 
@@ -72,7 +72,9 @@ class LangraphIntegration:
 	async def __aenter__(self):
 		logger.info("Creating WorkflowEngine for LangGraphIntegration")
 		self.flow = await WorkflowEngine.create(backend=self.backend)
-		self.agents: LangraphAgents = LangraphAgents(flow=self.flow)
+		self.execution_wrappers: ExecutionWrappersLangraph = ExecutionWrappersLangraph(
+			flow=self.flow, instrospector=self.agent_introspector
+		)
 		self.utils: LangraphUtils = LangraphUtils()
 		self.agent_logger: AgentLogger = AgentLogger()
 

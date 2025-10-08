@@ -6,7 +6,7 @@ from ..utils.schemas import WorkflowState, AgentOutput
 from .utils.actions_registry import ActionsRegistry
 
 import asyncio
-from flowgentic.langGraph.agents import AsyncFlowType
+from flowgentic.langGraph.execution_wrappers import AsyncFlowType
 from flowgentic.utils.llm_providers import ChatLLMProvider
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -42,7 +42,9 @@ class WorkflowNodes:
 
 	@property
 	def preprocess_node(self):
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
+		@self.agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.EXECUTION_BLOCK
+		)
 		async def _preprocess_node(state: WorkflowState) -> WorkflowState:
 			"""Preprocessing node with parallel validation and metadata extraction."""
 			print("🔄 Preprocessing Node: Starting input validation...")
@@ -71,7 +73,9 @@ class WorkflowNodes:
 
 	@property
 	def research_agent_node(self):
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
+		@self.agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.EXECUTION_BLOCK
+		)
 		async def _research_agent_node(state: WorkflowState) -> WorkflowState:
 			"""Research agent execution node."""
 			print("🔍 Research Agent Node: Starting research and analysis...")
@@ -140,7 +144,9 @@ class WorkflowNodes:
 
 	@property
 	def context_preparation_node(self):
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
+		@self.agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.EXECUTION_BLOCK
+		)
 		async def _context_preparation_node(state: WorkflowState) -> WorkflowState:
 			"""Context preparation node - runs in parallel with other deterministic tasks."""
 			print(
@@ -168,7 +174,9 @@ class WorkflowNodes:
 
 	@property
 	def synthesis_agent_node(self):
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
+		@self.agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.EXECUTION_BLOCK
+		)
 		async def _synthesis_agent_node(state: WorkflowState) -> WorkflowState:
 			"""Synthesis agent execution node."""
 			print("🏗️ Synthesis Agent Node: Creating final deliverables...")
@@ -243,7 +251,9 @@ You must use the tools provided to you. If you cant use the given tools explain 
 
 	@property
 	def finalize_output_node(self):
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
+		@self.agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.EXECUTION_BLOCK
+		)
 		async def _finalize_output_node(state: WorkflowState) -> WorkflowState:
 			"""Final output formatting node."""
 			print("📄 Finalize Output Node: Formatting final results...")
@@ -270,7 +280,9 @@ You must use the tools provided to you. If you cant use the given tools explain 
 
 	@property
 	def error_handler_node(self):
-		@self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
+		@self.agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.EXECUTION_BLOCK
+		)
 		async def _error_handler_node(state: WorkflowState) -> WorkflowState:
 			"""Handle errors in the workflow."""
 			print(f"❌ Error Handler: {'; '.join(state.errors)}")
