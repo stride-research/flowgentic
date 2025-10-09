@@ -1,5 +1,7 @@
 from typing import Optional, Any, Dict
 
+from flowgentic.utils.telemetry.introspection import GraphIntrospector
+
 """
 LangGraph/AsyncFlow Integration: bridge AsyncFlow tasks and LangChain tools
 with built-in retries, backoff, and timeouts.
@@ -50,7 +52,7 @@ from flowgentic.langGraph.memory import (
 import logging
 
 from radical.asyncflow.workflow_manager import BaseExecutionBackend, WorkflowEngine
-from flowgentic.langGraph.agents import LangraphAgents
+from flowgentic.langGraph.execution_wrappers import ExecutionWrappersLangraph
 from flowgentic.langGraph.utils import LangraphUtils
 from flowgentic.langGraph.agent_logger import AgentLogger
 
@@ -70,11 +72,14 @@ class LangraphIntegration:
 			f"Initializing LangGraphIntegration with backend: {type(backend).__name__}"
 		)
 		self.backend = backend
+		self.agent_introspector = GraphIntrospector()
 
 	async def __aenter__(self):
 		logger.info("Creating WorkflowEngine for LangGraphIntegration")
 		self.flow = await WorkflowEngine.create(backend=self.backend)
-		self.agents: LangraphAgents = LangraphAgents(flow=self.flow)
+		self.execution_wrappers: ExecutionWrappersLangraph = ExecutionWrappersLangraph(
+			flow=self.flow, instrospector=self.agent_introspector
+		)
 		self.utils: LangraphUtils = LangraphUtils()
 		self.agent_logger: AgentLogger = AgentLogger()
 		self.memory_manager: LangraphMemoryManager = LangraphMemoryManager()

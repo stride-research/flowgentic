@@ -51,7 +51,7 @@ async def start_app():
 	async with LangraphIntegration(backend=backend) as agents_manager:
 		llm = ChatLLMProvider(provider="OpenRouter", model="google/gemini-2.5-flash")
 
-		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.TOOL)
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION)
 		async def weather_extractor(city: str):
 			"""Extracts the weather for any given city"""
 			return {
@@ -59,13 +59,13 @@ async def start_app():
 				"humidity_percentage": 40,
 			}  # Dummy example
 
-		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.TOOL)
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION)
 		async def traffic_extractor(city: str):
 			"""Extracts the amount of traffic for any given city"""
 			return {"traffic_percentage": 90}  # Dummy example
 
 		# Define the task within the asyncflow context
-		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.NODE)
+		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
 		async def deterministic_task_internal(state: WorkflowState):
 			file_path = "im-working.txt"
 			with open(file_path, "w") as f:

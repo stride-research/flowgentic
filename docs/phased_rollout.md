@@ -1,48 +1,17 @@
 
-
 --------------
 
-# SINGLE AGENT 
+# PHASED ROLLOUT
 
-## RADICAL ASYNCFLOW
-[x] Add radical API for tool execution
-      [x] Examples working
-      [x] Add abstraction
-            - Can u add abstraction at the agent level?
+### Support Matrix
 
+Current and planned integrations. ✅ available, 🚧 planned.
 
-## IMPORTANT TO HAVE
-[x] Checkpointing + Fault tolerance mechanism 
-      [x] tool level
-      [x] toolkit level
-      [x] Checkpointing
+| Agent Framework \ HPC Engine | RADICAL AsyncFlow | Pegasus | Parsl |
+|---|---:|---:|---:|
+| LangGraph | ✅ | 🚧 | 🚧 |
+| CrewAI | 🚧 | 🚧 | 🚧 |
+| AG2 | 🚧 | 🚧 | 🚧 |
+| OpenAI Agents SDK | 🚧 | 🚧 | 🚧 |
 
-[x] Structured outputs - chatbot level
-[x] Ollama support
-[x] Logs 
-      [x] Conversation history
-
-## DOCUMENTATION
-- Mkdocs
-- Examples 
-      - Multi-agents 
-
-## NICE TO HAVE
-- Human in the loop
-- Multimedia file support 
-- Web search
-[x] Graph visualization
-- Streaming token by token
-- Evaluation / guardrails
-
-## GREAT TO HAVE
-- Observe telemetry
-- Multiple responses selection
-
-----
-# MULTIPLE AGENT 
-[] Decouple single agent, set-up, MAS code
-[] Code examples
-      [] Supervisor
-      [] Sequential
-[] Abstractions (for common architectural patterns )
+- **Note**: As of now, the only supported path is LangGraph → RADICAL AsyncFlow.

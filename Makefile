@@ -1,7 +1,21 @@
-.PHONY: install format lint docs
+.PHONY: install format lint docs tests examples-sequential-research examples-sequential-financial examples-supervisor examples-basic
+.DEFAULT_GOAL:= help
+
+
+# VARIABLES
+# Colors for output
+RED = \033[31m
+GREEN = \033[32m
+YELLOW = \033[33m
+BLUE = \033[34m
+RESET = \033[0m
 
 VENV_PATH =  ./.venv
 VENV_ACTIVATE = source $(VENV_PATH)/bin/activate
+
+help: ## Show this help message
+	@echo "$(BLUE)Available commands:$(RESET)"
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(GREEN)%-15s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 install: #Install dependencies with pip => install graphviz 
 	python3.9 -m venv $(VENV_PATH)
@@ -22,3 +36,13 @@ lint:
 
 docs:	
 	$(VENV_ACTIVATE) &&  mkdocs serve
+tests: ## Run tests
+	$(VENV_ACTIVATE) && python -m pytest -vv -s tests/test_generator.py
+examples-sequential-research:
+	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.research_agent.main
+examples-sequential-financial:
+	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.financial_advisor.main
+examples-supervisor: ## Run supervisor example
+	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.supervisor.main
+examples-basic: ## Run toy example 
+	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.dummy_example 

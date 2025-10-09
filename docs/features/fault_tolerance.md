@@ -2,15 +2,9 @@
 
 Keep agents resilient with retries, timeouts, and failure isolation.
 
-- Configurable retry/backoff policies
-- Fault boundaries between nodes
-- Clear logging and error propagation
+- Configurable retry/backoff policies for task execution at the backend level
+- Persisting workflow state to maintain idempotency and enable fault tolerance.
 
-## Concepts
-
-- Retry policy: attempts, backoff, jitter
-- Boundary: isolates node failures from cascading
 
 ## API
-
-::: flowgentic.langGraph.fault_tolerance
+Refer to the memory API reference here: [API Reference](../../api/flowgentic/langGraph/fault_tolerance/)

@@ -8,19 +8,19 @@ nav:
   - Home: index.md
   - Architecture:
       - Overview: architecture.md
-      - Design Patterns:
-          - Sequential: design_patterns/sequential.md
   - Features:
+      - Overview: features/overview.md
       - Memory: features/memory.md
       - Fault tolerance: features/fault_tolerance.md
-      - Chatbot: features/chatbot.md
-      - Phased rollout: features/phased_rollout.md
-  - Comparisons:
-      - LangGraph vs Radical AsyncFlow: compare.md
+      - Telemetry: features/telemetry.md
+      - Miscellaneous: features/miscellaneous.md
+  - Phased rollout:
+      - Phased rollout: phased_rollout.md
   - API Reference: api/
-  - Examples:
-      - LangGraph Chatbot: examples/chatbot.md
-      - Sequential pattern: examples/sequential.md
+  - Design Patterns:
+      - Chatbot: design_patterns/chatbot.md
+      - Sequential design pattern: design_patterns/sequential.md
+
 
 theme:
   name: material

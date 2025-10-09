@@ -7,5 +7,4 @@ Stateful helpers to persist and retrieve context across agent steps.
 - Works in both LangGraph and AsyncFlow runs
 
 ## API
-
-::: flowgentic.langGraph.memory
+Refer to the memory API reference here: [API Reference](../../api/flowgentic/langGraph/memory/)
