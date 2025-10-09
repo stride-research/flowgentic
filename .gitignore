@@ -41,3 +41,5 @@ logs/
 # Temporary files
 *.tmp
 
+agent_run_data/
+im-working.txt
