@@ -27,6 +27,7 @@ from langchain_core.outputs import ChatResult, ChatGeneration
 from flowgentic.langGraph.memory import (
     MemoryManager,
     MemoryConfig,
+    LangraphMemoryManager
 )
 
 
@@ -75,7 +76,7 @@ async def demonstrate_summarization():
         summarization_batch_size=3
     )
 
-    memory_manager = MemoryManager(memory_config, summarization_llm)
+    memory_manager = LangraphMemoryManager(memory_config, summarization_llm)
 
     print(f"Strategy: {memory_config.short_term_strategy}")
     print(f"Summarization enabled: {memory_config.enable_summarization}")
@@ -191,8 +192,8 @@ async def compare_with_without_summarization():
     )
 
     # Create managers
-    manager_no_summary = MemoryManager(config_no_summary)
-    manager_with_summary = MemoryManager(config_with_summary, MockSummarizationLLM())
+    manager_no_summary = LangraphMemoryManager(config_no_summary)
+    manager_with_summary = LangraphMemoryManager(config_with_summary, MockSummarizationLLM())
 
     # Add the same conversation to both
     test_conversation = cast(List[BaseMessage], [
@@ -258,7 +259,7 @@ async def demonstrate_summarization_fallback():
         enable_summarization=True
     )
 
-    memory_manager = MemoryManager(memory_config, failing_llm)
+    memory_manager = LangraphMemoryManager(memory_config, failing_llm)
 
     print("Adding messages with failing LLM (should fallback to trimming)...")
 
