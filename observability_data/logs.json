@@ -1,0 +1,14 @@
+{
+  "format_version": "1.0",
+  "format_type": "logs",
+  "timestamp": 1760622041.350656,
+  "record_count": 1,
+  "records": [
+    {
+      "timestamp": 1760622039.9105458,
+      "message": "OBSERVE observability initialized for LangGraph",
+      "level": "INFO",
+      "component": "langgraph.integration"
+    }
+  ]
+}

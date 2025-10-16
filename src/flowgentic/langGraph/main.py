@@ -69,8 +69,32 @@ class LangraphIntegration:
 		self.backend = backend
 		self.agent_introspector = GraphIntrospector()
 
+		# OBSERVE components (lazy initialization)
+		self._observability_initialized = False
+		self.logger = None
+		self.tracer = None
+		self.metrics = None
+
 	async def __aenter__(self):
 		logger.info("Creating WorkflowEngine for LangGraphIntegration")
+
+		# Initialize OBSERVE observability (if not already initialized)
+		if not self._observability_initialized:
+			try:
+				import importlib
+				observability_module = importlib.import_module("flowgentic.utils.observability")
+				await observability_module.initialize_flowgentice_observability("langgraph_integration")
+				self.logger = observability_module.get_flowgentice_logger("langgraph.integration")
+				self.tracer = observability_module.get_flowgentice_tracer("langgraph")
+				self.metrics = observability_module.get_flowgentice_metrics("flowgentice.langgraph")
+				self._observability_initialized = True
+				self.logger.info("OBSERVE observability initialized for LangGraph")
+			except (ImportError, AttributeError) as e:
+				logger.warning(f"OBSERVE not available ({e}), using standard logging")
+				self.logger = logger
+				self.tracer = None
+				self.metrics = None
+
 		self.flow = await WorkflowEngine.create(backend=self.backend)
 		self.execution_wrappers: ExecutionWrappersLangraph = ExecutionWrappersLangraph(
 			flow=self.flow, instrospector=self.agent_introspector
@@ -87,6 +111,18 @@ class LangraphIntegration:
 			logger.warning(
 				f"Exception occurred during context manager: {exc_type.__name__}: {exc}"
 			)
+
+		# Flush OBSERVE data before shutdown
+		if self._observability_initialized:
+			try:
+				import importlib
+				observability_module = importlib.import_module("flowgentic.utils.observability")
+				await observability_module.flush_all_data()
+				if self.logger:
+					self.logger.info("OBSERVE data flushed successfully")
+			except (ImportError, AttributeError):
+				pass  # OBSERVE not available
+
 		if self.flow:
 			await self.flow.shutdown()
 		logger.info("WorkflowEngine shutdown complete")
