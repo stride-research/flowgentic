@@ -129,6 +129,26 @@ mkdocs serve
 
 ---
 
+### How to cite
+
+If you use `flowgentic` in your work, please cite it. A suggested reference and a BibTeX entry are provided below.
+
+- Dominguez, J., Amirghofran, Y., & Turilli, M. (2025). flowgentic (Version 0.1.0). MIT License. Available at https://github.com/stride-research/flowgentic
+
+```bibtex
+@software{flowgentic_2025,
+  title        = {flowgentic},
+  author       = {Dominguez, Javier and Amirghofran, Yousef and Turilli, Matteo},
+  year         = {2025},
+  version      = {0.1.0},
+  url          = {https://github.com/stride-research/flowgentic},
+  license      = {MIT},
+  note         = {A library to enable running agentic frameworks on HPC environments.}
+}
+```
+
+---
+
 ### License
 
 MIT (see `LICENSE`).

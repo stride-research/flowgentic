@@ -1,14 +1,16 @@
 from typing import Dict
 import yaml
 import os
+from pathlib import Path
 
-config_path = "./config.yml"
+# Find config.yml in project root
+current_file = Path(__file__).resolve()
+project_root = current_file.parent.parent.parent.parent
+config_path = project_root / "config.yml"
 
 
 def create_files(APP_SETTINGS: Dict):
 	print(APP_SETTINGS)
-	results_directory = APP_SETTINGS["agent_execution"]["results_directory"]
-	os.makedirs(results_directory, exist_ok=True)
 
 
 with open(config_path, "r") as f:

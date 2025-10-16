@@ -5,7 +5,7 @@ from .components.builder import WorkflowBuilder
 from .utils.schemas import WorkflowState
 import asyncio
 from langgraph.checkpoint.memory import InMemorySaver
-from flowgentic.langGraph.telemetry import GraphIntrospector
+from flowgentic.utils.telemetry import GraphIntrospector
 
 
 async def start_app():
@@ -49,4 +49,4 @@ async def start_app():
 
 
 if __name__ == "__main__":
-	asyncio.run(start_app())
+	asyncio.run(start_app(), debug=True)

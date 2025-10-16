@@ -1,4 +1,4 @@
-.PHONY: install format lint docs tests examples-sequential-research examples-sequential-financial examples-supervisor examples-basic
+.PHONY: install format lint docs tests examples-sequential-research examples-sequential-financial examples-supervisor examples-supervisor-sales examples-basic
 .DEFAULT_GOAL:= help
 
 
@@ -42,7 +42,9 @@ examples-sequential-research:
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.research_agent.main
 examples-sequential-financial:
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.financial_advisor.main
-examples-supervisor: ## Run supervisor example
-	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.supervisor.main
+examples-supervisor-toy: ## Run supervisor toy example
+	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.supervisor.toy.main
+examples-supervisor-sales: ## Run supervisor sales proposal example
+	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.supervisor.sales_proposal.main
 examples-basic: ## Run toy example 
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.dummy_example 

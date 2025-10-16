@@ -6,22 +6,12 @@ import time
 from datetime import datetime
 from copy import deepcopy
 from typing import List, Dict, Any, Optional, Callable
-from langchain_core.messages import (
-	AIMessage,
-	BaseMessage,
-	HumanMessage,
-	SystemMessage,
-	ToolMessage,
-)
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from flowgentic.utils.telemetry.extractor import Extractor
-from .schemas import (
-	TokenUsage,
+from .utils.schemas import (
 	MessageInfo,
-	ToolCallInfo,
-	ModelMetadata,
 	NodeExecutionRecord,
 	GraphExecutionReport,
 	ToolExecutionInfo,
@@ -49,12 +39,8 @@ class GraphIntrospector:
 		self._all_nodes: List[str] = None
 		self.extractor = Extractor()
 
-	def _store_records(self, node_name: str, record):
-		timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[
-			:-3
-		]  # Millisecond precision
-		key = f"{node_name}_{timestamp}"
-		self._records[key] = record
+	def _store_records(self, node_name_detailed: str, record):
+		self._records[node_name_detailed] = record
 
 	def record_node_event(
 		self,
@@ -111,8 +97,14 @@ class GraphIntrospector:
 			timestamp=datetime.now().isoformat(),
 		)
 
+		timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[
+			:-3
+		]  # Millisecond precision
+		node_name_detailed = f"{node_name}_{timestamp}"
+
 		record = NodeExecutionRecord(
 			node_name=node_name,
+			node_name_detailed=node_name_detailed,
 			description="Supervisor routing decision",
 			start_time=start_time,
 			end_time=end_time,
@@ -135,7 +127,7 @@ class GraphIntrospector:
 			),
 		)
 
-		self._store_records(node_name, record)
+		self._store_records(node_name_detailed, record)
 		self._final_state = state
 
 	def introspect_node(self, node_func: Callable, node_name: str) -> Callable:
@@ -179,7 +171,7 @@ class GraphIntrospector:
 
 		return wrapper
 
-	def generate_report(self) -> None:
+	def generate_report(self, dir_to_write: str) -> None:
 		"""Generates a human-readable Markdown report of the entire graph execution."""
 		if not self._all_nodes:
 			raise ValueError(
@@ -190,4 +182,4 @@ class GraphIntrospector:
 				final_state=self._final_state,
 				records=self._records,
 				start_time=self._start_time,
-			).generate_report(all_nodes=self._all_nodes)
+			).generate_report(all_nodes=self._all_nodes, dir_to_write=dir_to_write)

@@ -6,11 +6,11 @@ from langgraph.prebuilt import create_react_agent
 from pydantic import BaseModel
 from radical.asyncflow import ConcurrentExecutionBackend
 from concurrent.futures import ThreadPoolExecutor
-from flowgentic.langGraph.agents import AsyncFlowType
+from flowgentic.langGraph.execution_wrappers import AsyncFlowType
 from flowgentic.langGraph.main import LangraphIntegration
 import asyncio
 from langgraph.checkpoint.memory import InMemorySaver
-from flowgentic.langGraph.telemetry import GraphIntrospector
+from flowgentic.utils.telemetry import GraphIntrospector
 from flowgentic.utils.llm_providers import ChatLLMProvider
 import logging
 from dotenv import load_dotenv

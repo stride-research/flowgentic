@@ -1,14 +1,9 @@
-import asyncio
 import inspect
 import json
-import sys
-import time
 from datetime import datetime
-from copy import deepcopy
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Optional
 from langchain_core.messages import (
 	AIMessage,
-	BaseMessage,
 	HumanMessage,
 	SystemMessage,
 	ToolMessage,
@@ -16,7 +11,7 @@ from langchain_core.messages import (
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
-from .schemas import (
+from .utils.schemas import (
 	TokenUsage,
 	MessageInfo,
 	ToolCallInfo,
@@ -140,6 +135,35 @@ class Extractor:
 		end_time,
 		node_func: callable,
 	):
+		# Handle Command objects (routing nodes that return Commands instead of state)
+		if isinstance(state_after, Command):
+			logger.debug(
+				f"Node '{node_name}' returned a Command for routing, skipping detailed extraction"
+			)
+			timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
+			node_name_detailed = f"{node_name}_{timestamp}"
+			record = NodeExecutionRecord(
+				node_name=node_name,
+				node_name_detailed=node_name_detailed,
+				description=inspect.getdoc(node_func),
+				start_time=start_time,
+				end_time=end_time,
+				duration_seconds=round((end_time - start_time).total_seconds(), 4),
+				total_messages_before=total_messages_before,
+				total_messages_after=total_messages_before,  # No new messages
+				new_messages_count=0,
+				messages_added=[],
+				model_metadata=None,
+				final_response=f"Routing command: {state_after.goto}",
+				interleaved_thinking=[],
+				tool_calls=[],
+				tool_executions=[],
+				token_usage=TokenUsage(),
+				state_diff={},
+				state_keys=[],
+			)
+			return node_name_detailed, record
+
 		# Handle both Pydantic models and dicts
 		if hasattr(state_after, "messages"):
 			messages_after = state_after.messages
@@ -149,7 +173,30 @@ class Extractor:
 			logger.warning(
 				f"State after doesn't have messages attribute/key: {type(state_after)}"
 			)
-			return
+			# Return a minimal record instead of None
+			timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
+			node_name_detailed = f"{node_name}_{timestamp}"
+			record = NodeExecutionRecord(
+				node_name=node_name,
+				node_name_detailed=node_name_detailed,
+				description=inspect.getdoc(node_func),
+				start_time=start_time,
+				end_time=end_time,
+				duration_seconds=round((end_time - start_time).total_seconds(), 4),
+				total_messages_before=total_messages_before,
+				total_messages_after=0,
+				new_messages_count=0,
+				messages_added=[],
+				model_metadata=None,
+				final_response=None,
+				interleaved_thinking=[],
+				tool_calls=[],
+				tool_executions=[],
+				token_usage=TokenUsage(),
+				state_diff={},
+				state_keys=[],
+			)
+			return node_name_detailed, record
 		logger.debug(f"Messages is: {messages_after}")
 
 		total_messages_after = (
@@ -243,8 +290,13 @@ class Extractor:
 			state_keys = []
 
 		# Create and store the execution record
+		timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[
+			:-3
+		]  # Millisecond precision
+		node_name_detailed = f"{node_name}_{timestamp}"
 		record = NodeExecutionRecord(
 			node_name=node_name,
+			node_name_detailed=node_name_detailed,
 			description=inspect.getdoc(node_func),
 			start_time=start_time,
 			end_time=end_time,
@@ -263,4 +315,4 @@ class Extractor:
 			state_keys=state_keys,
 		)
 		self._final_state = state_after  # Continuously update the final state
-		return node_name, record
+		return node_name_detailed, record
