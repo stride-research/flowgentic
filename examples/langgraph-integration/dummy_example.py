@@ -125,3 +125,107 @@ You must use the tools provided to you. If you cant use the given tools explain 
 
 if __name__ == "__main__":
 	asyncio.run(start_app())
+
+
+"""
+
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from typing import Annotated, Dict, TypedDict
+import logging
+import time
+import operator
+
+from langgraph.graph import StateGraph, START, END
+from langgraph.types import Send
+from radical.asyncflow import ConcurrentExecutionBackend
+
+from flowgentic.langGraph.execution_wrappers import AsyncFlowType
+from flowgentic.langGraph.main import LangraphIntegration
+
+
+class GraphState(TypedDict, total=False):
+    query: str
+    results: Annotated[Dict[str, str], operator.or_]  # Merge dicts from parallel agents
+
+
+
+
+async def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s.%(msecs)03d %(threadName)s %(levelname)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    graph = StateGraph(GraphState)
+    backend = await ConcurrentExecutionBackend(ThreadPoolExecutor())
+
+    async with LangraphIntegration(backend=backend) as agents_manager:
+
+
+        async def fan_out(state: GraphState):
+            # Returning two Sends triggers parallel execution of both nodes.
+            return [Send("agent_a", state), Send("agent_b", state)]
+
+
+        @agents_manager.execution_wrappers.asyncflow(flow_type=AsyncFlowType.FUNCTION_TASK)
+        async def router(state: GraphState) -> GraphState:
+            # No-op node used to branch to parallel agents exactly once
+            return state
+
+        @agents_manager.execution_wrappers.asyncflow(flow_type=AsyncFlowType.FUNCTION_TASK)
+        async def agent_a(state: GraphState) -> GraphState:
+            start = time.perf_counter()
+            logging.info(f"agent_a START query='{state['query']}'")
+            time.sleep(2.0)  # simulate work
+            elapsed = (time.perf_counter() - start) * 1000
+            logging.info(f"agent_a END   took_ms={elapsed:.1f}")
+            return {"results": {"agent_a": f"A processed: {state['query']}"}}
+
+
+        @agents_manager.execution_wrappers.asyncflow(flow_type=AsyncFlowType.FUNCTION_TASK)
+        async def agent_b(state: GraphState) -> GraphState:
+            start = time.perf_counter()
+            logging.info(f"agent_b START query='{state['query']}'")
+            time.sleep(2.0)  # simulate work (same duration to demonstrate overlap)
+            elapsed = (time.perf_counter() - start) * 1000
+            logging.info(f"agent_b END   took_ms={elapsed:.1f}")
+            return {"results": {"agent_b": f"B answered: {state['query']}!"}}
+
+
+        @agents_manager.execution_wrappers.asyncflow(flow_type=AsyncFlowType.FUNCTION_TASK)
+        async def gather(state: GraphState) -> GraphState:
+            # No-op: both agents wrote to distinct keys under results
+            return state
+
+        # Nodes
+        graph.add_node("router", router)
+        graph.add_node("agent_a", agent_a)
+        graph.add_node("agent_b", agent_b)
+        graph.add_node("gather", gather)
+
+        # Edges: START -> router -(fan_out)-> [agent_a, agent_b] -> gather -> END
+        graph.add_edge(START, "router")
+        graph.add_conditional_edges("router", fan_out)  # branch to parallel agents once
+        graph.add_edge("agent_a", "gather")
+        graph.add_edge("agent_b", "gather")
+        graph.add_edge("gather", END)
+
+        app = graph.compile()
+
+        wall_start = time.perf_counter()
+        result = await app.ainvoke({"query": "What is parallelism?", "results": {}})
+        wall_ms = (time.perf_counter() - wall_start) * 1000
+
+        logging.info(f"WALL elapsed_ms={wall_ms:.1f} (expect ~2s, not ~4s)")
+        print({"results": result.get("results")})
+
+
+if __name__ == "__main__":
+    
+    asyncio.run(main())
+
+
+
+"""
