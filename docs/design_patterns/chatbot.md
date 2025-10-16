@@ -537,6 +537,139 @@ if __name__ == "__main__":
 
 ---
 
+## Antipatterns
+
+### ❌ Using Chatbot Pattern for Non-Interactive Workflows
+
+**Problem:** Implementing a chatbot pattern for batch processing or one-shot tasks that don't require conversation.
+
+**Why it's bad:**
+- Unnecessary complexity from checkpointing and memory management
+- Wasted resources maintaining conversation state
+- Interactive streaming adds latency for non-interactive use cases
+
+**Solution:** Use the Sequential or Supervisor pattern for non-conversational workflows. Reserve chatbot pattern for truly interactive applications.
+
+```python
+# ❌ BAD: Using chatbot for a single query
+checkpointer = InMemorySaver()
+app = workflow.compile(checkpointer=checkpointer)
+result = await app.ainvoke(WorkflowState(messages=[HumanMessage("One-time task")]))
+
+# ✅ GOOD: Use simple invocation without memory
+app = workflow.compile()
+result = await app.ainvoke(WorkflowState(messages=[HumanMessage("One-time task")]))
+```
+
+### ❌ Not Validating Tool Outputs
+
+**Problem:** Trusting tool outputs without validation, leading to propagated errors.
+
+**Why it's bad:**
+- Tools can fail silently or return malformed data
+- LLM continues reasoning with bad data
+- Errors cascade through the conversation
+
+**Solution:** Wrap tools with validation logic and error handling.
+
+```python
+# ❌ BAD: No validation
+@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.TOOL)
+async def web_search_tool(query: str) -> str:
+    result = external_api.search(query)
+    return result  # What if this is None or errors?
+
+# ✅ GOOD: Validate and handle errors
+@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.TOOL)
+async def web_search_tool(query: str) -> str:
+    """Search the web for information."""
+    try:
+        result = external_api.search(query)
+        if not result or not result.strip():
+            return "No results found. Please try a different query."
+        return result
+    except Exception as e:
+        return f"Search failed: {str(e)}"
+```
+
+### ❌ Overly Broad Tool Access
+
+**Problem:** Giving the chatbot access to all tools even when only a subset is needed.
+
+**Why it's bad:**
+- LLM gets confused with too many options
+- Increased token usage in tool descriptions
+- Higher chance of incorrect tool selection
+- Security risks from unnecessary tool access
+
+**Solution:** Bind only relevant tools based on conversation context or user role.
+
+```python
+# ❌ BAD: All tools bound regardless of context
+all_tools = [weather_tool, file_writer, database_query, email_sender, code_executor]
+llm_with_tools = llm.bind_tools(all_tools)
+
+# ✅ GOOD: Context-specific tool binding
+if user_role == "analyst":
+    tools = [weather_tool, database_query]
+elif user_role == "admin":
+    tools = [file_writer, database_query, email_sender]
+else:
+    tools = [weather_tool]
+llm_with_tools = llm.bind_tools(tools)
+```
+
+### ❌ Not Implementing Conversation Limits
+
+**Problem:** Allowing infinite conversation turns without limits or cost controls.
+
+**Why it's bad:**
+- Costs can spiral out of control
+- Performance degrades with very long message histories
+- Potential for abuse or infinite loops
+
+**Solution:** Implement turn limits and conversation summarization.
+
+```python
+# ✅ GOOD: Track and limit conversation turns
+MAX_TURNS = 20
+
+while True:
+    user_input = input("User: ")
+    if user_input in ["quit", "q", "exit"]:
+        break
+    
+    # Get current state
+    current_state = app.get_state(config)
+    message_count = len(current_state.values.get("messages", []))
+    
+    if message_count > MAX_TURNS:
+        print("Conversation limit reached. Please start a new session.")
+        break
+    
+    # Continue with conversation...
+```
+
+### ❌ Mixing Deterministic Tasks with Conversational Flow
+
+**Problem:** Including non-interactive, deterministic operations in every conversation turn.
+
+**Why it's bad:**
+- Unnecessary work repeated on each interaction
+- Slows down chatbot response time
+- Confuses the conversational flow
+
+**Solution:** Run deterministic setup once at initialization, not in the conversation loop.
+
+```python
+# ❌ BAD: File operations in conversation loop
+workflow.add_edge("deterministic_task", "chatbot")  # Runs every turn
+
+# ✅ GOOD: Run setup once before conversation starts
+await app.ainvoke(WorkflowState(messages=[SystemMessage("Initialize")]))
+# Then start interactive loop without deterministic_task
+```
+
 ## Troubleshooting
 
 ### LLM not calling tools

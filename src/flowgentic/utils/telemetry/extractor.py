@@ -59,7 +59,7 @@ class Extractor:
 		for key in all_keys:
 			before_val = before_dict.get(key)
 			after_val = after_dict.get(key)
-			if before_val != after_val:
+			if before_val != after_val and after_val:
 				diff[key] = {
 					"changed_from": str(before_val)[:300]
 					if not isinstance(before_val, (list, dict))

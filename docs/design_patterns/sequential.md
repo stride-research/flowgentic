@@ -646,6 +646,257 @@ The example includes:
 
 ---
 
+## Antipatterns
+
+### ❌ Using Sequential When Tasks Can Run in Parallel
+
+**Problem:** Forcing tasks into sequential stages when they have no dependencies on each other.
+
+**Why it's bad:**
+- Wastes time waiting for independent tasks to complete one-by-one
+- Poor user experience (slow responses)
+- Underutilizes compute resources
+- Defeats the purpose of using HPC infrastructure
+
+**Solution:** Use the Supervisor pattern for independent tasks, or create parallel branches in your sequential flow.
+
+```python
+# ❌ BAD: Sequential when tasks are independent
+workflow.add_edge("research_agent", "data_collection_agent")
+workflow.add_edge("data_collection_agent", "analysis_agent")
+# ^ research and data_collection don't depend on each other, but run sequentially
+
+# ✅ GOOD: Parallel execution for independent tasks
+workflow.add_conditional_edges(
+    "preprocessing",
+    lambda state: Send("research_agent", state) + Send("data_collection_agent", state)
+)
+workflow.add_edge("research_agent", "synthesis")
+workflow.add_edge("data_collection_agent", "synthesis")
+# ^ Both run in parallel, then synthesis combines results
+```
+
+### ❌ Overly Granular Stages
+
+**Problem:** Creating too many tiny stages that add complexity without benefit.
+
+**Why it's bad:**
+- Each stage adds overhead (state serialization, node transitions)
+- Harder to understand the workflow at a glance
+- More potential failure points
+- Increased debugging complexity
+
+**Solution:** Combine related operations into cohesive stages.
+
+```python
+# ❌ BAD: Too granular
+workflow.add_node("validate_input")
+workflow.add_node("clean_input")
+workflow.add_node("extract_keywords")
+workflow.add_node("count_words")
+workflow.add_node("detect_language")
+# ^ 5 nodes for what should be one preprocessing stage
+
+# ✅ GOOD: Cohesive preprocessing stage
+@property
+def preprocess_node(self):
+    @self.agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
+    async def _preprocess(state: WorkflowState) -> WorkflowState:
+        # Validate, clean, extract keywords, count words, detect language
+        # All logically related preprocessing in one node
+        ...
+        return state
+    return _preprocess
+```
+
+### ❌ Not Validating State at Stage Boundaries
+
+**Problem:** Assuming each stage produces valid state without checking.
+
+**Why it's bad:**
+- Errors propagate silently through the pipeline
+- Failures happen far from their source
+- Debugging requires tracing back through multiple stages
+- Data corruption goes unnoticed
+
+**Solution:** Validate state after critical stages and handle errors gracefully.
+
+```python
+# ❌ BAD: No validation between stages
+@property
+def synthesis_node(self):
+    async def _synthesis(state: WorkflowState) -> WorkflowState:
+        # Assumes research_agent_output exists and is valid
+        analysis = state.research_agent_output.output_content
+        ...
+
+# ✅ GOOD: Validate state before processing
+@property
+def synthesis_node(self):
+    async def _synthesis(state: WorkflowState) -> WorkflowState:
+        # Validate critical state
+        if not state.research_agent_output:
+            state.errors.append("synthesis: missing research output")
+            state.current_stage = "error"
+            return state
+        
+        if not state.research_agent_output.success:
+            state.errors.append(f"synthesis: research failed: {state.research_agent_output.error_message}")
+            state.current_stage = "error"
+            return state
+        
+        # Now safe to process
+        analysis = state.research_agent_output.output_content
+        ...
+        return state
+```
+
+### ❌ Hardcoding Stage Order in Nodes
+
+**Problem:** Embedding routing logic inside node implementations.
+
+**Why it's bad:**
+- Nodes become tightly coupled to the workflow
+- Can't reuse nodes in different workflows
+- Hard to change workflow order
+- Violates separation of concerns
+
+**Solution:** Let the graph edges define the flow; keep nodes focused on their specific task.
+
+```python
+# ❌ BAD: Node decides what comes next
+async def research_node(state: WorkflowState) -> WorkflowState:
+    # Do research...
+    state.next_node = "synthesis_node"  # Hardcoded routing!
+    return state
+
+# ✅ GOOD: Graph edges define the flow
+# In the graph builder:
+workflow.add_edge("research_agent", "synthesis_agent")
+# Node just does its job:
+async def research_node(state: WorkflowState) -> WorkflowState:
+    # Do research...
+    return state
+```
+
+### ❌ Monolithic State Schemas
+
+**Problem:** Including every possible field in one giant state class.
+
+**Why it's bad:**
+- Hard to understand what each stage needs/produces
+- Increased memory usage
+- Unclear dependencies between stages
+- Difficult to validate state correctness
+
+**Solution:** Use nested Pydantic models for logical groupings.
+
+```python
+# ❌ BAD: Flat monolithic state
+class WorkflowState(BaseModel):
+    user_input: str
+    is_valid: bool
+    cleaned_input: str
+    word_count: int
+    timestamp: float
+    metadata_domain: str
+    metadata_language: str
+    research_output: str
+    research_time: float
+    research_tools: List[str]
+    synthesis_output: str
+    synthesis_time: float
+    final_output: str
+    # ... 50 more fields
+
+# ✅ GOOD: Nested, logical grouping
+class ValidationData(BaseModel):
+    is_valid: bool
+    cleaned_input: str
+    word_count: int
+    timestamp: float
+    metadata: Dict[str, Any]
+
+class AgentOutput(BaseModel):
+    output_content: str
+    execution_time: float
+    tools_used: List[str]
+    success: bool
+
+class WorkflowState(BaseModel):
+    user_input: str
+    validation_data: Optional[ValidationData]
+    research_agent_output: Optional[AgentOutput]
+    synthesis_agent_output: Optional[AgentOutput]
+    final_output: str
+```
+
+### ❌ Ignoring Error Handling Until the End
+
+**Problem:** Not adding error handlers at each critical stage.
+
+**Why it's bad:**
+- Entire workflow fails if one stage fails
+- No graceful degradation
+- Poor user experience (all-or-nothing results)
+- Hard to recover from transient failures
+
+**Solution:** Add conditional error routing at each critical stage.
+
+```python
+# ❌ BAD: No error handling
+workflow.add_edge("preprocessing", "research_agent")
+workflow.add_edge("research_agent", "synthesis_agent")
+workflow.add_edge("synthesis_agent", "finalize")
+
+# ✅ GOOD: Error handling at each critical stage
+workflow.add_conditional_edges(
+    "preprocessing",
+    should_continue_after_preprocessing,
+    {"success": "research_agent", "error": "error_handler"}
+)
+workflow.add_conditional_edges(
+    "research_agent",
+    should_continue_after_research,
+    {"success": "synthesis_agent", "error": "error_handler"}
+)
+workflow.add_edge("error_handler", END)
+```
+
+### ❌ Creating Stages That Are Too Coarse
+
+**Problem:** Putting too much unrelated logic into one stage.
+
+**Why it's bad:**
+- Hard to debug (which part of the stage failed?)
+- Poor separation of concerns
+- Can't parallelize sub-tasks
+- Difficult to reuse or modify
+
+**Solution:** Break coarse stages into logical substages.
+
+```python
+# ❌ BAD: One stage does everything
+async def mega_node(state: WorkflowState) -> WorkflowState:
+    # Validate input
+    # Run research with 5 different tools
+    # Process data
+    # Generate report
+    # Format output
+    # Send email
+    # ... 500 lines of code
+
+# ✅ GOOD: Logical substages
+workflow.add_node("validate", validate_node)
+workflow.add_node("research", research_node)
+workflow.add_node("process", process_node)
+workflow.add_node("generate_report", report_node)
+workflow.add_node("format_output", format_node)
+# Each stage has a clear, focused purpose
+```
+
+---
+
 ## Troubleshooting
 
 ### Tools not available to agents

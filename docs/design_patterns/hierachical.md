@@ -600,6 +600,207 @@ Track execution across the hierarchy:
 
 ---
 
+## Antipatterns
+
+### ❌ Over-Nesting: Too Many Hierarchical Levels
+
+**Problem:** Creating 4+ levels of supervisors when 2-3 would suffice.
+
+**Why it's bad:**
+- Exponentially increases latency (each level adds routing overhead)
+- Dramatically increases cost (more LLM calls for routing)
+- Makes debugging nearly impossible (errors buried deep in hierarchy)
+- Diminishing returns on routing accuracy after 3 levels
+
+**Solution:** Limit to 2-3 levels maximum. If you need more, reconsider your domain boundaries.
+
+```python
+# ❌ BAD: Too many levels
+Top → Department → Team → Sub-Team → Individual Agent
+# 4 routing decisions before any work happens!
+
+# ✅ GOOD: 2-3 levels maximum
+Top → Department → Worker Agent
+# or
+Top → Department → Sub-Department → Worker Agent
+```
+
+### ❌ Using Hierarchical When Flat Supervisor Would Work
+
+**Problem:** Implementing hierarchy for fewer than 8-10 total agents.
+
+**Why it's bad:**
+- Unnecessary complexity
+- Added latency from multi-level routing
+- Higher costs with no benefit
+- Harder to maintain and debug
+
+**Solution:** Use a flat supervisor pattern until you have enough agents to justify hierarchy.
+
+```python
+# ❌ BAD: Hierarchical for 5 agents
+Top Supervisor
+├─ Department A (2 agents)
+└─ Department B (3 agents)
+
+# ✅ GOOD: Flat supervisor for 5 agents
+Supervisor → [Agent1, Agent2, Agent3, Agent4, Agent5]
+```
+
+### ❌ Vague Domain Boundaries Between Departments
+
+**Problem:** Department responsibilities overlap or are poorly defined.
+
+**Why it's bad:**
+- Top-level router can't make clear decisions
+- Same query could route to multiple departments with conflicting results
+- Unclear which department owns which functionality
+- Wasted parallel execution when departments duplicate work
+
+**Solution:** Define clear, mutually exclusive domain boundaries.
+
+```python
+# ❌ BAD: Overlapping domains
+research_department: "Handles information gathering and analysis"
+analysis_department: "Handles data analysis and insights"
+# ^ These overlap! What's the difference?
+
+# ✅ GOOD: Clear boundaries
+research_department: "External information gathering (web search, papers, APIs)"
+analysis_department: "Internal data processing (statistics, ML, visualization)"
+# ^ Clear distinction between external vs. internal data
+```
+
+### ❌ Not Optimizing Model Selection by Level
+
+**Problem:** Using the same expensive model for all routing and execution.
+
+**Why it's bad:**
+- Routing is simpler than execution, doesn't need expensive models
+- Department-level routing is even simpler (smaller option space)
+- Costs 3-5x more than necessary
+- No performance benefit for routing decisions
+
+**Solution:** Use tiered model selection based on decision complexity.
+
+```python
+# ❌ BAD: Same model everywhere
+top_router = ChatLLMProvider(model="claude-opus-3")  # $15/1M tokens
+dept_router = ChatLLMProvider(model="claude-opus-3")  # $15/1M tokens
+worker_agents = ChatLLMProvider(model="claude-opus-3")  # $15/1M tokens
+
+# ✅ GOOD: Tiered model selection
+top_router = ChatLLMProvider(model="claude-sonnet-3.5")  # $3/1M tokens (complex routing)
+dept_router = ChatLLMProvider(model="gemini-flash")  # $0.075/1M tokens (simple routing)
+worker_agents = ChatLLMProvider(model="claude-opus-3")  # $15/1M tokens (quality work)
+# Saves 60-80% on costs while maintaining quality
+```
+
+### ❌ Weak Routing Prompts at Each Level
+
+**Problem:** Generic, vague routing prompts that don't guide the LLM effectively.
+
+**Why it's bad:**
+- Poor routing accuracy leads to wrong departments handling tasks
+- LLM wastes tokens on uncertainty
+- Users get irrelevant results
+- Requires human intervention to fix routing mistakes
+
+**Solution:** Write specific, example-rich routing prompts at each level.
+
+```python
+# ❌ BAD: Vague top-level prompt
+"Route this query to the right department: {query}"
+
+# ✅ GOOD: Specific, example-rich prompt
+"""
+Analyze the user's query and route to the appropriate department(s):
+
+RESEARCH DEPARTMENT - Choose when query involves:
+- Gathering external information (web search, academic papers, APIs)
+- Market research, competitor analysis, trend identification
+- Examples: "Find recent papers on AI safety", "What are competitors doing?"
+
+ENGINEERING DEPARTMENT - Choose when query involves:
+- Code generation, debugging, testing, or review
+- Technical implementation, architecture design, system analysis
+- Examples: "Build a REST API", "Debug this Python code", "Review architecture"
+
+SALES DEPARTMENT - Choose when query involves:
+- Customer communication, proposals, pricing, or strategy
+- Sales collateral, pitch decks, ROI calculations
+- Examples: "Draft a proposal for Client X", "What's the pricing for Enterprise?"
+
+Query: {query}
+
+Return: ["department_name"] or ["dept1", "dept2"] for multiple departments
+"""
+```
+
+### ❌ No State Transformation Between Levels
+
+**Problem:** Passing the entire top-level state down to departments unchanged.
+
+**Why it's bad:**
+- Department-level agents receive irrelevant data
+- Increased token usage (LLM processes unnecessary context)
+- Confuses department routing logic
+- Violates separation of concerns
+
+**Solution:** Transform state explicitly when crossing levels.
+
+```python
+# ❌ BAD: Pass entire state to department
+def research_department_node(top_state: TopLevelState):
+    return research_dept_graph.invoke(top_state)  # Too much data!
+
+# ✅ GOOD: Transform state for department
+def research_department_node(top_state: TopLevelState):
+    # Extract only relevant data for research department
+    dept_state = ResearchDepartmentState(
+        delegated_query=top_state.user_query,
+        context=top_state.research_context,  # Only relevant fields
+        # Exclude sales_data, engineering_specs, etc.
+    )
+    result = research_dept_graph.invoke(dept_state)
+    
+    # Transform result back to top-level state
+    top_state.research_summary = result.department_summary
+    return top_state
+```
+
+### ❌ Ignoring Parallelism Across Departments
+
+**Problem:** Running departments sequentially even when they're independent.
+
+**Why it's bad:**
+- Wasted time—departments could run simultaneously
+- Poor user experience (slow responses)
+- Underutilizes HPC infrastructure
+- Defeats a key benefit of hierarchical pattern
+
+**Solution:** Use conditional fan-out at top level to enable parallel department execution.
+
+```python
+# ❌ BAD: Sequential department execution
+graph.add_edge("top_router", "research_department")
+graph.add_edge("research_department", "engineering_department")
+graph.add_edge("engineering_department", "top_gather")
+# ^ Takes 10s if each department takes 5s
+
+# ✅ GOOD: Parallel department execution
+graph.add_conditional_edges(
+    "top_router",
+    top_supervisor_fan_out,  # Routes to multiple departments in parallel
+    path_map=["research_department", "engineering_department"]
+)
+graph.add_edge("research_department", "top_gather")
+graph.add_edge("engineering_department", "top_gather")
+# ^ Takes 5s if departments run in parallel
+```
+
+---
+
 ## Next Steps
 
 To implement a hierarchical system:

@@ -604,6 +604,280 @@ The example includes:
 
 ---
 
+## Antipatterns
+
+### ❌ Poor Routing Prompt Design
+
+**Problem:** Vague, generic routing prompts that don't clearly describe agent capabilities.
+
+**Why it's bad:**
+- LLM makes incorrect routing decisions
+- Inconsistent behavior across similar queries
+- Wasted parallel execution (wrong agents selected)
+- Poor user experience with irrelevant results
+
+**Solution:** Write detailed, example-rich routing prompts with clear agent descriptions.
+
+```python
+# ❌ BAD: Vague routing prompt
+routing_prompt = """
+Route this query to the right agent: {query}
+
+Agents: agent_A, agent_B
+"""
+
+# ✅ GOOD: Detailed, example-rich prompt
+routing_prompt = """
+Based on the user's query, decide which agent(s) should handle it:
+
+- agent_A: Handles DATA PROCESSING tasks including:
+  * Statistical analysis and calculations
+  * Data transformation and cleaning
+  * Numerical computations
+  * Examples: "Calculate average revenue", "Clean this dataset"
+
+- agent_B: Handles QUESTION ANSWERING tasks including:
+  * Information retrieval and explanation
+  * Conceptual questions
+  * How-to and why questions
+  * Examples: "What is machine learning?", "Explain how APIs work"
+
+- both: When the query requires BOTH processing AND explanation
+  * Examples: "Analyze this data and explain the trends"
+
+User query: "{query}"
+
+Respond with: ["agent_A"] or ["agent_B"] or ["agent_A", "agent_B"]
+"""
+```
+
+### ❌ Dependent Worker Agents
+
+**Problem:** Creating worker agents that depend on each other's outputs.
+
+**Why it's bad:**
+- Defeats the purpose of parallel execution
+- Creates hidden ordering dependencies
+- Leads to race conditions or deadlocks
+- Violates the supervisor pattern's independence principle
+
+**Solution:** Keep workers independent; use the gather node to combine results.
+
+```python
+# ❌ BAD: Agent B depends on Agent A's output
+async def agent_a(state: GraphState) -> dict:
+    result = "Data analysis complete"
+    return {"results": {"agent_A": result}}
+
+async def agent_b(state: GraphState) -> dict:
+    # This creates a dependency!
+    agent_a_result = state.results.get("agent_A", "")
+    # What if agent_A hasn't finished yet?
+    return {"results": {"agent_B": f"Based on {agent_a_result}..."}}
+
+# ✅ GOOD: Independent agents, gather combines
+async def agent_a(state: GraphState) -> dict:
+    result = "Data analysis complete"
+    return {"results": {"agent_A": result}}
+
+async def agent_b(state: GraphState) -> dict:
+    # Independent work, doesn't need agent_A
+    result = "Question answered independently"
+    return {"results": {"agent_B": result}}
+
+async def gather(state: GraphState) -> dict:
+    # Gather combines results from both agents
+    combined = f"{state.results['agent_A']} + {state.results['agent_B']}"
+    return {"final_summary": combined}
+```
+
+### ❌ No Gather/Synthesis Strategy
+
+**Problem:** Not combining results when multiple agents run in parallel.
+
+**Why it's bad:**
+- User receives fragmented, disconnected outputs
+- No coherent narrative or conclusion
+- Unclear how to interpret multiple agent results
+- Wastes the value of parallel execution
+
+**Solution:** Always implement a gather node that synthesizes parallel results.
+
+```python
+# ❌ BAD: No synthesis of parallel results
+graph.add_edge("agent_A", END)
+graph.add_edge("agent_B", END)
+# ^ Results are separate, no coherent final output
+
+# ✅ GOOD: Gather node synthesizes results
+graph.add_edge("agent_A", "gather")
+graph.add_edge("agent_B", "gather")
+graph.add_edge("gather", END)
+
+async def gather(state: GraphState) -> dict:
+    # Check if multiple agents ran
+    if len(state.results) > 1:
+        # Use LLM to synthesize
+        synthesis = await synthesize_results(state.results, state.query)
+        return {"final_summary": synthesis}
+    else:
+        # Single agent, pass through
+        return {"final_summary": list(state.results.values())[0]}
+```
+
+### ❌ Using Supervisor for Simple Sequential Flows
+
+**Problem:** Implementing supervisor pattern when tasks have a clear sequential order.
+
+**Why it's bad:**
+- Unnecessary routing overhead
+- LLM routing adds latency and cost
+- Over-engineering a simple problem
+- More potential points of failure
+
+**Solution:** Use the Sequential pattern for workflows with clear stage dependencies.
+
+```python
+# ❌ BAD: Supervisor for sequential tasks
+# Task is: validate → research → synthesize (always in this order)
+routing_prompt = "Route to validate, research, or synthesize"
+# ^ Why use LLM routing when order is fixed?
+
+# ✅ GOOD: Sequential pattern for fixed order
+workflow.add_edge("validate", "research")
+workflow.add_edge("research", "synthesize")
+workflow.add_edge("synthesize", END)
+# ^ Clear, deterministic flow
+```
+
+### ❌ Not Using `path_map` in Conditional Edges
+
+**Problem:** Forgetting to specify `path_map` when adding conditional edges.
+
+**Why it's bad:**
+- Graph compilation fails with cryptic errors
+- LangGraph can't validate routing targets
+- Runtime errors when routing to unknown nodes
+- Difficult to debug
+
+**Solution:** Always provide `path_map` with all possible routing targets.
+
+```python
+# ❌ BAD: Missing path_map
+graph.add_conditional_edges(
+    "llm_router",
+    supervisor_fan_out
+    # Missing path_map parameter!
+)
+# ^ Compilation error: "Cannot add edge to unknown node"
+
+# ✅ GOOD: Explicit path_map
+graph.add_conditional_edges(
+    "llm_router",
+    supervisor_fan_out,
+    path_map=["agent_A", "agent_B"]  # All possible routing targets
+)
+```
+
+### ❌ Incorrect State Merging Configuration
+
+**Problem:** Not using proper reducers for state fields that receive multiple updates.
+
+**Why it's bad:**
+- Agent results overwrite each other instead of merging
+- Lost data from parallel agents
+- Unpredictable final state
+- Silent data loss
+
+**Solution:** Use appropriate reducers (`operator.or_` for dicts, `add_messages` for messages).
+
+```python
+# ❌ BAD: No reducer for results field
+class GraphState(BaseModel):
+    results: Dict[str, str] = {}  # No reducer!
+    # ^ Second agent overwrites first agent's results
+
+# ✅ GOOD: Use operator.or_ to merge dictionaries
+import operator
+from typing import Annotated
+
+class GraphState(BaseModel):
+    results: Annotated[Dict[str, str], operator.or_] = Field(default_factory=dict)
+    # ^ Results from all agents are merged, not overwritten
+```
+
+### ❌ Overly Complex Routing Logic
+
+**Problem:** Creating routing prompts with too many agents or complex conditional rules.
+
+**Why it's bad:**
+- LLM struggles to make accurate decisions with 10+ options
+- Routing accuracy degrades exponentially with options
+- Increased token usage for routing
+- Consider hierarchical pattern instead
+
+**Solution:** Limit flat supervisor to 3-8 agents; use hierarchical pattern for more.
+
+```python
+# ❌ BAD: Too many agents in one supervisor
+routing_prompt = """
+Route to one or more of these 15 agents:
+- web_search_agent
+- database_query_agent
+- file_reader_agent
+- email_sender_agent
+- calendar_agent
+- calculator_agent
+- weather_agent
+- news_agent
+- translation_agent
+- sentiment_analyzer
+- code_generator
+- testing_agent
+- deployment_agent
+- monitoring_agent
+- alert_agent
+...
+"""
+# ^ LLM routing accuracy drops significantly
+
+# ✅ GOOD: Use hierarchical pattern
+# Top-level supervisor routes to departments:
+# - Data Department (web_search, database, file_reader)
+# - Communication Department (email, calendar)
+# - Engineering Department (code_gen, testing, deployment)
+# Each department has its own supervisor for 3-5 agents
+```
+
+### ❌ Not Logging Router Decisions
+
+**Problem:** No visibility into what the LLM router decided and why.
+
+**Why it's bad:**
+- Can't debug poor routing decisions
+- No way to improve routing prompts
+- Can't track routing patterns over time
+- Difficult to optimize
+
+**Solution:** Log routing decisions with context for analysis.
+
+```python
+# ✅ GOOD: Log routing decisions
+async def llm_router_with_logging(state: GraphState) -> GraphState:
+    decision = await router_llm.ainvoke(routing_prompt.format(query=state.query))
+    
+    # Log decision with context
+    logging.info(
+        f"🧠 Router Decision | Query: '{state.query}' | "
+        f"Routed to: {decision} | Model: {router_llm.model}"
+    )
+    
+    state.routing_decision = decision
+    return state
+```
+
+---
+
 ## Troubleshooting
 
 ### Graph compilation fails with "unknown node" error
