@@ -126,16 +126,6 @@ async def main():
 		)
 		print(f"🤖 Assistant: {response4['messages'][-1].content}\n")
 
-		print("=" * 80)
-		print("✨ What Just Happened:")
-		print("=" * 80)
-		print("1. ✅ Service initialized ONCE (first weather question)")
-		print("2. ✅ LLM called tool 3 times (Questions 1, 2, 4)")
-		print("3. ✅ LLM did NOT call tool for question 3 (no weather needed)")
-		print("4. ✅ Connection stayed open (no re-authentication)")
-		print("5. ✅ Results cached (New York weather hit cache on 2nd request)")
-		print("=" * 80)
-
 
 if __name__ == "__main__":
 	asyncio.run(main())
