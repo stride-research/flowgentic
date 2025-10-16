@@ -385,7 +385,12 @@ graph.add_node("gather", gather_introspection)
 graph.add_edge(START, "llm_router")
 
 # Conditional fan-out: router decides which agents to invoke
-graph.add_conditional_edges("llm_router", supervisor_fan_out)
+# path_map specifies the possible agents that can be routed to
+graph.add_conditional_edges(
+    "llm_router", 
+    supervisor_fan_out, 
+    path_map=["agent_A", "agent_B"]
+)
 
 # All agents route to gather node
 graph.add_edge("agent_A", "gather")
@@ -419,6 +424,18 @@ def supervisor_fan_out(state: GraphState) -> List[Send]:
 1. Reads `state.routing_decision` (populated by the router)
 2. Creates a `Send` command for each selected agent
 3. LangGraph executes all `Send` commands in parallel
+
+**Important:** When adding the conditional edge, you must specify `path_map` with the list of possible agent names:
+
+```python
+graph.add_conditional_edges(
+    "llm_router", 
+    supervisor_fan_out, 
+    path_map=["agent_A", "agent_B"]
+)
+```
+
+The `path_map` parameter tells LangGraph which nodes can be reached from this conditional edge. This is required for proper graph compilation and validation.
 
 **Example routing scenarios:**
 - Router decides `["agent_A"]` → Only agent_A runs
@@ -468,20 +485,17 @@ async def main():
             wall_start = time.perf_counter()
             
             try:
-                result = await app.ainvoke(GraphState(query=query))
+                state = GraphState(query=query)
+                result = await app.ainvoke(state)
                 wall_ms = (time.perf_counter() - wall_start) * 1000
             except Exception as e:
                 print(f"❌ Workflow execution failed: {str(e)}")
                 raise
             finally:
-                current_directory = str(pathlib.Path(__file__).parent.resolve())
-                agents_manager.utils.create_output_results_dirs(current_directory)
-                
-                # Optional: Generate introspection report
-                # agents_manager.agent_introspector.generate_report(dir_to_write=current_directory)
-                
-                # Optional: Render graph visualization
-                # await agents_manager.utils.render_graph(app, dir_to_write=current_directory)
+                # Generate all execution artifacts (directories, report, graph)
+                await agents_manager.generate_execution_artifacts(
+                    app, __file__, final_state=result
+                )
 
             print(f"\n📋 Results for: '{query}'")
             print(f"   Routing: {result['routing_decision']}")
@@ -492,6 +506,43 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main(), debug=True)
+```
+
+**Key execution details:**
+- Create the initial state with your query
+- Use `ainvoke()` to execute the workflow
+- In the `finally` block, call `generate_execution_artifacts()` to create output files
+
+### Using the Execution Artifacts Facade
+
+FlowGentic provides a convenient facade method `generate_execution_artifacts()` that handles all output generation in one call:
+
+```python
+await agents_manager.generate_execution_artifacts(
+    app, __file__, final_state=result
+)
+```
+
+**What it does:**
+1. Creates the `agent_execution_results/` directory
+2. Generates an execution summary markdown report
+3. Renders a visual graph of your workflow
+
+**Parameters:**
+- `app`: The compiled StateGraph
+- `__file__`: Python's built-in variable pointing to the current file (used to determine output directory)
+- `final_state`: The final state after workflow execution (used for state introspection in reports)
+
+**Generated artifacts:**
+- `agent_execution_results/execution_summary.md` — Detailed execution report with timing, node calls, and state
+- `agent_execution_results/agent_graph.png` — Visual representation of your workflow graph
+
+This replaces the older pattern of calling three separate methods:
+```python
+# Old pattern (deprecated)
+agents_manager.utils.create_output_results_dirs(current_directory)
+agents_manager.agent_introspector.generate_report(dir_to_write=current_directory)
+await agents_manager.utils.render_graph(app, dir_to_write=current_directory)
 ```
 
 ---
@@ -555,6 +606,22 @@ The example includes:
 
 ## Troubleshooting
 
+### Graph compilation fails with "unknown node" error
+
+**Symptom:** Error like "Cannot add edge to unknown node" when compiling the graph.
+
+**Solution:**
+- Ensure you've added `path_map` parameter to `add_conditional_edges()`:
+  ```python
+  graph.add_conditional_edges(
+      "llm_router", 
+      supervisor_fan_out, 
+      path_map=["agent_A", "agent_B"]  # ← Required!
+  )
+  ```
+- Verify that all node names in `path_map` match the nodes you added to the graph
+- Check that node names are strings and match exactly (case-sensitive)
+
 ### Router not selecting the right agents
 
 **Symptom:** LLM router makes poor routing decisions or always routes to the same agent.
@@ -604,6 +671,39 @@ The example includes:
 - Verify `_all_nodes` list includes every node name
 - Check that node names match between graph definition and introspector registration
 - Call `generate_report()` after workflow execution completes
+
+---
+
+## Advanced Example: Product Research Assistant
+
+Once you've mastered the basic supervisor pattern, explore the **Product Research Assistant** example that demonstrates advanced concepts:
+
+[**View Advanced Supervisor Example →**](https://github.com/stride-research/flowgentic/tree/main/examples/langgraph-integration/design_patterns/supervisor/product_research)
+
+**Key innovations in this example:**
+
+1. **Real LLM Worker Agents**: Uses `create_react_agent()` instead of simple functions
+2. **Two-Stage Routing**: Initial routing to workers + conditional routing to synthesizers
+3. **Context-Aware Synthesis**: Automatically detects audience type and selects appropriate synthesizer
+4. **Dual Synthesizer Strategies**: Technical reports for professionals vs consumer reports for general buyers
+
+**Workflow architecture:**
+```
+START → llm_router → [tech_agent || reviews_agent] → gather → synthesis_router 
+      → [technical_synthesizer OR consumer_synthesizer] → END
+```
+
+**What you'll learn:**
+- How to use actual LLM agents with domain-specific prompts
+- Implementing conditional synthesis based on extracted context
+- Building multi-stage routing architectures
+- Combining parallel and conditional execution patterns
+
+**Example queries:**
+- "I need a comprehensive technical analysis of the iPhone 15 Pro for professional developers" 
+  → Routes to both agents + technical synthesizer
+- "Should I buy the Samsung Galaxy S24 for everyday use?"
+  → Routes to reviews agent + consumer synthesizer
 
 ---
 

@@ -11,7 +11,7 @@ from langchain_core.messages import (
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
-from .utils.schemas import (
+from .schemas import (
 	TokenUsage,
 	MessageInfo,
 	ToolCallInfo,
@@ -139,8 +139,11 @@ class Extractor:
 		# Handle both Pydantic models and dicts
 		if hasattr(state_after, "messages"):
 			messages_after = state_after.messages
-		elif isinstance(state_after, dict) and "messages" in state_after:
-			messages_after = state_after["messages"]
+		elif isinstance(state_after, dict):
+			if "messages" in state_after:
+				messages_after = state_after["messages"]
+			else:
+				messages_after = []
 		else:
 			logger.warning(
 				f"State after doesn't have messages attribute/key: {type(state_after)}"

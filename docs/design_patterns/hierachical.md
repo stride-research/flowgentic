@@ -341,7 +341,11 @@ def build_research_department_graph():
     
     # Connect with supervisor fan-out pattern
     graph.add_edge(START, "router")
-    graph.add_conditional_edges("router", supervisor_fan_out)
+    graph.add_conditional_edges(
+        "router", 
+        supervisor_fan_out, 
+        path_map=["web_search_agent", "paper_analysis_agent"]
+    )
     graph.add_edge("web_search_agent", "gather")
     graph.add_edge("paper_analysis_agent", "gather")
     graph.add_edge("gather", END)
@@ -401,7 +405,11 @@ def build_hierarchical_graph():
     
     # Connect with conditional routing
     graph.add_edge(START, "top_router")
-    graph.add_conditional_edges("top_router", top_supervisor_fan_out)
+    graph.add_conditional_edges(
+        "top_router", 
+        top_supervisor_fan_out, 
+        path_map=["research_department", "engineering_department"]
+    )
     graph.add_edge("research_department", "top_gather")
     graph.add_edge("engineering_department", "top_gather")
     graph.add_edge("top_gather", END)

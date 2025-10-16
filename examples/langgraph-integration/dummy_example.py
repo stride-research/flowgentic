@@ -110,17 +110,21 @@ You must use the tools provided to you. If you cant use the given tools explain 
 		print("🚀 Starting Sequential Agent Workflow")
 		print("=" * 60)
 
-		try:
-			# Execute workflow
-			config = {"configurable": {"thread_id": "1"}}
-			async for chunk in app.astream({}, config=config, stream_mode="values"):
-				print(f"Chunk: {chunk}\n")
+	try:
+		# Execute workflow
+		config = {"configurable": {"thread_id": "1"}}
+		final_state = None
+		async for chunk in app.astream({}, config=config, stream_mode="values"):
+			print(f"Chunk: {chunk}\n")
+			final_state = chunk
 
-		except Exception as e:
-			raise
-		finally:
-			agents_manager.agent_introspector.generate_report()
-			await agents_manager.utils.render_graph(app)
+	except Exception as e:
+		raise
+	finally:
+		# Generate all execution artifacts (directories, report, graph)
+		await agents_manager.generate_execution_artifacts(
+			app, __file__, final_state=final_state
+		)
 
 
 if __name__ == "__main__":

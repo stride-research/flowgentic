@@ -313,11 +313,22 @@ config = {"configurable": {"thread_id": thread_id}}
 
 ## Step 13: Visualize the Graph
 
-FlowGentic provides utilities to render your graph structure.
+FlowGentic provides utilities to render your graph structure and generate execution artifacts.
 
 ```python
+# Simple graph visualization only
 await agents_manager.utils.render_graph(app)
+
+# Or generate full execution artifacts after running the workflow
+await agents_manager.generate_execution_artifacts(
+    app, __file__, final_state=last_state
+)
 ```
+
+**What `generate_execution_artifacts()` provides:**
+- Creates the `agent_execution_results/` directory
+- Generates an execution summary markdown report with timing and state
+- Renders a visual graph of your workflow
 
 This generates a visual representation of your workflow, showing:
 - All nodes and their connections
@@ -488,6 +499,7 @@ async def start_app():
         thread_id = random.randint(0, 10)
         config = {"configurable": {"thread_id": thread_id}}
 
+        # Optional: Render graph before starting interaction
         await agents_manager.utils.render_graph(app)
 
         while True:

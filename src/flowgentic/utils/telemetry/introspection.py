@@ -10,7 +10,7 @@ from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from flowgentic.utils.telemetry.extractor import Extractor
-from .utils.schemas import (
+from .schemas import (
 	MessageInfo,
 	NodeExecutionRecord,
 	GraphExecutionReport,

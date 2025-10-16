@@ -1,4 +1,5 @@
 from flowgentic.langGraph.main import LangraphIntegration
+from flowgentic.utils.telemetry.introspection import GraphIntrospector
 from ..utils.schemas import WorkflowState
 from langgraph.graph import END, StateGraph
 from .utils.actions_registry import ActionsRegistry
@@ -6,7 +7,6 @@ from .utils.actions_registry import ActionsRegistry
 from .nodes import WorkflowNodes
 from .edges import WorkflowEdges
 
-from flowgentic.langGraph.telemetry import GraphIntrospector
 
 import logging
 

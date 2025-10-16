@@ -5,7 +5,7 @@ from typing import Dict, List
 
 from pydantic import BaseModel
 
-from .utils.schemas import GraphExecutionReport, NodeExecutionRecord
+from .schemas import GraphExecutionReport, NodeExecutionRecord
 from flowgentic.settings.extract_settings import APP_SETTINGS
 import logging
 
@@ -78,6 +78,11 @@ class ReportGenerator:
 				final_state_dict = self._final_state.model_dump()
 			elif isinstance(self._final_state, dict):
 				final_state_dict = self._final_state
+			else:
+				logger.warning(
+					f"Final state: {self._final_state} with type: {type(self._final_state)} cant be accesed for attribute extraction"
+				)
+		logger.debug(f"Final state 123123 is: {final_state_dict}")
 
 		report_data = GraphExecutionReport(
 			graph_start_time=self._start_time,
@@ -278,10 +283,16 @@ class ReportGenerator:
 				if hasattr(self._final_state, "model_fields"):
 					state_keys = list(self._final_state.model_fields.keys())
 					f.write(f"**State Keys:** `{', '.join(state_keys)}`\n\n")
-
-					# Show summary of final state
 					for key in state_keys:
 						value = getattr(self._final_state, key, None)
 						f.write(f"- **{key}:** {(value)}\n")
+				else:
+					state_keys = list(self._final_state.keys())
+					f.write(f"**State Keys:** `{', '.join(state_keys)}`\n\n")
+					for key in state_keys:
+						value = self._final_state.get(key)
+						f.write(f"- **{key}:** {(value)}\n")
+
+				# Show summary of final state
 
 		print(f"✅ Introspection report saved to '{dir_to_write}'")

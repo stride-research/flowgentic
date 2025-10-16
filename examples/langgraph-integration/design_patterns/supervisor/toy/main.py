@@ -1,6 +1,5 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-import pathlib
 from typing import Annotated, Dict, List, Optional
 import logging
 import time
@@ -8,6 +7,7 @@ import operator
 
 from dotenv import load_dotenv
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END, add_messages
 from langgraph.prebuilt import create_react_agent
 from pydantic import BaseModel, Field
@@ -26,6 +26,9 @@ class GraphState(BaseModel):
 	query: str = Field(..., description="User query to route")
 	routing_decision: Optional[List[str]] = Field(
 		default=None, description="List of agents to route to"
+	)
+	routing_rationale: Optional[str] = Field(
+		default=None, description="Decision to move to a set of nodes"
 	)
 	results: Annotated[Dict[str, str], operator.or_] = Field(
 		default_factory=dict, description="Merge dicts from parallel agents"
@@ -48,28 +51,22 @@ async def main():
 
 	async with LangraphIntegration(backend=backend) as agents_manager:
 		# Define the routing prompt template
-		routing_prompt_template = """
-Based on the user's query, decide which agent(s) should handle it:
+		routing_prompt_agents_responsibility = """
 
 - agent_A: Handles data processing and analysis tasks
 - agent_B: Handles question answering and information retrieval
 - both: When the query requires both processing AND answering
 
-User query: "{query}"
-
-Respond with a list of the agents to call: 
-For example for agent_A: ["agent_A"]
-For both: ["agent_A, "agent_B"]
 """
 
 		# Define the model for routing
 		router_model = ChatLLMProvider(
-			provider="OpenRouter", model="google/gemini-2.5-flash"
+			provider="OpenRouter", model="google/gemini-2.5-pro"
 		)
 
 		# Create and decorate the router function using the factory
 		llm_router = agents_manager.execution_wrappers.asyncflow(
-			create_llm_router(routing_prompt_template, router_model),
+			create_llm_router(routing_prompt_agents_responsibility, router_model),
 			flow_type=AsyncFlowType.EXECUTION_BLOCK,
 		)
 
@@ -184,7 +181,9 @@ Create a brief, unified response that integrates both perspectives. Keep it conc
 
 		# Edges
 		graph.add_edge(START, "llm_router")
-		graph.add_conditional_edges("llm_router", supervisor_fan_out)
+		graph.add_conditional_edges(
+			"llm_router", supervisor_fan_out, path_map=["agent_A", "agent_B"]
+		)
 		graph.add_edge("agent_A", "gather")
 		graph.add_edge("agent_B", "gather")
 		graph.add_edge("gather", END)
@@ -203,27 +202,21 @@ Create a brief, unified response that integrates both perspectives. Keep it conc
 
 			wall_start = time.perf_counter()
 			try:
-				result = await app.ainvoke(GraphState(query=query))
+				state = GraphState(query=query)
+				result = await app.ainvoke(state)
 				wall_ms = (time.perf_counter() - wall_start) * 1000
 			except Exception as e:
 				print(f"❌ Workflow execution failed: {str(e)}")
 				raise
 			finally:
-				current_directory = str(pathlib.Path(__file__).parent.resolve())
-				agents_manager.utils.create_output_results_dirs(current_directory)
-
-				agents_manager.agent_introspector.generate_report(
-					dir_to_write=current_directory
-				)
-				await agents_manager.utils.render_graph(
-					app, dir_to_write=current_directory
+				await agents_manager.generate_execution_artifacts(
+					app, __file__, final_state=result
 				)
 
 			print(f"\n📋 Results for: '{query}'")
 			print(f"   Routing: {result['routing_decision']}")
 			print(f"   Agent Outputs: {result['results']}")
 			print(f"\n   💡 Final Summary:\n   {result.get('final_summary', 'N/A')}")
-			logging.info(f"⏱️  WALL elapsed_ms={wall_ms:.1f}")
 
 
 if __name__ == "__main__":
