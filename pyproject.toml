@@ -21,6 +21,7 @@ dependencies = [
     "academy-py",
     "pydantic>=2.0.0",
     "python-json-logger>=2.0.0",
+    "observe @ git+https://github.com/stride-research/observe.git@main",
 
 ]
 
