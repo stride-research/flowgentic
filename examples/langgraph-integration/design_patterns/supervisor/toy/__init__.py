@@ -1,3 +1,0 @@
-# Supervisor Pattern Example
-
-

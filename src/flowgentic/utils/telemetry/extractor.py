@@ -11,7 +11,7 @@ from langchain_core.messages import (
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
-from .utils.schemas import (
+from .schemas import (
 	TokenUsage,
 	MessageInfo,
 	ToolCallInfo,
@@ -59,7 +59,7 @@ class Extractor:
 		for key in all_keys:
 			before_val = before_dict.get(key)
 			after_val = after_dict.get(key)
-			if before_val != after_val:
+			if before_val != after_val and after_val:
 				diff[key] = {
 					"changed_from": str(before_val)[:300]
 					if not isinstance(before_val, (list, dict))
@@ -125,7 +125,7 @@ class Extractor:
 			)
 		return None
 
-	def _state_extraction(
+	def _final_state_extraction(
 		self,
 		node_name: str,
 		state_before: BaseModel,
@@ -135,68 +135,20 @@ class Extractor:
 		end_time,
 		node_func: callable,
 	):
-		# Handle Command objects (routing nodes that return Commands instead of state)
-		if isinstance(state_after, Command):
-			logger.debug(
-				f"Node '{node_name}' returned a Command for routing, skipping detailed extraction"
-			)
-			timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
-			node_name_detailed = f"{node_name}_{timestamp}"
-			record = NodeExecutionRecord(
-				node_name=node_name,
-				node_name_detailed=node_name_detailed,
-				description=inspect.getdoc(node_func),
-				start_time=start_time,
-				end_time=end_time,
-				duration_seconds=round((end_time - start_time).total_seconds(), 4),
-				total_messages_before=total_messages_before,
-				total_messages_after=total_messages_before,  # No new messages
-				new_messages_count=0,
-				messages_added=[],
-				model_metadata=None,
-				final_response=f"Routing command: {state_after.goto}",
-				interleaved_thinking=[],
-				tool_calls=[],
-				tool_executions=[],
-				token_usage=TokenUsage(),
-				state_diff={},
-				state_keys=[],
-			)
-			return node_name_detailed, record
-
+		logger.debug(f"Extracting final state for node with name: {node_name}")
 		# Handle both Pydantic models and dicts
 		if hasattr(state_after, "messages"):
 			messages_after = state_after.messages
-		elif isinstance(state_after, dict) and "messages" in state_after:
-			messages_after = state_after["messages"]
+		elif isinstance(state_after, dict):
+			if "messages" in state_after:
+				messages_after = state_after["messages"]
+			else:
+				messages_after = []
 		else:
 			logger.warning(
 				f"State after doesn't have messages attribute/key: {type(state_after)}"
 			)
-			# Return a minimal record instead of None
-			timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
-			node_name_detailed = f"{node_name}_{timestamp}"
-			record = NodeExecutionRecord(
-				node_name=node_name,
-				node_name_detailed=node_name_detailed,
-				description=inspect.getdoc(node_func),
-				start_time=start_time,
-				end_time=end_time,
-				duration_seconds=round((end_time - start_time).total_seconds(), 4),
-				total_messages_before=total_messages_before,
-				total_messages_after=0,
-				new_messages_count=0,
-				messages_added=[],
-				model_metadata=None,
-				final_response=None,
-				interleaved_thinking=[],
-				tool_calls=[],
-				tool_executions=[],
-				token_usage=TokenUsage(),
-				state_diff={},
-				state_keys=[],
-			)
-			return node_name_detailed, record
+			return
 		logger.debug(f"Messages is: {messages_after}")
 
 		total_messages_after = (

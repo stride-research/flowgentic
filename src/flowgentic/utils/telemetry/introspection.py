@@ -10,7 +10,7 @@ from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from flowgentic.utils.telemetry.extractor import Extractor
-from .utils.schemas import (
+from .schemas import (
 	MessageInfo,
 	NodeExecutionRecord,
 	GraphExecutionReport,
@@ -52,7 +52,7 @@ class GraphIntrospector:
 		end_time,
 		node_func,
 	):
-		node_name, record = self.extractor._state_extraction(
+		node_name_detailed, record = self.extractor._final_state_extraction(
 			node_name=node_name,
 			state_before=state_before,
 			state_after=state_after,
@@ -61,74 +61,7 @@ class GraphIntrospector:
 			end_time=end_time,
 			node_func=node_func,
 		)
-		self._store_records(node_name, record)
-
-	def record_supervisor_event(
-		self,
-		*,
-		state: Any,
-		destination: str,
-		task_description: str,
-		node_name: str = "supervisor",
-	) -> None:
-		"""
-		Record a lightweight execution entry for the supervisor when it routes work.
-
-		"""
-		start_time = datetime.now()
-		end_time = start_time
-
-		# Extract messages count from state (supports Pydantic model or dict)
-		if hasattr(state, "messages"):
-			messages_list = state.messages
-		elif isinstance(state, dict) and "messages" in state:
-			messages_list = state["messages"]
-		else:
-			messages_list = []
-
-		total_messages = len(messages_list) if isinstance(messages_list, list) else 0
-
-		# Create a synthetic message entry describing the routing decision
-		route_msg = MessageInfo(
-			message_type="SupervisorRoute",
-			content=f"transfer_to_{destination}: {task_description[:300]}",
-			role="assistant",
-			has_tool_calls=False,
-			timestamp=datetime.now().isoformat(),
-		)
-
-		timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[
-			:-3
-		]  # Millisecond precision
-		node_name_detailed = f"{node_name}_{timestamp}"
-
-		record = NodeExecutionRecord(
-			node_name=node_name,
-			node_name_detailed=node_name_detailed,
-			description="Supervisor routing decision",
-			start_time=start_time,
-			end_time=end_time,
-			duration_seconds=0.0,
-			total_messages_before=total_messages,
-			total_messages_after=total_messages,
-			new_messages_count=0,
-			messages_added=[route_msg],
-			model_metadata=None,
-			final_response=f"Command: routing to {destination}",
-			interleaved_thinking=[],
-			tool_calls=[],
-			tool_executions=[],
-			token_usage=None,
-			state_diff={},
-			state_keys=(
-				list(state.model_fields.keys())
-				if hasattr(state, "model_fields")
-				else (list(state.keys()) if isinstance(state, dict) else [])
-			),
-		)
-
 		self._store_records(node_name_detailed, record)
-		self._final_state = state
 
 	def introspect_node(self, node_func: Callable, node_name: str) -> Callable:
 		"""
@@ -178,6 +111,7 @@ class GraphIntrospector:
 				"You need to provide the the nodes for the graph to the inspector"
 			)
 		else:
+			logger.debug(f"Records are: {self._records}")
 			report_generator = ReportGenerator(
 				final_state=self._final_state,
 				records=self._records,
