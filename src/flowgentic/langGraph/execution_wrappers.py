@@ -81,10 +81,12 @@ class AsyncFlowType(Enum):
 	"""Enum defining the flow_type of AsyncFlow decoration"""
 
 	AGENT_TOOL_AS_FUNCTION = "tool"  # LangChain tool with @tool wrapper
-	AGENT_TOOL_AS_MCP = "mcp_tool"  # TO BE IMPLEMENTED
-	AGENT_TOOL_AS_SERVICE = "service"  # TO BE IMPLEMENTED
+	AGENT_TOOL_AS_MCP = "mcp_tool"  # LangChain tool representing an MCP tool
+	AGENT_TOOL_AS_SERVICE = "service"  # LangChain tool with persistent service instance
 	FUNCTION_TASK = "future"  # Simple asyncflow task with *args, **kwargs
-	SERVICE_TASK = "service_task"  # TO BE IMPLEMENTED
+	SERVICE_TASK = (
+		"service_task"  # Persistent service task (service instance is cached for reuse)
+	)
 	EXECUTION_BLOCK = "block"
 
 
@@ -135,6 +137,13 @@ class ExecutionWrappersLangraph:
 
 			if flow_type == AsyncFlowType.EXECUTION_BLOCK:
 				asyncflow_func = self.flow.block(f)  # Use block decorator
+			elif flow_type in [
+				AsyncFlowType.AGENT_TOOL_AS_SERVICE,
+				AsyncFlowType.SERVICE_TASK,
+			]:
+				asyncflow_func = self.flow.function_task(
+					f, service=True
+				)  # Use service=True for caching
 			else:
 				asyncflow_func = self.flow.function_task(f)
 
@@ -143,8 +152,12 @@ class ExecutionWrappersLangraph:
 				f"Using retry config for '{f.__name__}': {retry_cfg.model_dump()}"
 			)
 
-			if flow_type == AsyncFlowType.AGENT_TOOL_AS_FUNCTION:
+			if flow_type in [
+				AsyncFlowType.AGENT_TOOL_AS_FUNCTION,
+				AsyncFlowType.AGENT_TOOL_AS_SERVICE,
+			]:
 				# Tool behavior: *args, **kwargs input, with @tool wrapper
+				# For AGENT_TOOL_AS_SERVICE, caching is handled by service=True in asyncflow_func
 				@wraps(f)
 				async def tool_wrapper(*args, **kwargs):
 					logger.debug(
@@ -171,65 +184,6 @@ class ExecutionWrappersLangraph:
 					tool_wrapper, description=kwargs.get("tool_description")
 				)
 				logger.info(f"Successfully created LangChain tool for '{f.__name__}'")
-				return langraph_tool
-
-			elif flow_type == AsyncFlowType.AGENT_TOOL_AS_SERVICE:
-				# Service Tool: Persistent connection/client that LLM can call
-				service_name = f.__name__
-
-				@wraps(f)
-				async def service_tool_wrapper(*args, **kwargs):
-					logger.debug(
-						f"Service Tool '{service_name}' called with args: {len(args)} positional, {list(kwargs.keys())} keyword"
-					)
-
-					if service_name not in self.service_registry:
-						logger.info(
-							f"Initializing service '{service_name}' for first time"
-						)
-
-						async def _init():
-							logger.debug(
-								f"Running initialization for service '{service_name}'"
-							)
-							future = asyncflow_func(*args, **kwargs)
-							service_instance = await future
-							logger.debug(
-								f"Service '{service_name}' initialized successfully"
-							)
-							return service_instance
-
-						service_instance = (
-							await self.fault_tolerance_mechanism.retry_async(
-								_init, retry_cfg, name=f"{service_name}_init"
-							)
-						)
-						self.service_registry[service_name] = service_instance
-						logger.info(f"Service '{service_name}' initialized and cached")
-
-					service_instance = self.service_registry[service_name]
-
-					async def _call():
-						logger.debug(
-							f"Executing service '{service_name}' with cached instance"
-						)
-						if hasattr(service_instance, "handle_request"):
-							result = await service_instance.handle_request(
-								*args, **kwargs
-							)
-						else:
-							result = service_instance
-						logger.debug(f"Service '{service_name}' completed successfully")
-						return result
-
-					return await self.fault_tolerance_mechanism.retry_async(
-						_call, retry_cfg, name=service_name
-					)
-
-				langraph_tool = tool(service_tool_wrapper)
-				logger.info(
-					f"Successfully created LangChain service tool for '{f.__name__}'"
-				)
 				return langraph_tool
 
 			elif flow_type == AsyncFlowType.AGENT_TOOL_AS_MCP:
@@ -371,33 +325,27 @@ class ExecutionWrappersLangraph:
 
 			elif flow_type == AsyncFlowType.SERVICE_TASK:
 				# Service Task: Persistent utility/background service
-				service_name = f.__name__
-
+				# Uses service=True for caching
 				@wraps(f)
 				async def service_task_wrapper(*args, **kwargs):
 					logger.debug(
-						f"Service Task '{service_name}' called with args: {len(args)} positional, {list(kwargs.keys())} keyword"
+						f"Service Task '{f.__name__}' called with args: {len(args)} positional, {list(kwargs.keys())} keyword"
 					)
 
-					if service_name not in self.service_registry:
-						logger.info(f"Initializing service task '{service_name}'")
-
-						async def _init():
-							logger.debug(f"Running initialization for '{service_name}'")
-							future = asyncflow_func(*args, **kwargs)
-							service_instance = await future
-							logger.debug(f"Service task '{service_name}' initialized")
-							return service_instance
-
-						service_instance = (
-							await self.fault_tolerance_mechanism.retry_async(
-								_init, retry_cfg, name=f"{service_name}_init"
-							)
+					async def _call():
+						logger.debug(
+							f"Executing AsyncFlow service task for '{f.__name__}'"
 						)
-						self.service_registry[service_name] = service_instance
-						logger.info(f"Service task '{service_name}' cached")
+						future = asyncflow_func(*args, **kwargs)
+						result = await future
+						logger.debug(
+							f"AsyncFlow service task '{f.__name__}' completed successfully"
+						)
+						return result
 
-					return self.service_registry[service_name]
+					return await self.fault_tolerance_mechanism.retry_async(
+						_call, retry_cfg, name=f.__name__
+					)
 
 				logger.info(
 					f"Successfully created AsyncFlow service task for '{f.__name__}'"
