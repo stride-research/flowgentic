@@ -43,7 +43,12 @@ from langchain_core.tools import BaseTool, tool
 from radical.asyncflow import WorkflowEngine
 from radical.asyncflow.workflow_manager import BaseExecutionBackend
 
-from flowgentic.langGraph.memory import MemoryManager, MemoryConfig, MemoryEnabledState
+from flowgentic.langGraph.memory import (
+	MemoryManager, 
+	MemoryConfig, 
+	MemoryEnabledState,
+	LangraphMemoryManager
+)
 import logging
 
 from radical.asyncflow.workflow_manager import BaseExecutionBackend, WorkflowEngine
@@ -77,6 +82,7 @@ class LangraphIntegration:
 		)
 		self.utils: LangraphUtils = LangraphUtils()
 		self.agent_logger: AgentLogger = AgentLogger()
+		self.memory_manager: LangraphMemoryManager = LangraphMemoryManager()
 
 		logger.info("WorkflowEngine created successfully")
 		return self

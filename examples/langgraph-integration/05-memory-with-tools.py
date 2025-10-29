@@ -32,7 +32,8 @@ from flowgentic.langGraph import (
     MemoryManager,
     MemoryConfig,
     MemoryEnabledState,
-    create_memory_enabled_graph
+    create_memory_enabled_graph,
+    LangraphMemoryManager
 )
 
 # For AsyncFlow backend
@@ -130,7 +131,7 @@ async def create_memory_enabled_workflow():
         context_window_buffer=3
     )
 
-    memory_manager = MemoryManager(memory_config)
+    memory_manager = LangraphMemoryManager(memory_config)
 
     # Create memory-enabled integration
     integration = MemoryEnabledLangGraphIntegration(backend, memory_manager)
@@ -295,7 +296,7 @@ async def demonstrate_memory_consolidation():
         context_window_buffer=2
     )
 
-    memory_manager = MemoryManager(memory_config)
+    memory_manager = LangraphMemoryManager(memory_config)
 
     print("Simulating tool-heavy conversation that triggers memory consolidation...")
 
