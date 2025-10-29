@@ -90,25 +90,25 @@ focusing on battery technologies, grid integration, and market opportunities.
 		try:
 			# Execute workflow
 			config = {"configurable": {"thread_id": "memory_workflow_1"}}
+			final_state = None
 			async for chunk in app.astream(
 				initial_state, config=config, stream_mode="values"
 			):
 				# Print stage updates
 				if hasattr(chunk, "current_stage"):
 					print(f"\n📍 Stage: {chunk.current_stage}")
+				final_state = chunk
 
 		except Exception as e:
 			print(f"❌ Workflow execution failed: {str(e)}")
 			raise
 		finally:
-			# Generate introspection report
+			# Generate all execution artifacts (directories, report, graph)
 			print("\n" + "=" * 80)
-			print("📊 Generating Introspection Report...")
-			agents_manager.agent_introspector.generate_report()
-
-			# Render graph visualization
-			print("📈 Rendering Graph Visualization...")
-			await agents_manager.utils.render_graph(app)
+			print("📊 Generating Execution Artifacts...")
+			await agents_manager.generate_execution_artifacts(
+				app, __file__, final_state=final_state
+			)
 
 			# Display final memory statistics
 			print("\n" + "=" * 80)
