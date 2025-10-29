@@ -1,4 +1,4 @@
-.PHONY: install format lint docs tests examples-sequential-research examples-sequential-financial examples-supervisor examples-supervisor-sales examples-supervisor-product-research examples-basic examples-parallel-minimal examples-parallel-llm-router
+.PHONY: install format lint docs tests examples-sequential-research examples-sequential-financial examples-supervisor examples-supervisor-sales examples-supervisor-product-research examples-basic examples-parallel-minimal examples-parallel-llm-router examples-mcp-sales-analytics
 .DEFAULT_GOAL:= help
 
 
@@ -53,3 +53,9 @@ examples-parallel-toy: ## Run parallel example with LLM-based routing
 examples-supervisor-product-research: ## Run advanced supervisor pattern with product research
 	$(VENV_ACTIVATE) && python3 examples/langgraph-integration/design_patterns/supervisor/product_research/main.py
 
+examples-mcp-sales-analytics: ## Run MCP sales analytics sequential workflow example
+	@if [ ! -f examples/langgraph-integration/mcp/sequential/sales_analytics/sales.db ]; then \
+		echo "Creating sales database..."; \
+		$(VENV_ACTIVATE) && python3 examples/langgraph-integration/mcp/sequential/sales_analytics/setup_database.py; \
+	fi
+	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.mcp.sequential.sales_analytics.main
