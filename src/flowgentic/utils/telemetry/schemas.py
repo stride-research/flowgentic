@@ -55,6 +55,7 @@ class NodeExecutionRecord(BaseModel):
 	"""Captures all introspection data for a single node's execution."""
 
 	node_name: str
+	node_name_detailed: str
 	description: Optional[str] = None
 	start_time: datetime
 	end_time: datetime

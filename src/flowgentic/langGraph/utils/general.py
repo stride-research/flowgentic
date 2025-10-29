@@ -19,13 +19,22 @@ class LangraphUtils:
 		pass
 
 	@staticmethod
-	async def render_graph(app: CompiledStateGraph):
+	async def render_graph(app: CompiledStateGraph, dir_to_write: str):
 		"""
 		Renders a graph visualization and prepends it to a Markdown report.
 		"""
 		# Use os.path.join to ensure correct path construction
-		report_output_path = APP_SETTINGS["agent_execution"]["execution_summary_path"]
-		image_output_path = APP_SETTINGS["agent_execution"]["graph_image_path"]
+		print(dir_to_write)
+		report_output_path = (
+			dir_to_write
+			+ "/"
+			+ APP_SETTINGS["agent_execution"]["execution_summary_path"]
+		)
+		image_output_path = (
+			dir_to_write + "/" + APP_SETTINGS["agent_execution"]["graph_image_path"]
+		)
+
+		print(f"REPORT OUTPUT PATH: {report_output_path}")
 
 		# Extract the relative image path for Markdown
 		image_name = os.path.basename(image_output_path)
@@ -93,3 +102,7 @@ class LangraphUtils:
 				raise
 
 		return response_structurer
+
+	def create_output_results_dirs(self, current_directory):
+		results_directory = APP_SETTINGS["agent_execution"]["results_directory"]
+		os.makedirs(current_directory + "/" + results_directory, exist_ok=True)
