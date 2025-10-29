@@ -14,8 +14,7 @@ from flowgentic.langGraph.memory import (
     MemoryConfig,
     ShortTermMemoryItem,
     ShortTermMemoryManager,
-    MemoryManager,
-    MemoryTrimmer
+    MemoryManager
 )
 
 
@@ -192,39 +191,6 @@ async def test_memory_manager():
     assert health["memory_efficiency"] == 0.1  # 1/10
 
 
-def test_memory_trimmer():
-    """Test legacy MemoryTrimmer class."""
-    # Test basic message trimming
-    trimmer = MemoryTrimmer(max_messages=2)
-
-    messages = cast(List[BaseMessage], [
-        SystemMessage(content="System"),
-        HumanMessage(content="Message 1"),
-        HumanMessage(content="Message 2"),
-        HumanMessage(content="Message 3")
-    ])
-
-    result = trimmer.reduce_message_list(messages)
-
-    # Should keep system message + 2 most recent messages
-    assert len(result) == 3  # System + 2 others
-    assert isinstance(result[0], SystemMessage)
-    assert result[-1].content == "Message 3"
-
-    # Test when no trimming is needed
-    trimmer = MemoryTrimmer(max_messages=5)
-
-    messages = cast(List[BaseMessage], [
-        SystemMessage(content="System"),
-        HumanMessage(content="Message 1"),
-    ])
-
-    result = trimmer.reduce_message_list(messages)
-
-    assert len(result) == 2
-    assert result == messages
-
-
 def test_memory_summarization():
     """Test memory summarization functionality."""
     # Create a mock LLM
@@ -289,7 +255,6 @@ if __name__ == "__main__":
     test_memory_config()
     test_short_term_memory_item()
     test_short_term_memory_manager()
-    test_memory_trimmer()
     test_memory_summarization()
 
     # Run asynchronous tests

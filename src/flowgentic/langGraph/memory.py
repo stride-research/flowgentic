@@ -11,7 +11,6 @@ Initial implementation focuses on short-term memory management.
 Long-term memory features will be added in future iterations.
 """
 
-from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, cast
 import json
 from datetime import datetime
@@ -699,31 +698,4 @@ class LangraphMemoryManager:
 			self._memory_manager = MemoryManager(self.config, self.llm)
 
 
-# Legacy compatibility - keep the old interface for backward compatibility
-class MemoryMechanism(ABC):
-	"""Abstract base class for memory mechanisms (legacy interface)."""
 
-	def __init__(self, max_messages: int = 20) -> None:
-		self._max_messages = max_messages
-
-	@abstractmethod
-	def reduce_message_list(self, messages: List[BaseMessage]) -> List[BaseMessage]:
-		pass
-
-
-class MemoryTrimmer(MemoryMechanism):
-	"""Legacy memory trimmer for backward compatibility."""
-
-	def __init__(self, max_messages: int = 20) -> None:
-		super().__init__(max_messages)
-
-	def reduce_message_list(self, messages: List[BaseMessage]) -> List[BaseMessage]:
-		if len(messages) < self._max_messages:
-			return messages
-
-		# Always keep system messages:
-		system_msgs = [m for m in messages if isinstance(m, SystemMessage)]
-		other_msgs = [m for m in messages if not isinstance(m, SystemMessage)]
-
-		trimmed_msgs = other_msgs[-self._max_messages :]
-		return system_msgs + trimmed_msgs
