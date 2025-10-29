@@ -1,4 +1,5 @@
 from datetime import datetime
+import os
 import sys
 from typing import Dict, List, Any
 
@@ -33,6 +34,9 @@ class ReportGenerator:
 		return True
 
 	def _create_categorized_nodes(self, all_nodes: List[str]):
+		print(
+			f"ALL NODES ARE: {all_nodes}, recorded nodes are: {list(self._records.keys())}"
+		)
 		self.categorized_records = {key: [] for key in all_nodes}
 		for record_key in list(self._records.keys()):
 			cleaned_record_value = self._records[record_key]
@@ -110,7 +114,7 @@ class ReportGenerator:
 
 		return memory_info
 
-	def generate_report(self, all_nodes: List[str]):
+	def generate_report(self, all_nodes: List[str], dir_to_write: str):
 		"""Generates a human-readable Markdown report of the entire graph execution."""
 		# Initialization procedures
 		self._create_categorized_nodes(all_nodes=all_nodes)
@@ -144,6 +148,11 @@ class ReportGenerator:
 				final_state_dict = self._final_state.model_dump()
 			elif isinstance(self._final_state, dict):
 				final_state_dict = self._final_state
+			else:
+				logger.warning(
+					f"Final state: {self._final_state} with type: {type(self._final_state)} cant be accesed for attribute extraction"
+				)
+		logger.debug(f"Final state 123123 is: {final_state_dict}")
 
 		report_data = GraphExecutionReport(
 			graph_start_time=self._start_time,
@@ -159,7 +168,11 @@ class ReportGenerator:
 			total_messages=total_messages,
 			models_used=models_used,
 		)
-		output_path = APP_SETTINGS["agent_execution"]["execution_summary_path"]
+		output_path = (
+			dir_to_write
+			+ "/"
+			+ APP_SETTINGS["agent_execution"]["execution_summary_path"]
+		)
 		with open(output_path, "w", encoding="utf-8") as f:
 			f.write(f"# 📊 LangGraph Execution Report\n\n")
 			f.write(
@@ -258,10 +271,10 @@ class ReportGenerator:
 						node_category_messages += node_category_messages
 
 						f.write(
-							f"| `{record.node_name}` | {record.duration_seconds:<12.4f} | {tokens:<6} | {tools_count:<5} | {record.new_messages_count:<13} |\n"
+							f"| `{record.node_name_detailed}` | {record.duration_seconds:<12.4f} | {tokens:<6} | {tools_count:<5} | {record.new_messages_count:<13} |\n"
 						)
 					f.write(
-						f"| **{node_name} Total** | {node_category_duration:<10.4f} | {node_category_tokens:<4} | {node_category_tools:<3} | {node_category_messages:<11} |\n"
+						f"| **Total:{node_name}** | {node_category_duration:<10.4f} | {node_category_tokens:<4} | {node_category_tools:<3} | {node_category_messages:<11} |\n"
 					)
 				else:
 					f.write(
@@ -384,10 +397,16 @@ class ReportGenerator:
 				if hasattr(self._final_state, "model_fields"):
 					state_keys = list(self._final_state.model_fields.keys())
 					f.write(f"**State Keys:** `{', '.join(state_keys)}`\n\n")
-
-					# Show summary of final state
 					for key in state_keys:
 						value = getattr(self._final_state, key, None)
 						f.write(f"- **{key}:** {(value)}\n")
+				else:
+					state_keys = list(self._final_state.keys())
+					f.write(f"**State Keys:** `{', '.join(state_keys)}`\n\n")
+					for key in state_keys:
+						value = self._final_state.get(key)
+						f.write(f"- **{key}:** {(value)}\n")
 
-		print(f"✅ Introspection report saved to '{output_path}'")
+				# Show summary of final state
+
+		print(f"✅ Introspection report saved to '{dir_to_write}'")

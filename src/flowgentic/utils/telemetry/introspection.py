@@ -6,22 +6,12 @@ import time
 from datetime import datetime
 from copy import deepcopy
 from typing import List, Dict, Any, Optional, Callable
-from langchain_core.messages import (
-	AIMessage,
-	BaseMessage,
-	HumanMessage,
-	SystemMessage,
-	ToolMessage,
-)
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from flowgentic.utils.telemetry.extractor import Extractor
 from .schemas import (
-	TokenUsage,
 	MessageInfo,
-	ToolCallInfo,
-	ModelMetadata,
 	NodeExecutionRecord,
 	GraphExecutionReport,
 	ToolExecutionInfo,
@@ -49,12 +39,8 @@ class GraphIntrospector:
 		self._all_nodes: List[str] = None
 		self.extractor = Extractor()
 
-	def _store_records(self, node_name: str, record):
-		timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[
-			:-3
-		]  # Millisecond precision
-		key = f"{node_name}_{timestamp}"
-		self._records[key] = record
+	def _store_records(self, node_name_detailed: str, record):
+		self._records[node_name_detailed] = record
 
 	def record_node_event(
 		self,
@@ -66,7 +52,7 @@ class GraphIntrospector:
 		end_time,
 		node_func,
 	):
-		node_name, record = self.extractor._state_extraction(
+		node_name_detailed, record = self.extractor._final_state_extraction(
 			node_name=node_name,
 			state_before=state_before,
 			state_after=state_after,
@@ -75,68 +61,7 @@ class GraphIntrospector:
 			end_time=end_time,
 			node_func=node_func,
 		)
-		self._store_records(node_name, record)
-
-	def record_supervisor_event(
-		self,
-		*,
-		state: Any,
-		destination: str,
-		task_description: str,
-		node_name: str = "supervisor",
-	) -> None:
-		"""
-		Record a lightweight execution entry for the supervisor when it routes work.
-
-		"""
-		start_time = datetime.now()
-		end_time = start_time
-
-		# Extract messages count from state (supports Pydantic model or dict)
-		if hasattr(state, "messages"):
-			messages_list = state.messages
-		elif isinstance(state, dict) and "messages" in state:
-			messages_list = state["messages"]
-		else:
-			messages_list = []
-
-		total_messages = len(messages_list) if isinstance(messages_list, list) else 0
-
-		# Create a synthetic message entry describing the routing decision
-		route_msg = MessageInfo(
-			message_type="SupervisorRoute",
-			content=f"transfer_to_{destination}: {task_description[:300]}",
-			role="assistant",
-			has_tool_calls=False,
-			timestamp=datetime.now().isoformat(),
-		)
-
-		record = NodeExecutionRecord(
-			node_name=node_name,
-			description="Supervisor routing decision",
-			start_time=start_time,
-			end_time=end_time,
-			duration_seconds=0.0,
-			total_messages_before=total_messages,
-			total_messages_after=total_messages,
-			new_messages_count=0,
-			messages_added=[route_msg],
-			model_metadata=None,
-			final_response=f"Command: routing to {destination}",
-			interleaved_thinking=[],
-			tool_calls=[],
-			tool_executions=[],
-			token_usage=None,
-			state_diff={},
-			state_keys=(
-				list(state.model_fields.keys())
-				if hasattr(state, "model_fields")
-				else (list(state.keys()) if isinstance(state, dict) else [])
-			),
-		)
-
-		self._store_records(node_name, record)
-		self._final_state = state
+		self._store_records(node_name_detailed, record)
 
 	def introspect_node(self, node_func: Callable, node_name: str) -> Callable:
 		"""
@@ -182,15 +107,16 @@ class GraphIntrospector:
 
 		return wrapper
 
-	def generate_report(self) -> None:
+	def generate_report(self, dir_to_write: str) -> None:
 		"""Generates a human-readable Markdown report of the entire graph execution."""
 		if not self._all_nodes:
 			raise ValueError(
 				"You need to provide the the nodes for the graph to the inspector"
 			)
 		else:
+			logger.debug(f"Records are: {self._records}")
 			report_generator = ReportGenerator(
 				final_state=self._final_state,
 				records=self._records,
 				start_time=self._start_time,
-			).generate_report(all_nodes=self._all_nodes)
+			).generate_report(all_nodes=self._all_nodes, dir_to_write=dir_to_write)

@@ -1,4 +1,4 @@
-.PHONY: install format lint docs tests examples-sequential-research examples-sequential-financial examples-supervisor examples-basic
+.PHONY: install format lint docs tests examples-sequential-research examples-sequential-financial examples-supervisor examples-supervisor-sales examples-supervisor-product-research examples-basic examples-parallel-minimal examples-parallel-llm-router
 .DEFAULT_GOAL:= help
 
 
@@ -34,7 +34,7 @@ format:
 lint:
 	$(VENV_ACTIVATE) && ruff check --fix .
 
-docs:	
+docs:	## Renders docs locally
 	$(VENV_ACTIVATE) &&  mkdocs serve
 tests: ## Run tests
 	$(VENV_ACTIVATE) && python -m pytest -vv -s tests/test_generator.py
@@ -42,7 +42,14 @@ examples-sequential-research:
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.research_agent.main
 examples-sequential-financial:
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.financial_advisor.main
-examples-supervisor: ## Run supervisor example
-	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.supervisor.main
+examples-supervisor-toy: ## Run supervisor toy example
+	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.supervisor.toy.main
 examples-basic: ## Run toy example 
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.dummy_example 
+
+examples-parallel-toy: ## Run parallel example with LLM-based routing
+	$(VENV_ACTIVATE) && python3 examples/langgraph-integration/design_patterns/supervisor/toy/main.py
+
+examples-supervisor-product-research: ## Run advanced supervisor pattern with product research
+	$(VENV_ACTIVATE) && python3 examples/langgraph-integration/design_patterns/supervisor/product_research/main.py
+

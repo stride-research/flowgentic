@@ -90,3 +90,36 @@ class LangraphIntegration:
 		if self.flow:
 			await self.flow.shutdown()
 		logger.info("WorkflowEngine shutdown complete")
+
+	async def generate_execution_artifacts(
+		self,
+		app: CompiledStateGraph,
+		caller_file_path: str,
+		final_state: Dict or BaseModel,
+	) -> None:
+		"""
+		Facade method to generate all execution artifacts (directories, reports, and graph).
+
+		Args:
+			app: The compiled LangGraph StateGraph
+			caller_file_path: The __file__ path from the calling script (used to determine output directory)
+
+		Example:
+			await agents_manager.generate_execution_artifacts(app, __file__)
+		"""
+		import pathlib
+
+		self.agent_introspector._final_state = final_state
+		logger.debug(f"FINAL STATE IS: {self.agent_introspector._final_state}")
+		logger.debug(f"FINAL STATE IS: {final_state}")
+
+		current_directory = str(pathlib.Path(caller_file_path).parent.resolve())
+
+		# Create output directories
+		self.utils.create_output_results_dirs(current_directory)
+
+		# Generate execution report
+		self.agent_introspector.generate_report(dir_to_write=current_directory)
+
+		# Render graph visualization
+		await self.utils.render_graph(app, dir_to_write=current_directory)

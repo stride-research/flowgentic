@@ -5,7 +5,7 @@ from .components.builder import WorkflowBuilder
 from .utils.schemas import WorkflowState
 import asyncio
 from langgraph.checkpoint.memory import InMemorySaver
-from flowgentic.langGraph.telemetry import GraphIntrospector
+from flowgentic.utils.telemetry import GraphIntrospector
 
 
 async def start_app():
@@ -36,29 +36,30 @@ async def start_app():
 		print("🚀 Starting Financial Advisory Sequential Workflow")
 		print("=" * 80)
 
-		try:
-			# Execute workflow with increased recursion limit
-			config = {
-				"configurable": {"thread_id": "financial_advisory_1"},
-				"recursion_limit": 50,  # Increase limit for complex agent interactions
-			}
-			async for chunk in app.astream(
-				initial_state, config=config, stream_mode="values"
-			):
-				# Stream updates show progress through the workflow
-				stage = chunk.get("current_stage", "unknown")
-				print(f"\n📍 Current Stage: {stage}")
+	try:
+		# Execute workflow with increased recursion limit
+		config = {
+			"configurable": {"thread_id": "financial_advisory_1"},
+			"recursion_limit": 50,  # Increase limit for complex agent interactions
+		}
+		final_state = None
+		async for chunk in app.astream(
+			initial_state, config=config, stream_mode="values"
+		):
+			# Stream updates show progress through the workflow
+			stage = chunk.get("current_stage", "unknown")
+			print(f"\n📍 Current Stage: {stage}")
+			final_state = chunk
 
-		except Exception as e:
-			print(f"❌ Workflow execution failed: {str(e)}")
-			raise
-		finally:
-			# Generate introspection report
-			agents_manager.agent_introspector.generate_report()
-
-			# Render the workflow graph
-			await agents_manager.utils.render_graph(app)
+	except Exception as e:
+		print(f"❌ Workflow execution failed: {str(e)}")
+		raise
+	finally:
+		# Generate all execution artifacts (directories, report, graph)
+		await agents_manager.generate_execution_artifacts(
+			app, __file__, final_state=final_state
+		)
 
 
 if __name__ == "__main__":
-	asyncio.run(start_app())
+	asyncio.run(start_app(), debug=True)

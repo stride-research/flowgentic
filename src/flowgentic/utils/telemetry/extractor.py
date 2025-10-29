@@ -1,14 +1,9 @@
-import asyncio
 import inspect
 import json
-import sys
-import time
 from datetime import datetime
-from copy import deepcopy
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Optional
 from langchain_core.messages import (
 	AIMessage,
-	BaseMessage,
 	HumanMessage,
 	SystemMessage,
 	ToolMessage,
@@ -64,7 +59,7 @@ class Extractor:
 		for key in all_keys:
 			before_val = before_dict.get(key)
 			after_val = after_dict.get(key)
-			if before_val != after_val:
+			if before_val != after_val and after_val:
 				diff[key] = {
 					"changed_from": str(before_val)[:300]
 					if not isinstance(before_val, (list, dict))
@@ -130,7 +125,7 @@ class Extractor:
 			)
 		return None
 
-	def _state_extraction(
+	def _final_state_extraction(
 		self,
 		node_name: str,
 		state_before: BaseModel,
@@ -140,11 +135,15 @@ class Extractor:
 		end_time,
 		node_func: callable,
 	):
+		logger.debug(f"Extracting final state for node with name: {node_name}")
 		# Handle both Pydantic models and dicts
 		if hasattr(state_after, "messages"):
 			messages_after = state_after.messages
-		elif isinstance(state_after, dict) and "messages" in state_after:
-			messages_after = state_after["messages"]
+		elif isinstance(state_after, dict):
+			if "messages" in state_after:
+				messages_after = state_after["messages"]
+			else:
+				messages_after = []
 		else:
 			logger.warning(
 				f"State after doesn't have messages attribute/key: {type(state_after)}"
@@ -243,8 +242,13 @@ class Extractor:
 			state_keys = []
 
 		# Create and store the execution record
+		timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[
+			:-3
+		]  # Millisecond precision
+		node_name_detailed = f"{node_name}_{timestamp}"
 		record = NodeExecutionRecord(
 			node_name=node_name,
+			node_name_detailed=node_name_detailed,
 			description=inspect.getdoc(node_func),
 			start_time=start_time,
 			end_time=end_time,
@@ -263,4 +267,4 @@ class Extractor:
 			state_keys=state_keys,
 		)
 		self._final_state = state_after  # Continuously update the final state
-		return node_name, record
+		return node_name_detailed, record
