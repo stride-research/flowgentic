@@ -43,3 +43,6 @@ logs/
 
 agent_run_data/
 im-working.txt
+
+examples/**/agent_execution_results/
+*.db

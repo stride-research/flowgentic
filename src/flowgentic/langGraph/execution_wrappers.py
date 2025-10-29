@@ -31,9 +31,11 @@ from langgraph.types import Send
 from langchain_core.tools import BaseTool, tool
 from radical.asyncflow import WorkflowEngine
 from radical.asyncflow.workflow_manager import BaseExecutionBackend
+from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from flowgentic.utils.telemetry.introspection import GraphIntrospector
 from .fault_tolerance import LangraphToolFaultTolerance, RetryConfig
+from flowgentic.utils.llm_providers import ChatLLMProvider
 
 
 """
@@ -141,9 +143,7 @@ class ExecutionWrappersLangraph:
 				AsyncFlowType.AGENT_TOOL_AS_SERVICE,
 				AsyncFlowType.SERVICE_TASK,
 			]:
-				asyncflow_func = self.flow.function_task(
-					f, service=True
-				)  # Use service=True for caching
+				asyncflow_func = self.flow.function_task(f, service=True)
 			else:
 				asyncflow_func = self.flow.function_task(f)
 
@@ -157,7 +157,6 @@ class ExecutionWrappersLangraph:
 				AsyncFlowType.AGENT_TOOL_AS_SERVICE,
 			]:
 				# Tool behavior: *args, **kwargs input, with @tool wrapper
-				# For AGENT_TOOL_AS_SERVICE, caching is handled by service=True in asyncflow_func
 				@wraps(f)
 				async def tool_wrapper(*args, **kwargs):
 					logger.debug(
@@ -188,102 +187,112 @@ class ExecutionWrappersLangraph:
 
 			elif flow_type == AsyncFlowType.AGENT_TOOL_AS_MCP:
 				"""
-			    MCP Tool: Real MCP client integration with fallback.
-    
-				Connects to real MCP servers via the MCP SDK and makes them
-				callable by LLMs as tools through AsyncFlow:
-				- Async execution ✓
-				- Retry/fault tolerance ✓  
-				- LangChain integration ✓
-				- LLM callable ✓
-				- Real MCP client connection ✓
-				- Fallback to placeholder on error ✓
+				MCP Tool: Wraps an MCP agent as a LangChain tool.
+				Uses official langchain-mcp-adapters library for MCP integration.
 				
-				Currently connects to Anthropic's demo MCP server via NPX,
-				which provides tools like 'echo', 'add', etc.
-				
-				Production usage: Configure MCP server parameters via kwargs:
-				- mcp_server_script: Command to run (default: "npx")
-				- mcp_server_args: Arguments for server (default: demo server)
+				Supports two execution modes:
+				- "local" (default): MCP server runs locally, agent execution on HPC
+				- "remote": MCP server also runs on HPC (for compute-heavy servers)
 				"""
 
-				@wraps(f)
-				async def mcp_tool_wrapper(*args, **kwargs):
-					logger.debug(
-						f"MCP Tool '{f.__name__}' called with args: {len(args)} positional, {list(kwargs.keys())} keyword"
+				# Determine MCP execution mode
+				mcp_mode = kwargs.get("mcp_mode", "local")
+				logger.info(f"MCP execution mode for '{f.__name__}': {mcp_mode}")
+
+				if mcp_mode == "remote":
+					# Remote: MCP server runs on compute node
+					mcp_servers = kwargs.get("mcp_remote_servers")
+					if not mcp_servers:
+						raise ValueError(
+							f"MCP mode 'remote' requires 'mcp_remote_servers' parameter for '{f.__name__}'"
+						)
+					logger.info(f"Using remote MCP servers for '{f.__name__}'")
+				elif mcp_mode == "local":
+					# Local: MCP server runs on client machine (default)
+					mcp_servers = kwargs.get("mcp_servers")
+					if not mcp_servers:
+						# Fallback to demo config if nothing provided
+						logger.warning(
+							f"No 'mcp_servers' provided for '{f.__name__}', using demo config"
+						)
+						mcp_servers = {
+							"demo": {
+								"command": "npx",
+								"args": [
+									"-y",
+									"@modelcontextprotocol/server-everything",
+								],
+								"transport": "stdio",
+							}
+						}
+					logger.info(f"Using local MCP servers for '{f.__name__}'")
+				else:
+					raise ValueError(
+						f"Invalid mcp_mode '{mcp_mode}' for '{f.__name__}'. Must be 'local' or 'remote'"
 					)
 
+				# Agent cache (created once per tool)
+				agent_cache = {}
+
+				# Create the internal MCP work function
+				async def internal_mcp_work(question: str) -> str:
+					"""
+					The actual MCP agent work that gets executed through AsyncFlow.
+					This is what gets registered with self.flow.function_task()
+					"""
+					# Create agent once, cache it
+					if "agent" not in agent_cache:
+						logger.info(f"Initializing MCP agent for '{f.__name__}'")
+
+						client = MultiServerMCPClient(mcp_servers)
+
+						# Get all tools
+						mcp_tools = await client.get_tools()
+						logger.debug(
+							f"Discovered {len(mcp_tools)} MCP tools for '{f.__name__}'"
+						)
+
+						# Create agent with discovered tools
+						llm = kwargs.get("llm") or ChatLLMProvider(
+							provider="OpenRouter", model="google/gemini-2.5-flash"
+						)
+						agent = create_react_agent(llm, mcp_tools)
+
+						agent_cache["agent"] = agent
+						agent_cache["client"] = client
+						logger.info(f"MCP agent cached for '{f.__name__}'")
+
+					agent = agent_cache["agent"]
+
+					# Call the agent
+					logger.debug(f"Invoking MCP agent '{f.__name__}' through AsyncFlow")
+					result = await agent.ainvoke({"messages": [("user", question)]})
+
+					# Extract response
+					response = result["messages"][-1].content
+					logger.debug(f"MCP agent '{f.__name__}' completed")
+
+					return response
+
+				# Register internal work with AsyncFlow
+				asyncflow_func = self.flow.function_task(internal_mcp_work)
+
+				@wraps(f)
+				async def mcp_tool_wrapper(question: str) -> str:
+					logger.debug(f"MCP Tool '{f.__name__}' called")
+
 					async def _call():
-						logger.debug(f"Executing MCP call for '{f.__name__}'")
+						logger.debug(
+							f"Executing MCP agent through AsyncFlow for '{f.__name__}'"
+						)
+						future = asyncflow_func(question)
+						result = await future
+						logger.debug(
+							f"MCP agent '{f.__name__}' completed via AsyncFlow"
+						)
+						return result
 
-						try:
-							from mcp import ClientSession, StdioServerParameters
-							from mcp.client.stdio import stdio_client
-
-							server_params = StdioServerParameters(
-								command="npx",
-								args=["-y", "@modelcontextprotocol/server-everything"],
-							)
-
-							async with stdio_client(server_params) as (read, write):
-								async with ClientSession(read, write) as session:
-									await session.initialize()
-
-									tools_list = await session.list_tools()
-									logger.debug(
-										f"MCP server has {len(tools_list.tools)} tools available"
-									)
-
-									if tools_list.tools:
-										# Use echo tool (simplest one)
-										logger.debug(f"Calling MCP tool: echo")
-
-										result = await session.call_tool(
-											"echo",
-											arguments={
-												"message": kwargs.get(
-													"prompt", "Hello from MCP!"
-												)
-											},
-										)
-
-										# Extract text from result
-										response_text = ""
-										if hasattr(result, "content"):
-											for item in result.content:
-												if hasattr(item, "text"):
-													response_text += item.text
-
-										response = {
-											"status": "success",
-											"tool_used": "echo",
-											"result": response_text or str(result),
-										}
-									else:
-										response = {
-											"status": "success",
-											"message": "Connected to MCP server",
-											"available_tools": len(tools_list.tools),
-										}
-
-									logger.debug(
-										f"MCP call for '{f.__name__}' completed successfully"
-									)
-									return response
-
-						except Exception as e:
-							logger.error(f"MCP call failed: {e}")
-							import traceback
-
-							logger.error(
-								traceback.format_exc()
-							)  # ← Add full traceback!
-							return {
-								"status": "error",
-								"message": f"MCP call failed: {str(e)}",
-								"fallback": "Using placeholder response",
-							}
-
+					# Add retry on top
 					return await self.fault_tolerance_mechanism.retry_async(
 						_call, retry_cfg, name=f.__name__
 					)
@@ -291,20 +300,19 @@ class ExecutionWrappersLangraph:
 				langraph_tool = tool(
 					mcp_tool_wrapper,
 					description=kwargs.get(
-						"tool_description", f"MCP tool for {f.__name__}"
+						"tool_description", f.__doc__ or f"MCP agent for {f.__name__}"
 					),
 				)
-				logger.info(
-					f"Successfully created MCP LangChain tool for '{f.__name__}'"
-				)
+
+				logger.info(f"Successfully created MCP agent tool for '{f.__name__}'")
 				return langraph_tool
 
-			elif flow_type == AsyncFlowType.FUNCTION_TASK:
-				# Future behavior: simple *args, **kwargs asyncflow task
+			elif flow_type in [AsyncFlowType.FUNCTION_TASK, AsyncFlowType.SERVICE_TASK]:
+
 				@wraps(f)
 				async def future_wrapper(*args, **kwargs):
 					logger.debug(
-						f"Future '{f.__name__}' called with args: {len(args)} positional, {list(kwargs.keys())} keyword"
+						f"Task '{f.__name__}' called with args: {len(args)} positional, {list(kwargs.keys())} keyword"
 					)
 
 					async def _call():
@@ -320,37 +328,8 @@ class ExecutionWrappersLangraph:
 						_call, retry_cfg, name=f.__name__
 					)
 
-				logger.info(f"Successfully created AsyncFlow future for '{f.__name__}'")
+				logger.info(f"Successfully created AsyncFlow task for '{f.__name__}'")
 				return future_wrapper
-
-			elif flow_type == AsyncFlowType.SERVICE_TASK:
-				# Service Task: Persistent utility/background service
-				# Uses service=True for caching
-				@wraps(f)
-				async def service_task_wrapper(*args, **kwargs):
-					logger.debug(
-						f"Service Task '{f.__name__}' called with args: {len(args)} positional, {list(kwargs.keys())} keyword"
-					)
-
-					async def _call():
-						logger.debug(
-							f"Executing AsyncFlow service task for '{f.__name__}'"
-						)
-						future = asyncflow_func(*args, **kwargs)
-						result = await future
-						logger.debug(
-							f"AsyncFlow service task '{f.__name__}' completed successfully"
-						)
-						return result
-
-					return await self.fault_tolerance_mechanism.retry_async(
-						_call, retry_cfg, name=f.__name__
-					)
-
-				logger.info(
-					f"Successfully created AsyncFlow service task for '{f.__name__}'"
-				)
-				return service_task_wrapper
 
 			elif flow_type == AsyncFlowType.EXECUTION_BLOCK:
 
