@@ -40,7 +40,7 @@ class ReportGenerator:
 		self.categorized_records = {key: [] for key in all_nodes}
 		for record_key in list(self._records.keys()):
 			cleaned_record_value = self._records[record_key]
-			
+
 			# Find which node this record belongs to by checking if record_key starts with node_name
 			# Record keys are formatted as: {node_name}_{timestamp}
 			matched_node = None
@@ -48,13 +48,13 @@ class ReportGenerator:
 				if record_key.startswith(f"{node_name}_"):
 					matched_node = node_name
 					break
-			
+
 			# If no match found, try the old method (split by first underscore)
 			if matched_node is None:
 				cleaned_record_key = record_key.split("_")[0]
 				if cleaned_record_key in self.categorized_records:
 					matched_node = cleaned_record_key
-			
+
 			# Add record to the matched node's list
 			if matched_node:
 				self.categorized_records[matched_node].append(cleaned_record_value)
@@ -62,14 +62,14 @@ class ReportGenerator:
 				logger.warning(
 					f"Could not match record key '{record_key}' to any node in {all_nodes}"
 				)
-		
+
 		return self.categorized_records
 
 	def _has_memory_features(self) -> bool:
 		"""Check if the workflow uses memory features."""
 		if self._final_state is None:
 			return False
-		
+
 		return (
 			hasattr(self._final_state, "memory_stats")
 			or hasattr(self._final_state, "memory_operations")
@@ -82,21 +82,25 @@ class ReportGenerator:
 			return {}
 
 		memory_info: Dict[str, Any] = {}
-		
+
 		# Extract memory_stats if present
 		memory_stats_obj = getattr(self._final_state, "memory_stats", None)
 		if memory_stats_obj:
 			memory_info.update(
 				{
 					"total_messages": getattr(memory_stats_obj, "total_messages", 0),
-					"memory_efficiency": getattr(memory_stats_obj, "memory_efficiency", 0),
+					"memory_efficiency": getattr(
+						memory_stats_obj, "memory_efficiency", 0
+					),
 					"average_importance": getattr(
 						memory_stats_obj, "average_importance", 0
 					),
 					"system_messages": getattr(memory_stats_obj, "system_messages", 0),
 					"human_messages": getattr(memory_stats_obj, "human_messages", 0),
 					"ai_messages": getattr(memory_stats_obj, "ai_messages", 0),
-					"interaction_count": getattr(memory_stats_obj, "interaction_count", 0),
+					"interaction_count": getattr(
+						memory_stats_obj, "interaction_count", 0
+					),
 				}
 			)
 
