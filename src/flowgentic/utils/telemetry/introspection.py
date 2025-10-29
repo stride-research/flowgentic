@@ -174,6 +174,9 @@ class GraphIntrospector:
 				end_time=end_time,
 				node_func=node_func,
 			)
+			
+			# Update final state to the latest state after node execution
+			self._final_state = state_after
 
 			return state_after
 

@@ -84,6 +84,11 @@ class NodeExecutionRecord(BaseModel):
 	)
 	state_keys: List[str] = []
 
+	# Memory tracking (optional, only present for memory-enabled workflows)
+	memory_operations: Optional[List[str]] = None
+	memory_stats_before: Optional[Dict[str, Any]] = None
+	memory_stats_after: Optional[Dict[str, Any]] = None
+
 
 class GraphExecutionReport(BaseModel):
 	"""The final report containing all execution records and summary."""
@@ -100,3 +105,8 @@ class GraphExecutionReport(BaseModel):
 	total_tool_executions: int = 0
 	total_messages: int = 0
 	models_used: List[str] = []
+
+	# Memory statistics (optional, only present for memory-enabled workflows)
+	memory_enabled: bool = False
+	memory_stats: Optional[Dict[str, Any]] = None
+	memory_operations_count: int = 0
