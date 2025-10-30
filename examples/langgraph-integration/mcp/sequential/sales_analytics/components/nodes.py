@@ -345,7 +345,7 @@ Limit to 3-4 tool calls.
 
 				report_agent = create_react_agent(
 					model=ChatLLMProvider(
-						provider="OpenRouter", model="google/gemini-2.5-pro"
+						provider="OpenRouter", model="google/gemini-2.5-flash"
 					),
 					tools=tools,
 				)
