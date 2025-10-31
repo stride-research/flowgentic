@@ -31,7 +31,6 @@ from langgraph.types import Send
 from langchain_core.tools import BaseTool, tool
 from radical.asyncflow import WorkflowEngine
 from radical.asyncflow.workflow_manager import BaseExecutionBackend
-from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from flowgentic.utils.telemetry.introspection import GraphIntrospector
 from .fault_tolerance import LangraphToolFaultTolerance, RetryConfig
@@ -83,12 +82,9 @@ class AsyncFlowType(Enum):
 	"""Enum defining the flow_type of AsyncFlow decoration"""
 
 	AGENT_TOOL_AS_FUNCTION = "tool"  # LangChain tool with @tool wrapper
-	AGENT_TOOL_AS_MCP = "mcp_tool"  # LangChain tool representing an MCP tool
 	AGENT_TOOL_AS_SERVICE = "service"  # LangChain tool with persistent service instance
 	FUNCTION_TASK = "future"  # Simple asyncflow task with *args, **kwargs
-	SERVICE_TASK = (
-		"service_task"  # Persistent service task (service instance is cached for reuse)
-	)
+	SERVICE_TASK = "service_task"  # Persistent service task
 	EXECUTION_BLOCK = "block"
 
 
@@ -183,128 +179,6 @@ class ExecutionWrappersLangraph:
 					tool_wrapper, description=kwargs.get("tool_description")
 				)
 				logger.info(f"Successfully created LangChain tool for '{f.__name__}'")
-				return langraph_tool
-
-			elif flow_type == AsyncFlowType.AGENT_TOOL_AS_MCP:
-				"""
-				MCP Tool: Wraps an MCP agent as a LangChain tool.
-				Uses official langchain-mcp-adapters library for MCP integration.
-				
-				Supports two execution modes:
-				- "local" (default): MCP server runs locally, agent execution on HPC
-				- "remote": MCP server also runs on HPC (for compute-heavy servers)
-				"""
-
-				# Determine MCP execution mode
-				mcp_mode = kwargs.get("mcp_mode", "local")
-				logger.info(f"MCP execution mode for '{f.__name__}': {mcp_mode}")
-
-				if mcp_mode == "remote":
-					# Remote: MCP server runs on compute node
-					mcp_servers = kwargs.get("mcp_remote_servers")
-					if not mcp_servers:
-						raise ValueError(
-							f"MCP mode 'remote' requires 'mcp_remote_servers' parameter for '{f.__name__}'"
-						)
-					logger.info(f"Using remote MCP servers for '{f.__name__}'")
-				elif mcp_mode == "local":
-					# Local: MCP server runs on client machine (default)
-					mcp_servers = kwargs.get("mcp_servers")
-					if not mcp_servers:
-						# Fallback to demo config if nothing provided
-						logger.warning(
-							f"No 'mcp_servers' provided for '{f.__name__}', using demo config"
-						)
-						mcp_servers = {
-							"demo": {
-								"command": "npx",
-								"args": [
-									"-y",
-									"@modelcontextprotocol/server-everything",
-								],
-								"transport": "stdio",
-							}
-						}
-					logger.info(f"Using local MCP servers for '{f.__name__}'")
-				else:
-					raise ValueError(
-						f"Invalid mcp_mode '{mcp_mode}' for '{f.__name__}'. Must be 'local' or 'remote'"
-					)
-
-				# Agent cache (created once per tool)
-				agent_cache = {}
-
-				# Create the internal MCP work function
-				async def internal_mcp_work(question: str) -> str:
-					"""
-					The actual MCP agent work that gets executed through AsyncFlow.
-					This is what gets registered with self.flow.function_task()
-					"""
-					# Create agent once, cache it
-					if "agent" not in agent_cache:
-						logger.info(f"Initializing MCP agent for '{f.__name__}'")
-
-						client = MultiServerMCPClient(mcp_servers)
-
-						# Get all tools
-						mcp_tools = await client.get_tools()
-						logger.debug(
-							f"Discovered {len(mcp_tools)} MCP tools for '{f.__name__}'"
-						)
-
-						# Create agent with discovered tools
-						llm = kwargs.get("llm") or ChatLLMProvider(
-							provider="OpenRouter", model="google/gemini-2.5-flash"
-						)
-						agent = create_react_agent(llm, mcp_tools)
-
-						agent_cache["agent"] = agent
-						agent_cache["client"] = client
-						logger.info(f"MCP agent cached for '{f.__name__}'")
-
-					agent = agent_cache["agent"]
-
-					# Call the agent
-					logger.debug(f"Invoking MCP agent '{f.__name__}' through AsyncFlow")
-					result = await agent.ainvoke({"messages": [("user", question)]})
-
-					# Extract response
-					response = result["messages"][-1].content
-					logger.debug(f"MCP agent '{f.__name__}' completed")
-
-					return response
-
-				# Register internal work with AsyncFlow
-				asyncflow_func = self.flow.function_task(internal_mcp_work)
-
-				@wraps(f)
-				async def mcp_tool_wrapper(question: str) -> str:
-					logger.debug(f"MCP Tool '{f.__name__}' called")
-
-					async def _call():
-						logger.debug(
-							f"Executing MCP agent through AsyncFlow for '{f.__name__}'"
-						)
-						future = asyncflow_func(question)
-						result = await future
-						logger.debug(
-							f"MCP agent '{f.__name__}' completed via AsyncFlow"
-						)
-						return result
-
-					# Add retry on top
-					return await self.fault_tolerance_mechanism.retry_async(
-						_call, retry_cfg, name=f.__name__
-					)
-
-				langraph_tool = tool(
-					mcp_tool_wrapper,
-					description=kwargs.get(
-						"tool_description", f.__doc__ or f"MCP agent for {f.__name__}"
-					),
-				)
-
-				logger.info(f"Successfully created MCP agent tool for '{f.__name__}'")
 				return langraph_tool
 
 			elif flow_type in [AsyncFlowType.FUNCTION_TASK, AsyncFlowType.SERVICE_TASK]:
