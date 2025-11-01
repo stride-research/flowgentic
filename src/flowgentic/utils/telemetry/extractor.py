@@ -189,9 +189,24 @@ class Extractor:
 						if tool_calls:
 							for tc in tool_calls:
 								tool_function = tc.get("function")
-								tool_args = json.loads(tool_function.get("arguments"))
 								tool_name = tool_function.get("name")
 								tool_call_id = tc.get("id")
+
+								# Handle malformed JSON from LLM
+								try:
+									tool_args = json.loads(
+										tool_function.get("arguments")
+									)
+								except json.JSONDecodeError as e:
+									logger.warning(
+										f"Failed to parse tool arguments for '{tool_name}' (call_id: {tool_call_id}): {e}"
+									)
+									tool_args = {
+										"error": "malformed_json",
+										"raw_arguments": tool_function.get("arguments")[
+											:200
+										],
+									}
 
 								tool_call_info = ToolCallInfo(
 									tool_name=tool_name,

@@ -34,6 +34,7 @@ from radical.asyncflow.workflow_manager import BaseExecutionBackend
 
 from flowgentic.utils.telemetry.introspection import GraphIntrospector
 from .fault_tolerance import LangraphToolFaultTolerance, RetryConfig
+from flowgentic.utils.llm_providers import ChatLLMProvider
 
 
 """
@@ -81,10 +82,9 @@ class AsyncFlowType(Enum):
 	"""Enum defining the flow_type of AsyncFlow decoration"""
 
 	AGENT_TOOL_AS_FUNCTION = "tool"  # LangChain tool with @tool wrapper
-	AGENT_TOOL_AS_MCP = "tool"  # TO BE IMPLEMENTED
-	AGENT_TOOL_AS_SERVICE = "tool"  # TO BE IMPLEMENTED
+	AGENT_TOOL_AS_SERVICE = "service"  # LangChain tool with persistent service instance
 	FUNCTION_TASK = "future"  # Simple asyncflow task with *args, **kwargs
-	SERVICE_TASK = "future"  # TO BE IMPLEMENTED
+	SERVICE_TASK = "service_task"  # Persistent service task
 	EXECUTION_BLOCK = "block"
 
 
@@ -100,6 +100,7 @@ class ExecutionWrappersLangraph:
 		self.fault_tolerance_mechanism = LangraphToolFaultTolerance()
 		self.react_agents: Dict[str, Any] = {}
 		self.introspector = instrospector
+		self.service_registry: Dict[str, Any] = {}
 
 	def asyncflow(
 		self,
@@ -114,9 +115,11 @@ class ExecutionWrappersLangraph:
 
 		Args:
 			flow_type: AsyncFlowType enum specifying the decoration behavior:
-				- TOOL: Creates a LangChain tool (with @tool wrapper)
-				- NODE: Creates a LangGraph node (receives state, returns state)
-				- UTISL_TASK: Creates a simple asyncflow task (with *args, **kwargs)
+				- AGENT_TOOL_AS_FUNCTION: Creates a LangChain tool (with @tool wrapper)
+				- AGENT_TOOL_AS_SERVICE: Creates a LangChain tool with persistent service instance
+				- FUNCTION_TASK: Creates a simple asyncflow task (with *args, **kwargs)
+				- SERVICE_TASK: Creates a persistent service task
+				- EXECUTION_BLOCK: Creates a block node
 			retry: Optional retry configuration
 		"""
 
@@ -132,6 +135,11 @@ class ExecutionWrappersLangraph:
 
 			if flow_type == AsyncFlowType.EXECUTION_BLOCK:
 				asyncflow_func = self.flow.block(f)  # Use block decorator
+			elif flow_type in [
+				AsyncFlowType.AGENT_TOOL_AS_SERVICE,
+				AsyncFlowType.SERVICE_TASK,
+			]:
+				asyncflow_func = self.flow.function_task(f, service=True)
 			else:
 				asyncflow_func = self.flow.function_task(f)
 
@@ -140,7 +148,10 @@ class ExecutionWrappersLangraph:
 				f"Using retry config for '{f.__name__}': {retry_cfg.model_dump()}"
 			)
 
-			if flow_type == AsyncFlowType.AGENT_TOOL_AS_FUNCTION:
+			if flow_type in [
+				AsyncFlowType.AGENT_TOOL_AS_FUNCTION,
+				AsyncFlowType.AGENT_TOOL_AS_SERVICE,
+			]:
 				# Tool behavior: *args, **kwargs input, with @tool wrapper
 				@wraps(f)
 				async def tool_wrapper(*args, **kwargs):
@@ -170,12 +181,12 @@ class ExecutionWrappersLangraph:
 				logger.info(f"Successfully created LangChain tool for '{f.__name__}'")
 				return langraph_tool
 
-			elif flow_type == AsyncFlowType.FUNCTION_TASK:
-				# Future behavior: simple *args, **kwargs asyncflow task
+			elif flow_type in [AsyncFlowType.FUNCTION_TASK, AsyncFlowType.SERVICE_TASK]:
+
 				@wraps(f)
 				async def future_wrapper(*args, **kwargs):
 					logger.debug(
-						f"Future '{f.__name__}' called with args: {len(args)} positional, {list(kwargs.keys())} keyword"
+						f"Task '{f.__name__}' called with args: {len(args)} positional, {list(kwargs.keys())} keyword"
 					)
 
 					async def _call():
@@ -191,7 +202,7 @@ class ExecutionWrappersLangraph:
 						_call, retry_cfg, name=f.__name__
 					)
 
-				logger.info(f"Successfully created AsyncFlow future for '{f.__name__}'")
+				logger.info(f"Successfully created AsyncFlow task for '{f.__name__}'")
 				return future_wrapper
 
 			elif flow_type == AsyncFlowType.EXECUTION_BLOCK:
