@@ -16,16 +16,29 @@ help: e
 	@echo "$(BLUE)Available commands:$(RESET)"
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(GREEN)%-15s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
+# ============
+# =  SET-UP  =
+# ============
+
 install: #Install dependencies with pip => install graphviz 
-	python3.9 -m venv $(VENV_PATH)
+	$(VENV_ACTIVATE) && pip install -e "."
+	$(VENV_ACTIVATE) &&  pre-commit install
+	$(VENV_ACTIVATE) && pip install --config-settings="--global-option=build_ext" \
+		--config-settings="--global-option=-I$$(brew --prefix graphviz)/include/" \
+		--config-settings="--global-option=-L$$(brew --prefix graphviz)/lib/" \
+		pygraphviz
+install-dev: 
 	$(VENV_ACTIVATE) && pip install -e ".[dev]"
 	$(VENV_ACTIVATE) &&  pre-commit install
-	pip install --config-settings="--global-option=build_ext" \
-		--config-settings="--global-option=-I$(brew --prefix graphviz)/include/" \
-		--config-settings="--global-option=-L$(brew --prefix graphviz)/lib/" \
+	$(VENV_ACTIVATE) && pip install --config-settings="--global-option=build_ext" \
+		--config-settings="--global-option=-I$$(brew --prefix graphviz)/include/" \
+		--config-settings="--global-option=-L$$(brew --prefix graphviz)/lib/" \
 		pygraphviz
 
 
+# ============
+# =   CI/CD  =
+# ============
 format:
 	$(VENV_ACTIVATE) && ruff format .
 
@@ -34,7 +47,12 @@ lint:
 docs:	## Renders docs locally
 	$(VENV_ACTIVATE) &&  mkdocs serve
 tests: ## Run tests
-	$(VENV_ACTIVATE) && python -m pytest -vv -s tests/test_generator.py
+	$(VENV_ACTIVATE) && pytest -vv \
+                  --cov=flowgentic \
+                  --cov-report=html:coverage_report \
+                  --cov-report=term-missing \
+                  --cov-report=term:skip-covered \
+                  tests/
 
 # ============
 # = EXAMPLES =

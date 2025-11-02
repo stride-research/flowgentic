@@ -13,6 +13,7 @@ dependencies = [
     "langgraph>=0.6.6",
     "radical.asyncflow @ git+https://github.com/radical-cybertools/radical.asyncflow.git@main",
     "langchain-openai",
+    "langchain",
     "langchain-ollama",
     "langchain-core",
     "langchain-community",
@@ -38,9 +39,6 @@ dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "uv>=0.1.0",
-]
-tests = [
-   "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov",
 ]

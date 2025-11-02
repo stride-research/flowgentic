@@ -29,11 +29,11 @@ dependencies = [
 pip3 install "git+https://github.com/stride-research/flowgentic.git@main#egg=flowgentic"
 
 # 3) cloning this repo
-pip install '.' # no dev dependencies
-pip install '.[dev]' # dev dependencies
+python3.10 -m venv .venv
+make install 
 
 ```
-Then install graphviz pluggins:
+If you are in MacOS you may need to install graphviz pluggins:
 ```bash
 # For MacOS
 brew install graphviz

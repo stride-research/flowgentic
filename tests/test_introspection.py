@@ -7,9 +7,9 @@ from datetime import datetime, timedelta
 
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 
-from flowgentic.langGraph.telemetry.introspection import GraphIntrospector
-from flowgentic.langGraph.telemetry.report_generator import ReportGenerator
-from flowgentic.langGraph.telemetry.schemas import (
+from flowgentic.utils.telemetry.introspection import GraphIntrospector
+from flowgentic.utils.telemetry.report_generator import ReportGenerator
+from flowgentic.utils.telemetry.schemas import (
 	MessageInfo,
 	ModelMetadata,
 	NodeExecutionRecord,
