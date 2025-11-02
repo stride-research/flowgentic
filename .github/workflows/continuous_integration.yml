@@ -49,15 +49,30 @@ jobs:
                 ${{ runner.os }}-pip-${{ matrix.python-version }}-
                 ${{ runner.os }}-pip-
           
+          - name: "Install graphviz"
+            run: |
+              sudo apt-get update
+              sudo apt-get install -y graphviz graphviz-dev
+            shell: bash
+          
+          - name: "Create virtual environment"
+            run: |
+              python -m venv .venv
+            shell: bash
+          
           - name: "Install dependencies"
-            run: | 
-                make install-dev
+            run: |
+              source .venv/bin/activate
+              pip install -e ".[dev]"
+              pip install pygraphviz
+            shell: bash
           
           - name: Run python tests with coverage
             env: 
                 OPEN_ROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY }}
             run: |
               make tests
+            shell: bash
           
           - name: "Show coverage summary"
             if: always()
