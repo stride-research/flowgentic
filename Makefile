@@ -71,21 +71,13 @@ examples-chatbot-toy:
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.chatbot.toy
 examples-sequential-research:
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.research_agent.main
-examples-sequential-research-memory:
-	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.research_agent_memory.main
-
 examples-supervisor-toy: 
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.supervisor.toy.main
-
-examples-parallel-toy: ## Run parallel example with LLM-based routing
-	$(VENV_ACTIVATE) && python3 examples/langgraph-integration/design_patterns/supervisor/toy/main.py
-
-examples-supervisor-product-research: ## Run advanced supervisor pattern with product research
-	$(VENV_ACTIVATE) && python3 examples/langgraph-integration/design_patterns/supervisor/product_research/main.py
-
-examples-mcp-sales-analytics: ## Run MCP sales analytics sequential workflow example
-	@if [ ! -f examples/langgraph-integration/mcp/sequential/sales_analytics/sales.db ]; then \
-		echo "Creating sales database..."; \
-		$(VENV_ACTIVATE) && python3 examples/langgraph-integration/mcp/sequential/sales_analytics/setup_database.py; \
-	fi
-	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.mcp.sequential.sales_analytics.main
+#### Memory
+examples-sequential-research-memory:
+	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.research_agent_memory.main
+### Services
+examples-services-task:
+	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.service-task.service-task
+examples-services-intermittent-task: 
+	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.service-task.service-intermittent
