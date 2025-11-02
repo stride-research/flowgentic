@@ -51,16 +51,13 @@ jobs:
           
           - name: "Install dependencies"
             run: | 
-                pip3 install ".[tests]"
+                make install-dev
           
           - name: Run python tests with coverage
+            env: 
+                OPEN_ROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY }}
             run: |
-                pytest -vv \
-                  --cov=flowgentic \
-                  --cov-report=html:coverage_report \
-                  --cov-report=term-missing \
-                  --cov-report=term:skip-covered \
-                  tests/
+              make tests
           
           - name: "Show coverage summary"
             if: always()

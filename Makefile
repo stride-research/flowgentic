@@ -47,7 +47,7 @@ lint:
 docs:	## Renders docs locally
 	$(VENV_ACTIVATE) &&  mkdocs serve
 tests: ## Run tests
-	$(VENV_ACTIVATE) && pytest -vv \
+	$(VENV_ACTIVATE) && pytest -vv -s \
                   --cov=flowgentic \
                   --cov-report=html:coverage_report \
                   --cov-report=term-missing \
@@ -63,8 +63,6 @@ examples-sequential-financial:
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.financial_advisor.main
 examples-supervisor-toy: ## Run supervisor toy example
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.supervisor.toy.main
-examples-basic: ## Run toy example 
-	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.dummy_example 
 
 examples-parallel-toy: ## Run parallel example with LLM-based routing
 	$(VENV_ACTIVATE) && python3 examples/langgraph-integration/design_patterns/supervisor/toy/main.py
