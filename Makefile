@@ -53,6 +53,13 @@ tests: ## Run tests
                   --cov-report=term-missing \
                   --cov-report=term:skip-covered \
                   tests/
+tests-units: 
+	$(VENV_ACTIVATE) && pytest -vv -s \
+				--cov=flowgentic \
+				--cov-report=html:coverage_report \
+				--cov-report=term-missing \
+				--cov-report=term:skip-covered \
+				tests/unit
 
 # ============
 # = EXAMPLES =

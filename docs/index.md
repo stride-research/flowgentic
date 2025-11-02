@@ -10,7 +10,7 @@ Build and run modern agentic workflows on HPC with minimal overhead. Flowgentic 
 
 - **HPC execution of agent workflows**: Run multiagent graphs (e.g., langraph) on HPC via multiple HPC workflow engines (e.g., Radical Asyncflow). Note, while the canonical usecase is in an HPC execution context, you can run this in your laptop using as backend the `ConcurrentExecutionBackend`
 - **Concurrent tool and agent blocks**: Offload parallelizable work to HPC backends.
-- **Production-oriented patterns**: Start from examples that implement sequential patterns with typed state, tool registries, and error handling.
+- **Production-oriented patterns**: Start from examples that implement sequential, supervisor and hierarchical patterns with typed state, tool registries, and error handling.
 - **Memory Capabilities**: Used a range of memory solutions for managing context engineering. From shared-node memory to agent-based summarization, we provide a suite of efficient and scalable memory mechanism
 - **Telemetry**: Analyze your workflow execution with HPC-accomodated telemetry via the [Observe package](https://github.com/stride-research/observe) (under development). We also provide agents introspection that summarize agents decisions, avoiding the hussle of going through thousands of lines of logs.
 
