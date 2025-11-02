@@ -56,7 +56,7 @@ Current and planned integrations. ✅ available, 🚧 planned, 🟡 pre-release.
 
 ### Installation
 
-Requirements: Python >= 3.9
+Requirements: Python >= 3.10 (LangGraph recently discontinued support for python 3.9. See more [here](https://docs.langchain.com/oss/python/migrate/langgraph-v1#dropped-python-3-9-support:~:text=All%20LangChain%20packages%20now%20require%20Python%203.10%20or%20higher.%20Python%203.9%20reached%20end%20of%20life%20in%20October%202025.))
 
 ```bash
 pip install '.'
