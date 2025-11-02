@@ -95,33 +95,45 @@ class ReportGenerator:
 		memory_stats_obj = getattr(self._final_state, "memory_stats", None)
 		if not memory_stats_obj and isinstance(self._final_state, dict):
 			memory_stats_obj = self._final_state.get("memory_stats", None)
-		
+
 		if memory_stats_obj:
 			# Handle both dict and Pydantic model
 			if isinstance(memory_stats_obj, dict):
 				memory_info.update(
 					{
 						"total_messages": memory_stats_obj.get("total_messages", 0),
-						"memory_efficiency": memory_stats_obj.get("memory_efficiency", 0),
-						"average_importance": memory_stats_obj.get("average_importance", 0),
+						"memory_efficiency": memory_stats_obj.get(
+							"memory_efficiency", 0
+						),
+						"average_importance": memory_stats_obj.get(
+							"average_importance", 0
+						),
 						"system_messages": memory_stats_obj.get("system_messages", 0),
 						"human_messages": memory_stats_obj.get("human_messages", 0),
 						"ai_messages": memory_stats_obj.get("ai_messages", 0),
-						"interaction_count": memory_stats_obj.get("interaction_count", 0),
+						"interaction_count": memory_stats_obj.get(
+							"interaction_count", 0
+						),
 					}
 				)
 			else:
 				memory_info.update(
 					{
-						"total_messages": getattr(memory_stats_obj, "total_messages", 0),
+						"total_messages": getattr(
+							memory_stats_obj, "total_messages", 0
+						),
 						"memory_efficiency": getattr(
 							memory_stats_obj, "memory_efficiency", 0
 						),
 						"average_importance": getattr(
 							memory_stats_obj, "average_importance", 0
 						),
-						"system_messages": getattr(memory_stats_obj, "system_messages", 0),
-						"human_messages": getattr(memory_stats_obj, "human_messages", 0),
+						"system_messages": getattr(
+							memory_stats_obj, "system_messages", 0
+						),
+						"human_messages": getattr(
+							memory_stats_obj, "human_messages", 0
+						),
 						"ai_messages": getattr(memory_stats_obj, "ai_messages", 0),
 						"interaction_count": getattr(
 							memory_stats_obj, "interaction_count", 0
@@ -237,7 +249,7 @@ class ReportGenerator:
 				f.write(
 					"This section provides insights into the memory management system used during workflow execution.\n\n"
 				)
-				
+
 				# Message counts
 				f.write("### Message Counts\n\n")
 				f.write(
@@ -255,14 +267,14 @@ class ReportGenerator:
 				f.write(
 					f"- **Interaction Count:** `{memory_stats.get('interaction_count', 0)}` - Number of conversation turns\n\n"
 				)
-				
+
 				# Memory efficiency metrics
 				f.write("### Memory Efficiency Metrics\n\n")
-				memory_efficiency = memory_stats.get('memory_efficiency', 0)
+				memory_efficiency = memory_stats.get("memory_efficiency", 0)
 				f.write(
 					f"- **Memory Utilization:** `{memory_efficiency:.1%}` - Percentage of available memory capacity used (messages stored / max capacity)\n"
 				)
-				avg_importance = memory_stats.get('average_importance', 0)
+				avg_importance = memory_stats.get("average_importance", 0)
 				f.write(
 					f"- **Average Message Importance Score:** `{avg_importance:.2f}` - Mean importance rating of stored messages (scale: 0.0-1.0)\n"
 				)
@@ -290,7 +302,9 @@ class ReportGenerator:
 					f.write("### Memory Operations Performed\n\n")
 					f.write(f"- **Total Operations:** `{len(operations)}`\n")
 					f.write(f"- **Operation Types:** `{', '.join(operations)}`\n")
-					f.write("  - These operations track when memory was accessed or updated during workflow execution\n\n")
+					f.write(
+						"  - These operations track when memory was accessed or updated during workflow execution\n\n"
+					)
 
 				f.write(f"--- \n\n")
 

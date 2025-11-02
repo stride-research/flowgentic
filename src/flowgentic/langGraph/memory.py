@@ -455,7 +455,7 @@ class MemoryManager:
 		if not messages:
 			# Return empty list if no messages
 			return []
-			
+
 		if not query:
 			# Return recent messages if no query
 			return messages[-10:] if len(messages) > 10 else messages
@@ -472,7 +472,7 @@ class MemoryManager:
 			# Skip messages with empty content
 			if not content or not content.strip():
 				continue
-				
+
 			score = self._calculate_semantic_relevance(content, query)
 
 			# Boost score based on importance and recency
@@ -482,9 +482,11 @@ class MemoryManager:
 				else 1.0
 			)
 			# Protect against division by zero
-			recency_boost = max(
-				0.5, 1.0 - (messages_count - i) / messages_count
-			) if messages_count > 0 else 1.0  # More recent = higher boost
+			recency_boost = (
+				max(0.5, 1.0 - (messages_count - i) / messages_count)
+				if messages_count > 0
+				else 1.0
+			)  # More recent = higher boost
 
 			total_score = score * importance_boost * recency_boost
 			scored_messages.append((total_score, msg))
@@ -508,7 +510,7 @@ class MemoryManager:
 		# Handle empty content
 		if not content or not query:
 			return 0.0
-			
+
 		content_lower = content.lower()
 		query_lower = query.lower()
 
