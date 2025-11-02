@@ -452,18 +452,27 @@ class MemoryManager:
 		self, messages: List[BaseMessage], query: Optional[str] = None
 	) -> List[BaseMessage]:
 		"""Extract relevant messages based on semantic search and importance."""
+		if not messages:
+			# Return empty list if no messages
+			return []
+			
 		if not query:
 			# Return recent messages if no query
 			return messages[-10:] if len(messages) > 10 else messages
 
 		# Perform semantic search with multiple strategies
 		scored_messages = []
+		messages_count = len(messages)
 
 		for i, msg in enumerate(messages):
 			if not hasattr(msg, "content") or not isinstance(msg.content, str):
 				continue
 
 			content = msg.content
+			# Skip messages with empty content
+			if not content or not content.strip():
+				continue
+				
 			score = self._calculate_semantic_relevance(content, query)
 
 			# Boost score based on importance and recency
@@ -472,9 +481,10 @@ class MemoryManager:
 				if i < len(self.short_term_manager.memory_items)
 				else 1.0
 			)
+			# Protect against division by zero
 			recency_boost = max(
-				0.5, 1.0 - (len(messages) - i) / len(messages)
-			)  # More recent = higher boost
+				0.5, 1.0 - (messages_count - i) / messages_count
+			) if messages_count > 0 else 1.0  # More recent = higher boost
 
 			total_score = score * importance_boost * recency_boost
 			scored_messages.append((total_score, msg))
@@ -495,6 +505,10 @@ class MemoryManager:
 
 	def _calculate_semantic_relevance(self, content: str, query: str) -> float:
 		"""Calculate semantic relevance score between content and query."""
+		# Handle empty content
+		if not content or not query:
+			return 0.0
+			
 		content_lower = content.lower()
 		query_lower = query.lower()
 
@@ -533,7 +547,8 @@ class MemoryManager:
 					consecutive_boost += 0.3
 
 		# Length normalization (shorter matches get slight boost)
-		length_factor = min(1.0, 50.0 / len(content))
+		# Protect against division by zero
+		length_factor = min(1.0, 50.0 / len(content)) if len(content) > 0 else 0.0
 
 		return min(1.0, jaccard_score + consecutive_boost + length_factor * 0.1)
 
