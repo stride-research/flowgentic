@@ -1,2 +1,0 @@
-# Component utils package
-

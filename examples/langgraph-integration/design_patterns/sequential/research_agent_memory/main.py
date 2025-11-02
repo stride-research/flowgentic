@@ -59,7 +59,9 @@ async def start_app():
 
 		print(f"   Strategy: {memory_config.short_term_strategy}")
 		print(f"   Max messages: {memory_config.max_short_term_messages}")
-		print(f"   Summarization: {'Enabled' if memory_config.enable_summarization else 'Disabled'}")
+		print(
+			f"   Summarization: {'Enabled' if memory_config.enable_summarization else 'Disabled'}"
+		)
 		print()
 
 		# Build workflow with memory integration
@@ -122,7 +124,9 @@ focusing on battery technologies, grid integration, and market opportunities.
 			print(
 				f"   Average importance: {final_memory_health.get('average_importance', 0):.2f}"
 			)
-			print(f"   System messages: {final_memory_health.get('system_messages', 0)}")
+			print(
+				f"   System messages: {final_memory_health.get('system_messages', 0)}"
+			)
 			print(f"   Human messages: {final_memory_health.get('human_messages', 0)}")
 			print(f"   AI messages: {final_memory_health.get('ai_messages', 0)}")
 			print()

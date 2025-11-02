@@ -14,7 +14,11 @@ class WorkflowEdges:
 	@staticmethod
 	def should_continue_after_preprocessing(state: WorkflowState) -> str:
 		"""Route after preprocessing based on validation success."""
-		if state.preprocessing_complete and state.validation_data and state.validation_data.is_valid:
+		if (
+			state.preprocessing_complete
+			and state.validation_data
+			and state.validation_data.is_valid
+		):
 			return "research_agent"
 		else:
 			return "error_handler"

@@ -57,7 +57,7 @@ class MemoryStats(BaseModel):
 
 class WorkflowState(BaseModel):
 	"""Memory-enabled state model for the LangGraph workflow.
-	
+
 	This state extends the base sequential workflow with memory management
 	capabilities, allowing agents to access relevant context from previous
 	stages and maintain conversation history.

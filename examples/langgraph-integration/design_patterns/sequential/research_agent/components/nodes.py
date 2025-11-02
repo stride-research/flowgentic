@@ -188,7 +188,7 @@ class WorkflowNodes:
 
 				synthesis_agent = create_react_agent(
 					model=ChatLLMProvider(
-						provider="OpenRouter", model="google/gemini-2.5-pro"
+						provider="OpenRouter", model="google/gemini-2.5-flash"
 					),
 					tools=tools,
 				)

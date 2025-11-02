@@ -54,7 +54,9 @@ class WorkflowNodes:
 		)
 		async def _preprocess_node(state: WorkflowState) -> WorkflowState:
 			"""Memory-aware preprocessing node."""
-			print("🔄 Preprocessing Node (Memory-Enabled): Starting input validation...")
+			print(
+				"🔄 Preprocessing Node (Memory-Enabled): Starting input validation..."
+			)
 
 			try:
 				# Validate input
@@ -207,7 +209,9 @@ Your task: Conduct comprehensive research on the user's query, leveraging any re
 		)
 		async def _context_preparation_node(state: WorkflowState) -> WorkflowState:
 			"""Memory-aware context preparation node."""
-			print("🔧 Context Preparation Node (Memory-Enabled): Preparing synthesis context...")
+			print(
+				"🔧 Context Preparation Node (Memory-Enabled): Preparing synthesis context..."
+			)
 
 			try:
 				# Get memory context for synthesis
@@ -217,9 +221,11 @@ Your task: Conduct comprehensive research on the user's query, leveraging any re
 
 				# Prepare synthesis context using memory
 				if state.research_agent_output:
-					prepare_context_task = self.tools_registry.get_function_task_by_name(
-						"prepare_synthesis_context"
-					)(state.research_agent_output.output_content, memory_context)
+					prepare_context_task = (
+						self.tools_registry.get_function_task_by_name(
+							"prepare_synthesis_context"
+						)(state.research_agent_output.output_content, memory_context)
+					)
 
 					context_data = await prepare_context_task
 
@@ -360,7 +366,9 @@ Original query: {state.user_input}"""
 		)
 		async def _finalize_output_node(state: WorkflowState) -> WorkflowState:
 			"""Finalize output with memory statistics."""
-			print("📄 Finalize Output Node (Memory-Enabled): Formatting final results...")
+			print(
+				"📄 Finalize Output Node (Memory-Enabled): Formatting final results..."
+			)
 
 			try:
 				if state.synthesis_agent_output:
@@ -378,7 +386,9 @@ Original query: {state.user_input}"""
 
 					print("✅ Final output formatting complete")
 					print(f"\n🧠 Final Memory Statistics:")
-					print(f"   - Total messages: {memory_health.get('total_messages', 0)}")
+					print(
+						f"   - Total messages: {memory_health.get('total_messages', 0)}"
+					)
 					print(
 						f"   - Memory efficiency: {memory_health.get('memory_efficiency', 0):.1%}"
 					)

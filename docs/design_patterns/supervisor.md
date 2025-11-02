@@ -27,6 +27,9 @@ A supervisor workflow with an LLM router that analyzes user queries and dispatch
 
 [See the complete example code](https://github.com/stride-research/flowgentic/tree/main/examples/langgraph-integration/design_patterns/supervisor/toy)
 
+**Important Note**
+Currently the report generator for the supervisor and hierarchical pattern are partially functional. Please proceed to use them carefully while we working solving these issues.
+
 ---
 
 ## Implementation Steps Overview

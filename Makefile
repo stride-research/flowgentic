@@ -66,14 +66,15 @@ tests-units:
 # ============
 
 ## LangGraph
-examples-chatbot-main: ## EXAMPLE: design_patterns/chatbot/main
-	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.chatbot.main
-
+### Design Patterns 
+examples-chatbot-toy: 
+	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.chatbot.toy
 examples-sequential-research:
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.research_agent.main
-examples-sequential-financial:
-	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.financial_advisor.main
-examples-supervisor-toy: ## Run supervisor toy example
+examples-sequential-research-memory:
+	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.research_agent_memory.main
+
+examples-supervisor-toy: 
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.supervisor.toy.main
 
 examples-parallel-toy: ## Run parallel example with LLM-based routing
