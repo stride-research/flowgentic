@@ -1,7 +1,7 @@
 from datetime import datetime
 import os
 import sys
-from typing import Dict, List
+from typing import Dict, List, Any
 
 from pydantic import BaseModel
 
@@ -38,11 +38,85 @@ class ReportGenerator:
 			f"ALL NODES ARE: {all_nodes}, recorded nodes are: {list(self._records.keys())}"
 		)
 		self.categorized_records = {key: [] for key in all_nodes}
-		for record in list(self._records.keys()):
-			cleaned_record_value = self._records[record]
-			cleaned_record_key = record.rsplit("_", 1)[0]
-			self.categorized_records[cleaned_record_key].append(cleaned_record_value)
+		for record_key in list(self._records.keys()):
+			cleaned_record_value = self._records[record_key]
+
+			# Find which node this record belongs to by checking if record_key starts with node_name
+			# Record keys are formatted as: {node_name}_{timestamp}
+			matched_node = None
+			for node_name in all_nodes:
+				if record_key.startswith(f"{node_name}_"):
+					matched_node = node_name
+					break
+
+			# If no match found, try the old method (split by first underscore)
+			if matched_node is None:
+				cleaned_record_key = record_key.split("_")[0]
+				if cleaned_record_key in self.categorized_records:
+					matched_node = cleaned_record_key
+
+			# Add record to the matched node's list
+			if matched_node:
+				self.categorized_records[matched_node].append(cleaned_record_value)
+			else:
+				logger.warning(
+					f"Could not match record key '{record_key}' to any node in {all_nodes}"
+				)
+
 		return self.categorized_records
+
+	def _has_memory_features(self) -> bool:
+		"""Check if the workflow uses memory features."""
+		if self._final_state is None:
+			return False
+
+		return (
+			hasattr(self._final_state, "memory_stats")
+			or hasattr(self._final_state, "memory_operations")
+			or hasattr(self._final_state, "memory_context")
+		)
+
+	def _extract_memory_stats(self) -> Dict[str, Any]:
+		"""Extract memory statistics from final state."""
+		if not self._has_memory_features():
+			return {}
+
+		memory_info: Dict[str, Any] = {}
+
+		# Extract memory_stats if present
+		memory_stats_obj = getattr(self._final_state, "memory_stats", None)
+		if memory_stats_obj:
+			memory_info.update(
+				{
+					"total_messages": getattr(memory_stats_obj, "total_messages", 0),
+					"memory_efficiency": getattr(
+						memory_stats_obj, "memory_efficiency", 0
+					),
+					"average_importance": getattr(
+						memory_stats_obj, "average_importance", 0
+					),
+					"system_messages": getattr(memory_stats_obj, "system_messages", 0),
+					"human_messages": getattr(memory_stats_obj, "human_messages", 0),
+					"ai_messages": getattr(memory_stats_obj, "ai_messages", 0),
+					"interaction_count": getattr(
+						memory_stats_obj, "interaction_count", 0
+					),
+				}
+			)
+
+		# Extract memory_operations if present
+		memory_operations = getattr(self._final_state, "memory_operations", None)
+		if memory_operations:
+			memory_info["operations"] = memory_operations
+
+		# Extract memory_context if present
+		memory_context = getattr(self._final_state, "memory_context", None)
+		if memory_context and isinstance(memory_context, dict):
+			memory_stats_dict = memory_context.get("memory_stats", {})
+			if memory_stats_dict:
+				memory_info["config"] = memory_stats_dict.get("config", {})
+
+		return memory_info
 
 	def generate_report(self, all_nodes: List[str], dir_to_write: str):
 		"""Generates a human-readable Markdown report of the entire graph execution."""
@@ -126,6 +200,50 @@ class ReportGenerator:
 			f.write(f"- **Number of Nodes:** `{len(report_data.node_records)}`\n\n")
 
 			f.write(f"--- \n\n")
+
+			# Memory Statistics (if memory features are detected)
+			if self._has_memory_features():
+				memory_stats = self._extract_memory_stats()
+				f.write("## 🧠 Memory Statistics\n\n")
+				f.write(
+					f"- **Total Messages:** `{memory_stats.get('total_messages', 0)}`\n"
+				)
+				f.write(
+					f"- **Memory Efficiency:** `{memory_stats.get('memory_efficiency', 0):.1%}`\n"
+				)
+				f.write(
+					f"- **Average Importance:** `{memory_stats.get('average_importance', 0):.2f}`\n"
+				)
+				f.write(
+					f"- **System Messages:** `{memory_stats.get('system_messages', 0)}`\n"
+				)
+				f.write(
+					f"- **Human Messages:** `{memory_stats.get('human_messages', 0)}`\n"
+				)
+				f.write(f"- **AI Messages:** `{memory_stats.get('ai_messages', 0)}`\n")
+				f.write(
+					f"- **Interaction Count:** `{memory_stats.get('interaction_count', 0)}`\n"
+				)
+
+				config = memory_stats.get("config", {})
+				if config:
+					f.write(
+						f"- **Memory Strategy:** `{config.get('short_term_strategy', 'N/A')}`\n"
+					)
+					f.write(
+						f"- **Max Messages:** `{config.get('max_short_term_messages', 'N/A')}`\n"
+					)
+					f.write(
+						f"- **Context Window Buffer:** `{config.get('context_window_buffer', 'N/A')}`\n"
+					)
+
+				operations = memory_stats.get("operations", [])
+				if operations:
+					f.write(f"- **Memory Operations:** `{len(operations)}`\n")
+					f.write(f"  - Operations: `{', '.join(operations)}`\n")
+
+				f.write("\n")
+				f.write(f"--- \n\n")
 
 			f.write("## 📝 Execution Summary\n\n")
 			f.write(
