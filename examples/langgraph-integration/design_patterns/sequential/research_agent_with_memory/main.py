@@ -59,7 +59,9 @@ async def start_app():
 
 		print(f"   Strategy: {memory_config.short_term_strategy}")
 		print(f"   Max messages: {memory_config.max_short_term_messages}")
-		print(f"   Summarization: {'Enabled' if memory_config.enable_summarization else 'Disabled'}")
+		print(
+			f"   Summarization: {'Enabled' if memory_config.enable_summarization else 'Disabled'}"
+		)
 		print()
 
 		# Build workflow with memory integration
@@ -75,8 +77,8 @@ async def start_app():
 		# Initial state
 		initial_state = WorkflowState(
 			user_input="""
-I need to research the latest developments in renewable energy storage technologies 
-and create a comprehensive report with recommendations for a clean energy startup 
+I need to research the latest developments in renewable energy storage technologies
+and create a comprehensive report with recommendations for a clean energy startup
 focusing on battery technologies, grid integration, and market opportunities.
             """.strip(),
 			user_id="research_user_001",
@@ -104,7 +106,7 @@ focusing on battery technologies, grid integration, and market opportunities.
 			raise
 		finally:
 			# Update final memory statistics in state for report generation
-			if final_state:
+			if final_state is not None:
 				final_memory_health = memory_manager.get_memory_health()
 				memory_stats_obj = MemoryStats(**final_memory_health)
 				# Handle both dict and Pydantic model
@@ -112,7 +114,7 @@ focusing on battery technologies, grid integration, and market opportunities.
 					final_state["memory_stats"] = memory_stats_obj.model_dump()
 				else:
 					final_state.memory_stats = memory_stats_obj
-			
+
 			# Generate all execution artifacts (directories, report, graph)
 			print("\n" + "=" * 80)
 			print("📊 Generating Execution Artifacts...")
