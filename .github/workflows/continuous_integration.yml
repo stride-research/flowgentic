@@ -71,7 +71,13 @@ jobs:
             env: 
                 OPEN_ROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY }}
             run: |
-              make tests
+              source .venv/bin/activate
+              pytest -vv -s \
+                --cov=flowgentic \
+                --cov-report=html:coverage_report \
+                --cov-report=term-missing \
+                --cov-report=term:skip-covered \
+                tests/
             shell: bash
           
           - name: "Show coverage summary"
