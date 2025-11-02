@@ -23,7 +23,7 @@ from flowgentic.langGraph.main import LangraphIntegration
 from flowgentic.langGraph.memory import MemoryManager, MemoryConfig
 from flowgentic.utils.llm_providers import ChatLLMProvider
 from .components.builder import WorkflowBuilder
-from .utils.schemas import WorkflowState
+from .utils.schemas import WorkflowState, MemoryStats
 from langgraph.checkpoint.memory import InMemorySaver
 from dotenv import load_dotenv
 
@@ -87,10 +87,10 @@ focusing on battery technologies, grid integration, and market opportunities.
 		print(f"📝 User Input: {initial_state.user_input[:100]}...")
 		print()
 
+		final_state = None
 		try:
 			# Execute workflow
 			config = {"configurable": {"thread_id": "memory_workflow_1"}}
-			final_state = None
 			async for chunk in app.astream(
 				initial_state, config=config, stream_mode="values"
 			):
@@ -103,6 +103,16 @@ focusing on battery technologies, grid integration, and market opportunities.
 			print(f"❌ Workflow execution failed: {str(e)}")
 			raise
 		finally:
+			# Update final memory statistics in state for report generation
+			if final_state:
+				final_memory_health = memory_manager.get_memory_health()
+				memory_stats_obj = MemoryStats(**final_memory_health)
+				# Handle both dict and Pydantic model
+				if isinstance(final_state, dict):
+					final_state["memory_stats"] = memory_stats_obj.model_dump()
+				else:
+					final_state.memory_stats = memory_stats_obj
+			
 			# Generate all execution artifacts (directories, report, graph)
 			print("\n" + "=" * 80)
 			print("📊 Generating Execution Artifacts...")
@@ -110,24 +120,7 @@ focusing on battery technologies, grid integration, and market opportunities.
 				app, __file__, final_state=final_state
 			)
 
-			# Display final memory statistics
-			print("\n" + "=" * 80)
-			print("🧠 FINAL MEMORY STATISTICS")
-			print("=" * 80)
-			final_memory_health = memory_manager.get_memory_health()
-			print(f"   Total messages: {final_memory_health.get('total_messages', 0)}")
-			print(
-				f"   Memory efficiency: {final_memory_health.get('memory_efficiency', 0):.1%}"
-			)
-			print(
-				f"   Average importance: {final_memory_health.get('average_importance', 0):.2f}"
-			)
-			print(f"   System messages: {final_memory_health.get('system_messages', 0)}")
-			print(f"   Human messages: {final_memory_health.get('human_messages', 0)}")
-			print(f"   AI messages: {final_memory_health.get('ai_messages', 0)}")
-			print()
-
-			print("✅ Workflow completed successfully!")
+			print("\n✅ Workflow completed successfully!")
 			print("=" * 80)
 
 

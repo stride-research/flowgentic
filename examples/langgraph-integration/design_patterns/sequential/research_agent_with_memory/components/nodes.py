@@ -376,16 +376,11 @@ Original query: {state.user_input}"""
 					state.workflow_complete = True
 					state.current_stage = "completed"
 
+					# Update memory stats in state for report generation
+					state.memory_stats = MemoryStats(**memory_health)
+
 					print("✅ Final output formatting complete")
-					print(f"\n🧠 Final Memory Statistics:")
-					print(f"   - Total messages: {memory_health.get('total_messages', 0)}")
-					print(
-						f"   - Memory efficiency: {memory_health.get('memory_efficiency', 0):.1%}"
-					)
-					print(
-						f"   - Average importance: {memory_health.get('average_importance', 0):.2f}"
-					)
-					print(f"   - Operations performed: {len(state.memory_operations)}")
+					print("   Memory statistics will be included in the generated report")
 
 			except Exception as e:
 				logger.error(f"Finalization error: {str(e)}")
@@ -403,6 +398,13 @@ Original query: {state.user_input}"""
 		async def _error_handler_node(state: WorkflowState) -> WorkflowState:
 			"""Handle errors with memory context."""
 			print("❌ Error Handler Node: Processing errors...")
+
+			# Update memory stats even in error case for report generation
+			try:
+				memory_health = self.memory_manager.get_memory_health()
+				state.memory_stats = MemoryStats(**memory_health)
+			except Exception as e:
+				logger.error(f"Failed to get memory stats in error handler: {str(e)}")
 
 			error_summary = "\n".join(f"- {error}" for error in state.errors)
 			state.final_output = f"""
