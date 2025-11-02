@@ -591,14 +591,16 @@ class MemoryEnabledState(BaseModel):
 # Facade class following the established pattern for LangGraph integration
 class LangraphMemoryManager:
 	"""Facade for memory management in LangGraph integration.
-	
+
 	Follows the same pattern as LangraphToolFaultTolerance and AgentLogger,
 	providing a simple interface for memory operations within the LangraphIntegration.
 	"""
 
-	def __init__(self, config: Optional[MemoryConfig] = None, llm: Optional[BaseChatModel] = None) -> None:
+	def __init__(
+		self, config: Optional[MemoryConfig] = None, llm: Optional[BaseChatModel] = None
+	) -> None:
 		"""Initialize the memory manager facade.
-		
+
 		Args:
 		    config: Memory configuration. If None, uses default configuration.
 		    llm: Language model for summarization features. Optional.
@@ -606,7 +608,9 @@ class LangraphMemoryManager:
 		self.config = config or MemoryConfig()
 		self.llm = llm
 		self._memory_manager: Optional[MemoryManager] = None
-		logger.info(f"Initialized LangraphMemoryManager with strategy: {self.config.short_term_strategy}")
+		logger.info(
+			f"Initialized LangraphMemoryManager with strategy: {self.config.short_term_strategy}"
+		)
 
 	def _get_memory_manager(self) -> MemoryManager:
 		"""Lazy initialization of the underlying MemoryManager."""
@@ -622,16 +626,18 @@ class LangraphMemoryManager:
 		metadata: Optional[Dict[str, Any]] = None,
 	) -> Dict[str, Any]:
 		"""Add an interaction to memory and track statistics.
-		
+
 		Args:
 		    user_id: Identifier for the user/conversation thread
 		    messages: List of messages to add to memory
 		    metadata: Optional metadata for the interaction
-			
+
 		Returns:
 		    Dictionary with memory statistics and operation results
 		"""
-		logger.debug(f"Adding interaction for user '{user_id}' with {len(messages)} messages")
+		logger.debug(
+			f"Adding interaction for user '{user_id}' with {len(messages)} messages"
+		)
 		memory_manager = self._get_memory_manager()
 		return await memory_manager.add_interaction(user_id, messages, metadata)
 
@@ -639,11 +645,11 @@ class LangraphMemoryManager:
 		self, user_id: str, query: Optional[str] = None
 	) -> Dict[str, Any]:
 		"""Get relevant context from memory with smart retrieval.
-		
+
 		Args:
 		    user_id: Identifier for the user/conversation thread
 		    query: Optional query string for semantic search
-			
+
 		Returns:
 		    Dictionary containing relevant context and memory statistics
 		"""
@@ -653,7 +659,7 @@ class LangraphMemoryManager:
 
 	def get_short_term_messages(self) -> List[BaseMessage]:
 		"""Get current short-term messages.
-		
+
 		Returns:
 		    List of current messages in short-term memory
 		"""
@@ -668,7 +674,7 @@ class LangraphMemoryManager:
 
 	async def consolidate_memory(self) -> Dict[str, Any]:
 		"""Consolidate and optimize all memory systems.
-		
+
 		Returns:
 		    Dictionary with consolidation results and statistics
 		"""
@@ -678,7 +684,7 @@ class LangraphMemoryManager:
 
 	def get_memory_health(self) -> Dict[str, Any]:
 		"""Get overall memory system health and statistics.
-		
+
 		Returns:
 		    Dictionary with memory health metrics and configuration
 		"""
@@ -687,15 +693,14 @@ class LangraphMemoryManager:
 
 	def update_config(self, config: MemoryConfig) -> None:
 		"""Update memory configuration.
-		
+
 		Args:
 		    config: New memory configuration to apply
 		"""
-		logger.info(f"Updating memory configuration to strategy: {config.short_term_strategy}")
+		logger.info(
+			f"Updating memory configuration to strategy: {config.short_term_strategy}"
+		)
 		self.config = config
 		# Force recreation of memory manager with new config
 		if self._memory_manager is not None:
 			self._memory_manager = MemoryManager(self.config, self.llm)
-
-
-

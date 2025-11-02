@@ -44,10 +44,10 @@ from radical.asyncflow import WorkflowEngine
 from radical.asyncflow.workflow_manager import BaseExecutionBackend
 
 from flowgentic.langGraph.memory import (
-	MemoryManager, 
-	MemoryConfig, 
+	MemoryManager,
+	MemoryConfig,
 	MemoryEnabledState,
-	LangraphMemoryManager
+	LangraphMemoryManager,
 )
 import logging
 
