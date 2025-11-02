@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
 import json
 import os
+import pathlib
 import random
 from typing import Annotated
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -20,19 +21,18 @@ from langgraph.prebuilt import ToolNode, create_react_agent
 from pydantic import BaseModel
 from radical.asyncflow import ConcurrentExecutionBackend, WorkflowEngine
 
+from flowgentic.langGraph.execution_wrappers import AsyncFlowType
 from flowgentic.langGraph.utils import LangraphUtils
 from flowgentic.utils.llm_providers import ChatLLMProvider
-from flowgentic.langGraph.agent_logger import AgentLogger
 from flowgentic.langGraph.main import LangraphIntegration
-from flowgentic.langGraph.agents import AsyncFlowType, BaseLLMAgentState, LangraphAgents
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
-class WorkflowState(BaseLLMAgentState):
-	pass
+class WorkflowState(BaseModel):
+	messages: Annotated[list, add_messages]
 
 
 class DayVerdict(BaseModel):
@@ -51,7 +51,9 @@ async def start_app():
 	async with LangraphIntegration(backend=backend) as agents_manager:
 		llm = ChatLLMProvider(provider="OpenRouter", model="google/gemini-2.5-flash")
 
-		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION)
+		@agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION
+		)
 		async def weather_extractor(city: str):
 			"""Extracts the weather for any given city"""
 			return {
@@ -59,13 +61,17 @@ async def start_app():
 				"humidity_percentage": 40,
 			}  # Dummy example
 
-		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION)
+		@agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION
+		)
 		async def traffic_extractor(city: str):
 			"""Extracts the amount of traffic for any given city"""
 			return {"traffic_percentage": 90}  # Dummy example
 
 		# Define the task within the asyncflow context
-		@agents_manager.agents.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)
+		@agents_manager.execution_wrappers.asyncflow(
+			flow_type=AsyncFlowType.EXECUTION_BLOCK
+		)
 		async def deterministic_task_internal(state: WorkflowState):
 			file_path = "im-working.txt"
 			with open(file_path, "w") as f:
@@ -83,32 +89,20 @@ async def start_app():
 
 		# Nodes
 		workflow.add_node("chatbot", invoke_llm)
-		workflow.add_node(
-			"response_synthetizer",
-			agents_manager.utils.structured_final_response(
-				llm=llm, response_schema=DayVerdict, graph_state_schema=WorkflowState
-			),
-		)
-		workflow.add_node("deterministic_task", deterministic_task_internal)
-		workflow.set_entry_point("deterministic_task")
-		workflow.add_node("tools", ToolNode(tools))
-
 		# Edges
-		workflow.add_conditional_edges(
-			"chatbot",
-			agents_manager.utils.needs_tool_invokation,
-			{"true": "tools", "false": "response_synthetizer"},
-		)
-		workflow.add_edge("tools", "chatbot")
-		workflow.add_edge("deterministic_task", "chatbot")
-		workflow.add_edge("deterministic_task", END)
+		workflow.set_entry_point("chatbot")
+		workflow.add_edge("chatbot", END)
 
 		checkpointer = InMemorySaver()
 		app = workflow.compile(checkpointer=checkpointer)
 		thread_id = random.randint(0, 10)
 		config = {"configurable": {"thread_id": thread_id}}
 
-		await agents_manager.utils.render_graph(app)
+		current_dir = str(pathlib.Path(__file__).parent.resolve())
+
+		await agents_manager.utils.render_graph(
+			app, dir_to_write=current_dir, generate_graph_only=True
+		)
 
 		while True:
 			user_input = input("User: ").lower()
@@ -116,9 +110,6 @@ async def start_app():
 				print(f"Goodbye!")
 				last_state = app.get_state(config)
 				print(f"Last state: {last_state}")
-				agents_manager.agent_logger.flush_agent_conversation(
-					conversation_history=last_state.values.get("messages", [])
-				)
 				return
 
 			current_state = WorkflowState(messages=[HumanMessage(content=user_input)])

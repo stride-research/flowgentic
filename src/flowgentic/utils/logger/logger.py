@@ -76,14 +76,31 @@ class ContextAwareQueueHandler(logging.handlers.QueueHandler):
 
 
 class Logger:
-	def __init__(self, colorful_output=True) -> None:
+	def __init__(self, colorful_output=True, logger_level: str = logging.DEBUG) -> None:
 		self.colorful_output = colorful_output
 		self.queue_handler = self.__set_up_queue_handler()
 		self.root_logger = logging.getLogger()
-		self.root_logger.setLevel(logging.DEBUG)
+		self.root_logger.setLevel(self._resolve_logger_level(logger_level))
 		self.root_logger.addHandler(self.queue_handler)
 
 		atexit.register(self.shutdown)
+
+	def _resolve_logger_level(self, logger_level: str):
+		logger_level = logger_level.lower().strip()
+		if logger_level == "notset":
+			return logging.NOTSET
+		elif logger_level == "debug":
+			return logging.DEBUG
+		elif logger_level == "info":
+			return logging.INFO
+		elif logger_level == "warning":
+			return logging.WARNING
+		elif logger_level == "error":
+			return logging.ERROR
+		elif logger_level == "critical":
+			return logging.CRITICAL
+		else:
+			raise ValueError(f"{logger_level} is not an allowed logger level value1")
 
 	def __set_up_queue_handler(self):
 		log_queue = queue.Queue(-1)

@@ -12,7 +12,7 @@ RESET = \033[0m
 VENV_PATH =  ./.venv
 VENV_ACTIVATE = source $(VENV_PATH)/bin/activate
 
-help: e
+help: 
 	@echo "$(BLUE)Available commands:$(RESET)"
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(GREEN)%-15s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
@@ -64,6 +64,11 @@ tests-units:
 # ============
 # = EXAMPLES =
 # ============
+
+## LangGraph
+examples-chatbot-main: ## EXAMPLE: design_patterns/chatbot/main
+	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.chatbot.main
+
 examples-sequential-research:
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.research_agent.main
 examples-sequential-financial:

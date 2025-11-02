@@ -1,3 +1,8 @@
-from .utils import Logger, ChatLLMProvider
+from .utils import Logger
 
-logger_instance = Logger(colorful_output=True)  # Initiating logger
+from .settings.extract_settings import APP_SETTINGS
+
+logger_level = APP_SETTINGS["logger"]["level"]
+logger_instance = Logger(
+	colorful_output=True, logger_level=logger_level
+)  # Initiating logger

@@ -54,7 +54,6 @@ import logging
 from radical.asyncflow.workflow_manager import BaseExecutionBackend, WorkflowEngine
 from flowgentic.langGraph.execution_wrappers import ExecutionWrappersLangraph
 from flowgentic.langGraph.utils import LangraphUtils
-from flowgentic.langGraph.agent_logger import AgentLogger
 
 
 logger = logging.getLogger(__name__)
@@ -81,7 +80,6 @@ class LangraphIntegration:
 			flow=self.flow, instrospector=self.agent_introspector
 		)
 		self.utils: LangraphUtils = LangraphUtils()
-		self.agent_logger: AgentLogger = AgentLogger()
 		self.memory_manager: LangraphMemoryManager = LangraphMemoryManager()
 
 		logger.info("WorkflowEngine created successfully")
