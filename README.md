@@ -40,14 +40,15 @@ Read the documentation: [stride-research.github.io/flowgentic](https://stride-re
 
 ### Support Matrix
 
-Current and planned integrations. ✅ available, 🚧 planned.
+Current and planned integrations. ✅ available, 🚧 planned, 🟡 pre-release.
 
-| Agent Framework \ HPC Engine | RADICAL AsyncFlow | Pegasus | Parsl |
-|---|---:|---:|---:|
-| LangGraph | ✅ | 🚧 | 🚧 |
-| CrewAI | 🚧 | 🚧 | 🚧 |
-| AG2 | 🚧 | 🚧 | 🚧 |
-| OpenAI Agents SDK | 🚧 | 🚧 | 🚧 |
+| Agent Framework \ HPC Engine | RADICAL AsyncFlow | Pegasus | Parsl | Academy |
+|---|---:|---:|---:|---:|
+| LangGraph | ✅ | 🚧 | 🚧 | 🟡
+| CrewAI | 🚧 | 🚧 | 🚧 |🚧
+| AG2 | 🚧 | 🚧 | 🚧 | 🚧
+| OpenAI Agents SDK | 🚧 | 🚧 | 🚧 | 🚧
+
 
 - **Note**: As of now, the only supported path is LangGraph → RADICAL AsyncFlow.
 

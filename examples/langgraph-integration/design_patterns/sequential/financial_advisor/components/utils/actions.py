@@ -1,4 +1,4 @@
-from flowgentic.langGraph.agents import AsyncFlowType
+from flowgentic.langGraph.execution_wrappers import AsyncFlowType
 import asyncio
 import random
 from typing import Dict, Any, List

@@ -3,7 +3,6 @@
 
 
 # VARIABLES
-# Colors for output
 RED = \033[31m
 GREEN = \033[32m
 YELLOW = \033[33m
@@ -13,7 +12,7 @@ RESET = \033[0m
 VENV_PATH =  ./.venv
 VENV_ACTIVATE = source $(VENV_PATH)/bin/activate
 
-help: ## Show this help message
+help: e
 	@echo "$(BLUE)Available commands:$(RESET)"
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(GREEN)%-15s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
@@ -26,18 +25,20 @@ install: #Install dependencies with pip => install graphviz
 		--config-settings="--global-option=-L$(brew --prefix graphviz)/lib/" \
 		pygraphviz
 
-	
 
 format:
 	$(VENV_ACTIVATE) && ruff format .
 
 lint:
 	$(VENV_ACTIVATE) && ruff check --fix .
-
 docs:	## Renders docs locally
 	$(VENV_ACTIVATE) &&  mkdocs serve
 tests: ## Run tests
 	$(VENV_ACTIVATE) && python -m pytest -vv -s tests/test_generator.py
+
+# ============
+# = EXAMPLES =
+# ============
 examples-sequential-research:
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.research_agent.main
 examples-sequential-financial:

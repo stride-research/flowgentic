@@ -196,15 +196,127 @@
 }
 
 /* Search */
+/* Fix search overlay width and visibility */
+.md-search__overlay {
+  background: rgba(0, 0, 0, 0.54);
+}
+
+.md-search__inner {
+  width: 100%;
+  max-width: 100%;
+}
+
 [data-md-color-scheme="slate"] .md-search__form {
   background: #1e293b;
   border-radius: 6px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+[data-md-color-scheme="slate"] .md-search__input {
+  color: #e2e8f0;
+  background: transparent;
+  font-size: 16px;
+}
+
+[data-md-color-scheme="slate"] .md-search__input::placeholder {
+  color: #94a3b8;
+  opacity: 1;
 }
 
 [data-md-color-scheme="default"] .md-search__form {
   background: #ffffff;
   border-radius: 6px;
   border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+[data-md-color-scheme="default"] .md-search__input {
+  color: #1e293b;
+  background: transparent;
+  font-size: 16px;
+}
+
+[data-md-color-scheme="default"] .md-search__input::placeholder {
+  color: #64748b;
+  opacity: 1;
+}
+
+/* Search results */
+.md-search__scrollwrap {
+  max-height: 75vh;
+  overflow-y: auto;
+}
+
+[data-md-color-scheme="slate"] .md-search__output {
+  background: #1e293b;
+  border-radius: 6px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  max-width: 100%;
+  width: 100%;
+}
+
+[data-md-color-scheme="slate"] .md-search-result__meta {
+  background: #0f172a;
+  color: #94a3b8;
+}
+
+[data-md-color-scheme="slate"] .md-search-result__article {
+  background: #1e293b;
+  border-bottom: 1px solid #334155;
+}
+
+[data-md-color-scheme="slate"] .md-search-result__article:hover {
+  background: #334155;
+}
+
+[data-md-color-scheme="slate"] .md-search-result__title {
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
+[data-md-color-scheme="slate"] .md-search-result__teaser {
+  color: #94a3b8;
+}
+
+[data-md-color-scheme="slate"] .md-search-result mark {
+  background: #0e7490;
+  color: #ffffff;
+}
+
+[data-md-color-scheme="default"] .md-search__output {
+  background: #ffffff;
+  border-radius: 6px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+  max-width: 100%;
+  width: 100%;
+}
+
+[data-md-color-scheme="default"] .md-search-result__meta {
+  background: #f8fafc;
+  color: #64748b;
+}
+
+[data-md-color-scheme="default"] .md-search-result__article {
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+[data-md-color-scheme="default"] .md-search-result__article:hover {
+  background: #f8fafc;
+}
+
+[data-md-color-scheme="default"] .md-search-result__title {
+  color: #1e293b;
+  font-weight: 600;
+}
+
+[data-md-color-scheme="default"] .md-search-result__teaser {
+  color: #64748b;
+}
+
+[data-md-color-scheme="default"] .md-search-result mark {
+  background: #06b6d4;
+  color: #ffffff;
 }
 
 /* Tables */
@@ -305,4 +417,21 @@
   .md-nav__link:hover {
     transform: none;
   }
+}
+
+/* Revert search overlay width to default */
+.md-search__inner,
+.md-search--active .md-search__inner {
+  width: auto !important;
+  max-width: 46rem !important; /* roughly original 736px */
+}
+
+.md-search__output {
+  width: auto !important;
+  max-width: 46rem !important;
+}
+
+/* Allow search results to extend outside the header */
+.md-header {
+  overflow: visible !important;
 }

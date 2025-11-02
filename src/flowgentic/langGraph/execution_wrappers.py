@@ -81,10 +81,10 @@ class BaseLLMAgentState(BaseModel):
 class AsyncFlowType(Enum):
 	"""Enum defining the flow_type of AsyncFlow decoration"""
 
-	AGENT_TOOL_AS_FUNCTION = "tool"  # LangChain tool with @tool wrapper
-	AGENT_TOOL_AS_SERVICE = "service"  # LangChain tool with persistent service instance
-	FUNCTION_TASK = "future"  # Simple asyncflow task with *args, **kwargs
-	SERVICE_TASK = "service_task"  # Persistent service task
+	AGENT_TOOL_AS_FUNCTION = "tool"
+	AGENT_TOOL_AS_SERVICE = "service"
+	FUNCTION_TASK = "future"
+	SERVICE_TASK = "service_task"
 	EXECUTION_BLOCK = "block"
 
 

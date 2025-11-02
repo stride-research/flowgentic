@@ -18,6 +18,7 @@ Persistent internal services that initialize once and maintain continual uptime.
 - Any stateful service that should persist but doesn't need @tool wrapper
 
 ## Example
+### Service Task
 ```python
 @agents_manager.execution_wrappers.asyncflow(
     flow_type=AsyncFlowType.SERVICE_TASK
@@ -42,12 +43,39 @@ result2 = await database_query_service("SELECT * FROM products")
 # Both queries use the same service instance!
 ```
 
+### Service Task called as agent tool
+## Example
+```python
+@agents_manager.execution_wrappers.asyncflow(
+    flow_type=AsyncFlowType.AGENT_TOOL_AS_SERVICE,
+    tool_description="Get current weather for any city with persistent API session"
+)
+async def weather_api_tool(city: str) -> str:
+    """
+    Fetch weather data using a persistent API client.
+    The service instance is created once and reused for all calls.
+    """
+    # Lazy initialization: create service on first call
+    if not hasattr(weather_api_tool, '_client'):
+        weather_api_tool._client = WeatherAPIClient()
+        print("🌐 API client session created!")
+    
+    # Use the persistent service instance
+    result = await weather_api_tool._client.fetch_weather(city)
+    return f"Weather: {result['temperature']}°F, {result['conditions']}"
+
+# Agent can call this tool (automatic @tool wrapper)
+agent = create_react_agent(llm, tools=[weather_api_tool])
+
+# Manual calls require .ainvoke() (LangChain tool convention)
+result = await weather_api_tool.ainvoke({"city": "San Francisco"})
+```
+
 ## How It Works
 
-1. **First invocation**: Service instance created (lazy initialization)
+1. **First invocation**: Service instance created 
 2. **Service persists**: Instance stays alive in memory with continual uptime
 3. **Subsequent calls**: Same service instance handles all requests
-4. **State accumulates**: Service maintains connections, metrics, pool state
 
 ## Calling Convention
 
@@ -71,18 +99,10 @@ async def data_extraction_node(state: WorkflowState):
 
 - **Continual uptime**: Service stays alive across all calls
 - **No connection overhead**: Connections established once, reused forever
-- **State maintenance**: Track metrics, maintain pools, keep sessions
 - **Resource efficiency**: Share expensive resources across all calls
 - **Simple syntax**: Direct calls, no .ainvoke() needed
 
-## vs AGENT_TOOL_AS_SERVICE
-
-| Feature | SERVICE_TASK | AGENT_TOOL_AS_SERVICE |
-|---------|--------------|----------------------|
-| Wrapped as @tool | ❌ No | ✅ Yes |
-| Service persistence | ✅ Yes | ✅ Yes |
-| Manual call syntax | Direct call | `.ainvoke(dict)` |
-| Best for | Nodes, direct calls | Agent tools |
+## Comparision between `SERVICE_TASK` and `AGENT_TOOL_AS_SERVICE`
 
 **Use SERVICE_TASK when:**
 - Service used in workflow nodes
@@ -98,7 +118,7 @@ async def data_extraction_node(state: WorkflowState):
 ## Examples
 
 - [SERVICE_TASK example](https://github.com/stride-research/flowgentic/blob/main/examples/langgraph-integration/service-task/01-service-task-example.py)
+- [AGENT_TOOL_AS_SERVICE example](https://github.com/stride-research/flowgentic/blob/main/examples/langgraph-integration/service-task/02-agent-tool-as-service-example.py)
 
 ## API
-
 Refer to the execution wrappers API: [API Reference](../../api/flowgentic/langGraph/execution_wrappers/)

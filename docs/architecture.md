@@ -45,6 +45,7 @@ flowchart TD
 ```
 
 ## Wrappers
+If you have multiple wrappers inside a node we recommend to adhere to the following pattern in order to stick dependency resolution best practices:
 ```mermaid
 flowchart TD
     subgraph "ASYNCFLOW WRAPPERS"
@@ -77,25 +78,22 @@ flowchart TD
     TOOLS -.->|External Server| E
     TASKS -.->|Pure Functions| F
     
-    style B fill:#e1f5e1
-    style C fill:#e1f5e1
-    style D fill:#e1e8f5
-    style E fill:#e1e8f5
-    style F fill:#f5e1e1
+
 ```
+However, if you don't have multiple dependencies in a given node, you can define the node with the `function_task` execution wrapper. More information [here](https://radical-cybertools.github.io/radical.asyncflow/composite_workflow/?h=block#example-blocks-with-dependency)
 
 ### Flow Type Categories
 
 **Service Patterns** (Persistent, Stateful)
-- `SERVICE_TASK`: Internal services with caching (database pools, Redis clients)
-- `TOOL_AS_SERVICE`: LLM-callable services with caching (Weather APIs, search tools)
+- `SERVICE_TASK`: Internal services with continual uptime (database pools, Redis clients)
+- `TOOL_AS_SERVICE`: LLM-callable services with continual uptime (Weather APIs, search tools)
 
 **Agent Tools** (LLM-Callable)
 - `AGENT_TOOL_AS_FUNCTION`: Simple synchronous tools for LLMs
 - `AGENT_TOOL_AS_MCP`: External MCP server integration
 
-**Function Tasks** (Deterministic)
-- `FUNCTION_TASK`: Pure deterministic operations (validation, formatting)
+**Function Tasks** 
+- `FUNCTION_TASK`: Non-LLM operations (validation, formatting)
 
-All wrapped by:
-- `EXECUTION_BLOCK`: LangGraph nodes (orchestration layer)
+**Execution Block**
+- `EXECUTION_BLOCK`: LangGraph nodes (orchestration layer, optional)
