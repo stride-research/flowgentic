@@ -13,15 +13,16 @@ nav:
       - Memory: features/memory.md
       - Fault tolerance: features/fault_tolerance.md
       - Telemetry: features/telemetry.md
+      - Services: features/services.md
       - Miscellaneous: features/miscellaneous.md
-  - Phased rollout:
-      - Phased rollout: phased_rollout.md
-  - API Reference: api/
   - Design Patterns:
       - Chatbot: design_patterns/chatbot.md
       - Sequential design pattern: design_patterns/sequential.md
       - Supervisor design pattern: design_patterns/supervisor.md
       - Hierarchical design pattern: design_patterns/hierachical.md
+  - Phased rollout:
+      - Phased rollout: phased_rollout.md
+  - API Reference: api/
 
 
 theme:

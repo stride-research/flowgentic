@@ -6,7 +6,7 @@ from .utils.actions_registry import ActionsRegistry
 from .nodes import WorkflowNodes
 from .edges import WorkflowEdges
 
-from flowgentic.langGraph.telemetry import GraphIntrospector
+from flowgentic.utils.telemetry import GraphIntrospector
 
 import logging
 

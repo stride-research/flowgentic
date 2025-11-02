@@ -105,37 +105,36 @@ async def start_app():
 
 		checkpointer = InMemorySaver()
 		app = workflow.compile(checkpointer=checkpointer)
-	thread_id = random.randint(0, 10)
-	config = {"configurable": {"thread_id": thread_id}}
+		thread_id = random.randint(0, 10)
+		config = {"configurable": {"thread_id": thread_id}}
 
-	# Optional: Render graph before starting interaction
-	await agents_manager.utils.render_graph(app)
+		await agents_manager.utils.render_graph(app)
 
-	while True:
-		user_input = input("User: ").lower()
-		if user_input in ["quit", "q", "-q", "exit"]:
-			print(f"Goodbye!")
-			last_state = app.get_state(config)
-			print(f"Last state: {last_state}")
-			agents_manager.agent_logger.flush_agent_conversation(
-				conversation_history=last_state.values.get("messages", [])
-			)
-			return
+		while True:
+			user_input = input("User: ").lower()
+			if user_input in ["quit", "q", "-q", "exit"]:
+				print(f"Goodbye!")
+				last_state = app.get_state(config)
+				print(f"Last state: {last_state}")
+				agents_manager.agent_logger.flush_agent_conversation(
+					conversation_history=last_state.values.get("messages", [])
+				)
+				return
 
-		current_state = WorkflowState(messages=[HumanMessage(content=user_input)])
+			current_state = WorkflowState(messages=[HumanMessage(content=user_input)])
 
-		async for chunk in app.astream(
-			current_state, stream_mode="values", config=config
-		):
-			if chunk["messages"]:
-				last_msg = chunk["messages"][-1]
-				if isinstance(last_msg, AIMessage):
-					if hasattr(last_msg, "content") and last_msg.content:
-						print(f"Assistant: {last_msg.content}")
-					if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
-						print(f"Tool calls: {last_msg.tool_calls}")
-			print(chunk)
-			print("=" * 30)
+			async for chunk in app.astream(
+				current_state, stream_mode="values", config=config
+			):
+				if chunk["messages"]:
+					last_msg = chunk["messages"][-1]
+					if isinstance(last_msg, AIMessage):
+						if hasattr(last_msg, "content") and last_msg.content:
+							print(f"Assistant: {last_msg.content}")
+						if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+							print(f"Tool calls: {last_msg.tool_calls}")
+				print(chunk)
+				print("=" * 30)
 
 
 if __name__ == "__main__":
