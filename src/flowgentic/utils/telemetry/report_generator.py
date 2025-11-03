@@ -1,13 +1,14 @@
-from datetime import datetime
+import logging
 import os
 import sys
-from typing import Dict, List, Any
+from datetime import datetime
+from typing import Any, Dict, List
 
 from pydantic import BaseModel
 
-from .schemas import GraphExecutionReport, NodeExecutionRecord
 from flowgentic.settings.extract_settings import APP_SETTINGS
-import logging
+
+from .schemas import GraphExecutionReport, NodeExecutionRecord
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ class ReportGenerator:
 	def _node_was_visited(self, node_name):
 		"""
 		Args:
-			- node_name: name of one node in the graph (without postfix)
+		        - node_name: name of one node in the graph (without postfix)
 		"""
 		if len(self.categorized_records[node_name]) == 0:
 			return False
@@ -70,11 +71,19 @@ class ReportGenerator:
 		if self._final_state is None:
 			return False
 
-		return (
-			hasattr(self._final_state, "memory_stats")
-			or hasattr(self._final_state, "memory_operations")
-			or hasattr(self._final_state, "memory_context")
-		)
+		# Handle both dict and Pydantic model
+		if isinstance(self._final_state, dict):
+			return (
+				"memory_stats" in self._final_state
+				or "memory_operations" in self._final_state
+				or "memory_context" in self._final_state
+			)
+		else:
+			return (
+				hasattr(self._final_state, "memory_stats")
+				or hasattr(self._final_state, "memory_operations")
+				or hasattr(self._final_state, "memory_context")
+			)
 
 	def _extract_memory_stats(self) -> Dict[str, Any]:
 		"""Extract memory statistics from final state."""
@@ -83,34 +92,67 @@ class ReportGenerator:
 
 		memory_info: Dict[str, Any] = {}
 
-		# Extract memory_stats if present
+		# Extract memory_stats if present (can be dict or Pydantic model)
 		memory_stats_obj = getattr(self._final_state, "memory_stats", None)
+		if not memory_stats_obj and isinstance(self._final_state, dict):
+			memory_stats_obj = self._final_state.get("memory_stats", None)
+
 		if memory_stats_obj:
-			memory_info.update(
-				{
-					"total_messages": getattr(memory_stats_obj, "total_messages", 0),
-					"memory_efficiency": getattr(
-						memory_stats_obj, "memory_efficiency", 0
-					),
-					"average_importance": getattr(
-						memory_stats_obj, "average_importance", 0
-					),
-					"system_messages": getattr(memory_stats_obj, "system_messages", 0),
-					"human_messages": getattr(memory_stats_obj, "human_messages", 0),
-					"ai_messages": getattr(memory_stats_obj, "ai_messages", 0),
-					"interaction_count": getattr(
-						memory_stats_obj, "interaction_count", 0
-					),
-				}
-			)
+			# Handle both dict and Pydantic model
+			if isinstance(memory_stats_obj, dict):
+				memory_info.update(
+					{
+						"total_messages": memory_stats_obj.get("total_messages", 0),
+						"memory_efficiency": memory_stats_obj.get(
+							"memory_efficiency", 0
+						),
+						"average_importance": memory_stats_obj.get(
+							"average_importance", 0
+						),
+						"system_messages": memory_stats_obj.get("system_messages", 0),
+						"human_messages": memory_stats_obj.get("human_messages", 0),
+						"ai_messages": memory_stats_obj.get("ai_messages", 0),
+						"interaction_count": memory_stats_obj.get(
+							"interaction_count", 0
+						),
+					}
+				)
+			else:
+				memory_info.update(
+					{
+						"total_messages": getattr(
+							memory_stats_obj, "total_messages", 0
+						),
+						"memory_efficiency": getattr(
+							memory_stats_obj, "memory_efficiency", 0
+						),
+						"average_importance": getattr(
+							memory_stats_obj, "average_importance", 0
+						),
+						"system_messages": getattr(
+							memory_stats_obj, "system_messages", 0
+						),
+						"human_messages": getattr(
+							memory_stats_obj, "human_messages", 0
+						),
+						"ai_messages": getattr(memory_stats_obj, "ai_messages", 0),
+						"interaction_count": getattr(
+							memory_stats_obj, "interaction_count", 0
+						),
+					}
+				)
 
 		# Extract memory_operations if present
 		memory_operations = getattr(self._final_state, "memory_operations", None)
+		if not memory_operations and isinstance(self._final_state, dict):
+			memory_operations = self._final_state.get("memory_operations", None)
 		if memory_operations:
 			memory_info["operations"] = memory_operations
 
 		# Extract memory_context if present
 		memory_context = getattr(self._final_state, "memory_context", None)
+		if not memory_context and isinstance(self._final_state, dict):
+			memory_context = self._final_state.get("memory_context", None)
 		if memory_context and isinstance(memory_context, dict):
 			memory_stats_dict = memory_context.get("memory_stats", {})
 			if memory_stats_dict:
@@ -201,50 +243,6 @@ class ReportGenerator:
 
 			f.write(f"--- \n\n")
 
-			# Memory Statistics (if memory features are detected)
-			if self._has_memory_features():
-				memory_stats = self._extract_memory_stats()
-				f.write("## 🧠 Memory Statistics\n\n")
-				f.write(
-					f"- **Total Messages:** `{memory_stats.get('total_messages', 0)}`\n"
-				)
-				f.write(
-					f"- **Memory Efficiency:** `{memory_stats.get('memory_efficiency', 0):.1%}`\n"
-				)
-				f.write(
-					f"- **Average Importance:** `{memory_stats.get('average_importance', 0):.2f}`\n"
-				)
-				f.write(
-					f"- **System Messages:** `{memory_stats.get('system_messages', 0)}`\n"
-				)
-				f.write(
-					f"- **Human Messages:** `{memory_stats.get('human_messages', 0)}`\n"
-				)
-				f.write(f"- **AI Messages:** `{memory_stats.get('ai_messages', 0)}`\n")
-				f.write(
-					f"- **Interaction Count:** `{memory_stats.get('interaction_count', 0)}`\n"
-				)
-
-				config = memory_stats.get("config", {})
-				if config:
-					f.write(
-						f"- **Memory Strategy:** `{config.get('short_term_strategy', 'N/A')}`\n"
-					)
-					f.write(
-						f"- **Max Messages:** `{config.get('max_short_term_messages', 'N/A')}`\n"
-					)
-					f.write(
-						f"- **Context Window Buffer:** `{config.get('context_window_buffer', 'N/A')}`\n"
-					)
-
-				operations = memory_stats.get("operations", [])
-				if operations:
-					f.write(f"- **Memory Operations:** `{len(operations)}`\n")
-					f.write(f"  - Operations: `{', '.join(operations)}`\n")
-
-				f.write("\n")
-				f.write(f"--- \n\n")
-
 			f.write("## 📝 Execution Summary\n\n")
 			f.write(
 				"| Node Name           | Duration (s) | Tokens | Tools | New Messages |\n"
@@ -272,7 +270,7 @@ class ReportGenerator:
 						node_category_duration += record.duration_seconds
 						node_category_tokens += tokens
 						node_category_tools += tools_count
-						node_category_messages += node_category_messages
+						node_category_messages += record.new_messages_count
 
 						f.write(
 							f"| `{record.node_name_detailed}` | {record.duration_seconds:<12.4f} | {tokens:<6} | {tools_count:<5} | {record.new_messages_count:<13} |\n"
@@ -286,6 +284,72 @@ class ReportGenerator:
 					)
 
 			f.write("\n\n")
+
+			# Memory Statistics (if memory features are detected)
+			if self._has_memory_features():
+				memory_stats = self._extract_memory_stats()
+				f.write("## 🧠 Memory Statistics\n\n")
+				f.write(
+					"This section provides insights into the memory management system used during workflow execution.\n\n"
+				)
+
+				# Message counts
+				f.write("### Message Counts\n\n")
+				f.write(
+					f"- **Total Messages Stored:** `{memory_stats.get('total_messages', 0)}` - Total number of messages currently in memory\n"
+				)
+				f.write(
+					f"- **System Messages:** `{memory_stats.get('system_messages', 0)}` - Instructions and prompts to the AI\n"
+				)
+				f.write(
+					f"- **Human Messages:** `{memory_stats.get('human_messages', 0)}` - User inputs and queries\n"
+				)
+				f.write(
+					f"- **AI Messages:** `{memory_stats.get('ai_messages', 0)}` - AI-generated responses\n"
+				)
+				f.write(
+					f"- **Interaction Count:** `{memory_stats.get('interaction_count', 0)}` - Number of conversation turns\n\n"
+				)
+
+				# Memory efficiency metrics
+				f.write("### Memory Efficiency Metrics\n\n")
+				memory_efficiency = memory_stats.get("memory_efficiency", 0)
+				f.write(
+					f"- **Memory Utilization:** `{memory_efficiency:.1%}` - Percentage of available memory capacity used (messages stored / max capacity)\n"
+				)
+				avg_importance = memory_stats.get("average_importance", 0)
+				f.write(
+					f"- **Average Message Importance Score:** `{avg_importance:.2f}` - Mean importance rating of stored messages (scale: 0.0-1.0)\n"
+				)
+				f.write(
+					"  - Higher scores indicate messages are more relevant to the workflow goals\n\n"
+				)
+
+				# Memory configuration
+				config = memory_stats.get("config", {})
+				if config:
+					f.write("### Memory Configuration\n\n")
+					f.write(
+						f"- **Memory Strategy:** `{config.get('short_term_strategy', 'N/A')}` - Algorithm used for message retention\n"
+					)
+					f.write(
+						f"- **Max Messages Capacity:** `{config.get('max_short_term_messages', 'N/A')}` - Maximum messages before trimming occurs\n"
+					)
+					f.write(
+						f"- **Context Window Buffer:** `{config.get('context_window_buffer', 'N/A')}` - Reserved space for new messages\n\n"
+					)
+
+				# Memory operations
+				operations = memory_stats.get("operations", [])
+				if operations:
+					f.write("### Memory Operations Performed\n\n")
+					f.write(f"- **Total Operations:** `{len(operations)}`\n")
+					f.write(f"- **Operation Types:** `{', '.join(operations)}`\n")
+					f.write(
+						"  - These operations track when memory was accessed or updated during workflow execution\n\n"
+					)
+
+				f.write(f"--- \n\n")
 
 			f.write("## 🔍 Node Details\n\n")
 			for i, record in enumerate(report_data.node_records):
