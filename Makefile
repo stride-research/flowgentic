@@ -81,3 +81,6 @@ examples-services-task:
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.service-task.service-task
 examples-services-intermittent-task: 
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.service-task.service-intermittent
+### Miscellaneous
+examples-runtime-graph:
+	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.miscellaneous.runtime-graph-creation
