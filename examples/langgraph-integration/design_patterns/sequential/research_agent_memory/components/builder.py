@@ -17,7 +17,9 @@ from .utils.actions_registry import ActionsRegistry
 class WorkflowBuilder:
 	"""Assembles the memory-enabled workflow graph."""
 
-	def __init__(self, agents_manager: LangraphIntegration, memory_manager: MemoryManager):
+	def __init__(
+		self, agents_manager: LangraphIntegration, memory_manager: MemoryManager
+	):
 		self.agents_manager = agents_manager
 		self.memory_manager = memory_manager
 		self.tools_registry = ActionsRegistry(agents_manager)

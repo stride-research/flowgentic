@@ -28,6 +28,9 @@ The **hierarchical pattern** extends the supervisor pattern by organizing agents
 - Scenarios requiring multi-stage delegation and specialization
 - Applications where routing decisions need domain-specific expertise
 
+**Important Note**
+Currently the report generator for the supervisor and hierarchical pattern are partially functional. Please proceed to use them carefully while we working solving these issues.
+
 ---
 
 ## Conceptual Architecture

@@ -121,7 +121,6 @@ focusing on battery technologies, grid integration, and market opportunities.
 			await agents_manager.generate_execution_artifacts(
 				app, __file__, final_state=final_state
 			)
-
 			print("\n✅ Workflow completed successfully!")
 			print("=" * 80)
 

@@ -122,7 +122,10 @@ class ValidationTasks:
 				cleaned_input=cleaned,
 				word_count=len(words),
 				timestamp=asyncio.get_event_loop().time(),
-				metadata={"domain": domain, "complexity": "high" if len(words) > 20 else "medium"},
+				metadata={
+					"domain": domain,
+					"complexity": "high" if len(words) > 20 else "medium",
+				},
 			)
 
 		return {"validate_input": validate_input}
@@ -148,7 +151,9 @@ class ContextTasks:
 
 			# Extract relevant memory insights
 			memory_insights = memory_context.get("relevant_messages", [])
-			memory_summary = f"Previous context: {len(memory_insights)} relevant messages"
+			memory_summary = (
+				f"Previous context: {len(memory_insights)} relevant messages"
+			)
 
 			return {
 				"domain": validation_data.metadata.get("domain", "general"),
@@ -174,7 +179,11 @@ class ContextTasks:
 				"research_summary": research_output[:200] + "...",
 				"memory_message_count": memory_stats.get("total_messages", 0),
 				"memory_efficiency": memory_stats.get("memory_efficiency", 0.0),
-				"key_themes": ["battery technology", "grid integration", "market analysis"],
+				"key_themes": [
+					"battery technology",
+					"grid integration",
+					"market analysis",
+				],
 			}
 
 		return {
@@ -205,10 +214,10 @@ class FormattingTasks:
 === MEMORY-ENABLED SEQUENTIAL WORKFLOW RESULTS ===
 
 📊 Memory Statistics:
-   - Total messages processed: {memory_stats.get('total_messages', 0)}
-   - Memory efficiency: {memory_stats.get('memory_efficiency', 0.0):.1%}
-   - Average importance: {memory_stats.get('average_importance', 0.0):.2f}
-   - Interaction count: {memory_stats.get('interaction_count', 0)}
+   - Total messages processed: {memory_stats.get("total_messages", 0)}
+   - Memory efficiency: {memory_stats.get("memory_efficiency", 0.0):.1%}
+   - Average importance: {memory_stats.get("average_importance", 0.0):.2f}
+   - Interaction count: {memory_stats.get("interaction_count", 0)}
 
 📝 Synthesis Output:
 {synthesis_output}

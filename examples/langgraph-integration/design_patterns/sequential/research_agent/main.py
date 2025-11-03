@@ -29,7 +29,7 @@ async def start_app():
             """
 		)
 
-		print("🚀 Starting Sequential Agent Workflow")
+		print("🚀 Starting Sequential Agent Worklof")
 		print("=" * 60)
 
 		try:
@@ -43,10 +43,9 @@ async def start_app():
 				final_state = chunk
 
 		except Exception as e:
-			print(f"❌ Workflow execution failed: {str(e)}")
 			raise
+			print(f"❌ Workflow execution failed: {str(e)}")
 		finally:
-			# Generate all execution artifacts (directories, report, graph)
 			await agents_manager.generate_execution_artifacts(
 				app, __file__, final_state=final_state
 			)
