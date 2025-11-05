@@ -65,7 +65,7 @@ class LangraphIntegration:
 
 	Supports both traditional workflow patterns and React agent orchestration
 	with supervisor patterns and parallel execution.
-	
+
 	Includes distributed memory support for HPC environments using Dragon DDict.
 	"""
 
@@ -76,7 +76,7 @@ class LangraphIntegration:
 		distributed_config: Optional[DistributedMemoryConfig] = None,
 	):
 		"""Initialize LangGraph integration.
-		
+
 		Args:
 			backend: AsyncFlow execution backend
 			memory_config: Configuration for short-term memory management
@@ -103,7 +103,7 @@ class LangraphIntegration:
 		)
 
 		logger.info("WorkflowEngine created successfully")
-		
+
 		# Log distributed memory status
 		if self.memory_manager.is_distributed():
 			logger.info("Distributed memory (Dragon DDict) is enabled")
@@ -111,7 +111,7 @@ class LangraphIntegration:
 			logger.debug(f"Memory configuration: {memory_info}")
 		else:
 			logger.info("Using local memory storage")
-		
+
 		return self
 
 	async def __aexit__(self, exc_type, exc, tb):
@@ -120,15 +120,15 @@ class LangraphIntegration:
 			logger.warning(
 				f"Exception occurred during context manager: {exc_type.__name__}: {exc}"
 			)
-		
+
 		# Clean up distributed memory resources
-		if hasattr(self, 'memory_manager') and self.memory_manager:
+		if hasattr(self, "memory_manager") and self.memory_manager:
 			try:
 				self.memory_manager.close()
 				logger.info("Cleaned up memory manager resources")
 			except Exception as e:
 				logger.warning(f"Error cleaning up memory manager: {e}")
-		
+
 		if self.flow:
 			await self.flow.shutdown()
 		logger.info("WorkflowEngine shutdown complete")
