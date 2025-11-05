@@ -48,6 +48,7 @@ from flowgentic.langGraph.memory import (
 	MemoryConfig,
 	MemoryEnabledState,
 	LangraphMemoryManager,
+	DistributedMemoryConfig,
 )
 import logging
 
@@ -64,14 +65,30 @@ class LangraphIntegration:
 
 	Supports both traditional workflow patterns and React agent orchestration
 	with supervisor patterns and parallel execution.
+	
+	Includes distributed memory support for HPC environments using Dragon DDict.
 	"""
 
-	def __init__(self, backend: BaseExecutionBackend):
+	def __init__(
+		self,
+		backend: BaseExecutionBackend,
+		memory_config: Optional[MemoryConfig] = None,
+		distributed_config: Optional[DistributedMemoryConfig] = None,
+	):
+		"""Initialize LangGraph integration.
+		
+		Args:
+			backend: AsyncFlow execution backend
+			memory_config: Configuration for short-term memory management
+			distributed_config: Configuration for distributed memory (Dragon DDict)
+		"""
 		logger.info(
 			f"Initializing LangGraphIntegration with backend: {type(backend).__name__}"
 		)
 		self.backend = backend
 		self.agent_introspector = GraphIntrospector()
+		self._memory_config = memory_config
+		self._distributed_config = distributed_config
 
 	async def __aenter__(self):
 		logger.info("Creating WorkflowEngine for LangGraphIntegration")
@@ -80,9 +97,21 @@ class LangraphIntegration:
 			flow=self.flow, instrospector=self.agent_introspector
 		)
 		self.utils: LangraphUtils = LangraphUtils()
-		self.memory_manager: LangraphMemoryManager = LangraphMemoryManager()
+		self.memory_manager: LangraphMemoryManager = LangraphMemoryManager(
+			config=self._memory_config,
+			distributed_config=self._distributed_config,
+		)
 
 		logger.info("WorkflowEngine created successfully")
+		
+		# Log distributed memory status
+		if self.memory_manager.is_distributed():
+			logger.info("Distributed memory (Dragon DDict) is enabled")
+			memory_info = self.memory_manager.get_full_memory_info()
+			logger.debug(f"Memory configuration: {memory_info}")
+		else:
+			logger.info("Using local memory storage")
+		
 		return self
 
 	async def __aexit__(self, exc_type, exc, tb):
@@ -91,6 +120,15 @@ class LangraphIntegration:
 			logger.warning(
 				f"Exception occurred during context manager: {exc_type.__name__}: {exc}"
 			)
+		
+		# Clean up distributed memory resources
+		if hasattr(self, 'memory_manager') and self.memory_manager:
+			try:
+				self.memory_manager.close()
+				logger.info("Cleaned up memory manager resources")
+			except Exception as e:
+				logger.warning(f"Error cleaning up memory manager: {e}")
+		
 		if self.flow:
 			await self.flow.shutdown()
 		logger.info("WorkflowEngine shutdown complete")
@@ -99,7 +137,7 @@ class LangraphIntegration:
 		self,
 		app: CompiledStateGraph,
 		caller_file_path: str,
-		final_state: Dict or BaseModel,
+		final_state: Dict | BaseModel,
 	) -> None:
 		"""
 		Facade method to generate all execution artifacts (directories, reports, and graph).
