@@ -6,6 +6,8 @@ import queue
 import re
 import sys
 from contextlib import contextmanager
+from pathlib import Path
+from typing import Literal, Optional
 
 from pythonjsonlogger import jsonlogger
 
@@ -76,8 +78,37 @@ class ContextAwareQueueHandler(logging.handlers.QueueHandler):
 
 
 class Logger:
-	def __init__(self, colorful_output=True, logger_level: str = logging.DEBUG) -> None:
+	def __init__(
+		self,
+		colorful_output: bool = True,
+		logger_level: str = "DEBUG",
+		output_mode: Literal["stdout", "file", "both"] = "stdout",
+		log_file_path: Optional[str] = None,
+		max_bytes: int = 10485760,  # 10MB default
+		backup_count: int = 5,
+	) -> None:
+		"""Initialize the Logger with configurable output modes.
+
+		Args:
+		    colorful_output: Whether to use colored output for console logs
+		    logger_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+		    output_mode: Where to send logs - "stdout", "file", or "both"
+		    log_file_path: Path to log file (required if output_mode is "file" or "both")
+		    max_bytes: Maximum size of log file before rotation
+		    backup_count: Number of backup log files to keep
+		"""
 		self.colorful_output = colorful_output
+		self.output_mode = output_mode
+		self.log_file_path = log_file_path
+		self.max_bytes = max_bytes
+		self.backup_count = backup_count
+
+		# Validate configuration
+		if output_mode in ["file", "both"] and not log_file_path:
+			raise ValueError(
+				f"log_file_path must be provided when output_mode is '{output_mode}'"
+			)
+
 		self.queue_handler = self.__set_up_queue_handler()
 		self.root_logger = logging.getLogger()
 		self.root_logger.setLevel(self._resolve_logger_level(logger_level))
@@ -104,23 +135,60 @@ class Logger:
 
 	def __set_up_queue_handler(self):
 		log_queue = queue.Queue(-1)
-		console_handler = self.__bind_handlers()
-		self.listener = logging.handlers.QueueListener(log_queue, console_handler)
+		handlers = self.__bind_handlers()
+		self.listener = logging.handlers.QueueListener(log_queue, *handlers)
 		self.listener.start()
 
 		queue_handler = ContextAwareQueueHandler(log_queue)
 		return queue_handler
 
-	def __bind_handlers(self) -> logging.Handler:
-		stream_handler = logging.StreamHandler(stream=sys.stdout)
-		formatter = self.__bind_formatter()
-		stream_handler.setFormatter(formatter)
-		log_filter = FileUploadFilter()
-		stream_handler.addFilter(log_filter)
-		return stream_handler
+	def __bind_handlers(self) -> list[logging.Handler]:
+		"""Create handlers based on the configured output mode.
 
-	def __bind_formatter(self):
-		if not self.colorful_output:
+		Returns:
+		    List of configured handlers (StreamHandler and/or RotatingFileHandler)
+		"""
+		handlers = []
+		log_filter = FileUploadFilter()
+
+		# Add stdout handler if needed
+		if self.output_mode in ["stdout", "both"]:
+			stream_handler = logging.StreamHandler(stream=sys.stdout)
+			formatter = self.__bind_formatter(colorful=self.colorful_output)
+			stream_handler.setFormatter(formatter)
+			stream_handler.addFilter(log_filter)
+			handlers.append(stream_handler)
+
+		# Add file handler if needed
+		if self.output_mode in ["file", "both"]:
+			# Ensure log directory exists
+			log_file = Path(self.log_file_path)
+			log_file.parent.mkdir(parents=True, exist_ok=True)
+
+			file_handler = logging.handlers.RotatingFileHandler(
+				filename=str(log_file),
+				maxBytes=self.max_bytes,
+				backupCount=self.backup_count,
+				encoding="utf-8",
+			)
+			# File output should never be colorful
+			formatter = self.__bind_formatter(colorful=False)
+			file_handler.setFormatter(formatter)
+			file_handler.addFilter(log_filter)
+			handlers.append(file_handler)
+
+		return handlers
+
+	def __bind_formatter(self, colorful: bool = False):
+		"""Create a formatter based on whether colorful output is desired.
+
+		Args:
+		    colorful: Whether to use colored JSON formatter
+
+		Returns:
+		    Configured formatter (ColoredJSONFormatter or JsonFormatter)
+		"""
+		if not colorful:
 			formatter = jsonlogger.JsonFormatter(
 				"%(asctime)s %(name)s %(levelname)s %(message)s",
 				rename_fields={"levelname": "level", "asctime": "time"},

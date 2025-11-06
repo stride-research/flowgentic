@@ -4,3 +4,10 @@ agent_execution:
   graph_image_path: agent_execution_results/agent_graph.png
 logger:
   level: DEBUG
+  # Logging output modes: "stdout", "file", "both"
+  output: both
+  # File logging configuration (only used when output is "file" or "both")
+  file:
+    path: logs/flowgentic.log
+    max_bytes: 10485760  # 10MB
+    backup_count: 5
