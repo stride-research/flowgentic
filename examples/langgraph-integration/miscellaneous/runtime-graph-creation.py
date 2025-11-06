@@ -6,7 +6,7 @@ This example demonstrates how to dynamically modify a LangGraph at runtime:
 - Reduce: Remove nodes from the graph
 - Update: Replace nodes with different implementations
 
-All nodes use flowgentic's AsyncFlow integration with proper async execution,
+All nodes use flowgentic's AsyncFlow integration with proper async execut+ion,
 fault tolerance, and comprehensive logging.
 """
 
@@ -412,4 +412,4 @@ def _print_result(result: GraphState, phase: str):
 
 
 if __name__ == "__main__":
-	asyncio.run(demonstrate_runtime_graph_creation())
+	asyncio.run(demonstrate_runtime_graph_creation(), debug=True)
