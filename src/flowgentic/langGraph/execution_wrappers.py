@@ -192,14 +192,14 @@ class ExecutionWrappersLangraph:
 					async def _call():
 						logger.debug(f"Executing AsyncFlow task for '{f.__name__}'")
 						future = asyncflow_func(*args, **kwargs)
-						result = await future
-						logger.debug(
-							f"AsyncFlow task '{f.__name__}' completed successfully"
-						)
 						if flow_type == AsyncFlowType.FUNCTION_TASK:
+							result = await future
+							logger.debug(
+								f"AsyncFlow task '{f.__name__}' completed successfully"
+							)
 							return result
 						else:
-							return result, future
+							return future
 
 					return await self.fault_tolerance_mechanism.retry_async(
 						_call, retry_cfg, name=f.__name__
