@@ -15,7 +15,7 @@ logger_kwargs = {
 
 # Add file configuration if needed
 if output_mode in ["file", "both"]:
-	file_config = logger_config.get("file", {})
+	file_config = logger_config.get("file") or {}
 	# Only pass file config if provided; Logger class will use its own defaults
 	if "path" in file_config:
 		logger_kwargs["log_file_path"] = file_config["path"]
