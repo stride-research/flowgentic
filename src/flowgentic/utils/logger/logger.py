@@ -109,9 +109,8 @@ class Logger:
 				f"Invalid output_mode: '{self.output_mode}'. Must be one of 'stdout', 'file', 'both'."
 			)
 		if self.output_mode in ["file", "both"] and not self.log_file_path:
-			raise ValueError(
-				f"log_file_path must be provided when output_mode is '{self.output_mode}'"
-			)
+			# Provide a sensible default path when none is supplied via config
+			self.log_file_path = "logs/flowgentic.log"
 
 		self.queue_handler = self.__set_up_queue_handler()
 		self.root_logger = logging.getLogger()
