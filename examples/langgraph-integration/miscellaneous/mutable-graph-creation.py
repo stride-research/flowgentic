@@ -20,7 +20,7 @@ from langgraph.graph.message import add_messages
 
 from flowgentic.langGraph.execution_wrappers import AsyncFlowType
 from flowgentic.langGraph.main import LangraphIntegration
-from flowgentic.langGraph.dynamic_graph import DynamicGraph
+from flowgentic.langGraph.mutable_graph import MutableGraph
 from flowgentic.utils.logger.logger import Logger
 
 load_dotenv()
@@ -39,9 +39,9 @@ class GraphState(TypedDict):
 	operation_count: int
 
 
-class DynamicFlowgenticGraph(DynamicGraph):
+class DynamicFlowgenticGraph(MutableGraph):
 	"""
-	Example implementation of DynamicGraph with sequential data processing nodes.
+	Example implementation of MutableGraph with sequential data processing nodes.
 
 	Demonstrates:
 	- Node registration with AsyncFlow decoration
@@ -180,7 +180,7 @@ class DynamicFlowgenticGraph(DynamicGraph):
 		return result
 
 
-class ConditionalFlowGraph(DynamicGraph):
+class ConditionalFlowGraph(MutableGraph):
 	"""
 	Example showing custom edge logic with conditional routing.
 
@@ -412,4 +412,4 @@ def _print_result(result: GraphState, phase: str):
 
 
 if __name__ == "__main__":
-	asyncio.run(demonstrate_runtime_graph_creation())
+	asyncio.run(demonstrate_runtime_graph_creation(), debug=True)

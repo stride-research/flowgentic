@@ -16,7 +16,7 @@ from flowgentic.langGraph.main import LangraphIntegration
 logger = logging.getLogger(__name__)
 
 
-class DynamicGraph(ABC):
+class MutableGraph(ABC):
 	"""
 	Abstract base class for dynamic runtime graph modification.
 
@@ -43,7 +43,7 @@ class DynamicGraph(ABC):
 			agents_manager: LangraphIntegration instance for AsyncFlow execution
 			initial_active_nodes: List of node names to start with (validates that nodes exist)
 		"""
-		logger.info("🚀 Initializing DynamicGraph")
+		logger.info("🚀 Initializing MutableGraph")
 		self.agents_manager = agents_manager
 		self.available_nodes: Dict[str, Callable] = {}
 		self.active_node_names: List[str] = []
