@@ -165,16 +165,22 @@ class Logger:
 
 		# Add file handler if needed
 		if self.output_mode in ["file", "both"]:
-			# Ensure log directory exists
-			log_file = Path(self.log_file_path)
-			log_file.parent.mkdir(parents=True, exist_ok=True)
+			try:
+				# Ensure log directory exists
+				log_file = Path(self.log_file_path)
+				log_file.parent.mkdir(parents=True, exist_ok=True)
 
-			file_handler = logging.handlers.RotatingFileHandler(
-				filename=str(log_file),
-				maxBytes=self.max_bytes,
-				backupCount=self.backup_count,
-				encoding="utf-8",
-			)
+				file_handler = logging.handlers.RotatingFileHandler(
+					filename=str(log_file),
+					maxBytes=self.max_bytes,
+					backupCount=self.backup_count,
+					encoding="utf-8",
+				)
+			except (OSError, PermissionError) as e:
+				raise RuntimeError(
+					f"Failed to initialize file logging at '{self.log_file_path}': {e}"
+				) from e
+
 			# File output should never be colorful
 			formatter = self.__bind_formatter(colorful=False)
 			file_handler.setFormatter(formatter)
