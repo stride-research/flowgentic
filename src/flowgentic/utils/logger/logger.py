@@ -104,9 +104,13 @@ class Logger:
 		self.backup_count = backup_count
 
 		# Validate configuration
-		if output_mode in ["file", "both"] and not log_file_path:
+		if self.output_mode not in ["stdout", "file", "both"]:
 			raise ValueError(
-				f"log_file_path must be provided when output_mode is '{output_mode}'"
+				f"Invalid output_mode: '{self.output_mode}'. Must be one of 'stdout', 'file', 'both'."
+			)
+		if self.output_mode in ["file", "both"] and not self.log_file_path:
+			raise ValueError(
+				f"log_file_path must be provided when output_mode is '{self.output_mode}'"
 			)
 
 		self.queue_handler = self.__set_up_queue_handler()
