@@ -165,11 +165,11 @@ class Logger:
 
 		# Add file handler if needed
 		if self.output_mode in ["file", "both"]:
-			try:
-				# Ensure log directory exists
-				log_file = Path(self.log_file_path)
-				log_file.parent.mkdir(parents=True, exist_ok=True)
+			# Ensure log directory exists
+			log_file = Path(self.log_file_path).expanduser()
+			log_file.parent.mkdir(parents=True, exist_ok=True)
 
+			try:
 				file_handler = logging.handlers.RotatingFileHandler(
 					filename=str(log_file),
 					maxBytes=self.max_bytes,
