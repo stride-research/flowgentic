@@ -3,17 +3,18 @@ Memory management system for LangGraph agents.
 
 This module provides memory management capabilities for LangGraph integrations:
 - Short-term memory: Thread-scoped conversation history management
+- Long-term memory: Distributed storage using Dragon DDict (when available)
 - Memory configuration: Configurable memory strategies and limits
 - Integration hooks: Memory-aware graph construction and execution
 - Facade pattern: Simple interface following the established component pattern
 
-Initial implementation focuses on short-term memory management.
-Long-term memory features will be added in future iterations.
+Supports both local (in-memory) and distributed (Dragon DDict) memory backends.
 """
 
-from typing import List, Dict, Any, Optional, cast
+from typing import List, Dict, Any, Optional, cast, Literal
 import json
 from datetime import datetime
+import os
 
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
@@ -43,6 +44,66 @@ class MemoryConfig:
 		self.memory_update_threshold = memory_update_threshold
 		self.summarization_batch_size = summarization_batch_size
 		self.enable_summarization = enable_summarization
+
+
+class DistributedMemoryConfig:
+	"""Configuration for distributed memory using Dragon DDict backend.
+
+	This configuration extends basic memory management to support distributed
+	storage across HPC nodes using Dragon's DDict.
+	"""
+
+	def __init__(
+		self,
+		mode: Literal["local", "distributed", "auto"] = "auto",
+		managers_per_node: int = 1,
+		n_nodes: int = 1,
+		store_total_mem: int = 10 * 1024 * 1024 * 1024,  # 10 GB for store
+		checkpoint_total_mem: int = 20 * 1024 * 1024 * 1024,  # 20 GB for checkpoints
+		enable_store: bool = True,  # Enable distributed long-term memory store
+		enable_checkpointer: bool = True,  # Enable distributed checkpoint saver
+		fallback_to_local: bool = True,  # Fall back to local if Dragon unavailable
+	):
+		"""Initialize distributed memory configuration.
+
+		Args:
+			mode: Memory backend mode - "local" (in-memory), "distributed" (Dragon), or "auto" (detect)
+			managers_per_node: Number of Dragon managers per node
+			n_nodes: Number of nodes for distribution
+			store_total_mem: Total memory for long-term store in bytes
+			checkpoint_total_mem: Total memory for checkpoints in bytes
+			enable_store: Whether to use distributed store for long-term memory
+			enable_checkpointer: Whether to use distributed checkpointer
+			fallback_to_local: Whether to fall back to local storage if Dragon unavailable
+		"""
+		self.mode = mode
+		self.managers_per_node = managers_per_node
+		self.n_nodes = n_nodes
+		self.store_total_mem = store_total_mem
+		self.checkpoint_total_mem = checkpoint_total_mem
+		self.enable_store = enable_store
+		self.enable_checkpointer = enable_checkpointer
+		self.fallback_to_local = fallback_to_local
+
+	def should_use_distributed(self) -> bool:
+		"""Determine if distributed memory should be used based on configuration and environment.
+
+		Returns:
+			True if distributed memory should be used, False otherwise
+		"""
+		if self.mode == "local":
+			return False
+		elif self.mode == "distributed":
+			return True
+		else:  # auto mode
+			# Check for HPC environment indicators
+			hpc_indicators = [
+				"SLURM_JOB_ID",
+				"PBS_JOBID",
+				"LSB_JOBID",
+				"DRAGON_RUNTIME",
+			]
+			return any(os.getenv(indicator) for indicator in hpc_indicators)
 
 
 class ShortTermMemoryItem(BaseModel):
@@ -605,28 +666,171 @@ class MemoryEnabledState(BaseModel):
 	memory_context: Dict[str, Any]
 
 
+class DistributedMemoryManager:
+	"""Manager for distributed memory using Dragon DDict backend.
+
+	Provides a unified interface for distributed long-term memory storage
+	and checkpoint persistence across HPC nodes. Automatically falls back
+	to local storage if Dragon is not available.
+	"""
+
+	def __init__(
+		self,
+		config: Optional[DistributedMemoryConfig] = None,
+	):
+		"""Initialize distributed memory manager.
+
+		Args:
+			config: Distributed memory configuration. If None, uses defaults with auto-detection.
+		"""
+		self.config = config or DistributedMemoryConfig()
+		self._store = None
+		self._checkpointer = None
+		self._initialized = False
+
+		logger.info(
+			f"Initialized DistributedMemoryManager with mode: {self.config.mode}"
+		)
+
+	def _initialize_backends(self):
+		"""Lazy initialization of distributed memory backends."""
+		if self._initialized:
+			return
+
+		use_distributed = self.config.should_use_distributed()
+
+		if use_distributed:
+			logger.info("Attempting to initialize Dragon DDict backends")
+			try:
+				from flowgentic.langGraph.distributed_memory import (
+					DragonDDictStore,
+					DragonCheckpointSaver,
+				)
+
+				if self.config.enable_store:
+					self._store = DragonDDictStore(
+						managers_per_node=self.config.managers_per_node,
+						n_nodes=self.config.n_nodes,
+						total_mem=self.config.store_total_mem,
+					)
+					logger.info("Initialized DragonDDictStore for long-term memory")
+
+				if self.config.enable_checkpointer:
+					self._checkpointer = DragonCheckpointSaver(
+						managers_per_node=self.config.managers_per_node,
+						n_nodes=self.config.n_nodes,
+						total_mem=self.config.checkpoint_total_mem,
+					)
+					logger.info("Initialized DragonCheckpointSaver for checkpoints")
+
+			except Exception as e:
+				logger.warning(f"Failed to initialize Dragon backends: {e}")
+				if self.config.fallback_to_local:
+					logger.info("Falling back to local memory storage")
+					self._store = None
+					self._checkpointer = None
+				else:
+					raise
+		else:
+			logger.info("Using local memory storage (distributed mode not enabled)")
+
+		self._initialized = True
+
+	def get_store(self):
+		"""Get the distributed store backend.
+
+		Returns:
+			DragonDDictStore instance or None if not available/enabled
+		"""
+		self._initialize_backends()
+		return self._store
+
+	def get_checkpointer(self):
+		"""Get the distributed checkpoint saver backend.
+
+		Returns:
+			DragonCheckpointSaver instance or None if not available/enabled
+		"""
+		self._initialize_backends()
+		return self._checkpointer
+
+	def is_distributed(self) -> bool:
+		"""Check if distributed memory is actually being used.
+
+		Returns:
+			True if using distributed backends, False if using local
+		"""
+		self._initialize_backends()
+		return self._store is not None or self._checkpointer is not None
+
+	def get_memory_info(self) -> Dict[str, Any]:
+		"""Get information about the current memory configuration.
+
+		Returns:
+			Dictionary with memory backend information
+		"""
+		self._initialize_backends()
+
+		return {
+			"mode": self.config.mode,
+			"is_distributed": self.is_distributed(),
+			"store_enabled": self._store is not None,
+			"checkpointer_enabled": self._checkpointer is not None,
+			"n_nodes": self.config.n_nodes,
+			"managers_per_node": self.config.managers_per_node,
+			"store_memory_gb": self.config.store_total_mem / (1024**3),
+			"checkpoint_memory_gb": self.config.checkpoint_total_mem / (1024**3),
+		}
+
+	def close(self):
+		"""Clean up distributed memory resources."""
+		if self._store and hasattr(self._store, "close"):
+			try:
+				self._store.close()
+				logger.info("Closed distributed store")
+			except Exception as e:
+				logger.warning(f"Error closing distributed store: {e}")
+
+		if self._checkpointer and hasattr(self._checkpointer, "close"):
+			try:
+				self._checkpointer.close()
+				logger.info("Closed distributed checkpointer")
+			except Exception as e:
+				logger.warning(f"Error closing distributed checkpointer: {e}")
+
+
 # Facade class following the established pattern for LangGraph integration
 class LangraphMemoryManager:
 	"""Facade for memory management in LangGraph integration.
 
 	Follows the same pattern as LangraphToolFaultTolerance and AgentLogger,
 	providing a simple interface for memory operations within the LangraphIntegration.
+
+	Supports both local (short-term) and distributed (long-term) memory backends.
 	"""
 
 	def __init__(
-		self, config: Optional[MemoryConfig] = None, llm: Optional[BaseChatModel] = None
+		self,
+		config: Optional[MemoryConfig] = None,
+		llm: Optional[BaseChatModel] = None,
+		distributed_config: Optional[DistributedMemoryConfig] = None,
 	) -> None:
 		"""Initialize the memory manager facade.
 
 		Args:
-		    config: Memory configuration. If None, uses default configuration.
+		    config: Memory configuration for short-term memory. If None, uses default configuration.
 		    llm: Language model for summarization features. Optional.
+		    distributed_config: Configuration for distributed memory. If None, uses defaults.
 		"""
 		self.config = config or MemoryConfig()
 		self.llm = llm
+		self.distributed_config = distributed_config or DistributedMemoryConfig()
 		self._memory_manager: Optional[MemoryManager] = None
+		self._distributed_manager: Optional[DistributedMemoryManager] = None
+
 		logger.info(
-			f"Initialized LangraphMemoryManager with strategy: {self.config.short_term_strategy}"
+			f"Initialized LangraphMemoryManager with strategy: {self.config.short_term_strategy}, "
+			f"distributed mode: {self.distributed_config.mode}"
 		)
 
 	def _get_memory_manager(self) -> MemoryManager:
@@ -635,6 +839,15 @@ class LangraphMemoryManager:
 			self._memory_manager = MemoryManager(self.config, self.llm)
 			logger.debug("Created underlying MemoryManager instance")
 		return self._memory_manager
+
+	def _get_distributed_manager(self) -> DistributedMemoryManager:
+		"""Lazy initialization of the distributed memory manager."""
+		if self._distributed_manager is None:
+			self._distributed_manager = DistributedMemoryManager(
+				self.distributed_config
+			)
+			logger.debug("Created underlying DistributedMemoryManager instance")
+		return self._distributed_manager
 
 	async def add_interaction(
 		self,
@@ -721,3 +934,51 @@ class LangraphMemoryManager:
 		# Force recreation of memory manager with new config
 		if self._memory_manager is not None:
 			self._memory_manager = MemoryManager(self.config, self.llm)
+
+	def get_store(self):
+		"""Get the distributed store backend for long-term memory.
+
+		Returns:
+			DragonDDictStore instance or None if not available/enabled
+		"""
+		distributed_manager = self._get_distributed_manager()
+		return distributed_manager.get_store()
+
+	def get_checkpointer(self):
+		"""Get the distributed checkpoint saver backend.
+
+		Returns:
+			DragonCheckpointSaver instance or None if not available/enabled
+		"""
+		distributed_manager = self._get_distributed_manager()
+		return distributed_manager.get_checkpointer()
+
+	def is_distributed(self) -> bool:
+		"""Check if distributed memory is being used.
+
+		Returns:
+			True if using distributed backends, False if using local only
+		"""
+		distributed_manager = self._get_distributed_manager()
+		return distributed_manager.is_distributed()
+
+	def get_full_memory_info(self) -> Dict[str, Any]:
+		"""Get comprehensive information about memory configuration.
+
+		Returns:
+			Dictionary with both short-term and distributed memory information
+		"""
+		memory_health = self.get_memory_health()
+		distributed_manager = self._get_distributed_manager()
+		distributed_info = distributed_manager.get_memory_info()
+
+		return {
+			"short_term": memory_health,
+			"distributed": distributed_info,
+		}
+
+	def close(self) -> None:
+		"""Clean up all memory resources."""
+		if self._distributed_manager is not None:
+			self._distributed_manager.close()
+			logger.info("Closed distributed memory manager")
