@@ -15,13 +15,13 @@ logger_kwargs = {
 
 # Add file configuration if needed
 if output_mode in ["file", "both"]:
-	file_config = logger_config.get("file") or {}
-	logger_kwargs.update(
-		{
-			"log_file_path": file_config.get("path", "logs/flowgentic.log"),
-			"max_bytes": file_config.get("max_bytes", 10485760),
-			"backup_count": file_config.get("backup_count", 5),
-		}
-	)
+	file_config = logger_config.get("file", {})
+	# Only pass file config if provided; Logger class will use its own defaults
+	if "path" in file_config:
+		logger_kwargs["log_file_path"] = file_config["path"]
+	if "max_bytes" in file_config:
+		logger_kwargs["max_bytes"] = file_config["max_bytes"]
+	if "backup_count" in file_config:
+		logger_kwargs["backup_count"] = file_config["backup_count"]
 
 logger_instance = Logger(**logger_kwargs)  # Initiating logger
