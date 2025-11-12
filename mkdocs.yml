@@ -12,6 +12,7 @@ nav:
       - Overview: features/overview.md
       - Memory: features/memory.md
       - Fault tolerance: features/fault_tolerance.md
+      - Mutable graph: features/mutable_graph.md
       - Telemetry: features/telemetry.md
       - Services: features/services.md
       - MCP: features/mcp.md
