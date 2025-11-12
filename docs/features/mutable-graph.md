@@ -1,4 +1,4 @@
-# Dynamic Graph
+# MutableGraph
 
 Runtime graph modification for LangGraph workflows. Modify graph topology during execution without rebuilding the entire application.
 
@@ -11,17 +11,17 @@ Runtime graph modification for LangGraph workflows. Modify graph topology during
 
 ## Implementation
 
-Subclass `DynamicGraph` and implement two required methods:
+Subclass `MutableGraph` and implement two required methods:
 
 ```python
-from flowgentic.langGraph.dynamic_graph import DynamicGraph
+from flowgentic.langGraph.dynamic_graph import MutableGraph
 from typing import TypedDict
 
 class GraphState(TypedDict):
     messages: list
     operations: int
 
-class MyDynamicGraph(DynamicGraph):
+class MyMutableGraph(MutableGraph):
     def _register_available_nodes(self) -> None:
         """Register all node functions."""
         @self.agents_manager.execution_wrappers.asyncflow(
@@ -44,7 +44,7 @@ class MyDynamicGraph(DynamicGraph):
 
 ```python
 # Start with subset of registered nodes
-graph = MyDynamicGraph(
+graph = MyMutableGraph(
     agents_manager=agents_manager,
     initial_active_nodes=["node_a", "node_b"]
 )

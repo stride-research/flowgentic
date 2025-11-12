@@ -6,7 +6,7 @@ This example demonstrates how to dynamically modify a LangGraph at runtime:
 - Reduce: Remove nodes from the graph
 - Update: Replace nodes with different implementations
 
-All nodes use flowgentic's AsyncFlow integration with proper async execut+ion,
+All nodes use flowgentic's AsyncFlow integration with proper async execution,
 fault tolerance, and comprehensive logging.
 """
 
@@ -20,7 +20,7 @@ from langgraph.graph.message import add_messages
 
 from flowgentic.langGraph.execution_wrappers import AsyncFlowType
 from flowgentic.langGraph.main import LangraphIntegration
-from flowgentic.langGraph.dynamic_graph import DynamicGraph
+from flowgentic.langGraph.mutable_graph import MutableGraph
 from flowgentic.utils.logger.logger import Logger
 
 load_dotenv()
@@ -39,9 +39,9 @@ class GraphState(TypedDict):
 	operation_count: int
 
 
-class DynamicFlowgenticGraph(DynamicGraph):
+class DynamicFlowgenticGraph(MutableGraph):
 	"""
-	Example implementation of DynamicGraph with sequential data processing nodes.
+	Example implementation of MutableGraph with sequential data processing nodes.
 
 	Demonstrates:
 	- Node registration with AsyncFlow decoration
@@ -180,7 +180,7 @@ class DynamicFlowgenticGraph(DynamicGraph):
 		return result
 
 
-class ConditionalFlowGraph(DynamicGraph):
+class ConditionalFlowGraph(MutableGraph):
 	"""
 	Example showing custom edge logic with conditional routing.
 
