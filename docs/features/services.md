@@ -6,7 +6,7 @@ Persistent internal services that initialize once and maintain continual uptime 
 - **Service persistence**: Service instances stay alive across multiple invocations
 - **Continual uptime**: Maintain connections, state, and resources without cold-starts
 - **Resource efficiency**: Eliminate repeated expensive connection setup
-- **Future control**: Returns `(result, future)` tuple for lifecycle management
+- **Future control**: Returns a future handle that yields the service instance
 
 ## Overview
 
@@ -35,29 +35,33 @@ The `SERVICE_TASK` flow type is designed for production scenarios where you want
 ## Basic Example: Persistent HTTP Server
 
 ```python
-from utils.simple_server import create_and_start_server
+from utils.simple_server import SimpleAsyncServer
 
 async def main():
     async with LangraphIntegration(backend=backend) as agents_manager:
-        # Initialize the server once - this stays alive across SERVICE_TASK calls
-        server = await create_and_start_server(host="localhost", port=8080)
-
         # SERVICE_TASK wraps the server to maintain continual uptime
         @agents_manager.execution_wrappers.asyncflow(
             flow_type=AsyncFlowType.SERVICE_TASK
         )
-        async def call_server(endpoint: str, method: str = "GET") -> str:
-            """Make a request to the persistent server."""
-            result = await server.handle_request(endpoint, method)
-            return format_response(result)
+        async def start_server(port: int) -> SimpleAsyncServer:
+            """Start a persistent background server."""
+            print("🚀 COLD START: Initializing server...")
+            server = SimpleAsyncServer(host="localhost", port=port)
+            await server.start()
+            return server
 
-        # First request - server is already running
-        result1, future1 = await call_server("/api/users", "GET")
+        # First call returns a future handle
+        service_future = await start_server(8080)
         
-        # Second request - SAME server instance (no cold-start!)
-        result2, future2 = await call_server("/api/data", "POST")
+        # Await the future to get the actual server instance
+        server = await service_future
+        
+        # Make requests - SAME server instance (no cold-start!)
+        result1 = await server.handle_request("/api/users", "GET")
+        result2 = await server.handle_request("/api/data", "POST")
         
         # Clean shutdown
+        service_future.cancel()
         await server.shutdown()
 ```
 
@@ -66,115 +70,108 @@ async def main():
 - ✅ Same server instance handles all requests
 - ✅ Request counter increments across calls
 - ✅ Server uptime accumulates
-- ✅ Returns `(result, future)` tuple for lifecycle control
+- ✅ Returns future handle that yields the service instance
 
 ## Production Patterns
 
 ### Pattern 1: Database Connection Pool
 ```python
-# Initialize once
-db_pool = await create_connection_pool(
-    host="localhost",
-    database="mydb",
-    min_size=10,
-    max_size=100
-)
-
 @agents_manager.execution_wrappers.asyncflow(
     flow_type=AsyncFlowType.SERVICE_TASK
 )
-async def query_db(sql: str):
-    """Execute queries using persistent connection pool."""
-    async with db_pool.acquire() as conn:
-        return await conn.fetch(sql)
+async def create_db_service():
+    """Initialize persistent database connection pool."""
+    db_pool = await create_connection_pool(
+        host="localhost",
+        database="mydb",
+        min_size=10,
+        max_size=100
+    )
+    return db_pool
+
+# Start the service and get the pool
+service_future = await create_db_service()
+db_pool = await service_future
 
 # All queries use the same connection pool
-result1, future1 = await query_db("SELECT * FROM users")
-result2, future2 = await query_db("SELECT * FROM products")
+async with db_pool.acquire() as conn:
+    result1 = await conn.fetch("SELECT * FROM users")
+    
+async with db_pool.acquire() as conn:
+    result2 = await conn.fetch("SELECT * FROM products")
+
+# Cleanup
+service_future.cancel()
+await db_pool.close()
 ```
 
 ### Pattern 2: ML Model Server
 ```python
-# Load model once (expensive operation)
-model = await load_ml_model("path/to/large/model")
-
 @agents_manager.execution_wrappers.asyncflow(
     flow_type=AsyncFlowType.SERVICE_TASK
 )
-async def predict(input_data: dict):
-    """Make predictions using persistent model."""
-    return await model.predict(input_data)
+async def load_model_service():
+    """Load model once (expensive operation)."""
+    model = await load_ml_model("path/to/large/model")
+    return model
+
+# Start the service and get the model
+service_future = await load_model_service()
+model = await service_future
 
 # No model reloading on subsequent calls
-prediction1, future1 = await predict({"text": "sample input"})
-prediction2, future2 = await predict({"text": "another input"})
+prediction1 = await model.predict({"text": "sample input"})
+prediction2 = await model.predict({"text": "another input"})
+
+# Cleanup
+service_future.cancel()
 ```
 
 ### Pattern 3: Redis Cache Client
 ```python
-# Initialize Redis connection once
-redis_client = await create_redis_client(url="redis://localhost")
-
 @agents_manager.execution_wrappers.asyncflow(
     flow_type=AsyncFlowType.SERVICE_TASK
 )
-async def cache_get(key: str):
-    """Get value from persistent Redis connection."""
-    return await redis_client.get(key)
+async def create_redis_service():
+    """Initialize Redis connection once."""
+    redis_client = await create_redis_client(url="redis://localhost")
+    return redis_client
+
+# Start the service and get the client
+service_future = await create_redis_service()
+redis_client = await service_future
 
 # Same Redis connection for all operations
-value1, future1 = await cache_get("user:123")
-value2, future2 = await cache_get("session:456")
-```
+value1 = await redis_client.get("user:123")
+value2 = await redis_client.get("session:456")
 
-## Service Task as Agent Tool
-
-For services that should be callable by agents, use `AGENT_TOOL_AS_SERVICE`:
-
-```python
-@agents_manager.execution_wrappers.asyncflow(
-    flow_type=AsyncFlowType.AGENT_TOOL_AS_SERVICE,
-    tool_description="Get current weather for any city with persistent API session"
-)
-async def weather_api_tool(city: str) -> str:
-    """
-    Fetch weather data using a persistent API client.
-    The service instance is created once and reused for all calls.
-    """
-    # Lazy initialization: create service on first call
-    if not hasattr(weather_api_tool, '_client'):
-        weather_api_tool._client = WeatherAPIClient()
-        print("🌐 API client session created!")
-    
-    # Use the persistent service instance
-    result = await weather_api_tool._client.fetch_weather(city)
-    return f"Weather: {result['temperature']}°F, {result['conditions']}"
-
-# Agent can call this tool (automatic @tool wrapper)
-agent = create_react_agent(llm, tools=[weather_api_tool])
-
-# Manual calls require .ainvoke() (LangChain tool convention)
-result = await weather_api_tool.ainvoke({"city": "San Francisco"})
+# Cleanup
+service_future.cancel()
+await redis_client.close()
 ```
 
 ## Lifecycle Management
 
-SERVICE_TASK returns a `(result, future)` tuple, allowing you to control the service lifecycle:
+SERVICE_TASK returns a future handle that you await to get the service instance:
 
 ```python
-# Start service and make request
-result1, future1 = await call_server("/api/users", "GET")
+# Start service and get the future handle
+service_future = await start_server(8080)
 
-# Service continues running...
-result2, future2 = await call_server("/api/data", "POST")
+# Await the future to get the service instance
+server = await service_future
+
+# Make requests - service continues running...
+result1 = await server.handle_request("/api/users", "GET")
+result2 = await server.handle_request("/api/data", "POST")
 
 # Explicitly stop the service when needed
-future1.cancel()
-future2.cancel()
+service_future.cancel()
 await server.shutdown()
 
-# Next call will trigger a new cold-start
-result3, future3 = await call_server("/api/health", "GET")  # New server instance
+# Starting a new service will trigger a cold-start
+service_future2 = await start_server(8081)  # New server instance
+server2 = await service_future2
 ```
 
 ## Comparison: SERVICE_TASK vs FUNCTION_TASK
@@ -184,7 +181,7 @@ result3, future3 = await call_server("/api/health", "GET")  # New server instanc
 | Lifecycle | Task-scoped | Service-scoped |
 | Cold-starts | Every call | Only on first call or restart |
 | State | Not preserved | Preserved across calls |
-| Return value | Result only | `(result, future)` tuple |
+| Return value | Result only | Future handle |
 | Use case | Stateless operations | Stateful services |
 | Overhead | Minimal | Startup cost amortized |
 
@@ -202,64 +199,55 @@ result3, future3 = await call_server("/api/health", "GET")  # New server instanc
 - LLM decides when to invoke
 - Tool needs to appear in agent's tool list
 
-## Complete Examples
+## Complete Example
 
-### Example 1: Persistent Service (No Cold-Start)
-Demonstrates how SERVICE_TASK maintains continual uptime with no cold-starts.
-
-```bash
-python examples/langgraph-integration/service-task/service-task.py
-```
-
-**Expected Output:**
-```
-❄️  COLD START: Server starting...
-Request 1 → Server A ✅
-Wait 2 seconds...
-Request 2 → Server A ✅ (No cold-start!)
-Request 3 → Server A ✅ (No cold-start!)
-
-Evidence:
-- Same server instance ID across all requests
-- Request counter: 1 → 2 → 3
-- Server uptime accumulates: 2.2s
-```
-
-[View source code](https://github.com/stride-research/flowgentic/blob/main/examples/langgraph-integration/service-task/service-task.py)
-
-### Example 2: Intermittent Service (Cold-Start on Restart)
-Demonstrates how shutting down a server and canceling futures triggers a cold-start.
+### Persistent Service Behavior Demo
+Demonstrates the complete SERVICE_TASK lifecycle including:
+- **Part 1**: Single service instance with no cold-starts across multiple requests
+- **Part 2**: New service call creates a new instance (cold-start)
+- **Part 3**: Multiple services running concurrently
+- **Part 4**: Graceful shutdown and cleanup
 
 ```bash
 python examples/langgraph-integration/service-task/service-intermittent.py
 ```
 
-**Expected Output:**
+**Key Demonstrations:**
 ```
-❄️  COLD START: Server A starting...
-Request 1 → Server A ✅
-Request 2 → Server A ✅
-🛑 SHUTDOWN: Server A shutting down...
-❄️  COLD START: Server B starting...
-Request 3 → Server B ✅ (Different instance!)
+Part 1: Persistence Proof
+  ❄️  COLD START: Server 1 starting...
+  Request 1 → Server 1 ✅
+  Request 2 → Server 1 ✅ (No cold-start!)
+  Request 3 → Server 1 ✅ (No cold-start!)
+
+Part 2: New Service Cold-Start
+  ❄️  COLD START: Server 2 starting...
+  Request 1 → Server 2 ✅ (Different instance!)
+
+Part 3: Concurrent Services
+  Request 4 → Server 1 ✅ (Still running!)
+  Request 2 → Server 2 ✅ (Also running!)
 
 Evidence:
-- TWO cold-starts (different servers)
-- Request counter reset: 2 → 1
-- Different instance IDs
+  - Same future handle = Same service instance
+  - Different futures = Different instances (with cold-starts)
+  - Request counters increment independently per service
+  - Both services maintain separate state and uptime
 ```
 
 [View source code](https://github.com/stride-research/flowgentic/blob/main/examples/langgraph-integration/service-task/service-intermittent.py)
 
-## Best practices
-- Invoke a `service.shutdown()` before cancelling the future in order to have a graceful shutdown
+## Best Practices
+- Cancel the future with `service_future.cancel()` and then call `await service.shutdown()` for graceful cleanup
+- Always await the service future to get the actual service instance before making requests
+- Store the future handle if you need to cancel the service later
 
 ## Key Takeaways
 
 1. **SERVICE_TASK maintains state** - The service instance persists across multiple calls
 2. **Avoid cold-starts** - Initialization happens once, not on every call
-3. **Returns future** - You get `(result, future)` to control the service lifecycle
-4. **Graceful shutdown** - Always call `server.shutdown()` and `future.cancel()` to clean up
+3. **Returns future handle** - First await returns a future, second await gets the service instance
+4. **Graceful shutdown** - Always call `future.cancel()` and `server.shutdown()` to clean up
 5. **Production-ready** - This pattern mirrors real-world server/service behavior
 
 ## API Reference

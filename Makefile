@@ -77,8 +77,6 @@ examples-supervisor-toy:
 examples-sequential-research-memory:
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.research_agent_memory.main
 ### Services
-examples-services-task:
-	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.service-task.service-task
 examples-services-intermittent-task: 
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.service-task.service-intermittent
 ### Miscellaneous

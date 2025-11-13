@@ -82,7 +82,6 @@ class AsyncFlowType(Enum):
 	"""Enum defining the flow_type of AsyncFlow decoration"""
 
 	AGENT_TOOL_AS_FUNCTION = "tool"
-	AGENT_TOOL_AS_SERVICE = "service"
 	FUNCTION_TASK = "future"
 	SERVICE_TASK = "service_task"
 	EXECUTION_BLOCK = "block"
@@ -135,10 +134,7 @@ class ExecutionWrappersLangraph:
 
 			if flow_type == AsyncFlowType.EXECUTION_BLOCK:
 				asyncflow_func = self.flow.block(f)  # Use block decorator
-			elif flow_type in [
-				AsyncFlowType.AGENT_TOOL_AS_SERVICE,
-				AsyncFlowType.SERVICE_TASK,
-			]:
+			elif flow_type == AsyncFlowType.SERVICE_TASK:
 				asyncflow_func = self.flow.function_task(f, service=True)
 			else:
 				asyncflow_func = self.flow.function_task(f)
@@ -150,7 +146,6 @@ class ExecutionWrappersLangraph:
 
 			if flow_type in [
 				AsyncFlowType.AGENT_TOOL_AS_FUNCTION,
-				AsyncFlowType.AGENT_TOOL_AS_SERVICE,
 			]:
 				# Tool behavior: *args, **kwargs input, with @tool wrapper
 				@wraps(f)
@@ -192,14 +187,20 @@ class ExecutionWrappersLangraph:
 					async def _call():
 						logger.debug(f"Executing AsyncFlow task for '{f.__name__}'")
 						future = asyncflow_func(*args, **kwargs)
-						result = await future
-						logger.debug(
-							f"AsyncFlow task '{f.__name__}' completed successfully"
-						)
 						if flow_type == AsyncFlowType.FUNCTION_TASK:
+							# FUNCTION_TASK: await the future and return the result
+							result = await future
+							logger.debug(
+								f"AsyncFlow task '{f.__name__}' completed successfully"
+							)
 							return result
 						else:
-							return result, future
+							# SERVICE_TASK: return the future handle itself
+							# The service starts in the background and persists
+							# Multiple awaits on the same future = same service instance
+							# Usage: service_future = await service_task()
+							#        result = await service_future (can await multiple times)
+							return future
 
 					return await self.fault_tolerance_mechanism.retry_async(
 						_call, retry_cfg, name=f.__name__
