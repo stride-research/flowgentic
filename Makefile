@@ -84,3 +84,8 @@ examples-services-intermittent-task:
 ### Miscellaneous
 examples-runtime-graph:
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.miscellaneous.runtime-graph-creation
+
+benchmark:  ## Run benchamrk 
+	$(VENV_ACTIVATE) && python3 -m tests.benchmark.benchmark
+analyze-benchmark:  ## Analyze benchmark results
+	$(VENV_ACTIVATE) && python3 -m tests.benchmark.analyze_results
