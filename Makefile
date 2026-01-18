@@ -22,6 +22,8 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(GREEN)%-15s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 install:  
 	uv venv $(VENV_PATH) --python 3.10
-	uv pip install -e ".[dev, tests]"
+	uv pip install -e ".[dev]"
 
-# 2) 
+# 2) Examples
+examples-chatbot-toy:  ## toy example
+	$(VENV_ACTIVATE) && python3 -m examples.langgraph_asyncflow.main

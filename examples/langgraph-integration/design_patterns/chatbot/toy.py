@@ -72,7 +72,7 @@ async def start_app():
 		@agents_manager.execution_wrappers.asyncflow(
 			flow_type=AsyncFlowType.EXECUTION_BLOCK
 		)
-		async def deterministic_task_internal(state: WorkflowState):
+		async def deterministic_task_intetrnal(state: WorkflowState):
 			file_path = "im-working.txt"
 			with open(file_path, "w") as f:
 				f.write("Hello world!")
