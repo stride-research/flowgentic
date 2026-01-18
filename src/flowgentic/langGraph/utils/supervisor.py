@@ -122,4 +122,4 @@ def supervisor_fan_out(state: BaseModel) -> Command[Literal["agent_A", "agent_B"
 	    List of Send objects to route to selected agents
 	"""
 	decision = state.routing_decision or []
-	return [Send(agent, state) for agent in decision]
+	return [Send(agent, state) for agent in decision]  # Send API for concurrency

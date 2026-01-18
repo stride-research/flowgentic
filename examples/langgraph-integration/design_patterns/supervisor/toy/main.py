@@ -154,6 +154,7 @@ Create a brief, unified response that integrates both perspectives. Keep it conc
 			return state
 
 		# Nodes
+		## Note: introspection for router is not a stable feature. You can
 		llm_router_introspection = agents_manager.agent_introspector.introspect_node(
 			llm_router, "llm_router"
 		)

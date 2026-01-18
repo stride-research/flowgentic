@@ -100,6 +100,7 @@ class LangraphIntegration:
 		app: CompiledStateGraph,
 		caller_file_path: str,
 		final_state: Dict or BaseModel,
+		generate_report: bool = False,
 	) -> None:
 		"""
 		Facade method to generate all execution artifacts (directories, reports, and graph).
@@ -123,7 +124,8 @@ class LangraphIntegration:
 		self.utils.create_output_results_dirs(current_directory)
 
 		# Generate execution report
-		self.agent_introspector.generate_report(dir_to_write=current_directory)
+		if not generate_report:
+			self.agent_introspector.generate_report(dir_to_write=current_directory)
 
 		# Render graph visualization
 		await self.utils.render_graph(app, dir_to_write=current_directory)
