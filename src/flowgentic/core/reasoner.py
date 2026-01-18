@@ -20,9 +20,10 @@ class Reasoner:
 		self, prompt_input: PromptInput, memory_context
 	) -> ProvidersResponse:
 		# 1) Plan what to do based on prompt + context
+		tools = list(self.tool_schemas.values()) if self.tool_schemas else None
 		provider_resp: ProvidersResponse = await self.provider.aprompt(
-			prompt_input=prompt_input, memory_context=memory_context
+			prompt_input=prompt_input, memory_context=memory_context, tools=tools
 		)
 		# 2) Extract content of response
-		logger.debug(f"Provider response is: {provider_resp}")
+		logger.debug(f"Reasoner response is: {provider_resp}")
 		return provider_resp

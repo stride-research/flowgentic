@@ -19,9 +19,15 @@ class OpenRouterModelProvider(ModelProvider):
 		)
 
 	async def aprompt(
-		self, prompt_input: PromptInput, memory_context: str, **kwargs
+		self,
+		prompt_input: PromptInput,
+		memory_context: str,
+		tools: list = None,
+		**kwargs,
 	) -> ProvidersResponse:
 		messages = self._prepare_messages(prompt_input, memory_context)
+		if tools:
+			kwargs["tools"] = tools
 		response: ChatCompletion = await self.aclient.chat.completions.create(
 			model=self.model_id, messages=messages, **kwargs
 		)

@@ -1,4 +1,5 @@
 from typing import Optional
+from flowgentic.backend_engines.base import BaseEngine
 from flowgentic.core.memory.agent_state import AgentState
 from flowgentic.core.memory.memory_manager import MemoryManger, NullMemoryManager
 from flowgentic.core.reasoner import Reasoner
@@ -14,27 +15,29 @@ logger = logging.getLogger(__name__)
 
 class Agent:
 	def __init__(
-		self, reasoner: Reasoner, memory_manager: Optional[MemoryManger] = None
+		self,
+		reasoner: Reasoner,
+		engine: BaseEngine,
+		memory_manager: Optional[MemoryManger] = None,
 	):
 		self.reasoner = reasoner
+		self.engine = engine
 		self.memory = (
 			memory_manager if memory_manager is not None else NullMemoryManager()
 		)
-		self.tools = {}
+		self.tools_registry = {}
 
 	def add_tool(self, tool: Tool):
-		self.reasoner.bind_tool(tool)
-		self.tools[tool.name] = tool
+		self.reasoner.bind_tool(tool)  # Track tools and their schema
+		self.tools_registry[tool.name] = tool  # Track tools and their callables
 
-	async def run(self, prompt_input: PromptInput):
-		# 1. Intialize a fresh state for this specific run
+	async def _internal_run_logic(self, prompt_input: PromptInput):
+		# 1. Memory retreival
 		state = AgentState()
 		state.add_user_input(prompt_input)
-
-		# 2. Get context from memory
 		context = self.memory.get_context()
 
-		# 3. Reasoner plans the transformation into a Tool call
+		# 3. Reasoning (the brain of the agent)
 		providers_response = await self.reasoner.plan(prompt_input, context)
 		reasoning = providers_response.reasoning
 		message = providers_response.message
@@ -42,19 +45,18 @@ class Agent:
 		state.add_reasoning(reasoning)
 		state.add_message(message)
 
-		# 4. Execute the Tool
-		results = {}  # {tool_name: execution_result}
-		for tool_name, args in tools_to_use:
-			logger.debug(f"Executing tool with name: {tool_name}")
-			results[tool_name] = self.tools[tool_name].execute(**args)
+		# 4. Execution (the muscle of the agent)
+		results = await self.engine.execute_tools(tools_to_use, self.tools_registry)
 		state.add_tool_results(results)
 
-		# 5. Flush state
+		# 5. Update memory
 		self.memory.record_state(state)
+
 		agent_response = AgentResponse(
 			tools_results=results, reasoning=reasoning, message=message
 		)
-
 		logger.debug(f"Agent response is: {agent_response}")
-
 		return agent_response
+
+	async def run(self, prompt_input: PromptInput):
+		return await self.engine.wrap_agent_run(self._internal_run_logic, prompt_input)

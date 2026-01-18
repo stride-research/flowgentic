@@ -1,8 +1,10 @@
 """
 1. Basic => agent says hello to prompt
 2. Integration with asyncflow
-3. Basic with one non-llm node at the end
-4. Basic with two non-llm nodes with routing
+      2.3 Allow for kwargs
+3. Add tools
+4. Basic with one non-llm node at the end
+5. Basic with two non-llm nodes with routing
       - What happens if we attempt non-LLM node?
 """
 
@@ -16,6 +18,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import StateGraph, add_messages
 from pydantic import BaseModel
+from flowgentic.backend_engines.radical_asyncflow import AsyncFlowEngine
 from flowgentic.core.agent import Agent
 from radical.asyncflow import ConcurrentExecutionBackend, WorkflowEngine
 
@@ -25,6 +28,7 @@ from dotenv import load_dotenv
 
 from flowgentic.core.reasoner import Reasoner
 from flowgentic.core.schemas.prompt_input import PromptInput
+from flowgentic.core.tool.tool import Tool
 
 load_dotenv()
 
@@ -34,16 +38,20 @@ class WorkflowState(BaseModel):
 
 
 async def start_app():
-	backend = await ConcurrentExecutionBackend(ThreadPoolExecutor())
-
+	# Reasoner
 	reasoner_model = OpenRouterModelProvider(
 		model_id="google/gemini-3-flash-preview",
 		api_key=os.getenv("OPEN_ROUTER_API_KEY"),
 	)
 	reasoner = Reasoner(model_provider=reasoner_model)
+	# Backend engine
+	backend = await ConcurrentExecutionBackend(ThreadPoolExecutor())
+	flow = await WorkflowEngine.create(backend)
+	engine = AsyncFlowEngine(flow)
 
-	agent = Agent(reasoner=reasoner)
+	agent = Agent(reasoner=reasoner, engine=engine)
 
+	# Primary agent
 	async def chatbot_node(state: WorkflowState):
 		last_message = state.messages[-1].content
 
@@ -55,6 +63,18 @@ async def start_app():
 		response = await agent.run(prompt_input)
 
 		return {"messages": [AIMessage(content=str(response))]}
+
+	# Tools, Primary agent
+	async def fetch_temperature(location: str) -> dict:
+		"""Fetches temperature of a given city"""
+		return {"temperature": 70}
+
+	async def fetch_humidity(location: str) -> dict:
+		"""Fetches humidity of a given city"""
+		return {"humidity": 50}
+
+	agent.add_tool(Tool(fetch_temperature))
+	agent.add_tool(Tool(fetch_humidity))
 
 	# 1) Structure of the workflow
 	workflow = StateGraph(WorkflowState)
