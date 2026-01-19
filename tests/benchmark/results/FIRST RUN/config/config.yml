@@ -1,0 +1,11 @@
+
+
+
+run_name: "FIRST RUN"
+run_description: "foo description"
+environment:
+  n_of_agents: 3
+  n_of_tool_calls: 3 # How many tools each agent
+  n_of_backend_slots: 3 # Will be elavated to the power of 2
+  tool_execution_duration_time: 3
+workload_id: "langgraph_asyncflow"

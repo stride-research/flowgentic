@@ -6,6 +6,10 @@ from radical.asyncflow import WorkflowEngine
 from flowgentic.backend_engines.base import BaseEngine
 from flowgentic.core.tool.tool import Tool
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class AsyncFlowEngine(BaseEngine):
 	def __init__(self, flow: WorkflowEngine):
@@ -19,6 +23,8 @@ class AsyncFlowEngine(BaseEngine):
 	) -> Dict[str, Any]:
 		futures = []
 		task_names = []
+
+		logger.debug(f"tools_to_use: {tools_to_use}")
 
 		for tool in tools_to_use:
 			func = tool.function

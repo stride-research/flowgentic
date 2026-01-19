@@ -1,0 +1,35 @@
+[
+  {
+    "run_name": "FIRST RUN",
+    "run_description": "foo description",
+    "workload_id": "langgraph_asyncflow",
+    "n_of_agents": 3,
+    "n_of_tool_calls": 3,
+    "n_of_backend_slots": 1,
+    "workload_type": "fixed_tools_vary_agents",
+    "tool_execution_duration_time": 0,
+    "makespan": 0.6812138750001395
+  },
+  {
+    "run_name": "FIRST RUN",
+    "run_description": "foo description",
+    "workload_id": "langgraph_asyncflow",
+    "n_of_agents": 3,
+    "n_of_tool_calls": 3,
+    "n_of_backend_slots": 2,
+    "workload_type": "fixed_tools_vary_agents",
+    "tool_execution_duration_time": 0,
+    "makespan": 0.8817828750002263
+  },
+  {
+    "run_name": "FIRST RUN",
+    "run_description": "foo description",
+    "workload_id": "langgraph_asyncflow",
+    "n_of_agents": 3,
+    "n_of_tool_calls": 3,
+    "n_of_backend_slots": 4,
+    "workload_type": "fixed_tools_vary_agents",
+    "tool_execution_duration_time": 0,
+    "makespan": 1.1838745000000017
+  }
+]

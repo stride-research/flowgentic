@@ -20,10 +20,13 @@ VENV_ACTIVATE = source $(VENV_PATH)/bin/activate
 help: ## Show this help message
 	@printf "$(BLUE) Available commands: $(RESET)\n"
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(GREEN)%-15s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
-install:  
+install: ## Installation
 	uv venv $(VENV_PATH) --python 3.10
 	uv pip install -e ".[dev]"
 
 # 2) Examples
 examples-chatbot-toy:  ## toy example
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph_asyncflow.main
+# 3) Benchmark
+benchmark:  ## Benchmarking the program
+	$(VENV_ACTIVATE) && python3 -m tests.benchmark.data_generation.run_benchmark

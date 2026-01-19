@@ -22,6 +22,7 @@ from flowgentic.backend_engines.radical_asyncflow import AsyncFlowEngine
 from flowgentic.core.agent import Agent
 from radical.asyncflow import ConcurrentExecutionBackend, WorkflowEngine
 
+from flowgentic.core.models.implementations.dummyProvider import DummyModelProvider
 from flowgentic.core.models.implementations.openRouter import OpenRouterModelProvider
 
 from dotenv import load_dotenv
@@ -39,10 +40,16 @@ class WorkflowState(BaseModel):
 
 async def start_app():
 	# Reasoner
-	reasoner_model = OpenRouterModelProvider(
-		model_id="google/gemini-3-flash-preview",
-		api_key=os.getenv("OPEN_ROUTER_API_KEY"),
+	# reasoner_model = OpenRouterModelProvider(
+	# 	model_id="google/gemini-3-flash-preview",
+	# 	api_key=os.getenv("OPEN_ROUTER_API_KEY"),
+	# )
+	reasoner_model = DummyModelProvider(
+		model_id="dummy/dummy_moodel",
+		tool_names=["fetch_temperature", "fetch_humidity"],
+		n_of_tool_calls=10,
 	)
+
 	reasoner = Reasoner(model_provider=reasoner_model)
 	# Backend engine
 	backend = await ConcurrentExecutionBackend(ThreadPoolExecutor())
@@ -57,7 +64,7 @@ async def start_app():
 
 		prompt_input = PromptInput(
 			user_input=last_message,
-			system_input="You are a helpful assistant that reminds people's names.",
+			system_input="You call different tools.",
 		)
 
 		response = await agent.run(prompt_input)
@@ -65,11 +72,11 @@ async def start_app():
 		return {"messages": [AIMessage(content=str(response))]}
 
 	# Tools, Primary agent
-	async def fetch_temperature(location: str) -> dict:
+	async def fetch_temperature(location: str = "SFO") -> dict:
 		"""Fetches temperature of a given city"""
 		return {"temperature": 70}
 
-	async def fetch_humidity(location: str) -> dict:
+	async def fetch_humidity(location: str = "SFO") -> dict:
 		"""Fetches humidity of a given city"""
 		return {"humidity": 50}
 
@@ -83,35 +90,34 @@ async def start_app():
 	workflow.set_finish_point("chatbot")
 
 	# 2) Settings of the workflow
-	checkpointer = InMemorySaver()
-	compiled_workflow = workflow.compile(checkpointer=checkpointer)
-	thread_id = random.randint(0, 10)
-	config = {"configurable": {"thread_id": thread_id}}
+	compiled_workflow = workflow.compile()
 
-	compiled_workflow = workflow.compile(checkpointer)
+	user_input = "Whats the weather in SFO?"
+	current_state = WorkflowState(messages=[HumanMessage(content=user_input)])
+	await compiled_workflow.ainvoke(current_state)
 
-	while True:
-		user_input = input("User: ").lower()
-		if user_input in ["quit", "q", "-q", "exit"]:
-			print(f"Goodbye!")
-			last_state = compiled_workflow.get_state(config)
-			print(f"Last state: {last_state}")
-			return
+	# while True:
+	# 	user_input = input("User: ").lower()
+	# 	if user_input in ["quit", "q", "-q", "exit"]:
+	# 		print(f"Goodbye!")
+	# 		last_state = compiled_workflow.get_state(config)
+	# 		print(f"Last state: {last_state}")
+	# 		return
 
-		current_state = WorkflowState(messages=[HumanMessage(content=user_input)])
+	# 	current_state = WorkflowState(messages=[HumanMessage(content=user_input)])
 
-		async for chunk in compiled_workflow.astream(
-			current_state, stream_mode="values", config=config
-		):
-			if chunk["messages"]:
-				last_msg = chunk["messages"][-1]
-				if isinstance(last_msg, AIMessage):
-					if hasattr(last_msg, "content") and last_msg.content:
-						print(f"Assistant: {last_msg.content}")
-					if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
-						print(f"Tool calls: {last_msg.tool_calls}")
-			print(chunk)
-			print("=" * 30)
+	# 	async for chunk in compiled_workflow.astream(
+	# 		current_state, stream_mode="values", config=config
+	# 	):
+	# 		if chunk["messages"]:
+	# 			last_msg = chunk["messages"][-1]
+	# 			if isinstance(last_msg, AIMessage):
+	# 				if hasattr(last_msg, "content") and last_msg.content:
+	# 					print(f"Assistant: {last_msg.content}")
+	# 				if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+	# 					print(f"Tool calls: {last_msg.tool_calls}")
+	# 		print(chunk)
+	# 		print("=" * 30)
 
 
 if __name__ == "__main__":
