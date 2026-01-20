@@ -1,5 +1,6 @@
 import asyncio
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+import time
 from typing import Annotated
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -14,6 +15,7 @@ from flowgentic.core.models.implementations.dummyProvider import DummyModelProvi
 from flowgentic.core.reasoner import Reasoner
 from flowgentic.core.schemas.prompt_input import PromptInput
 from flowgentic.core.tool.tool import Tool
+from tests.benchmark.data_generation.schemas import WorkloadResult
 
 
 class WorkflowState(BaseModel):
@@ -30,12 +32,15 @@ async def langgraph_asyncflow_workload(
 	Return future for execution of workload
 	"""
 
-	reasoner = Reasoner(model_provider=reasoner_model)
-	# Backend engine
+	t_execution_start = time.perf_counter()
+	# Backend engine => asyncflow overhead
 	backend = await ConcurrentExecutionBackend(
-		ProcessPoolExecutor(max_workers=n_of_backend_slots)
+		ThreadPoolExecutor(max_workers=n_of_backend_slots)
 	)
 	flow = await WorkflowEngine.create(backend)
+
+	t_flowgentic_start = time.perf_counter()
+	reasoner = Reasoner(model_provider=reasoner_model)
 	engine = AsyncFlowEngine(flow)
 
 	agent = Agent(reasoner=reasoner, engine=engine)
@@ -60,6 +65,8 @@ async def langgraph_asyncflow_workload(
 		return {"temperature": 70}
 
 	agent.add_tool(Tool(fetch_temperature))
+	# === END flowgentic overhead===
+	t_flowgentic_submit_end = time.perf_counter()
 
 	# 1) Structure of the workflow
 	workflow = StateGraph(WorkflowState)
@@ -72,4 +79,13 @@ async def langgraph_asyncflow_workload(
 
 	user_input = "Whats the weather in SFO?"
 	current_state = WorkflowState(messages=[HumanMessage(content=user_input)])
-	return await compiled_workflow.ainvoke(current_state)
+	result = await compiled_workflow.ainvoke(current_state)
+
+	# === END execution ==
+	t_execution_end = time.perf_counter()
+
+	return WorkloadResult(
+		result=result,
+		flowgentic_overhead=t_flowgentic_submit_end - t_flowgentic_start,
+		execution_time=t_execution_end - t_execution_start,
+	)

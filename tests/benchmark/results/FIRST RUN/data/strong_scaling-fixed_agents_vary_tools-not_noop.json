@@ -1,0 +1,54 @@
+[
+  {
+    "run_name": "FIRST RUN",
+    "run_description": "foo description",
+    "workload_id": "langgraph_asyncflow",
+    "n_of_agents": 3,
+    "n_of_tool_calls": 3,
+    "n_of_backend_slots": 1,
+    "workload_type": "fixed_agents_vary_tools",
+    "tool_execution_duration_time": 3,
+    "makespan": 9.061382708001474,
+    "total_flowgentic_overhead": 8.595799954491667e-05,
+    "total_execution_time": 27.13359112499893
+  },
+  {
+    "run_name": "FIRST RUN",
+    "run_description": "foo description",
+    "workload_id": "langgraph_asyncflow",
+    "n_of_agents": 3,
+    "n_of_tool_calls": 3,
+    "n_of_backend_slots": 2,
+    "workload_type": "fixed_agents_vary_tools",
+    "tool_execution_duration_time": 3,
+    "makespan": 6.032957874998829,
+    "total_flowgentic_overhead": 0.0003402500042284373,
+    "total_execution_time": 18.084807375998935
+  },
+  {
+    "run_name": "FIRST RUN",
+    "run_description": "foo description",
+    "workload_id": "langgraph_asyncflow",
+    "n_of_agents": 3,
+    "n_of_tool_calls": 3,
+    "n_of_backend_slots": 4,
+    "workload_type": "fixed_agents_vary_tools",
+    "tool_execution_duration_time": 3,
+    "makespan": 3.02987504200064,
+    "total_flowgentic_overhead": 0.0001784590058377944,
+    "total_execution_time": 9.080958167000063
+  },
+  {
+    "run_name": "FIRST RUN",
+    "run_description": "foo description",
+    "workload_id": "langgraph_asyncflow",
+    "n_of_agents": 3,
+    "n_of_tool_calls": 3,
+    "n_of_backend_slots": 8,
+    "workload_type": "fixed_agents_vary_tools",
+    "tool_execution_duration_time": 3,
+    "makespan": 3.035213915998611,
+    "total_flowgentic_overhead": 0.000203460000193445,
+    "total_execution_time": 9.09318116799841
+  }
+]
