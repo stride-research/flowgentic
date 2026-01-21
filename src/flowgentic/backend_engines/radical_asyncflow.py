@@ -24,7 +24,8 @@ class AsyncFlowEngine(BaseEngine):
 			func = tool.function
 			if func.name not in self._task_registry:
 				self._task_registry[func.name] = self.flow.function_task(
-					tools[func.name].func
+					tools[func.name].func,
+					service=tools[func.name].config.get("run_as_service"),
 				)
 
 			task = self._task_registry[func.name]

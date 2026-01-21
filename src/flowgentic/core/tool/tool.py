@@ -13,10 +13,11 @@ _TYPE_MAP = {
 
 
 class Tool:
-	def __init__(self, func: Callable):
+	def __init__(self, func: Callable, **config):
 		self.func = func
 		self.name = func.__name__
 		self.description = func.__doc__ or ""
+		self.config = config
 
 	def get_schema(self) -> dict:
 		"""Returns OpenAI-compatible tool schema."""
