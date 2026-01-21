@@ -23,17 +23,17 @@ class WorkloadManager:
 			n_of_tool_calls=n_of_tool_calls,
 		)
 
-	def get_agent_workloads(self, id):
-		futures = []
+	def get_shared_backend_workload(self, id):
+		"""
+		Returns a single workload with SHARED backend across all agents.
+		This allows backend slots to parallelize setup work.
+		"""
+		print(f"NUMBER OF AGENTS: {self.n_of_agents}")
 		if id == "langgraph_asyncflow":
-			agent_workload = langgraph_asyncflow_workload
-		print(f"NUMBER OF AGENTS {self.n_of_agents}")
-		for i in range(self.n_of_agents):
-			futures.append(
-				agent_workload(
-					reasoner_model=self.reasoner_model,
-					n_of_backend_slots=self.n_of_backend_slots,
-					tool_execution_duration_time=self.tool_execution_duration_time,
-				)
+			return langgraph_asyncflow_workload(
+				reasoner_model=self.reasoner_model,
+				n_of_backend_slots=self.n_of_backend_slots,
+				n_of_agents=self.n_of_agents,
+				tool_execution_duration_time=self.tool_execution_duration_time,
 			)
-		return futures
+		raise ValueError(f"Unknown workload id: {id}")

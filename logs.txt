@@ -1,0 +1,55 @@
+source ./.venv/bin/activate && python3 -m tests.benchmark.data_generation.run_benchmark
+[2m[2026-01-21 11:45:04,033][0m [[90m🐞 DEBUG   [0m] ([36mmatplotlib[0m) [3mmatplotlib data path: /Users/javierdominguezsegura/Programming/S25/STRIDE/flowgentic/.venv/lib/python3.10/site-packages/matplotlib/mpl-data[0m
+[2m[2026-01-21 11:45:04,042][0m [[90m🐞 DEBUG   [0m] ([36mmatplotlib[0m) [3mCONFIGDIR=/Users/javierdominguezsegura/.matplotlib[0m
+[2m[2026-01-21 11:45:04,043][0m [[90m🐞 DEBUG   [0m] ([36mmatplotlib[0m) [3minteractive is False[0m
+[2m[2026-01-21 11:45:04,043][0m [[90m🐞 DEBUG   [0m] ([36mmatplotlib[0m) [3mplatform is darwin[0m
+[2m[2026-01-21 11:45:04,064][0m [[90m🐞 DEBUG   [0m] ([36mmatplotlib[0m) [3mCACHEDIR=/Users/javierdominguezsegura/.matplotlib[0m
+[2m[2026-01-21 11:45:04,066][0m [[90m🐞 DEBUG   [0m] ([36mmatplotlib.font_manager[0m) [3mUsing fontManager instance from /Users/javierdominguezsegura/.matplotlib/fontlist-v390.json[0m
+[2m[2026-01-21 11:45:04,259][0m [[90m🐞 DEBUG   [0m] ([36masyncio[0m) [3mUsing selector: KqueueSelector[0m
+NUMBER OF AGENTS: 8
+[2m[2026-01-21 11:45:04,261][0m [[94mℹ️ INFO    [0m] ([36m__main__[0m) [3m=== STRONG SCALING: YES SCALING ===[0m
+[2m[2026-01-21 11:45:04,262][0m [[94mℹ️ INFO    [0m] ([36m__main__[0m) [3mConfig is: {
+    "run_name": "YES SCALING",
+    "run_description": "foo description",
+    "workload_id": "langgraph_asyncflow",
+    "n_of_agents": 8,
+    "n_of_tool_calls": 1,
+    "n_of_backend_slots": 3,
+    "workload_type": "fixed_agents_vary_tools",
+    "tool_execution_duration_time": 3
+}[0m
+[2m[2026-01-21 11:45:04,262][0m [[94mℹ️ INFO    [0m] ([36m__main__[0m) [3m
+--- Testing p=1 backend slots ---[0m
+[2m[2026-01-21 11:45:04,291][0m [[94mℹ️ INFO    [0m] ([36mradical.asyncflow.backends.execution.concurrent[0m) [3mProcessPoolExecutor execution backend started successfully[0m
+[2m[2026-01-21 11:45:04,291][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mRegistered signal handler for SIGHUP[0m
+[2m[2026-01-21 11:45:04,291][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mRegistered signal handler for SIGTERM[0m
+[2m[2026-01-21 11:45:04,291][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mRegistered signal handler for SIGINT[0m
+[2m[2026-01-21 11:45:04,291][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mStarted run component[0m
+[2m[2026-01-21 11:45:04,292][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mRegistered task: 'flowgentic_setup' with id of task.000001[0m
+[2m[2026-01-21 11:45:04,292][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mRegistered task: 'flowgentic_setup' with id of task.000002[0m
+[2m[2026-01-21 11:45:04,292][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mRegistered task: 'flowgentic_setup' with id of task.000003[0m
+[2m[2026-01-21 11:45:04,292][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mRegistered task: 'flowgentic_setup' with id of task.000004[0m
+[2m[2026-01-21 11:45:04,292][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mRegistered task: 'flowgentic_setup' with id of task.000005[0m
+[2m[2026-01-21 11:45:04,292][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mRegistered task: 'flowgentic_setup' with id of task.000006[0m
+[2m[2026-01-21 11:45:04,292][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mRegistered task: 'flowgentic_setup' with id of task.000007[0m
+[2m[2026-01-21 11:45:04,292][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mRegistered task: 'flowgentic_setup' with id of task.000008[0m
+[2m[2026-01-21 11:45:04,293][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mReady to submit: flowgentic_setup with resolved dependencies: [][0m
+[2m[2026-01-21 11:45:04,293][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mReady to submit: flowgentic_setup with resolved dependencies: [][0m
+[2m[2026-01-21 11:45:04,293][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mReady to submit: flowgentic_setup with resolved dependencies: [][0m
+[2m[2026-01-21 11:45:04,293][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mReady to submit: flowgentic_setup with resolved dependencies: [][0m
+[2m[2026-01-21 11:45:04,293][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mReady to submit: flowgentic_setup with resolved dependencies: [][0m
+[2m[2026-01-21 11:45:04,293][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mReady to submit: flowgentic_setup with resolved dependencies: [][0m
+[2m[2026-01-21 11:45:04,293][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mReady to submit: flowgentic_setup with resolved dependencies: [][0m
+[2m[2026-01-21 11:45:04,293][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mReady to submit: flowgentic_setup with resolved dependencies: [][0m
+[2m[2026-01-21 11:45:04,293][0m [[94mℹ️ INFO    [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mSubmitting 8 tasks/blocks for execution[0m
+[2m[2026-01-21 11:45:04,293][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mSubmitting: ['flowgentic_setup', 'flowgentic_setup', 'flowgentic_setup', 'flowgentic_setup', 'flowgentic_setup', 'flowgentic_setup', 'flowgentic_setup', 'flowgentic_setup'][0m
+[2m[2026-01-21 11:45:04,294][0m [[94mℹ️ INFO    [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mtask.000001 is in FAILED state[0m
+[2m[2026-01-21 11:45:04,295][0m [[94mℹ️ INFO    [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mtask.000002 is in FAILED state[0m
+[2m[2026-01-21 11:45:04,295][0m [[94mℹ️ INFO    [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mtask.000003 is in FAILED state[0m
+[2m[2026-01-21 11:45:04,295][0m [[94mℹ️ INFO    [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mtask.000004 is in FAILED state[0m
+[2m[2026-01-21 11:45:04,295][0m [[94mℹ️ INFO    [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mtask.000005 is in FAILED state[0m
+[2m[2026-01-21 11:45:04,296][0m [[94mℹ️ INFO    [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mtask.000006 is in FAILED state[0m
+[2m[2026-01-21 11:45:04,296][0m [[94mℹ️ INFO    [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mtask.000007 is in FAILED state[0m
+[2m[2026-01-21 11:45:04,297][0m [[94mℹ️ INFO    [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mtask.000008 is in FAILED state[0m
+[2m[2026-01-21 11:45:04,297][0m [[90m🐞 DEBUG   [0m] ([36mradical.asyncflow.workflow_manager[0m) [3mRun component stopped[0m
+[2m[2026-01-21 11:45:04,302][0m [[94mℹ️ INFO    [0m] ([36mroot[0m) [3mShutting down logging listener...[0m
