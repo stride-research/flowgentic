@@ -229,10 +229,10 @@ async def main():
 	# ## 2.1) Varying tool calls, fixed agents ; for each agent do m x p tool calls
 
 	# Experiment 3: Not noop work
-	# await benchmark.run_weak_scaling(run_config_exp1)
+	await benchmark.run_weak_scaling(run_config_exp1)
 
 	# Experiment 4: Noop work
-	# await benchmark.run_weak_scaling(run_config_exp2)
+	await benchmark.run_weak_scaling(run_config_exp2)
 
 	# Save and generate plots
 	benchmark.save_and_analyse()

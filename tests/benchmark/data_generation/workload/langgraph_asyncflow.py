@@ -36,8 +36,6 @@ async def langgraph_asyncflow_workload(
 	t_execution_start = time.perf_counter()
 
 	# SHARED backend engine across all agents
-	# NOTE: Must use ThreadPoolExecutor (not ProcessPoolExecutor) because
-	# radical.asyncflow's closures can't be pickled across process boundaries
 	backend = await ConcurrentExecutionBackend(
 		ThreadPoolExecutor(max_workers=n_of_backend_slots)
 	)
@@ -67,9 +65,8 @@ async def langgraph_asyncflow_workload(
 		agent.add_tool(Tool(fetch_temperature))
 		return chatbot_node
 
-	# === PARALLEL setup of all agents via shared backend ===
+	# === Set-up ===
 	t_flowgentic_start = time.perf_counter()
-	# Submit all setup tasks to the SAME backend - backend slots parallelize this
 	setup_futures = [flowgentic_setup(i) for i in range(n_of_agents)]
 	chatbot_nodes = await asyncio.gather(*setup_futures)
 	t_flowgentic_end = time.perf_counter()

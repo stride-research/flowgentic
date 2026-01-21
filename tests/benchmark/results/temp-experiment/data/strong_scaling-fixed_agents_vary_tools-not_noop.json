@@ -1,0 +1,54 @@
+[
+  {
+    "run_name": "temp-experiment",
+    "run_description": "foo description",
+    "workload_id": "langgraph_asyncflow",
+    "n_of_agents": 3,
+    "n_of_tool_calls": 3,
+    "n_of_backend_slots": 1,
+    "workload_type": "fixed_agents_vary_tools",
+    "tool_execution_duration_time": 3,
+    "makespan": 27.096235416000127,
+    "total_flowgentic_overhead": 0.003077875000599306,
+    "total_execution_time": 27.096148458000243
+  },
+  {
+    "run_name": "temp-experiment",
+    "run_description": "foo description",
+    "workload_id": "langgraph_asyncflow",
+    "n_of_agents": 3,
+    "n_of_tool_calls": 3,
+    "n_of_backend_slots": 2,
+    "workload_type": "fixed_agents_vary_tools",
+    "tool_execution_duration_time": 3,
+    "makespan": 15.054283875000692,
+    "total_flowgentic_overhead": 0.005185459000131232,
+    "total_execution_time": 15.054226666999966
+  },
+  {
+    "run_name": "temp-experiment",
+    "run_description": "foo description",
+    "workload_id": "langgraph_asyncflow",
+    "n_of_agents": 3,
+    "n_of_tool_calls": 3,
+    "n_of_backend_slots": 4,
+    "workload_type": "fixed_agents_vary_tools",
+    "tool_execution_duration_time": 3,
+    "makespan": 9.035741124998822,
+    "total_flowgentic_overhead": 0.003365832999406848,
+    "total_execution_time": 9.03570879200015
+  },
+  {
+    "run_name": "temp-experiment",
+    "run_description": "foo description",
+    "workload_id": "langgraph_asyncflow",
+    "n_of_agents": 3,
+    "n_of_tool_calls": 3,
+    "n_of_backend_slots": 8,
+    "workload_type": "fixed_agents_vary_tools",
+    "tool_execution_duration_time": 3,
+    "makespan": 6.040346292000322,
+    "total_flowgentic_overhead": 0.005742999999711174,
+    "total_execution_time": 6.040330083000299
+  }
+]

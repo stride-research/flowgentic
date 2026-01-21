@@ -45,5 +45,15 @@ class Tool:
 			},
 		}
 
+	async def validate(self) -> bool:
+		"""
+		Validate tool configuration and schema.
+		This is I/O-bound work that CAN be parallelized.
+		Override for custom validation (e.g., checking external service availability).
+		"""
+		# Validate schema is well-formed
+		schema = self.get_schema()
+		return "function" in schema and "name" in schema["function"]
+
 	async def execute(self, **kwargs):
 		return await self.func(**kwargs)
