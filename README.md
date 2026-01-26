@@ -1,4 +1,3 @@
-
 <img width="1920" height="1080" alt="FLOWGENTIC" src="https://github.com/user-attachments/assets/9fc877a6-1c61-4b7e-bd14-00f4befd9e27" />
 
 <p align="center">
@@ -18,7 +17,6 @@
     <img src="https://img.shields.io/badge/PyPI-not%20available-red.svg" alt="PyPI: Not Available">
   </a>
 </p>
-
 
 ### flowgentic
 
@@ -43,12 +41,11 @@ Read the documentation: [stride-research.github.io/flowgentic](https://stride-re
 Current and planned integrations. ✅ available, 🚧 planned, 🟡 pre-release.
 
 | Agent Framework \ HPC Engine | RADICAL AsyncFlow | Pegasus | Parsl | Academy |
-|---|---:|---:|---:|---:|
-| LangGraph | ✅ | 🚧 | 🚧 | 🟡
-| CrewAI | 🚧 | 🚧 | 🚧 |🚧
-| AG2 | 🚧 | 🚧 | 🚧 | 🚧
-| OpenAI Agents SDK | 🚧 | 🚧 | 🚧 | 🚧
-
+| ---------------------------- | ----------------: | ------: | ----: | ------: |
+| LangGraph                    |                ✅ |      🚧 |    🚧 |      🟡 |
+| CrewAI                       |                🚧 |      🚧 |    🚧 |      🚧 |
+| AG2                          |                🚧 |      🚧 |    🚧 |      🚧 |
+| OpenAI Agents SDK            |                🚧 |      🚧 |    🚧 |      🚧 |
 
 - **Note**: As of now, the only supported path is LangGraph → RADICAL AsyncFlow.
 
@@ -85,7 +82,6 @@ export OPEN_ROUTER_API_KEY=sk-or-...
 - **Concurrent tool and agent blocks**: Offload parallelizable work to HPC backends.
 - **Resilience and memory**: Combine LangGraph checkpointing with HPC retries and blocks.
 - **Production-oriented patterns**: Start from examples that implement sequential patterns with typed state, tool registries, and error handling.
-
 
 ---
 
@@ -125,8 +121,18 @@ mkdocs serve
 
 ### Contributing
 
-- Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines (environment setup, coding style, testing, and PR process).
+We welcome contributions! If you find a bug or have a feature request, please [create a GitHub issue](https://github.com/stride-research/flowgentic/issues/new).
 
+Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines (environment setup, coding style, testing, and PR process).
+
+#### Reporting Bugs
+
+When reporting a bug, please include:
+
+- A clear description of the problem
+- Steps to reproduce
+- Expected vs. actual behavior
+- Your environment (OS, version, etc.)
 
 ---
 
@@ -153,5 +159,3 @@ If you use `flowgentic` in your work, please cite it. A suggested reference and 
 ### License
 
 MIT (see `LICENSE`).
-
-
