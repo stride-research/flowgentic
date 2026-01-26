@@ -125,7 +125,7 @@ We welcome contributions! If you find a bug or have a feature request, please [c
 
 Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines (environment setup, coding style, testing, and PR process).
 
-### Reporting Bugs
+#### Reporting Bugs
 
 When reporting a bug, please include:
 
