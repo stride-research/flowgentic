@@ -35,7 +35,6 @@ async def start_app():
 	orchestrator = AutoGenOrchestrator(engine)
 
 	# --- DEFINE HPC TOOLS ---
-	# We use type hints strictly because AutoGen uses them to generate the JSON schema
 	@orchestrator.hpc_tool
 	async def fetch_temperature(location: str = "SFO") -> dict:
 		"""Fetches temperature of a given city."""
@@ -51,13 +50,12 @@ async def start_app():
 		return {"humidity": 50, "location": location}
 
 	# --- DEFINE AGENTS ---
-	# Create assistant with dummy model client
-	assistant = create_assistant_with_dummy_model(
+	assistant = create_assistant_with_dummy_model(  # Only for this dummy-model scenario u need to use this funct
 		name="hpc_assistant",
 		system_message="You are a helpful assistant. You can check weather data using available tools.",
 	)
 
-	# The User Proxy: Executes the tool calls (via our HPC engine wrapper)
+	# The User Proxy: Executes the tool calls
 	user_proxy = UserProxyAgent(
 		name="hpc_executor",
 		human_input_mode="NEVER",
@@ -65,7 +63,7 @@ async def start_app():
 		is_termination_msg=lambda x: x.get("content", "")
 		.rstrip()
 		.endswith("TERMINATE"),
-		code_execution_config=False,  # We use function calling, not code execution
+		code_execution_config=False,
 	)
 
 	# --- REGISTER TOOLS ---

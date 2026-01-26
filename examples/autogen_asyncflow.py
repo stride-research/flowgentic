@@ -61,7 +61,6 @@ async def start_app():
 	orchestrator = LanGraphOrchestrator(engine)
 
 	# --- DEFINE HPC TOOLS ---
-	# We use type hints strictly because AutoGen uses them to generate the JSON schema
 	@orchestrator.hpc_tool
 	async def fetch_temperature(location: str = "SFO") -> dict:
 		"""Fetches temperature of a given city."""
