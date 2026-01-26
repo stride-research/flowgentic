@@ -388,7 +388,9 @@ Original query: {state.user_input}"""
 					state.memory_stats = MemoryStats(**memory_health)
 
 					print("✅ Final output formatting complete")
-					print("   Memory statistics will be included in the generated report")
+					print(
+						"   Memory statistics will be included in the generated report"
+					)
 
 			except Exception as e:
 				logger.error(f"Finalization error: {str(e)}")
