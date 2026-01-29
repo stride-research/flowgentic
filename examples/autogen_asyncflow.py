@@ -54,8 +54,6 @@ async def start_app():
 		executors=[ThreadPoolExecutor(max_threads=1, label="local_threads")]
 	)
 
-	t_execution_start = time.perf_counter()
-
 	# --- INITIALIZE FLOWGENTIC ---
 	engine = ParslEngine(parsl_config)
 	orchestrator = LanGraphOrchestrator(engine)
