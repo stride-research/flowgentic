@@ -17,29 +17,6 @@ from flowgentic.core.models.implementations.dummy.autogen import (
 )
 from flowgentic.core.models.implementations.dummy.autogen import DummyAutoGenClient
 
-import asyncio
-from typing import Annotated
-from langgraph.graph import StateGraph, add_messages
-from pydantic import BaseModel
-from radical.asyncflow import ConcurrentExecutionBackend, WorkflowEngine
-from concurrent.futures import ThreadPoolExecutor
-
-from flowgentic.agent_orchestration_frameworks.langgraph import LanGraphOrchestrator
-from flowgentic.backend_engines.parsl import ParslEngine
-from flowgentic.backend_engines.radical_asyncflow import AsyncFlowEngine
-
-from flowgentic.core.models.implementations.dummy.langgraph import (
-	DummyLanggraphModelProvider,
-)
-from flowgentic.old.utils.llm_providers import ChatLLMProvider
-import logging
-import time
-
-from parsl.config import Config
-from parsl.executors import ThreadPoolExecutor
-
-from langgraph.prebuilt import ToolNode
-
 
 load_dotenv()
 
@@ -50,13 +27,12 @@ logger = logging.getLogger(__name__)
 
 async def start_app():
 	# --- SETUP HPC BACKEND ---
-	parsl_config = Config(
-		executors=[ThreadPoolExecutor(max_threads=1, label="local_threads")]
-	)
+	backend = await ConcurrentExecutionBackend(ThreadPoolExecutor(max_workers=2))
+	flow = await WorkflowEngine.create(backend)
 
 	# --- INITIALIZE FLOWGENTIC ---
-	engine = ParslEngine(parsl_config)
-	orchestrator = LanGraphOrchestrator(engine)
+	engine = AsyncFlowEngine(flow)
+	orchestrator = AutoGenOrchestrator(engine)
 
 	# --- DEFINE HPC TOOLS ---
 	@orchestrator.hpc_tool
@@ -74,13 +50,12 @@ async def start_app():
 		return {"humidity": 50, "location": location}
 
 	# --- DEFINE AGENTS ---
-	# Create assistant with dummy model client
-	assistant = create_assistant_with_dummy_model(
+	assistant = create_assistant_with_dummy_model(  # Only for this dummy-model scenario u need to use this funct
 		name="hpc_assistant",
 		system_message="You are a helpful assistant. You can check weather data using available tools.",
 	)
 
-	# The User Proxy: Executes the tool calls (via our HPC engine wrapper)
+	# The User Proxy: Executes the tool calls
 	user_proxy = UserProxyAgent(
 		name="hpc_executor",
 		human_input_mode="NEVER",
@@ -88,7 +63,7 @@ async def start_app():
 		is_termination_msg=lambda x: x.get("content", "")
 		.rstrip()
 		.endswith("TERMINATE"),
-		code_execution_config=False,  # We use function calling, not code execution
+		code_execution_config=False,
 	)
 
 	# --- REGISTER TOOLS ---

@@ -12,6 +12,11 @@ class WorkloadType(str, Enum):
 	FIXED_TOOLS_VARY_AGENTS = "fixed_tools_vary_agents"
 
 
+class EngineIDs(str, Enum):
+	ASYNCFLOW = "asyncflow"
+	PARSL = "parsl"
+
+
 class BenchmarkConfig(BaseModel):
 	"""Configuration for benchmark runs"""
 
@@ -22,7 +27,7 @@ class BenchmarkConfig(BaseModel):
 	workload_id: str
 
 	n_of_agents: int
-	n_of_tool_calls: int
+	n_of_tool_calls_per_agent: int
 	n_of_backend_slots: int
 
 	# 2) Edited by the benchmarking program
@@ -31,12 +36,24 @@ class BenchmarkConfig(BaseModel):
 
 
 class BenchmarkResult(BenchmarkConfig):
-	makespan: float
-	total_flowgentic_overhead: float
-	total_execution_time: float
+	total_makespan: float
+	total_flowgentic_makespan: float
 
 
 class WorkloadResult(BaseModel):
 	result: Dict[str, Any]
 	flowgentic_overhead: float
 	execution_time: float
+
+
+class BenchamarkWorkloadResult(BaseModel):
+	total_makespan: float
+	total_flowgentic_makespan: float
+
+
+class WorkloadConfig:
+	n_of_agents: int
+	n_of_tool_calls_per_agent: int
+	n_of_backend_slots: int
+	tool_execution_duration_time: int
+	engine_id: EngineIDs

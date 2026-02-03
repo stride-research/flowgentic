@@ -41,7 +41,7 @@ async def start_app():
 	orchestrator = LanGraphOrchestrator(engine)
 
 	# --- DEFINE HPC TOOLS ---
-	@orchestrator.hpc_tool
+	@orchestrator.hpc_tool(service=True)
 	async def fetch_temperature(location: str = "SFO"):
 		"""Fetches temperature of a given city."""
 		logger.debug(f"Executing temperature tool")
