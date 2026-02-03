@@ -48,8 +48,8 @@ class FlowGenticBenchmark:
 
 		return results
 
-	def add_experiment_results(self, experiment_id: str, experiment_data: List[Any]):
-		self.results[experiment_id] = experiment_data
+	def register_experiment(self, experiment_id: str):
+		self.io_utils
 
 	def save_and_analyse(self):
 		"""Save results and generate plots"""
@@ -68,6 +68,7 @@ async def main():
 	# 2) Call ur experiment class and pass on the benchmark config
 
 	# Experiment 2
+	experiment_path_dir = benchmark.register_experiment("syntethic_adaptive")
 	syntethic_adaptive = SynthethicAdaptive(benchmark.benchmark_config)
 	syntethic_adaptive_results: Dict[str, Any] = syntethic_adaptive.run_experiment()
 	benchmark.add_experiment_results("syntethic_adaptive", syntethic_adaptive_results)

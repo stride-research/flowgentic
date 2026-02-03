@@ -20,17 +20,17 @@ Code set-up:
 # Glossary
 - Dummy workload: the most basic representation of an agent (no complex tool calling, minimal # of nodes/edges in teh graph) (current implementation in: tests/benchmark/data_generation/workload/langgraph.py is dummy )
 
-# Experiments 
+# Experiments (YES, for thursday)
 ## EXPERIMENT 1: Coordination Overhead and Scalability 
 Major details about these 3 figures in page 7 of the paper 
 ### Task 1: figure 1a plot
 #### Responsible 
-xxx 
+Diana  
 #### Deadline
 Midnight feb 4
 ### Task : figure 1b plot
 #### Responsible 
-xxx 
+Diego
 #### Deadline
 Midnight feb 4
 
@@ -54,29 +54,30 @@ Midnight feb 4
 2. Report throughput with varying execution engines (e.g., Parsl vs Asyncflow)
 
 #### Responsible 
-xxx
+Cate
 #### Deadline
 Midnight feb 4
 
 ## EXPERIMENT 4:
 Yousef's work. Details excluded from here
 
-# Peripheral Work
+# Peripheral Work (NOT, for thursday)
 ## Framework Support Expansion
 ```
 I just added support for microsoft autogen and parsl. Yall can now check out examples: https://github.com/stride-research/flowgentic/pull/89
 Examples are: (asyncflow + langgraph), (asyncflow + autogen), (parsl + langgraph), (parsl + autogen). You can see how FG's footprint is minimal. Alter the number of tools + backend slots and assess the makespan printed at the end accordingly. Small note: footprint for autogen is slgihtly larger cause there are some extra lines for creaeting a DumyLLMProvider. Langgraph was easier)
 I think it would be beneiftial if @Diana Cordovez @Diego Oliveros continue this expansion toward other frameworks. Yall can organize as u prefer. I suggest expanding to these multi-agent orchestraion framewokrs first (due to relevance): LlamaIndex, CrewAI, Academy-Agents. For backend engines: Ray (see: https://github.com/ray-project/ray) 
 ```
-## Update documentation based on new API
 ### Responsible: 
-xxx
+Diana y Diego 
+## Update documentation based on new API
+Javi
 ## Add test suite for the existing API
 ### Responsible: 
-xxx
+Cate 
 ## Add more complex workload with DummyLLMProvider
 ### Responsible: 
-xxx
+Diego and Yousef
 
 # Next Sprint
 - Add queue for increased throughput

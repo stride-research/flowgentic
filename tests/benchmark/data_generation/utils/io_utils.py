@@ -8,13 +8,16 @@ from tests.benchmark.data_generation.utils.schemas import BenchmarkConfig
 class IOUtils:
 	def __init__(self, config_path: Path = Path("tests/benchmark/config.yml")) -> None:
 		self.config = self._load_config(config_path)
-		self._create_directories(config_path)
+		self.config_path = config_path
+		self.benchmark_config = self.get_run_config()
+		self._create_core_directories(config_path)
 
 	def _load_config(self, config_path):
 		with open(config_path, "r") as file:
 			return yaml.safe_load(file)
 
 	def get_run_config(self):
+		"""Parses the config.yml"""
 		run_name = self.config["run_name"]
 		run_description = self.config["run_description"]
 
@@ -36,12 +39,29 @@ class IOUtils:
 			tool_execution_duration_time=tool_execution_duration_time,
 		)
 
-	def _create_directories(self, config_path):
-		"""Create output directories and initialize analyser"""
-		output_dir = Path(f"tests/benchmark/results/{self.config['run_name']}")
-		self.data_dir = output_dir / "data"
+	def _create_core_directories(self, run_configuration_name: str):
+		"""Create output directories and initialize analyser
+
+		Ideal map:
+			- results
+				- {run_configuration_name}
+					- results
+						- {experiment_name}
+							- data (json stuff)
+								- temp.json
+								- foo.sjon
+							- plots (the actual plots)
+						- config
+							- config.yml
+		"""
+		# 1) Define the paths
+		output_dir = Path(f"tests/benchmark/results/{run_configuration_name}")
 		config_dir = output_dir / "config"
+
+		# Create folders
 		output_dir.mkdir(parents=True, exist_ok=True)
-		self.data_dir.mkdir(parents=True, exist_ok=True)
-		config_dir.mkdir(parents=True, exist_ok=True)
-		shutil.copy(config_path, config_dir / "config.yml")
+		shutil.copy(
+			self.config_path, config_dir / "config.yml"
+		)  # copy config for reproducibility
+
+	def _create_experiment_directory(self, experiment_name: str): ...
