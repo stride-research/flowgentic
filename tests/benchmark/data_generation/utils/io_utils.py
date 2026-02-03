@@ -10,7 +10,7 @@ class IOUtils:
 		self.config = self._load_config(config_path)
 		self.config_path = config_path
 		self.benchmark_config = self.get_run_config()
-		self._create_core_directories(config_path)
+		self._create_core_directories(self.benchmark_config.run_name)
 
 	def _load_config(self, config_path):
 		with open(config_path, "r") as file:
@@ -45,23 +45,33 @@ class IOUtils:
 		Ideal map:
 			- results
 				- {run_configuration_name}
-					- results
-						- {experiment_name}
-							- data (json stuff)
-								- temp.json
-								- foo.sjon
-							- plots (the actual plots)
-						- config
-							- config.yml
+					- {experiment_name}
+						- data (json stuff)
+							- temp.json
+							- foo.sjon
+						- plots (the actual plots)
+					- config
+						- config.yml
 		"""
-		# 1) Define the paths
+		# Define the paths
 		output_dir = Path(f"tests/benchmark/results/{run_configuration_name}")
+		self.output_dir = output_dir
 		config_dir = output_dir / "config"
 
 		# Create folders
 		output_dir.mkdir(parents=True, exist_ok=True)
+		config_dir.mkdir(parents=True, exist_ok=True)
 		shutil.copy(
 			self.config_path, config_dir / "config.yml"
 		)  # copy config for reproducibility
 
-	def _create_experiment_directory(self, experiment_name: str): ...
+	def create_experiment_directory(self, experiment_name: str):
+		experiment_dir = self.output_dir / "experiments" / experiment_name
+		data_dir = experiment_dir / "data"
+		plots_dir = experiment_dir / "plots"
+
+		experiment_dir.mkdir(parents=True, exist_ok=True)
+		data_dir.mkdir(parents=True, exist_ok=True)
+		plots_dir.mkdir(parents=True, exist_ok=True)
+
+		return data_dir, plots_dir

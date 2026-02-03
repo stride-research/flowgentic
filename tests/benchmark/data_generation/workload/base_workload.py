@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
 
 from flowgentic.backend_engines.base import BaseEngine
-from tests.benchmark.data_generation.schemas import (
-	BenchamarkWorkloadResult,
+from tests.benchmark.data_generation.utils.schemas import (
 	WorkloadConfig,
+	BenchamarkWorkloadResult,
 )
 
 

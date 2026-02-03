@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 import yaml
 import shutil
 
-from tests.benchmark.data_generation.experiments.synthethic_adaptive import (
+from tests.benchmark.data_generation.experiments.synthethic_adaptive.experiment import (
 	SynthethicAdaptive,
 )
 from tests.benchmark.data_generation.utils.io_utils import IOUtils
@@ -17,14 +17,12 @@ from tests.benchmark.data_generation.utils.schemas import (
 	BenchmarkResult,
 	EngineIDs,
 	WorkloadConfig,
-	WorkloadParameters,
 	WorkloadResult,
 	WorkloadType,
 )
 from tests.benchmark.data_generation.workload.base_workload import BaseWorkload
 from tests.benchmark.data_generation.workload.utils.engine import resolve_engine
 from tests.benchmark.data_generation.workload.langgraph import LangraphWorkload
-from tests.benchmark.analyse.analyse import Analyse
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +33,6 @@ class FlowGenticBenchmark:
 	def __init__(self, config_path: Path = Path("tests/benchmark/config.yml")):
 		self.io_utils = IOUtils(config_path)
 		self.benchmark_config = self.io_utils.config
-		self.analyser = Analyse(self.io_utils.data_dir)
 		self.results: Dict[str, List[Dict]] = {}
 
 	async def run_workload(
@@ -48,13 +45,11 @@ class FlowGenticBenchmark:
 
 		return results
 
-	def register_experiment(self, experiment_id: str):
-		self.io_utils
-
-	def save_and_analyse(self):
-		"""Save results and generate plots"""
-		logger.debug(f"Results are: {self.results}")
-		self.analyser.save_and_plot(self.results)
+	def register_experiment(self, experiment_name: str):
+		data_dir, plots_dir = self.io_utils.create_experiment_directory(
+			experiment_name=experiment_name
+		)
+		return data_dir, plots_dir
 
 
 async def main():
@@ -62,16 +57,13 @@ async def main():
 
 	benchmark = FlowGenticBenchmark()
 
-	# ====== TUTORIAL =======
-	# **Experiment i **
-	# 1) Register ur experiment to the class of this module
-	# 2) Call ur experiment class and pass on the benchmark config
-
 	# Experiment 2
-	experiment_path_dir = benchmark.register_experiment("syntethic_adaptive")
-	syntethic_adaptive = SynthethicAdaptive(benchmark.benchmark_config)
-	syntethic_adaptive_results: Dict[str, Any] = syntethic_adaptive.run_experiment()
-	benchmark.add_experiment_results("syntethic_adaptive", syntethic_adaptive_results)
+	data_dir, plots_dir = benchmark.register_experiment("syntethic_adaptive")
+	syntethic_adaptive = SynthethicAdaptive(
+		benchmark.benchmark_config, data_dir, plots_dir
+	)
+	syntethic_adaptive_results: Dict[Any, Any] = syntethic_adaptive.run_experiment()
+	syntethic_adaptive.save_results(syntethic_adaptive_results)
 
 
 if __name__ == "__main__":

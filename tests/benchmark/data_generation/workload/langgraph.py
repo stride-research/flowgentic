@@ -17,9 +17,10 @@ import time
 
 from langgraph.prebuilt import ToolNode
 
-from tests.benchmark.data_generation.schemas import (
-	BenchamarkWorkloadResult,
+
+from tests.benchmark.data_generation.utils.schemas import (
 	WorkloadConfig,
+	BenchamarkWorkloadResult,
 )
 from tests.benchmark.data_generation.workload.base_workload import BaseWorkload
 
