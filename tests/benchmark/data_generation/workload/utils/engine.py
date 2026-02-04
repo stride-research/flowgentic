@@ -5,6 +5,9 @@ from autogen.code_utils import ThreadPoolExecutor
 from radical.asyncflow import ConcurrentExecutionBackend, WorkflowEngine
 
 from flowgentic.backend_engines.radical_asyncflow import AsyncFlowEngine
+from flowgentic.backend_engines.parsl import ParslEngine
+from parsl.config import Config
+from parsl.executors import ThreadPoolExecutor as ParslThreadPoolExecutor
 
 
 async def resolve_engine(
@@ -26,4 +29,9 @@ async def resolve_engine(
 		)
 		flow = await WorkflowEngine.create(backend)
 		return AsyncFlowEngine(flow, observer=observer)
+	elif engine_id == "parsl":
+		parsl_config = Config(
+			executors=[ParslThreadPoolExecutor(max_threads=n_of_backend_slots, label="local_threads")]
+		)
+		return ParslEngine(config=parsl_config, observer=observer)
 	raise Exception(f"Didnt match any engine for engine_id: {engine_id}")
