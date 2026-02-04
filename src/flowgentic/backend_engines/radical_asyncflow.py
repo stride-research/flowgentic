@@ -36,15 +36,15 @@ class AsyncFlowEngine(BaseEngine):
 			self._task_registry[key] = self.flow.function_task(func, **task_kwargs)
 
 		task = self._task_registry[key]
-		tool_name = getattr(func, "__name__", str(func))
+		task_name = getattr(func, "__name__", str(func))
 		exec_id = str(uuid.uuid4())
 
 		# Emit start event
 		self.emit(
 			{
-				"event": "tool_exec_start",
+				"event": "task_exec_start",
 				"ts": time.perf_counter(),
-				"tool_name": tool_name,
+				"task_name": task_name,
 				"exec_id": exec_id,
 			}
 		)
@@ -54,9 +54,9 @@ class AsyncFlowEngine(BaseEngine):
 		# Emit end event
 		self.emit(
 			{
-				"event": "tool_exec_end",
+				"event": "task_exec_end",
 				"ts": time.perf_counter(),
-				"tool_name": tool_name,
+				"task_name": task_name,
 				"exec_id": exec_id,
 			}
 		)

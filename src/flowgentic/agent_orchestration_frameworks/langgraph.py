@@ -11,17 +11,19 @@ class LanGraphOrchestrator(AgentOrchestrator):
 	def __init__(self, engine: BaseEngine) -> None:
 		self.engine = engine
 
-	def hpc_tool(self, func: Optional[Callable] = None, **task_kwargs: Any):
+	def hpc_task(self, func: Optional[Callable] = None, **task_kwargs: Any):
+		"""Wrap a function to execute as an HPC task."""
+
 		def deco(f: Callable):
-			tool_name = getattr(f, "__name__", str(f))
+			task_name = getattr(f, "__name__", str(f))
 			wrap_id = str(uuid.uuid4())
 
 			# Emit setup start event
 			self.engine.emit(
 				{
-					"event": "tool_wrap_start",
+					"event": "task_wrap_start",
 					"ts": time.perf_counter(),
-					"tool_name": tool_name,
+					"task_name": task_name,
 					"wrap_id": wrap_id,
 				}
 			)
@@ -37,9 +39,9 @@ class LanGraphOrchestrator(AgentOrchestrator):
 			# Emit setup end event
 			self.engine.emit(
 				{
-					"event": "tool_wrap_end",
+					"event": "task_wrap_end",
 					"ts": time.perf_counter(),
-					"tool_name": tool_name,
+					"task_name": task_name,
 					"wrap_id": wrap_id,
 				}
 			)
@@ -48,30 +50,31 @@ class LanGraphOrchestrator(AgentOrchestrator):
 
 		return deco(func) if callable(func) else deco
 
-	def hpc_node(self, node_func: Callable):
-		node_name = getattr(node_func, "__name__", str(node_func))
+	def hpc_block(self, block_func: Callable):
+		"""Wrap a function to execute as an HPC block."""
+		block_name = getattr(block_func, "__name__", str(block_func))
 		wrap_id = str(uuid.uuid4())
 
-		# Emit node wrap start event
+		# Emit block wrap start event
 		self.engine.emit(
 			{
-				"event": "node_wrap_start",
+				"event": "block_wrap_start",
 				"ts": time.perf_counter(),
-				"node_name": node_name,
+				"block_name": block_name,
 				"wrap_id": wrap_id,
 			}
 		)
 
-		wrapped_node = self.engine.wrap_node(node_func)
+		wrapped_block = self.engine.wrap_node(block_func)
 
-		# Emit node wrap end event
+		# Emit block wrap end event
 		self.engine.emit(
 			{
-				"event": "node_wrap_end",
+				"event": "block_wrap_end",
 				"ts": time.perf_counter(),
-				"node_name": node_name,
+				"block_name": block_name,
 				"wrap_id": wrap_id,
 			}
 		)
 
-		return wrapped_node
+		return wrapped_block
