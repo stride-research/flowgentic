@@ -93,8 +93,8 @@ class SynthethicAdaptive(BaseExperiment):
 				tool_execution_duration_time=config.tool_execution_duration_time,
 				# Results
 				total_makespan=workload_result.total_makespan,
-				total_overhead_makespan=workload_result.total_overhead_makespan,
-			).model_dump()
+				events=workload_result.events,
+			).model_dump(mode="json")  # mode="json" ensures enums serialize as strings
 			logger.debug(f"Writing to logs: {benchmark_result}")
 
 			workloads_results.append(benchmark_result)
@@ -123,15 +123,10 @@ class SynthethicAdaptive(BaseExperiment):
 		self,
 	) -> Dict[Any, Any]:  # Data expected to come out format is meant to be JSON-like
 		# 1) STRONG SCALING: Fixed workload, varying backend slots
-		# Experiment 1: Real work (with tool execution time)
 		await self.run_strong_scaling(self.benchmark_config)
 
 		# 2) WEAK SCALING: Workload scales with backend slots (tool_calls * p)
-		# Experiment 3: Real work
 		await self.run_weak_scaling(self.benchmark_config)
-
-		# Experiment 4: Noop work
-		# await self.run_weak_scaling(noop_config)
 
 		logger.debug(f"RESULTS ARE: {self.results}")
 		return self.results

@@ -72,6 +72,9 @@ class SyntheticAdaptivePlotter(BasePlotter):
 		n_agents = sorted_records[0].get("n_of_agents", "?")
 		n_tools = sorted_records[0].get("n_of_tool_calls_per_agent", "?")
 
+		# Create subdirectory for strong scaling plots
+		scaling_subdir = "strong_scaling"
+
 		# Plot speedup
 		self._create_scaling_plot(
 			x_values=backend_slots,
@@ -79,7 +82,8 @@ class SyntheticAdaptivePlotter(BasePlotter):
 			title=f"Strong Scaling: Speedup\n({n_agents} agents, {n_tools} tool calls/agent)",
 			xlabel="Number of Backend Slots (p)",
 			ylabel="Speedup (T₁/Tₚ)",
-			filename=f"{experiment_name}_speedup.png",
+			filename="speedup.png",
+			subdirectory=scaling_subdir,
 			ideal_line=backend_slots,  # Ideal speedup = p (linear)
 			ideal_label="Ideal (linear)",
 		)
@@ -91,7 +95,8 @@ class SyntheticAdaptivePlotter(BasePlotter):
 			title=f"Strong Scaling: Efficiency\n({n_agents} agents, {n_tools} tool calls/agent)",
 			xlabel="Number of Backend Slots (p)",
 			ylabel="Efficiency (Speedup/p)",
-			filename=f"{experiment_name}_efficiency.png",
+			filename="efficiency.png",
+			subdirectory=scaling_subdir,
 			ideal_line=[1.0] * len(backend_slots),  # Ideal efficiency = 1
 			ideal_label="Ideal (100%)",
 			y_max=1.1,
@@ -104,10 +109,11 @@ class SyntheticAdaptivePlotter(BasePlotter):
 			title=f"Strong Scaling: Makespan\n({n_agents} agents, {n_tools} tool calls/agent)",
 			xlabel="Number of Backend Slots (p)",
 			ylabel="Makespan (seconds)",
-			filename=f"{experiment_name}_makespan.png",
+			filename="makespan.png",
+			subdirectory=scaling_subdir,
 		)
 
-		logger.info(f"Generated strong scaling plots for {experiment_name}")
+		logger.info(f"Generated strong scaling plots in {scaling_subdir}/")
 
 	def _plot_weak_scaling(
 		self, experiment_name: str, records: List[Dict[Any, Any]]
@@ -141,6 +147,9 @@ class SyntheticAdaptivePlotter(BasePlotter):
 		run_name = sorted_records[0].get("run_name", "unknown")
 		n_agents = sorted_records[0].get("n_of_agents", "?")
 
+		# Create subdirectory for weak scaling plots
+		scaling_subdir = "weak_scaling"
+
 		# Plot efficiency
 		self._create_scaling_plot(
 			x_values=backend_slots,
@@ -148,7 +157,8 @@ class SyntheticAdaptivePlotter(BasePlotter):
 			title=f"Weak Scaling: Efficiency\n({n_agents} agents, workload ∝ p)",
 			xlabel="Number of Backend Slots (p)",
 			ylabel="Efficiency (T₁/Tₚ)",
-			filename=f"{experiment_name}_efficiency.png",
+			filename="efficiency.png",
+			subdirectory=scaling_subdir,
 			ideal_line=[1.0] * len(backend_slots),
 			ideal_label="Ideal (100%)",
 			y_max=1.1,
@@ -161,12 +171,13 @@ class SyntheticAdaptivePlotter(BasePlotter):
 			title=f"Weak Scaling: Scaled Speedup\n({n_agents} agents, workload ∝ p)",
 			xlabel="Number of Backend Slots (p)",
 			ylabel="Scaled Speedup (p·T₁/Tₚ)",
-			filename=f"{experiment_name}_speedup.png",
+			filename="speedup.png",
+			subdirectory=scaling_subdir,
 			ideal_line=backend_slots,
 			ideal_label="Ideal (linear)",
 		)
 
-		logger.info(f"Generated weak scaling plots for {experiment_name}")
+		logger.info(f"Generated weak scaling plots in {scaling_subdir}/")
 
 	def _create_scaling_plot(
 		self,
@@ -176,6 +187,7 @@ class SyntheticAdaptivePlotter(BasePlotter):
 		xlabel: str,
 		ylabel: str,
 		filename: str,
+		subdirectory: Optional[str] = None,
 		ideal_line: Optional[List[float]] = None,
 		ideal_label: str = "Ideal",
 		y_max: Optional[float] = None,
@@ -211,7 +223,14 @@ class SyntheticAdaptivePlotter(BasePlotter):
 
 		# Save plot
 		if self.plots_dir:
-			plot_path = self.plots_dir / filename
+			if subdirectory:
+				# Create subdirectory if it doesn't exist
+				subdir_path = self.plots_dir / subdirectory
+				subdir_path.mkdir(parents=True, exist_ok=True)
+				plot_path = subdir_path / filename
+			else:
+				plot_path = self.plots_dir / filename
+
 			fig.savefig(plot_path, dpi=150, bbox_inches="tight")
 			logger.info(f"Saved plot: {plot_path}")
 		else:
@@ -223,8 +242,9 @@ class SyntheticAdaptivePlotter(BasePlotter):
 	def _plot_overhead(
 		self, experiment_name: str, records: List[Dict[Any, Any]]
 	) -> None:
-		"""Plot coordination overhead metrics. To be implemented when data is available."""
-		# TODO: Implement when total_overhead_makespan is populated
+		"""Plot coordination overhead metrics using events data."""
+		# TODO: Implement overhead analysis from events
+		# Events contain tool_exec_start/tool_exec_end timestamps
 		pass
 
 	def _plot_throughput(

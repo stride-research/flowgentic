@@ -18,10 +18,7 @@ import time
 from langgraph.prebuilt import ToolNode
 
 
-from tests.benchmark.data_generation.utils.schemas import (
-	WorkloadConfig,
-	WorkloadResult,
-)
+from tests.benchmark.data_generation.utils.schemas import WorkloadConfig
 from tests.benchmark.data_generation.workload.base_workload import BaseWorkload
 
 
@@ -46,7 +43,11 @@ class LangraphWorkload(BaseWorkload):
 	def __init__(self, workload_config: WorkloadConfig) -> None:
 		super().__init__(workload_config=workload_config)
 
-	async def run(self, engine: BaseEngine) -> WorkloadResult:
+	async def run(self, engine: BaseEngine) -> float:
+		"""
+		Run the workload and return the total makespan in seconds.
+		Events are captured by the engine's observer.
+		"""
 		t_execution_start = time.perf_counter()
 
 		# --- INITIALIZE FLOWGENTIC ---
@@ -112,7 +113,4 @@ class LangraphWorkload(BaseWorkload):
 
 		t_execution_end = time.perf_counter()
 
-		return WorkloadResult(
-			total_makespan=t_execution_end - t_execution_start,
-			total_overhead_makespan=-1.0,
-		)
+		return t_execution_end - t_execution_start

@@ -8,9 +8,262 @@
       "n_of_tool_calls_per_agent": 3,
       "n_of_backend_slots": 1,
       "workload_type": "fixed_agents_vary_tools",
-      "tool_execution_duration_time": 3,
-      "total_makespan": 56.38747062499988,
-      "total_overhead_makespan": -1.0
+      "tool_execution_duration_time": 1,
+      "total_makespan": 20.00294337500054,
+      "events": [
+        {
+          "event": "tool_wrap_start",
+          "ts": 11979.104300541,
+          "tool_name": "fetch_temperature",
+          "wrap_id": "5b2b410a-4649-4e15-be1f-215704de9f0b"
+        },
+        {
+          "event": "tool_wrap_end",
+          "ts": 11979.106698541,
+          "tool_name": "fetch_temperature",
+          "wrap_id": "5b2b410a-4649-4e15-be1f-215704de9f0b"
+        },
+        {
+          "event": "tool_wrap_start",
+          "ts": 11979.10671675,
+          "tool_name": "fetch_humidity",
+          "wrap_id": "96c7323a-1dc4-496b-ab8f-3298952749d9"
+        },
+        {
+          "event": "tool_wrap_end",
+          "ts": 11979.108283875,
+          "tool_name": "fetch_humidity",
+          "wrap_id": "96c7323a-1dc4-496b-ab8f-3298952749d9"
+        },
+        {
+          "event": "node_wrap_start",
+          "ts": 11979.111608458,
+          "node_name": "chatbot_logic",
+          "wrap_id": "5ef82613-935b-4cd6-affa-7c5fc8d9348e"
+        },
+        {
+          "event": "node_wrap_end",
+          "ts": 11979.111645875,
+          "node_name": "chatbot_logic",
+          "wrap_id": "5ef82613-935b-4cd6-affa-7c5fc8d9348e"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11979.12577875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "7c6f870a-9112-43e5-b906-643402993f4d"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11979.126165833,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a1e8bca8-cb08-43a0-aee7-6369f77cd3f6"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11979.126445666,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a81eac0b-548c-482a-9252-7ba82601e8bf"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11979.126707458,
+          "tool_name": "fetch_humidity",
+          "exec_id": "17c024a9-7595-4303-8a05-44436a52b78f"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11979.126927291,
+          "tool_name": "fetch_humidity",
+          "exec_id": "38f29b58-3576-48ff-bfd1-89e5b3ee80af"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11979.12712225,
+          "tool_name": "fetch_humidity",
+          "exec_id": "b2a95cbb-7c24-4274-8403-1b6c4b436c85"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11979.127323875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "f24425ee-3d41-4754-abea-5cac067c395a"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11979.127509875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "92528571-abd0-4f98-9865-75962a25ecf3"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11979.127754416,
+          "tool_name": "fetch_temperature",
+          "exec_id": "b265f32e-4909-4fc9-b186-b598566bd225"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11979.127938625,
+          "tool_name": "fetch_humidity",
+          "exec_id": "663dce32-b713-4f4b-9d9e-0f8046de4beb"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11979.128121208,
+          "tool_name": "fetch_humidity",
+          "exec_id": "180fa24a-fc4f-44ff-8735-1a2869388160"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11979.128306625,
+          "tool_name": "fetch_humidity",
+          "exec_id": "78fd3671-bf59-40b1-a551-ad5b6c3760e4"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11979.1285,
+          "tool_name": "fetch_temperature",
+          "exec_id": "2f5686ae-99f5-4c01-b8a9-6f85018b54c3"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11979.128680541,
+          "tool_name": "fetch_temperature",
+          "exec_id": "bfc2e75e-23dd-4f7e-878f-7389355de01c"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11979.128887875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "81b23abc-ba57-4db6-85b5-a26672d5c5b5"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11979.129076833,
+          "tool_name": "fetch_humidity",
+          "exec_id": "646680e6-ba42-4c10-ba5a-a7dca4699fda"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11979.129311875,
+          "tool_name": "fetch_humidity",
+          "exec_id": "ae8b861d-8110-4918-913f-cba51a27721f"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11979.129503375,
+          "tool_name": "fetch_humidity",
+          "exec_id": "ce893881-e31b-4e17-a26c-dde45b0cc42e"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 11982.042773,
+          "tool_name": "fetch_temperature",
+          "exec_id": "7c6f870a-9112-43e5-b906-643402993f4d"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 11983.045689875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a1e8bca8-cb08-43a0-aee7-6369f77cd3f6"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 11984.050106666,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a81eac0b-548c-482a-9252-7ba82601e8bf"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 11985.05168875,
+          "tool_name": "fetch_humidity",
+          "exec_id": "17c024a9-7595-4303-8a05-44436a52b78f"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 11986.05551675,
+          "tool_name": "fetch_humidity",
+          "exec_id": "38f29b58-3576-48ff-bfd1-89e5b3ee80af"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 11987.06014025,
+          "tool_name": "fetch_humidity",
+          "exec_id": "b2a95cbb-7c24-4274-8403-1b6c4b436c85"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 11988.062260458,
+          "tool_name": "fetch_temperature",
+          "exec_id": "f24425ee-3d41-4754-abea-5cac067c395a"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 11989.064531041,
+          "tool_name": "fetch_temperature",
+          "exec_id": "92528571-abd0-4f98-9865-75962a25ecf3"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 11990.066714291,
+          "tool_name": "fetch_temperature",
+          "exec_id": "b265f32e-4909-4fc9-b186-b598566bd225"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 11991.071506791,
+          "tool_name": "fetch_humidity",
+          "exec_id": "663dce32-b713-4f4b-9d9e-0f8046de4beb"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 11992.075450916,
+          "tool_name": "fetch_humidity",
+          "exec_id": "180fa24a-fc4f-44ff-8735-1a2869388160"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 11993.079431041,
+          "tool_name": "fetch_humidity",
+          "exec_id": "78fd3671-bf59-40b1-a551-ad5b6c3760e4"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 11994.083648416,
+          "tool_name": "fetch_temperature",
+          "exec_id": "2f5686ae-99f5-4c01-b8a9-6f85018b54c3"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 11995.085403958,
+          "tool_name": "fetch_temperature",
+          "exec_id": "bfc2e75e-23dd-4f7e-878f-7389355de01c"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 11996.088945541,
+          "tool_name": "fetch_temperature",
+          "exec_id": "81b23abc-ba57-4db6-85b5-a26672d5c5b5"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 11997.092369916,
+          "tool_name": "fetch_humidity",
+          "exec_id": "646680e6-ba42-4c10-ba5a-a7dca4699fda"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 11998.09686775,
+          "tool_name": "fetch_humidity",
+          "exec_id": "ae8b861d-8110-4918-913f-cba51a27721f"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 11999.101242958,
+          "tool_name": "fetch_humidity",
+          "exec_id": "ce893881-e31b-4e17-a26c-dde45b0cc42e"
+        }
+      ]
     },
     {
       "run_name": "temp-experiment",
@@ -20,9 +273,262 @@
       "n_of_tool_calls_per_agent": 3,
       "n_of_backend_slots": 2,
       "workload_type": "fixed_agents_vary_tools",
-      "tool_execution_duration_time": 3,
-      "total_makespan": 29.439475834000405,
-      "total_overhead_makespan": -1.0
+      "tool_execution_duration_time": 1,
+      "total_makespan": 11.398539833000541,
+      "events": [
+        {
+          "event": "tool_wrap_start",
+          "ts": 11999.111245458,
+          "tool_name": "fetch_temperature",
+          "wrap_id": "e60b20a0-84e8-4799-b22d-f2bb63ecf360"
+        },
+        {
+          "event": "tool_wrap_end",
+          "ts": 11999.115716875,
+          "tool_name": "fetch_temperature",
+          "wrap_id": "e60b20a0-84e8-4799-b22d-f2bb63ecf360"
+        },
+        {
+          "event": "tool_wrap_start",
+          "ts": 11999.11576225,
+          "tool_name": "fetch_humidity",
+          "wrap_id": "674aa5f7-6354-437a-a548-c5d4bab95fc8"
+        },
+        {
+          "event": "tool_wrap_end",
+          "ts": 11999.119803166,
+          "tool_name": "fetch_humidity",
+          "wrap_id": "674aa5f7-6354-437a-a548-c5d4bab95fc8"
+        },
+        {
+          "event": "node_wrap_start",
+          "ts": 11999.120038208,
+          "node_name": "chatbot_logic",
+          "wrap_id": "0075d939-dcfb-4d44-a9c6-9a69ccc4602d"
+        },
+        {
+          "event": "node_wrap_end",
+          "ts": 11999.120078708,
+          "node_name": "chatbot_logic",
+          "wrap_id": "0075d939-dcfb-4d44-a9c6-9a69ccc4602d"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11999.133834791,
+          "tool_name": "fetch_temperature",
+          "exec_id": "b1c8ace4-bf54-4885-95e4-1705ade1b158"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11999.134069291,
+          "tool_name": "fetch_temperature",
+          "exec_id": "ec99cf01-00f1-47e1-8438-687e6bdda22c"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11999.13427825,
+          "tool_name": "fetch_temperature",
+          "exec_id": "43877d8f-332b-47ed-9d7a-4adc66ed7ef8"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11999.134482791,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a659c7ca-b51a-4e4f-8250-17e85677c869"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11999.134683833,
+          "tool_name": "fetch_humidity",
+          "exec_id": "ffc7d55f-43fa-47ae-88d7-0f9fdd23b65c"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11999.134870708,
+          "tool_name": "fetch_humidity",
+          "exec_id": "9a58a3d9-c189-4cb4-8679-2bb9eee50c1e"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11999.135061916,
+          "tool_name": "fetch_temperature",
+          "exec_id": "debf2e9f-a5ff-4af7-a80f-20539899abd4"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11999.135248291,
+          "tool_name": "fetch_temperature",
+          "exec_id": "9afeff18-53e2-4f20-b0c9-9607cecda30d"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11999.135668958,
+          "tool_name": "fetch_temperature",
+          "exec_id": "696d6f79-2d16-456d-866c-87a2640a7434"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11999.135867583,
+          "tool_name": "fetch_humidity",
+          "exec_id": "214d34e2-e383-4cec-8438-7d5c32d5106b"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11999.136048416,
+          "tool_name": "fetch_humidity",
+          "exec_id": "2ddecf09-9833-4c39-8cc1-eb6a4ecec08e"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11999.136236583,
+          "tool_name": "fetch_humidity",
+          "exec_id": "75765338-00ee-4f1b-aaa5-c3dcdac135ef"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11999.136416375,
+          "tool_name": "fetch_temperature",
+          "exec_id": "0418fcd2-c92e-4b21-ac8b-cc98a175cf08"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11999.13662325,
+          "tool_name": "fetch_temperature",
+          "exec_id": "6e1d04b3-25bd-4499-83f4-6d275378abeb"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11999.136815291,
+          "tool_name": "fetch_temperature",
+          "exec_id": "ce867a8d-bb95-4f63-ac68-fac3be708a09"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11999.137002208,
+          "tool_name": "fetch_humidity",
+          "exec_id": "2b0b5858-83e0-4c1a-a2eb-12f3e210cbfa"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11999.137236791,
+          "tool_name": "fetch_humidity",
+          "exec_id": "0b93e1c9-e09a-4d65-b7c5-3b8949a45722"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 11999.137422208,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a74f75ee-46a2-4776-8aa6-3bba49775549"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12002.478284666,
+          "tool_name": "fetch_temperature",
+          "exec_id": "ec99cf01-00f1-47e1-8438-687e6bdda22c"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12002.480087,
+          "tool_name": "fetch_temperature",
+          "exec_id": "b1c8ace4-bf54-4885-95e4-1705ade1b158"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12003.478949583,
+          "tool_name": "fetch_temperature",
+          "exec_id": "43877d8f-332b-47ed-9d7a-4adc66ed7ef8"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12003.479971833,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a659c7ca-b51a-4e4f-8250-17e85677c869"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12004.483291541,
+          "tool_name": "fetch_humidity",
+          "exec_id": "ffc7d55f-43fa-47ae-88d7-0f9fdd23b65c"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12004.483889,
+          "tool_name": "fetch_humidity",
+          "exec_id": "9a58a3d9-c189-4cb4-8679-2bb9eee50c1e"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12005.486824791,
+          "tool_name": "fetch_temperature",
+          "exec_id": "debf2e9f-a5ff-4af7-a80f-20539899abd4"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12005.487618333,
+          "tool_name": "fetch_temperature",
+          "exec_id": "9afeff18-53e2-4f20-b0c9-9607cecda30d"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12006.489943458,
+          "tool_name": "fetch_temperature",
+          "exec_id": "696d6f79-2d16-456d-866c-87a2640a7434"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12006.490901458,
+          "tool_name": "fetch_humidity",
+          "exec_id": "214d34e2-e383-4cec-8438-7d5c32d5106b"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12007.492717333,
+          "tool_name": "fetch_humidity",
+          "exec_id": "75765338-00ee-4f1b-aaa5-c3dcdac135ef"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12007.493703,
+          "tool_name": "fetch_humidity",
+          "exec_id": "2ddecf09-9833-4c39-8cc1-eb6a4ecec08e"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12008.495830125,
+          "tool_name": "fetch_temperature",
+          "exec_id": "0418fcd2-c92e-4b21-ac8b-cc98a175cf08"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12008.49685275,
+          "tool_name": "fetch_temperature",
+          "exec_id": "6e1d04b3-25bd-4499-83f4-6d275378abeb"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12009.499470125,
+          "tool_name": "fetch_humidity",
+          "exec_id": "2b0b5858-83e0-4c1a-a2eb-12f3e210cbfa"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12009.500451916,
+          "tool_name": "fetch_temperature",
+          "exec_id": "ce867a8d-bb95-4f63-ac68-fac3be708a09"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12010.502333333,
+          "tool_name": "fetch_humidity",
+          "exec_id": "0b93e1c9-e09a-4d65-b7c5-3b8949a45722"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12010.503611041,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a74f75ee-46a2-4776-8aa6-3bba49775549"
+        }
+      ]
     },
     {
       "run_name": "temp-experiment",
@@ -32,9 +538,262 @@
       "n_of_tool_calls_per_agent": 3,
       "n_of_backend_slots": 4,
       "workload_type": "fixed_agents_vary_tools",
-      "tool_execution_duration_time": 3,
-      "total_makespan": 18.363147167000534,
-      "total_overhead_makespan": -1.0
+      "tool_execution_duration_time": 1,
+      "total_makespan": 8.161981916000514,
+      "events": [
+        {
+          "event": "tool_wrap_start",
+          "ts": 12010.5132665,
+          "tool_name": "fetch_temperature",
+          "wrap_id": "96296226-f8de-44c2-8fdf-3f839c35b594"
+        },
+        {
+          "event": "tool_wrap_end",
+          "ts": 12010.519141375,
+          "tool_name": "fetch_temperature",
+          "wrap_id": "96296226-f8de-44c2-8fdf-3f839c35b594"
+        },
+        {
+          "event": "tool_wrap_start",
+          "ts": 12010.519212333,
+          "tool_name": "fetch_humidity",
+          "wrap_id": "0a222122-b462-402f-b3f0-31ecdf4686bb"
+        },
+        {
+          "event": "tool_wrap_end",
+          "ts": 12010.522097833,
+          "tool_name": "fetch_humidity",
+          "wrap_id": "0a222122-b462-402f-b3f0-31ecdf4686bb"
+        },
+        {
+          "event": "node_wrap_start",
+          "ts": 12010.522329416,
+          "node_name": "chatbot_logic",
+          "wrap_id": "f174269e-a479-4503-8483-45b9d5f8f1ba"
+        },
+        {
+          "event": "node_wrap_end",
+          "ts": 12010.522372541,
+          "node_name": "chatbot_logic",
+          "wrap_id": "f174269e-a479-4503-8483-45b9d5f8f1ba"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12010.535918875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "5fb7f8d0-9db9-42b6-a368-01b488c26c75"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12010.536170416,
+          "tool_name": "fetch_temperature",
+          "exec_id": "e2999de4-d706-434c-85f3-dc01b7669908"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12010.536466791,
+          "tool_name": "fetch_temperature",
+          "exec_id": "338a2888-07d4-4315-b522-f16eb83076b9"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12010.536731,
+          "tool_name": "fetch_humidity",
+          "exec_id": "b21e6530-5271-4e94-9a42-4e0d6fc64667"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12010.536955666,
+          "tool_name": "fetch_humidity",
+          "exec_id": "09ff1068-f96e-473c-ab2b-4f5b9e5ea35b"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12010.537157,
+          "tool_name": "fetch_humidity",
+          "exec_id": "24338631-54d4-4ad7-955b-270d4ff9df00"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12010.537353916,
+          "tool_name": "fetch_temperature",
+          "exec_id": "e6b62452-8a6b-44a3-af36-e2a720e35c36"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12010.537545708,
+          "tool_name": "fetch_temperature",
+          "exec_id": "b598576a-9da8-4c90-9692-8a8a76163b6a"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12010.537876166,
+          "tool_name": "fetch_temperature",
+          "exec_id": "79f36b90-9701-4459-a814-588fc5deddb5"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12010.538073833,
+          "tool_name": "fetch_humidity",
+          "exec_id": "32060455-f6d8-4ab2-bcc1-95f65702341b"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12010.538259083,
+          "tool_name": "fetch_humidity",
+          "exec_id": "158a38a9-cb26-4cac-8303-b8ae491629e3"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12010.538454291,
+          "tool_name": "fetch_humidity",
+          "exec_id": "6bf82647-d5fd-4fe6-b063-6837cda8b1ca"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12010.538643625,
+          "tool_name": "fetch_temperature",
+          "exec_id": "0d41507c-973f-402c-be60-6da711fdcd56"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12010.538993375,
+          "tool_name": "fetch_temperature",
+          "exec_id": "93bc98c6-2519-42a4-a68f-a3b38ab8e6ec"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12010.539199625,
+          "tool_name": "fetch_temperature",
+          "exec_id": "31797667-f881-4eeb-ba9e-e91cde946682"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12010.539388375,
+          "tool_name": "fetch_humidity",
+          "exec_id": "51491647-385d-46cf-bc86-8e13e449e4ea"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12010.53957375,
+          "tool_name": "fetch_humidity",
+          "exec_id": "b1013702-210f-4451-b9d3-105efe0d03a9"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12010.539820333,
+          "tool_name": "fetch_humidity",
+          "exec_id": "73d3bd69-a057-45ec-8da6-df6dfdb1fc94"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12014.655277375,
+          "tool_name": "fetch_humidity",
+          "exec_id": "b21e6530-5271-4e94-9a42-4e0d6fc64667"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12014.658344625,
+          "tool_name": "fetch_temperature",
+          "exec_id": "5fb7f8d0-9db9-42b6-a368-01b488c26c75"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12014.659740291,
+          "tool_name": "fetch_temperature",
+          "exec_id": "e2999de4-d706-434c-85f3-dc01b7669908"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12014.659873166,
+          "tool_name": "fetch_temperature",
+          "exec_id": "338a2888-07d4-4315-b522-f16eb83076b9"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12015.656816583,
+          "tool_name": "fetch_humidity",
+          "exec_id": "09ff1068-f96e-473c-ab2b-4f5b9e5ea35b"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12015.657682291,
+          "tool_name": "fetch_humidity",
+          "exec_id": "24338631-54d4-4ad7-955b-270d4ff9df00"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12015.659299333,
+          "tool_name": "fetch_temperature",
+          "exec_id": "e6b62452-8a6b-44a3-af36-e2a720e35c36"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12015.663218208,
+          "tool_name": "fetch_temperature",
+          "exec_id": "b598576a-9da8-4c90-9692-8a8a76163b6a"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12016.66055675,
+          "tool_name": "fetch_temperature",
+          "exec_id": "79f36b90-9701-4459-a814-588fc5deddb5"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12016.662368291,
+          "tool_name": "fetch_humidity",
+          "exec_id": "158a38a9-cb26-4cac-8303-b8ae491629e3"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12016.663078916,
+          "tool_name": "fetch_humidity",
+          "exec_id": "32060455-f6d8-4ab2-bcc1-95f65702341b"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12016.663782916,
+          "tool_name": "fetch_humidity",
+          "exec_id": "6bf82647-d5fd-4fe6-b063-6837cda8b1ca"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12017.663869166,
+          "tool_name": "fetch_temperature",
+          "exec_id": "0d41507c-973f-402c-be60-6da711fdcd56"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12017.664985583,
+          "tool_name": "fetch_temperature",
+          "exec_id": "31797667-f881-4eeb-ba9e-e91cde946682"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12017.665587875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "93bc98c6-2519-42a4-a68f-a3b38ab8e6ec"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12017.666046583,
+          "tool_name": "fetch_humidity",
+          "exec_id": "51491647-385d-46cf-bc86-8e13e449e4ea"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12018.668277708,
+          "tool_name": "fetch_humidity",
+          "exec_id": "b1013702-210f-4451-b9d3-105efe0d03a9"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12018.669219583,
+          "tool_name": "fetch_humidity",
+          "exec_id": "73d3bd69-a057-45ec-8da6-df6dfdb1fc94"
+        }
+      ]
     },
     {
       "run_name": "temp-experiment",
@@ -44,9 +803,262 @@
       "n_of_tool_calls_per_agent": 3,
       "n_of_backend_slots": 8,
       "workload_type": "fixed_agents_vary_tools",
-      "tool_execution_duration_time": 3,
-      "total_makespan": 14.448866290999831,
-      "total_overhead_makespan": -1.0
+      "tool_execution_duration_time": 1,
+      "total_makespan": 6.176014958000451,
+      "events": [
+        {
+          "event": "tool_wrap_start",
+          "ts": 12018.6785155,
+          "tool_name": "fetch_temperature",
+          "wrap_id": "f654786b-a7cc-4897-acb3-5667c02ff304"
+        },
+        {
+          "event": "tool_wrap_end",
+          "ts": 12018.683279458,
+          "tool_name": "fetch_temperature",
+          "wrap_id": "f654786b-a7cc-4897-acb3-5667c02ff304"
+        },
+        {
+          "event": "tool_wrap_start",
+          "ts": 12018.683321458,
+          "tool_name": "fetch_humidity",
+          "wrap_id": "ea8813f1-92fd-4a44-9863-102900404d09"
+        },
+        {
+          "event": "tool_wrap_end",
+          "ts": 12018.686955041,
+          "tool_name": "fetch_humidity",
+          "wrap_id": "ea8813f1-92fd-4a44-9863-102900404d09"
+        },
+        {
+          "event": "node_wrap_start",
+          "ts": 12018.687220208,
+          "node_name": "chatbot_logic",
+          "wrap_id": "07f8185e-8032-474b-b04f-0f17fde143bf"
+        },
+        {
+          "event": "node_wrap_end",
+          "ts": 12018.687267041,
+          "node_name": "chatbot_logic",
+          "wrap_id": "07f8185e-8032-474b-b04f-0f17fde143bf"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12018.700110083,
+          "tool_name": "fetch_temperature",
+          "exec_id": "ace02d7a-567f-415c-a499-81feb3afad37"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12018.700369208,
+          "tool_name": "fetch_temperature",
+          "exec_id": "97bab8f3-ee0b-416b-93f5-ec5c2cefe15e"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12018.700587416,
+          "tool_name": "fetch_temperature",
+          "exec_id": "f7f52376-3a02-4dc1-b428-f0ecb023abe6"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12018.700791375,
+          "tool_name": "fetch_humidity",
+          "exec_id": "51898173-7e55-4f0b-87cc-215af434c24f"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12018.700980083,
+          "tool_name": "fetch_humidity",
+          "exec_id": "e79290ff-a1a5-4313-8d22-7cf589a5f502"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12018.701173833,
+          "tool_name": "fetch_humidity",
+          "exec_id": "31551201-0127-41fb-99f1-bdd2ac4e157a"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12018.701359375,
+          "tool_name": "fetch_temperature",
+          "exec_id": "e18f8e98-6707-4005-b96a-06a28fcf70fe"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12018.701553833,
+          "tool_name": "fetch_temperature",
+          "exec_id": "9075962b-ad88-4d06-907a-2699e61982e1"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12018.702117041,
+          "tool_name": "fetch_temperature",
+          "exec_id": "78f7213c-7253-4c1b-9157-60953aadef4a"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12018.702436041,
+          "tool_name": "fetch_humidity",
+          "exec_id": "259f4c1e-fd7f-4556-bf02-16cb54eb25a7"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12018.702663708,
+          "tool_name": "fetch_humidity",
+          "exec_id": "1f7061de-3e11-4bb9-9df6-f6c9a41bd58b"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12018.702869208,
+          "tool_name": "fetch_humidity",
+          "exec_id": "c04c8dac-34cb-4a89-b74a-c5ae90700426"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12018.703073625,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a903f511-0740-4698-9c04-4523ea0a5fa8"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12018.703266791,
+          "tool_name": "fetch_temperature",
+          "exec_id": "77eece4d-edb7-45df-abd1-e0a7e69f66f8"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12018.703461208,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a72b3285-793e-42f9-b452-588a7a38b69b"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12018.703646375,
+          "tool_name": "fetch_humidity",
+          "exec_id": "3b6ac320-3dcf-4952-b344-9ec2478fddc6"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12018.70383075,
+          "tool_name": "fetch_humidity",
+          "exec_id": "795fdfde-c8b4-40c2-b766-fa83449af5c4"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12018.704076166,
+          "tool_name": "fetch_humidity",
+          "exec_id": "f8f968d4-1fdf-4356-b5ce-d7a9fef76201"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12022.844533125,
+          "tool_name": "fetch_temperature",
+          "exec_id": "ace02d7a-567f-415c-a499-81feb3afad37"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12022.847811833,
+          "tool_name": "fetch_temperature",
+          "exec_id": "97bab8f3-ee0b-416b-93f5-ec5c2cefe15e"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12022.848181125,
+          "tool_name": "fetch_temperature",
+          "exec_id": "f7f52376-3a02-4dc1-b428-f0ecb023abe6"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12022.849575208,
+          "tool_name": "fetch_humidity",
+          "exec_id": "51898173-7e55-4f0b-87cc-215af434c24f"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12022.849875833,
+          "tool_name": "fetch_humidity",
+          "exec_id": "e79290ff-a1a5-4313-8d22-7cf589a5f502"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12022.860962416,
+          "tool_name": "fetch_humidity",
+          "exec_id": "31551201-0127-41fb-99f1-bdd2ac4e157a"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12022.979100958,
+          "tool_name": "fetch_temperature",
+          "exec_id": "e18f8e98-6707-4005-b96a-06a28fcf70fe"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12022.980285083,
+          "tool_name": "fetch_temperature",
+          "exec_id": "9075962b-ad88-4d06-907a-2699e61982e1"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12023.830508375,
+          "tool_name": "fetch_temperature",
+          "exec_id": "78f7213c-7253-4c1b-9157-60953aadef4a"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12023.845022958,
+          "tool_name": "fetch_humidity",
+          "exec_id": "259f4c1e-fd7f-4556-bf02-16cb54eb25a7"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12023.848105166,
+          "tool_name": "fetch_humidity",
+          "exec_id": "1f7061de-3e11-4bb9-9df6-f6c9a41bd58b"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12023.850130458,
+          "tool_name": "fetch_humidity",
+          "exec_id": "c04c8dac-34cb-4a89-b74a-c5ae90700426"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12023.85320325,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a903f511-0740-4698-9c04-4523ea0a5fa8"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12023.863625541,
+          "tool_name": "fetch_temperature",
+          "exec_id": "77eece4d-edb7-45df-abd1-e0a7e69f66f8"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12023.984564041,
+          "tool_name": "fetch_humidity",
+          "exec_id": "3b6ac320-3dcf-4952-b344-9ec2478fddc6"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12023.985595208,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a72b3285-793e-42f9-b452-588a7a38b69b"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12024.835094083,
+          "tool_name": "fetch_humidity",
+          "exec_id": "795fdfde-c8b4-40c2-b766-fa83449af5c4"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12024.848770166,
+          "tool_name": "fetch_humidity",
+          "exec_id": "f8f968d4-1fdf-4356-b5ce-d7a9fef76201"
+        }
+      ]
     }
   ],
   "weak_scaling-op-work": [
@@ -58,9 +1070,262 @@
       "n_of_tool_calls_per_agent": 3,
       "n_of_backend_slots": 1,
       "workload_type": "fixed_agents_vary_tools",
-      "tool_execution_duration_time": 3,
-      "total_makespan": 56.34318245899976,
-      "total_overhead_makespan": -1.0
+      "tool_execution_duration_time": 1,
+      "total_makespan": 19.976404832999833,
+      "events": [
+        {
+          "event": "tool_wrap_start",
+          "ts": 12024.859822625,
+          "tool_name": "fetch_temperature",
+          "wrap_id": "68391fe1-c012-45b2-ad2d-e44a9af1ec3e"
+        },
+        {
+          "event": "tool_wrap_end",
+          "ts": 12024.86426075,
+          "tool_name": "fetch_temperature",
+          "wrap_id": "68391fe1-c012-45b2-ad2d-e44a9af1ec3e"
+        },
+        {
+          "event": "tool_wrap_start",
+          "ts": 12024.864497375,
+          "tool_name": "fetch_humidity",
+          "wrap_id": "6e9bb30a-9b2b-4564-ae6f-8197e3b4a9d0"
+        },
+        {
+          "event": "tool_wrap_end",
+          "ts": 12024.86670125,
+          "tool_name": "fetch_humidity",
+          "wrap_id": "6e9bb30a-9b2b-4564-ae6f-8197e3b4a9d0"
+        },
+        {
+          "event": "node_wrap_start",
+          "ts": 12024.866933666,
+          "node_name": "chatbot_logic",
+          "wrap_id": "29e74670-f622-4ad6-bbd0-74e8fe468183"
+        },
+        {
+          "event": "node_wrap_end",
+          "ts": 12024.86696925,
+          "node_name": "chatbot_logic",
+          "wrap_id": "29e74670-f622-4ad6-bbd0-74e8fe468183"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12024.879647625,
+          "tool_name": "fetch_temperature",
+          "exec_id": "78ba1f09-0422-429b-a105-ce629fd1aca4"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12024.880002333,
+          "tool_name": "fetch_temperature",
+          "exec_id": "9f66889c-77da-45b3-bdef-14da64c6d6fd"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12024.880208958,
+          "tool_name": "fetch_temperature",
+          "exec_id": "cb8f5698-ac9c-4b99-b6db-85b72a076029"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12024.88042575,
+          "tool_name": "fetch_humidity",
+          "exec_id": "eefa13b0-8a18-4ca0-9fe4-ecbf1d46bca5"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12024.880624,
+          "tool_name": "fetch_humidity",
+          "exec_id": "9afebbe0-0aef-412c-89aa-e11edf8984fe"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12024.88081625,
+          "tool_name": "fetch_humidity",
+          "exec_id": "b59aad68-f0da-4661-b8f9-dd7088cc3351"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12024.881005166,
+          "tool_name": "fetch_temperature",
+          "exec_id": "82bbdb5d-2511-44de-9a10-8ffcbc98c459"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12024.881190166,
+          "tool_name": "fetch_temperature",
+          "exec_id": "5d79c6ae-dd45-47c1-acab-9b460396e1a8"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12024.881376125,
+          "tool_name": "fetch_temperature",
+          "exec_id": "4f108533-bc83-4acd-a1d3-9988b05a27dc"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12024.881555083,
+          "tool_name": "fetch_humidity",
+          "exec_id": "85322867-4469-414f-b4a3-47ace336b193"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12024.881761625,
+          "tool_name": "fetch_humidity",
+          "exec_id": "1ca3f2d4-d32f-4456-9a92-571d5b99a0f2"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12024.882027291,
+          "tool_name": "fetch_humidity",
+          "exec_id": "c662e3b8-beda-41ad-9036-7dcb06e5747f"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12024.882216583,
+          "tool_name": "fetch_temperature",
+          "exec_id": "e1393196-e70d-4d29-971e-71c8dee7bec4"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12024.882412666,
+          "tool_name": "fetch_temperature",
+          "exec_id": "5416f9e1-409f-4e56-b642-afb85d3e3ca3"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12024.8826005,
+          "tool_name": "fetch_temperature",
+          "exec_id": "9b1a2f99-b5f1-4cfd-b6b6-1998902b5f7e"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12024.8827985,
+          "tool_name": "fetch_humidity",
+          "exec_id": "d6b11ddc-3d55-4f41-9388-0eced9b22ecf"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12024.882986,
+          "tool_name": "fetch_humidity",
+          "exec_id": "99c61406-57d9-4eab-a8eb-5e6d6ce45bdb"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12024.883169375,
+          "tool_name": "fetch_humidity",
+          "exec_id": "514676ea-5182-47f7-8f28-877b4bc36e4e"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12027.768793291,
+          "tool_name": "fetch_temperature",
+          "exec_id": "78ba1f09-0422-429b-a105-ce629fd1aca4"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12028.772266208,
+          "tool_name": "fetch_temperature",
+          "exec_id": "9f66889c-77da-45b3-bdef-14da64c6d6fd"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12029.775197458,
+          "tool_name": "fetch_temperature",
+          "exec_id": "cb8f5698-ac9c-4b99-b6db-85b72a076029"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12030.7784385,
+          "tool_name": "fetch_humidity",
+          "exec_id": "eefa13b0-8a18-4ca0-9fe4-ecbf1d46bca5"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12031.782376583,
+          "tool_name": "fetch_humidity",
+          "exec_id": "9afebbe0-0aef-412c-89aa-e11edf8984fe"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12032.786196291,
+          "tool_name": "fetch_humidity",
+          "exec_id": "b59aad68-f0da-4661-b8f9-dd7088cc3351"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12033.789656875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "82bbdb5d-2511-44de-9a10-8ffcbc98c459"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12034.793155666,
+          "tool_name": "fetch_temperature",
+          "exec_id": "5d79c6ae-dd45-47c1-acab-9b460396e1a8"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12035.7973265,
+          "tool_name": "fetch_temperature",
+          "exec_id": "4f108533-bc83-4acd-a1d3-9988b05a27dc"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12036.801230583,
+          "tool_name": "fetch_humidity",
+          "exec_id": "85322867-4469-414f-b4a3-47ace336b193"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12037.805055333,
+          "tool_name": "fetch_humidity",
+          "exec_id": "1ca3f2d4-d32f-4456-9a92-571d5b99a0f2"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12038.808678708,
+          "tool_name": "fetch_humidity",
+          "exec_id": "c662e3b8-beda-41ad-9036-7dcb06e5747f"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12039.812638708,
+          "tool_name": "fetch_temperature",
+          "exec_id": "e1393196-e70d-4d29-971e-71c8dee7bec4"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12040.816321708,
+          "tool_name": "fetch_temperature",
+          "exec_id": "5416f9e1-409f-4e56-b642-afb85d3e3ca3"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12041.820013166,
+          "tool_name": "fetch_temperature",
+          "exec_id": "9b1a2f99-b5f1-4cfd-b6b6-1998902b5f7e"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12042.823211791,
+          "tool_name": "fetch_humidity",
+          "exec_id": "d6b11ddc-3d55-4f41-9388-0eced9b22ecf"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12043.827045791,
+          "tool_name": "fetch_humidity",
+          "exec_id": "99c61406-57d9-4eab-a8eb-5e6d6ce45bdb"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12044.830452166,
+          "tool_name": "fetch_humidity",
+          "exec_id": "514676ea-5182-47f7-8f28-877b4bc36e4e"
+        }
+      ]
     },
     {
       "run_name": "temp-experiment",
@@ -70,9 +1335,478 @@
       "n_of_tool_calls_per_agent": 6,
       "n_of_backend_slots": 2,
       "workload_type": "fixed_agents_vary_tools",
-      "tool_execution_duration_time": 3,
-      "total_makespan": 56.84708304099968,
-      "total_overhead_makespan": -1.0
+      "tool_execution_duration_time": 1,
+      "total_makespan": 20.520449833000384,
+      "events": [
+        {
+          "event": "tool_wrap_start",
+          "ts": 12044.83950525,
+          "tool_name": "fetch_temperature",
+          "wrap_id": "95dd20ed-35ab-435d-8d6e-2696b80a1330"
+        },
+        {
+          "event": "tool_wrap_end",
+          "ts": 12044.843787333,
+          "tool_name": "fetch_temperature",
+          "wrap_id": "95dd20ed-35ab-435d-8d6e-2696b80a1330"
+        },
+        {
+          "event": "tool_wrap_start",
+          "ts": 12044.843812125,
+          "tool_name": "fetch_humidity",
+          "wrap_id": "678691b0-8c08-469a-842b-192e217d57a5"
+        },
+        {
+          "event": "tool_wrap_end",
+          "ts": 12044.933162083,
+          "tool_name": "fetch_humidity",
+          "wrap_id": "678691b0-8c08-469a-842b-192e217d57a5"
+        },
+        {
+          "event": "node_wrap_start",
+          "ts": 12044.933332125,
+          "node_name": "chatbot_logic",
+          "wrap_id": "c0d76919-7a39-42a7-9c9b-979a61072906"
+        },
+        {
+          "event": "node_wrap_end",
+          "ts": 12044.933360291,
+          "node_name": "chatbot_logic",
+          "wrap_id": "c0d76919-7a39-42a7-9c9b-979a61072906"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.943943875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "65b63bc3-3399-498f-88b9-5ae03062788d"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.944287791,
+          "tool_name": "fetch_temperature",
+          "exec_id": "5e8c0f05-9d08-48bd-8c79-573cdf8e5720"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.944501583,
+          "tool_name": "fetch_temperature",
+          "exec_id": "3355b761-a1c1-4309-aee7-211a4db8b057"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.944704,
+          "tool_name": "fetch_temperature",
+          "exec_id": "cbcf9b5c-596c-489f-aeb6-9eafc04652e2"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.944907791,
+          "tool_name": "fetch_temperature",
+          "exec_id": "584e6d9e-2692-4388-9f0e-3110c2df9dfd"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.945101666,
+          "tool_name": "fetch_temperature",
+          "exec_id": "f23f1ecc-3a6c-418c-9038-7837909c3cd0"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.945308125,
+          "tool_name": "fetch_humidity",
+          "exec_id": "5bd6f464-dbd2-4c5a-9e01-e3a37e73fbcc"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.945502208,
+          "tool_name": "fetch_humidity",
+          "exec_id": "6658ede2-a46e-45fe-b93a-0508b6e67221"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.945685291,
+          "tool_name": "fetch_humidity",
+          "exec_id": "1407f341-4eba-4223-a806-1f72aedabd05"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.945926125,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a6b609b9-5283-4ac9-a282-407791c6ec77"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.946136083,
+          "tool_name": "fetch_humidity",
+          "exec_id": "8564d777-b0c4-466e-b73f-915d49d67457"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.946314,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a486178b-87c0-429b-b69a-006d6f370891"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.946563166,
+          "tool_name": "fetch_temperature",
+          "exec_id": "353caedf-7137-4f32-9c79-f2f12955a5fe"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.94684175,
+          "tool_name": "fetch_temperature",
+          "exec_id": "d7228a8c-fc8c-4f7a-b3c4-d222cb600b4c"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.947066958,
+          "tool_name": "fetch_temperature",
+          "exec_id": "72d2e21f-5c01-470b-bb4c-4b0e8f0557f6"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.947294125,
+          "tool_name": "fetch_temperature",
+          "exec_id": "b395c0d3-cee7-4dd6-a65b-b70fbc19e604"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.947495416,
+          "tool_name": "fetch_temperature",
+          "exec_id": "f0575f98-bf07-47de-bcf3-e23cbebff1bf"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.947756291,
+          "tool_name": "fetch_temperature",
+          "exec_id": "46a62431-0fc1-43d9-b56b-b11d5a01a34a"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.947954875,
+          "tool_name": "fetch_humidity",
+          "exec_id": "3253bd73-5a55-4516-b831-7cb92cff0ee3"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.948148666,
+          "tool_name": "fetch_humidity",
+          "exec_id": "be97e00f-3ff3-4d1b-a209-d0c3ac4984d2"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.948352583,
+          "tool_name": "fetch_humidity",
+          "exec_id": "5786efe0-9928-4da6-8f61-af0366418645"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.948539083,
+          "tool_name": "fetch_humidity",
+          "exec_id": "1662a653-287b-48e2-8e61-3488f4e57f29"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.948726708,
+          "tool_name": "fetch_humidity",
+          "exec_id": "c7e6d2ea-9ce2-435c-b272-64088d682cad"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.948943041,
+          "tool_name": "fetch_humidity",
+          "exec_id": "1c314b0e-7309-44f4-826e-783d534ce239"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.949140583,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a1556790-c21e-4beb-a876-d27979c85746"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.949375666,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a5c45b2e-6028-4e09-ad11-866516361f96"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.949567916,
+          "tool_name": "fetch_temperature",
+          "exec_id": "76467814-3310-4c49-9948-9d6d94b39e9d"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.949761125,
+          "tool_name": "fetch_temperature",
+          "exec_id": "beb5cd73-d86a-4df1-9ae9-0ed5deec05d5"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.94994975,
+          "tool_name": "fetch_temperature",
+          "exec_id": "4da916b0-4f3f-473f-a33a-1e5b36530740"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.950131833,
+          "tool_name": "fetch_temperature",
+          "exec_id": "b76e2f1d-f7c7-4d0e-8e29-b9031d5cee41"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.950317916,
+          "tool_name": "fetch_humidity",
+          "exec_id": "127cb190-28e1-4627-b558-6dcb8491dbd4"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.950508541,
+          "tool_name": "fetch_humidity",
+          "exec_id": "33067032-c085-4e4e-8c3d-6d38aba46ae3"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.950740833,
+          "tool_name": "fetch_humidity",
+          "exec_id": "eb823814-212b-4a35-9716-110e9d2651e8"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.950930875,
+          "tool_name": "fetch_humidity",
+          "exec_id": "fa827d7e-0687-4e07-b6df-32f4d32165b9"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.951132333,
+          "tool_name": "fetch_humidity",
+          "exec_id": "7ee5e6a4-a7bc-422a-a2e5-2f00b5b20058"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12044.951315166,
+          "tool_name": "fetch_humidity",
+          "exec_id": "bd159697-8a0a-4ab3-9b3c-4cacb9a4f14e"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12048.279653458,
+          "tool_name": "fetch_temperature",
+          "exec_id": "5e8c0f05-9d08-48bd-8c79-573cdf8e5720"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12048.280466416,
+          "tool_name": "fetch_temperature",
+          "exec_id": "65b63bc3-3399-498f-88b9-5ae03062788d"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12049.28084425,
+          "tool_name": "fetch_temperature",
+          "exec_id": "3355b761-a1c1-4309-aee7-211a4db8b057"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12049.281994875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "cbcf9b5c-596c-489f-aeb6-9eafc04652e2"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12050.285277375,
+          "tool_name": "fetch_temperature",
+          "exec_id": "f23f1ecc-3a6c-418c-9038-7837909c3cd0"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12050.286209875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "584e6d9e-2692-4388-9f0e-3110c2df9dfd"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12051.288890791,
+          "tool_name": "fetch_humidity",
+          "exec_id": "6658ede2-a46e-45fe-b93a-0508b6e67221"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12051.289797083,
+          "tool_name": "fetch_humidity",
+          "exec_id": "5bd6f464-dbd2-4c5a-9e01-e3a37e73fbcc"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12052.292879375,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a6b609b9-5283-4ac9-a282-407791c6ec77"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12052.293910958,
+          "tool_name": "fetch_humidity",
+          "exec_id": "1407f341-4eba-4223-a806-1f72aedabd05"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12053.296531208,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a486178b-87c0-429b-b69a-006d6f370891"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12053.297537916,
+          "tool_name": "fetch_humidity",
+          "exec_id": "8564d777-b0c4-466e-b73f-915d49d67457"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12054.300702708,
+          "tool_name": "fetch_temperature",
+          "exec_id": "d7228a8c-fc8c-4f7a-b3c4-d222cb600b4c"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12054.301681583,
+          "tool_name": "fetch_temperature",
+          "exec_id": "353caedf-7137-4f32-9c79-f2f12955a5fe"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12055.302576625,
+          "tool_name": "fetch_temperature",
+          "exec_id": "72d2e21f-5c01-470b-bb4c-4b0e8f0557f6"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12055.302966958,
+          "tool_name": "fetch_temperature",
+          "exec_id": "b395c0d3-cee7-4dd6-a65b-b70fbc19e604"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12056.304852708,
+          "tool_name": "fetch_temperature",
+          "exec_id": "46a62431-0fc1-43d9-b56b-b11d5a01a34a"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12056.305275958,
+          "tool_name": "fetch_temperature",
+          "exec_id": "f0575f98-bf07-47de-bcf3-e23cbebff1bf"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12057.310516416,
+          "tool_name": "fetch_humidity",
+          "exec_id": "be97e00f-3ff3-4d1b-a209-d0c3ac4984d2"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12057.310850166,
+          "tool_name": "fetch_humidity",
+          "exec_id": "3253bd73-5a55-4516-b831-7cb92cff0ee3"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12058.313892791,
+          "tool_name": "fetch_humidity",
+          "exec_id": "1662a653-287b-48e2-8e61-3488f4e57f29"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12058.315010958,
+          "tool_name": "fetch_humidity",
+          "exec_id": "5786efe0-9928-4da6-8f61-af0366418645"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12059.314792541,
+          "tool_name": "fetch_humidity",
+          "exec_id": "1c314b0e-7309-44f4-826e-783d534ce239"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12059.316044291,
+          "tool_name": "fetch_humidity",
+          "exec_id": "c7e6d2ea-9ce2-435c-b272-64088d682cad"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12060.322265125,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a1556790-c21e-4beb-a876-d27979c85746"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12060.322854416,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a5c45b2e-6028-4e09-ad11-866516361f96"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12061.326768583,
+          "tool_name": "fetch_temperature",
+          "exec_id": "76467814-3310-4c49-9948-9d6d94b39e9d"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12061.327593625,
+          "tool_name": "fetch_temperature",
+          "exec_id": "beb5cd73-d86a-4df1-9ae9-0ed5deec05d5"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12062.330762916,
+          "tool_name": "fetch_temperature",
+          "exec_id": "b76e2f1d-f7c7-4d0e-8e29-b9031d5cee41"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12062.331413041,
+          "tool_name": "fetch_temperature",
+          "exec_id": "4da916b0-4f3f-473f-a33a-1e5b36530740"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12063.338121416,
+          "tool_name": "fetch_humidity",
+          "exec_id": "33067032-c085-4e4e-8c3d-6d38aba46ae3"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12063.3396385,
+          "tool_name": "fetch_humidity",
+          "exec_id": "127cb190-28e1-4627-b558-6dcb8491dbd4"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12064.344474583,
+          "tool_name": "fetch_humidity",
+          "exec_id": "fa827d7e-0687-4e07-b6df-32f4d32165b9"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12064.345100125,
+          "tool_name": "fetch_humidity",
+          "exec_id": "eb823814-212b-4a35-9716-110e9d2651e8"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12065.348960958,
+          "tool_name": "fetch_humidity",
+          "exec_id": "bd159697-8a0a-4ab3-9b3c-4cacb9a4f14e"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12065.349833458,
+          "tool_name": "fetch_humidity",
+          "exec_id": "7ee5e6a4-a7bc-422a-a2e5-2f00b5b20058"
+        }
+      ]
     },
     {
       "run_name": "temp-experiment",
@@ -82,9 +1816,910 @@
       "n_of_tool_calls_per_agent": 12,
       "n_of_backend_slots": 4,
       "workload_type": "fixed_agents_vary_tools",
-      "tool_execution_duration_time": 3,
-      "total_makespan": 56.85689033399922,
-      "total_overhead_makespan": -1.0
+      "tool_execution_duration_time": 1,
+      "total_makespan": 20.67695591700067,
+      "events": [
+        {
+          "event": "tool_wrap_start",
+          "ts": 12065.362764625,
+          "tool_name": "fetch_temperature",
+          "wrap_id": "786dd1d1-d470-4651-9c54-c6c052ef98bc"
+        },
+        {
+          "event": "tool_wrap_end",
+          "ts": 12065.368741666,
+          "tool_name": "fetch_temperature",
+          "wrap_id": "786dd1d1-d470-4651-9c54-c6c052ef98bc"
+        },
+        {
+          "event": "tool_wrap_start",
+          "ts": 12065.368769083,
+          "tool_name": "fetch_humidity",
+          "wrap_id": "09b25fd5-d47e-4138-b6b3-9219e021cf2f"
+        },
+        {
+          "event": "tool_wrap_end",
+          "ts": 12065.371496416,
+          "tool_name": "fetch_humidity",
+          "wrap_id": "09b25fd5-d47e-4138-b6b3-9219e021cf2f"
+        },
+        {
+          "event": "node_wrap_start",
+          "ts": 12065.371798541,
+          "node_name": "chatbot_logic",
+          "wrap_id": "9d474b76-f9a2-456c-83f7-9a58a6e63665"
+        },
+        {
+          "event": "node_wrap_end",
+          "ts": 12065.371841416,
+          "node_name": "chatbot_logic",
+          "wrap_id": "9d474b76-f9a2-456c-83f7-9a58a6e63665"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.393322375,
+          "tool_name": "fetch_temperature",
+          "exec_id": "d80079cc-2f8b-4f5c-876a-a5cfa3dabb46"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.393593333,
+          "tool_name": "fetch_temperature",
+          "exec_id": "869cea34-d3b0-4424-9abe-74ca2e5c2366"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.394000625,
+          "tool_name": "fetch_temperature",
+          "exec_id": "ca460e78-5dff-4bd2-9726-e17fa729fd02"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.394237291,
+          "tool_name": "fetch_temperature",
+          "exec_id": "034a7bee-97a5-4cc3-ad55-90359d1da9ec"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.39445375,
+          "tool_name": "fetch_temperature",
+          "exec_id": "1ef4c041-edfa-4369-a86f-b07721b7fcb0"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.394660666,
+          "tool_name": "fetch_temperature",
+          "exec_id": "d1503d45-2448-470f-8fd2-c77fa1633701"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.394857125,
+          "tool_name": "fetch_temperature",
+          "exec_id": "85c88a19-f983-4b4e-947c-2669a3636b86"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.395060625,
+          "tool_name": "fetch_temperature",
+          "exec_id": "96ddd232-922b-4961-910e-bdb1c3f56626"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.395250166,
+          "tool_name": "fetch_temperature",
+          "exec_id": "bf055d4e-fff2-42db-800f-dc0b3d175d28"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.395441583,
+          "tool_name": "fetch_temperature",
+          "exec_id": "dbf9cf68-0768-4462-b130-7c92e71afa53"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.395637291,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a20f7ff4-531f-43c0-a6ab-8d1de72f9513"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.395905916,
+          "tool_name": "fetch_temperature",
+          "exec_id": "dad29427-1dad-4869-acd8-fdffca3e9ebd"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.397876041,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a84044ef-8467-4ead-ad30-c886eea6868d"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.39807325,
+          "tool_name": "fetch_humidity",
+          "exec_id": "9aced8b1-cd4d-44a2-8588-b0dee4e575dc"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.398300791,
+          "tool_name": "fetch_humidity",
+          "exec_id": "b9deb5da-6893-43a9-a1f7-781cef23ce46"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.398674458,
+          "tool_name": "fetch_humidity",
+          "exec_id": "c64d759a-3b02-49c8-9f27-ee96156d9660"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.398958416,
+          "tool_name": "fetch_humidity",
+          "exec_id": "d5419d2d-0b4f-4ef3-94d8-e7e50ba98b84"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.399200666,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a28d33d5-a9fc-40fa-821e-baccd64e19c9"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.399542875,
+          "tool_name": "fetch_humidity",
+          "exec_id": "87b1e302-c5bd-404e-8303-823a009d319a"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.399852875,
+          "tool_name": "fetch_humidity",
+          "exec_id": "74dda2d6-c413-42b0-9141-e1a2017762ed"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.400076041,
+          "tool_name": "fetch_humidity",
+          "exec_id": "82a57155-3c2b-41fb-b133-597ab79e4e68"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.4002815,
+          "tool_name": "fetch_humidity",
+          "exec_id": "d232801c-0a66-41c2-899f-9d56b614129d"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.400641958,
+          "tool_name": "fetch_humidity",
+          "exec_id": "26b4f155-4395-442b-96a0-4e2a4b6fe784"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.400894083,
+          "tool_name": "fetch_humidity",
+          "exec_id": "41515933-9c2b-4ce1-bc6b-c558dfd0a51e"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.401126416,
+          "tool_name": "fetch_temperature",
+          "exec_id": "fea3ef9d-f401-4135-ae9c-8b78110ac04c"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.401517666,
+          "tool_name": "fetch_temperature",
+          "exec_id": "c1c38eb3-913c-4b6a-acae-e7b774759f33"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.40180875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "7fa09198-ef67-4333-ac18-909ca8766bcf"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.402106375,
+          "tool_name": "fetch_temperature",
+          "exec_id": "f8006e00-6cd3-4d07-9269-dcf8ba805235"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.402318416,
+          "tool_name": "fetch_temperature",
+          "exec_id": "95403a81-5447-44d9-aa00-f927b869e949"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.402569833,
+          "tool_name": "fetch_temperature",
+          "exec_id": "96692904-a28f-473a-b89b-9db711a24b17"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.402760333,
+          "tool_name": "fetch_temperature",
+          "exec_id": "3df8e524-b46b-48ce-a65c-ee60891f1e0c"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.40295275,
+          "tool_name": "fetch_temperature",
+          "exec_id": "10153206-2814-4bbe-be0b-b39b92858dae"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.403144333,
+          "tool_name": "fetch_temperature",
+          "exec_id": "9b4f710d-b04d-4cd5-9525-c33d4ed1c581"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.403328166,
+          "tool_name": "fetch_temperature",
+          "exec_id": "93a7ae95-5240-45bc-a0f5-24ad07082601"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.403515875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "6365134c-0802-458d-bd85-509f1fd460e2"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.40374825,
+          "tool_name": "fetch_temperature",
+          "exec_id": "af759194-a000-4f84-b3d2-c716e19460f6"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.403939166,
+          "tool_name": "fetch_humidity",
+          "exec_id": "669789fd-f601-4e98-a1d5-ad424623e0b1"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.404165166,
+          "tool_name": "fetch_humidity",
+          "exec_id": "c1c03083-ef13-4692-94ce-8958bafc3791"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.40434425,
+          "tool_name": "fetch_humidity",
+          "exec_id": "4a849865-c1ea-4419-85cd-06f97148725e"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.4045985,
+          "tool_name": "fetch_humidity",
+          "exec_id": "449f54c7-886d-4696-8ac5-9d0afc970e2f"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.40482225,
+          "tool_name": "fetch_humidity",
+          "exec_id": "f98de06c-9de8-46cd-a18c-c61c9561a792"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.405027416,
+          "tool_name": "fetch_humidity",
+          "exec_id": "2d19f3fb-0653-4580-ab9a-7383c42b8ce4"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.405214875,
+          "tool_name": "fetch_humidity",
+          "exec_id": "2943d9cc-2ae1-4046-a158-6685b970d707"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.405446458,
+          "tool_name": "fetch_humidity",
+          "exec_id": "503baf79-0b69-4fee-8643-560259bad067"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.405636708,
+          "tool_name": "fetch_humidity",
+          "exec_id": "387eec0d-9417-4c2f-9e48-c0cff407cbbe"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.405830916,
+          "tool_name": "fetch_humidity",
+          "exec_id": "3438a010-2dc7-412c-98cf-27ece4b06efc"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.406024208,
+          "tool_name": "fetch_humidity",
+          "exec_id": "e9074131-54c3-4350-a7d0-a30f211c7aab"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.406199958,
+          "tool_name": "fetch_humidity",
+          "exec_id": "ac8775c6-2b91-44be-947e-32235d1b47ca"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.406403916,
+          "tool_name": "fetch_temperature",
+          "exec_id": "831bf8e3-10b0-4fb3-988b-428f9d484241"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.406599875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "68f73841-7953-48b2-a075-659e71833c9d"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.406781083,
+          "tool_name": "fetch_temperature",
+          "exec_id": "8d31c6b8-9aa5-4f62-885a-963f46a7f825"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.407005333,
+          "tool_name": "fetch_temperature",
+          "exec_id": "b552482c-2c40-47c2-b057-31ac0031854f"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.40718475,
+          "tool_name": "fetch_temperature",
+          "exec_id": "16a9abbc-5fc7-4443-bdff-43f7d53c938c"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.407379416,
+          "tool_name": "fetch_temperature",
+          "exec_id": "c44d65a0-b570-4168-b31a-d49a7434dc4e"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.407561,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a685cb6f-ffa8-4403-9e99-e38d176cef9d"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.407742833,
+          "tool_name": "fetch_temperature",
+          "exec_id": "49b17dd4-f8d9-4ece-a594-e487b532ff55"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.407923541,
+          "tool_name": "fetch_temperature",
+          "exec_id": "c6e78776-10fb-4f02-8285-740b6f78e916"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.408110791,
+          "tool_name": "fetch_temperature",
+          "exec_id": "9ce4b566-e88e-4fee-8866-a843c372f61f"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.408288208,
+          "tool_name": "fetch_temperature",
+          "exec_id": "f52d415b-29ae-47c8-b8f2-14d00c363d06"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.408520666,
+          "tool_name": "fetch_temperature",
+          "exec_id": "6c3463f0-9094-4a6f-bfb2-123ede24b778"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.408702875,
+          "tool_name": "fetch_humidity",
+          "exec_id": "f8d4cae6-f786-4e9c-87e1-b88b5c0f2847"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.408883458,
+          "tool_name": "fetch_humidity",
+          "exec_id": "81da1680-c408-47f3-ab92-3c95c537ae78"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.409066458,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a087a67c-e92d-4dd1-8d5a-007321d8d407"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.40924575,
+          "tool_name": "fetch_humidity",
+          "exec_id": "3bcf32a4-21dc-41e8-b6f1-84c5b4db563a"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.409427583,
+          "tool_name": "fetch_humidity",
+          "exec_id": "b74f94cc-1ee0-4740-8ab9-021954d3cddd"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.409608791,
+          "tool_name": "fetch_humidity",
+          "exec_id": "e1a7e4f7-f050-4968-bf4d-66f7628574fe"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.409826083,
+          "tool_name": "fetch_humidity",
+          "exec_id": "4cd92fb2-ec10-4a7c-aaba-6734e4af946c"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.410008458,
+          "tool_name": "fetch_humidity",
+          "exec_id": "1d4242bd-b293-4314-8abc-c634820dda1a"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.410198958,
+          "tool_name": "fetch_humidity",
+          "exec_id": "f4488bad-af1b-444d-8286-bfbab68e2898"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.410376,
+          "tool_name": "fetch_humidity",
+          "exec_id": "d2bc7c77-45a7-4210-b3b7-beab3bab1911"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.410559083,
+          "tool_name": "fetch_humidity",
+          "exec_id": "8295d59c-b3aa-466a-aba3-e8c865351afc"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12065.410740666,
+          "tool_name": "fetch_humidity",
+          "exec_id": "44583203-2729-4cd4-bb26-2e8bd1a0dc21"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12068.96006625,
+          "tool_name": "fetch_temperature",
+          "exec_id": "d80079cc-2f8b-4f5c-876a-a5cfa3dabb46"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12068.961934708,
+          "tool_name": "fetch_temperature",
+          "exec_id": "869cea34-d3b0-4424-9abe-74ca2e5c2366"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12068.962788541,
+          "tool_name": "fetch_temperature",
+          "exec_id": "ca460e78-5dff-4bd2-9726-e17fa729fd02"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12068.963237333,
+          "tool_name": "fetch_temperature",
+          "exec_id": "034a7bee-97a5-4cc3-ad55-90359d1da9ec"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12069.963768625,
+          "tool_name": "fetch_temperature",
+          "exec_id": "1ef4c041-edfa-4369-a86f-b07721b7fcb0"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12069.965559958,
+          "tool_name": "fetch_temperature",
+          "exec_id": "96ddd232-922b-4961-910e-bdb1c3f56626"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12069.965709458,
+          "tool_name": "fetch_temperature",
+          "exec_id": "85c88a19-f983-4b4e-947c-2669a3636b86"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12069.966313291,
+          "tool_name": "fetch_temperature",
+          "exec_id": "d1503d45-2448-470f-8fd2-c77fa1633701"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12070.968062875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "bf055d4e-fff2-42db-800f-dc0b3d175d28"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12070.969601833,
+          "tool_name": "fetch_temperature",
+          "exec_id": "dbf9cf68-0768-4462-b130-7c92e71afa53"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12070.970914,
+          "tool_name": "fetch_temperature",
+          "exec_id": "dad29427-1dad-4869-acd8-fdffca3e9ebd"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12070.971437333,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a20f7ff4-531f-43c0-a6ab-8d1de72f9513"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12071.970911125,
+          "tool_name": "fetch_humidity",
+          "exec_id": "9aced8b1-cd4d-44a2-8588-b0dee4e575dc"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12071.971899041,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a84044ef-8467-4ead-ad30-c886eea6868d"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12071.973273125,
+          "tool_name": "fetch_humidity",
+          "exec_id": "b9deb5da-6893-43a9-a1f7-781cef23ce46"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12071.973834416,
+          "tool_name": "fetch_humidity",
+          "exec_id": "c64d759a-3b02-49c8-9f27-ee96156d9660"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12072.9743825,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a28d33d5-a9fc-40fa-821e-baccd64e19c9"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12072.975777375,
+          "tool_name": "fetch_humidity",
+          "exec_id": "d5419d2d-0b4f-4ef3-94d8-e7e50ba98b84"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12072.976625833,
+          "tool_name": "fetch_humidity",
+          "exec_id": "87b1e302-c5bd-404e-8303-823a009d319a"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12072.977181833,
+          "tool_name": "fetch_humidity",
+          "exec_id": "74dda2d6-c413-42b0-9141-e1a2017762ed"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12073.98019275,
+          "tool_name": "fetch_humidity",
+          "exec_id": "82a57155-3c2b-41fb-b133-597ab79e4e68"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12073.981164416,
+          "tool_name": "fetch_humidity",
+          "exec_id": "d232801c-0a66-41c2-899f-9d56b614129d"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12073.98188325,
+          "tool_name": "fetch_humidity",
+          "exec_id": "26b4f155-4395-442b-96a0-4e2a4b6fe784"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12073.98254125,
+          "tool_name": "fetch_humidity",
+          "exec_id": "41515933-9c2b-4ce1-bc6b-c558dfd0a51e"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12074.983762416,
+          "tool_name": "fetch_temperature",
+          "exec_id": "fea3ef9d-f401-4135-ae9c-8b78110ac04c"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12074.985327583,
+          "tool_name": "fetch_temperature",
+          "exec_id": "c1c38eb3-913c-4b6a-acae-e7b774759f33"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12074.986164666,
+          "tool_name": "fetch_temperature",
+          "exec_id": "7fa09198-ef67-4333-ac18-909ca8766bcf"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12074.9869445,
+          "tool_name": "fetch_temperature",
+          "exec_id": "f8006e00-6cd3-4d07-9269-dcf8ba805235"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12075.9879455,
+          "tool_name": "fetch_temperature",
+          "exec_id": "96692904-a28f-473a-b89b-9db711a24b17"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12075.988874708,
+          "tool_name": "fetch_temperature",
+          "exec_id": "95403a81-5447-44d9-aa00-f927b869e949"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12075.989991541,
+          "tool_name": "fetch_temperature",
+          "exec_id": "3df8e524-b46b-48ce-a65c-ee60891f1e0c"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12075.99058425,
+          "tool_name": "fetch_temperature",
+          "exec_id": "10153206-2814-4bbe-be0b-b39b92858dae"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12076.994516958,
+          "tool_name": "fetch_temperature",
+          "exec_id": "93a7ae95-5240-45bc-a0f5-24ad07082601"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12076.995756208,
+          "tool_name": "fetch_temperature",
+          "exec_id": "9b4f710d-b04d-4cd5-9525-c33d4ed1c581"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12076.996540666,
+          "tool_name": "fetch_temperature",
+          "exec_id": "af759194-a000-4f84-b3d2-c716e19460f6"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12076.996929,
+          "tool_name": "fetch_temperature",
+          "exec_id": "6365134c-0802-458d-bd85-509f1fd460e2"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12077.997974625,
+          "tool_name": "fetch_humidity",
+          "exec_id": "c1c03083-ef13-4692-94ce-8958bafc3791"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12077.998243208,
+          "tool_name": "fetch_humidity",
+          "exec_id": "669789fd-f601-4e98-a1d5-ad424623e0b1"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12077.999483166,
+          "tool_name": "fetch_humidity",
+          "exec_id": "449f54c7-886d-4696-8ac5-9d0afc970e2f"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12078.000136375,
+          "tool_name": "fetch_humidity",
+          "exec_id": "4a849865-c1ea-4419-85cd-06f97148725e"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12079.005806125,
+          "tool_name": "fetch_humidity",
+          "exec_id": "2943d9cc-2ae1-4046-a158-6685b970d707"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12079.006913291,
+          "tool_name": "fetch_humidity",
+          "exec_id": "f98de06c-9de8-46cd-a18c-c61c9561a792"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12079.007559208,
+          "tool_name": "fetch_humidity",
+          "exec_id": "2d19f3fb-0653-4580-ab9a-7383c42b8ce4"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12079.008288875,
+          "tool_name": "fetch_humidity",
+          "exec_id": "503baf79-0b69-4fee-8643-560259bad067"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12080.008881291,
+          "tool_name": "fetch_humidity",
+          "exec_id": "3438a010-2dc7-412c-98cf-27ece4b06efc"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12080.009782916,
+          "tool_name": "fetch_humidity",
+          "exec_id": "387eec0d-9417-4c2f-9e48-c0cff407cbbe"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12080.01155425,
+          "tool_name": "fetch_humidity",
+          "exec_id": "e9074131-54c3-4350-a7d0-a30f211c7aab"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12080.011990375,
+          "tool_name": "fetch_humidity",
+          "exec_id": "ac8775c6-2b91-44be-947e-32235d1b47ca"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12081.012876166,
+          "tool_name": "fetch_temperature",
+          "exec_id": "8d31c6b8-9aa5-4f62-885a-963f46a7f825"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12081.014225541,
+          "tool_name": "fetch_temperature",
+          "exec_id": "831bf8e3-10b0-4fb3-988b-428f9d484241"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12081.014352958,
+          "tool_name": "fetch_temperature",
+          "exec_id": "68f73841-7953-48b2-a075-659e71833c9d"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12081.015023875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "b552482c-2c40-47c2-b057-31ac0031854f"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12082.016327375,
+          "tool_name": "fetch_temperature",
+          "exec_id": "c44d65a0-b570-4168-b31a-d49a7434dc4e"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12082.01765,
+          "tool_name": "fetch_temperature",
+          "exec_id": "16a9abbc-5fc7-4443-bdff-43f7d53c938c"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12082.018434416,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a685cb6f-ffa8-4403-9e99-e38d176cef9d"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12082.018695166,
+          "tool_name": "fetch_temperature",
+          "exec_id": "49b17dd4-f8d9-4ece-a594-e487b532ff55"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12083.02061825,
+          "tool_name": "fetch_temperature",
+          "exec_id": "c6e78776-10fb-4f02-8285-740b6f78e916"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12083.021683958,
+          "tool_name": "fetch_temperature",
+          "exec_id": "f52d415b-29ae-47c8-b8f2-14d00c363d06"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12083.022588416,
+          "tool_name": "fetch_temperature",
+          "exec_id": "9ce4b566-e88e-4fee-8866-a843c372f61f"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12083.023097041,
+          "tool_name": "fetch_temperature",
+          "exec_id": "6c3463f0-9094-4a6f-bfb2-123ede24b778"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12084.022785458,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a087a67c-e92d-4dd1-8d5a-007321d8d407"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12084.022906666,
+          "tool_name": "fetch_humidity",
+          "exec_id": "f8d4cae6-f786-4e9c-87e1-b88b5c0f2847"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12084.023408333,
+          "tool_name": "fetch_humidity",
+          "exec_id": "81da1680-c408-47f3-ab92-3c95c537ae78"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12084.024016458,
+          "tool_name": "fetch_humidity",
+          "exec_id": "3bcf32a4-21dc-41e8-b6f1-84c5b4db563a"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12085.026011875,
+          "tool_name": "fetch_humidity",
+          "exec_id": "b74f94cc-1ee0-4740-8ab9-021954d3cddd"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12085.027210916,
+          "tool_name": "fetch_humidity",
+          "exec_id": "4cd92fb2-ec10-4a7c-aaba-6734e4af946c"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12085.027661291,
+          "tool_name": "fetch_humidity",
+          "exec_id": "e1a7e4f7-f050-4968-bf4d-66f7628574fe"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12085.028132083,
+          "tool_name": "fetch_humidity",
+          "exec_id": "1d4242bd-b293-4314-8abc-c634820dda1a"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12086.0295565,
+          "tool_name": "fetch_humidity",
+          "exec_id": "d2bc7c77-45a7-4210-b3b7-beab3bab1911"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12086.030543958,
+          "tool_name": "fetch_humidity",
+          "exec_id": "8295d59c-b3aa-466a-aba3-e8c865351afc"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12086.030878,
+          "tool_name": "fetch_humidity",
+          "exec_id": "f4488bad-af1b-444d-8286-bfbab68e2898"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12086.032584375,
+          "tool_name": "fetch_humidity",
+          "exec_id": "44583203-2729-4cd4-bb26-2e8bd1a0dc21"
+        }
+      ]
     },
     {
       "run_name": "temp-experiment",
@@ -94,9 +2729,1774 @@
       "n_of_tool_calls_per_agent": 24,
       "n_of_backend_slots": 8,
       "workload_type": "fixed_agents_vary_tools",
-      "tool_execution_duration_time": 3,
-      "total_makespan": 60.81627050000043,
-      "total_overhead_makespan": -1.0
+      "tool_execution_duration_time": 1,
+      "total_makespan": 24.511431917000664,
+      "events": [
+        {
+          "event": "tool_wrap_start",
+          "ts": 12086.044118875,
+          "tool_name": "fetch_temperature",
+          "wrap_id": "5d397cdf-ff40-4392-94e1-7937f40be006"
+        },
+        {
+          "event": "tool_wrap_end",
+          "ts": 12086.051145041,
+          "tool_name": "fetch_temperature",
+          "wrap_id": "5d397cdf-ff40-4392-94e1-7937f40be006"
+        },
+        {
+          "event": "tool_wrap_start",
+          "ts": 12086.051171875,
+          "tool_name": "fetch_humidity",
+          "wrap_id": "1d31e2d5-9838-4a32-b774-16f1c635d284"
+        },
+        {
+          "event": "tool_wrap_end",
+          "ts": 12086.053751208,
+          "tool_name": "fetch_humidity",
+          "wrap_id": "1d31e2d5-9838-4a32-b774-16f1c635d284"
+        },
+        {
+          "event": "node_wrap_start",
+          "ts": 12086.054106583,
+          "node_name": "chatbot_logic",
+          "wrap_id": "9c67e320-5c8c-4be1-aed8-34fd79eb298e"
+        },
+        {
+          "event": "node_wrap_end",
+          "ts": 12086.054146958,
+          "node_name": "chatbot_logic",
+          "wrap_id": "9c67e320-5c8c-4be1-aed8-34fd79eb298e"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.068605541,
+          "tool_name": "fetch_temperature",
+          "exec_id": "42311106-dbf4-4438-8634-45090a248eaf"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.068955333,
+          "tool_name": "fetch_temperature",
+          "exec_id": "79462e49-b0c2-451c-b836-f8dadeebf885"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.069171,
+          "tool_name": "fetch_temperature",
+          "exec_id": "22ce1786-f620-487c-b723-ef26258058e0"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.069371375,
+          "tool_name": "fetch_temperature",
+          "exec_id": "9781bd0f-55c6-4fc5-b672-916ae17eee53"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.069563916,
+          "tool_name": "fetch_temperature",
+          "exec_id": "cdca5422-46e6-4474-b19c-c6730a9a78b8"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.069753958,
+          "tool_name": "fetch_temperature",
+          "exec_id": "ec1a9373-30ec-4fc7-a768-77fd67c7d7aa"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.069948375,
+          "tool_name": "fetch_temperature",
+          "exec_id": "6693c516-ec3a-49e4-b6e1-2da756ce387c"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.070165833,
+          "tool_name": "fetch_temperature",
+          "exec_id": "512d63e6-880e-43e7-828d-76e936f68323"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.07052725,
+          "tool_name": "fetch_temperature",
+          "exec_id": "7f7dffbf-410c-4c41-bb66-7f58091c2a17"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.070891125,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a92ee6c4-4a14-4d6b-aa0c-da65cc963dc5"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.071217208,
+          "tool_name": "fetch_temperature",
+          "exec_id": "b23faf39-0f4b-499f-8484-dd418886cc3d"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.071430166,
+          "tool_name": "fetch_temperature",
+          "exec_id": "4bea9317-a678-4175-a95d-3e99f3c9e8aa"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.071629208,
+          "tool_name": "fetch_temperature",
+          "exec_id": "c05e547a-b5b3-4bf9-af4c-4ed0681294c9"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.071822083,
+          "tool_name": "fetch_temperature",
+          "exec_id": "412e2699-e6f7-4e8c-9efb-dc1c5f3166e3"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.072007708,
+          "tool_name": "fetch_temperature",
+          "exec_id": "3ec38004-9b7e-413a-8d4e-253db35b9f13"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.072213583,
+          "tool_name": "fetch_temperature",
+          "exec_id": "8a168baf-f79f-49fc-a4b9-36e41d52da0e"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.072404208,
+          "tool_name": "fetch_temperature",
+          "exec_id": "579a091a-a2b3-491c-ad97-cceb0218c51a"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.072590166,
+          "tool_name": "fetch_temperature",
+          "exec_id": "2322a0a8-c106-47ae-b944-9f2fcc9228bc"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.072825041,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a4c7b26e-ba03-4c74-9337-207d1df3c663"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.073011708,
+          "tool_name": "fetch_temperature",
+          "exec_id": "e3a21121-dff1-471f-b328-afe8f4941079"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.073195583,
+          "tool_name": "fetch_temperature",
+          "exec_id": "09619969-a0a4-47ef-85ea-e0b4f0308ea4"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.073383583,
+          "tool_name": "fetch_temperature",
+          "exec_id": "e1678659-0aa3-4439-a506-7853db9eeabf"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.073561416,
+          "tool_name": "fetch_temperature",
+          "exec_id": "7b179f03-0ca5-478d-9fda-d84085e3bb0b"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.0737435,
+          "tool_name": "fetch_temperature",
+          "exec_id": "7aa106a4-99ef-400d-9524-23a0cafddaaf"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.073944541,
+          "tool_name": "fetch_humidity",
+          "exec_id": "b8e06185-662f-481c-a335-bb5118a691dc"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.074207916,
+          "tool_name": "fetch_humidity",
+          "exec_id": "11ea86fa-59da-42ac-adc1-cab350189513"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.074394208,
+          "tool_name": "fetch_humidity",
+          "exec_id": "49fff688-e2f3-4ebb-905d-9f0b7e266803"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.074588291,
+          "tool_name": "fetch_humidity",
+          "exec_id": "20e6a0a2-ae1e-46de-ada1-aeadda257f75"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.074776833,
+          "tool_name": "fetch_humidity",
+          "exec_id": "ca01d143-45be-4d10-8e90-535cad28ca83"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.074961458,
+          "tool_name": "fetch_humidity",
+          "exec_id": "094a8b11-f0cd-42ae-86b4-49ff5e0ada3e"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.075141541,
+          "tool_name": "fetch_humidity",
+          "exec_id": "3cd98cb2-f74e-4465-bf8e-4153d7cb792d"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.075335208,
+          "tool_name": "fetch_humidity",
+          "exec_id": "954037b7-8c84-4f8e-bb13-176068b63f06"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.075534833,
+          "tool_name": "fetch_humidity",
+          "exec_id": "1678755d-9c74-412d-80d6-8b53f408ace7"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.075774791,
+          "tool_name": "fetch_humidity",
+          "exec_id": "dd31e2cb-3cf6-4973-a132-988895c9a947"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.0759645,
+          "tool_name": "fetch_humidity",
+          "exec_id": "088ad510-4b86-4d16-8e07-ddb91963a2ff"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.076145916,
+          "tool_name": "fetch_humidity",
+          "exec_id": "81de1868-90e6-451e-a6b3-03deb1581c35"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.076336291,
+          "tool_name": "fetch_humidity",
+          "exec_id": "056397cf-4395-4a79-a5ca-27414b715801"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.076516791,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a4c26706-ee1f-48a9-a91f-0ef54ac9cfb6"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.076706333,
+          "tool_name": "fetch_humidity",
+          "exec_id": "ce7a673c-90df-46e5-988e-5f989955f960"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.076964291,
+          "tool_name": "fetch_humidity",
+          "exec_id": "8fe21ee1-690d-4f3b-8efa-9fa2a35670ac"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.077196583,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a5c356f4-0371-4bd1-a839-a7df83d6d704"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.07815925,
+          "tool_name": "fetch_humidity",
+          "exec_id": "122cd251-4787-4c8d-9f21-0c24e3a35d97"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.078379625,
+          "tool_name": "fetch_humidity",
+          "exec_id": "8717ba4d-a7d7-451b-97b7-b2667afe03a2"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.078579541,
+          "tool_name": "fetch_humidity",
+          "exec_id": "7b9f161f-b429-415a-9fdf-9023a8b1d09f"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.078766875,
+          "tool_name": "fetch_humidity",
+          "exec_id": "d9d2ddd7-dcf9-434c-b248-f2aa6b33c78c"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.0789615,
+          "tool_name": "fetch_humidity",
+          "exec_id": "9e37d57b-a12c-43ca-8a3a-d5e878688a5a"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.079156125,
+          "tool_name": "fetch_humidity",
+          "exec_id": "d0855a2d-c446-488f-8fcf-7ca0c1a25eda"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.079347125,
+          "tool_name": "fetch_humidity",
+          "exec_id": "fe222d7b-c599-4ff7-9961-64b795806fd4"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.07953575,
+          "tool_name": "fetch_temperature",
+          "exec_id": "897553ef-8784-47af-9572-67a7bef1f99d"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.079769958,
+          "tool_name": "fetch_temperature",
+          "exec_id": "c7394ae5-dc14-40d0-a800-1dfbd19dc6d4"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.079956541,
+          "tool_name": "fetch_temperature",
+          "exec_id": "210bef77-00d5-4f13-859e-1caa9fc8ca2e"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.080146541,
+          "tool_name": "fetch_temperature",
+          "exec_id": "addcfde5-4bb5-4b6c-ab35-0e4d63c53438"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.080328958,
+          "tool_name": "fetch_temperature",
+          "exec_id": "f9fd86e0-1ad0-43b7-9ed9-0b0475e149e7"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.080512,
+          "tool_name": "fetch_temperature",
+          "exec_id": "2104aeab-5778-4346-ab6f-7f3c6d6a1f53"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.08070225,
+          "tool_name": "fetch_temperature",
+          "exec_id": "8253b3a7-da77-490e-985d-e3b8082fdc94"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.080886291,
+          "tool_name": "fetch_temperature",
+          "exec_id": "2ce51387-28f8-4267-b7e8-da1a99753b31"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.081074791,
+          "tool_name": "fetch_temperature",
+          "exec_id": "99eb8346-47a9-4ae0-9d3d-0e6fe052bb76"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.081303416,
+          "tool_name": "fetch_temperature",
+          "exec_id": "c65b1e67-ade9-4892-b1a9-58c236f92c53"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.081495041,
+          "tool_name": "fetch_temperature",
+          "exec_id": "9e10bbf2-4e7c-435d-83b0-4250558a0871"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.081678791,
+          "tool_name": "fetch_temperature",
+          "exec_id": "9ca02d2e-a29b-4440-a563-8a32ff8c538e"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.081870416,
+          "tool_name": "fetch_temperature",
+          "exec_id": "0f15d59e-96ea-4347-9c92-6b41ced96c2e"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.08205475,
+          "tool_name": "fetch_temperature",
+          "exec_id": "d0a8d693-a6ef-4c31-93d1-4bb6f3f257d5"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.082245333,
+          "tool_name": "fetch_temperature",
+          "exec_id": "c7c77115-c66f-404b-9ca5-1180ee7c4287"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.08242775,
+          "tool_name": "fetch_temperature",
+          "exec_id": "b2d9d53f-1a71-40c9-bc95-6b9012e0ef77"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.08261825,
+          "tool_name": "fetch_temperature",
+          "exec_id": "4fc6d998-beab-4a7b-ac1f-adedcd9ba3ab"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.082851041,
+          "tool_name": "fetch_temperature",
+          "exec_id": "5ca805ea-0816-48d4-b46e-28e3ee6de266"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.083046791,
+          "tool_name": "fetch_temperature",
+          "exec_id": "e0b1a68d-c109-49d0-a967-b1992724e8a6"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.083228625,
+          "tool_name": "fetch_temperature",
+          "exec_id": "10af39ab-b830-49a6-a2b5-ebe4a854cb98"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.083414708,
+          "tool_name": "fetch_temperature",
+          "exec_id": "3d0e06ac-e0c6-46e3-862f-b901dfbd9cbb"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.083598875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "53394c71-5742-4ee9-9201-30c72bc24129"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.083779291,
+          "tool_name": "fetch_temperature",
+          "exec_id": "97bbe365-19b6-4d33-b4f5-ffaf71f9b71c"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.083955666,
+          "tool_name": "fetch_temperature",
+          "exec_id": "f704375b-df4a-4f29-a036-30222f76a062"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.084136458,
+          "tool_name": "fetch_humidity",
+          "exec_id": "de3f8bc6-fc95-46b7-b181-4ade043520d0"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.084362625,
+          "tool_name": "fetch_humidity",
+          "exec_id": "91388695-b091-4b5e-be20-f304702acf50"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.084585166,
+          "tool_name": "fetch_humidity",
+          "exec_id": "b31512b1-514b-4b9e-8796-7fc375944c50"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.084787416,
+          "tool_name": "fetch_humidity",
+          "exec_id": "8abffc6e-d4b3-4eee-a703-d172b91b18a7"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.08498025,
+          "tool_name": "fetch_humidity",
+          "exec_id": "81291826-a711-472a-aa44-2e41db71f9b6"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.085166625,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a2f12bcb-985c-42d5-a344-f087cb88f0b8"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.085353708,
+          "tool_name": "fetch_humidity",
+          "exec_id": "2573b811-32a1-4336-91b1-e9310fb7f220"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.085535583,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a538c7d1-bd38-474a-8633-cabb0283635e"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.0857195,
+          "tool_name": "fetch_humidity",
+          "exec_id": "4b5c106b-e22d-49f5-a709-1353c2f473c1"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.085956666,
+          "tool_name": "fetch_humidity",
+          "exec_id": "3a8e8c64-a8b3-4f4e-9a68-1bc60910a2e1"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.086140958,
+          "tool_name": "fetch_humidity",
+          "exec_id": "18f49c67-b8c9-492e-a7ff-1bc702e59145"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.086328791,
+          "tool_name": "fetch_humidity",
+          "exec_id": "2eb565d6-cf3e-4be3-92e8-f264a47aca89"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.086510208,
+          "tool_name": "fetch_humidity",
+          "exec_id": "acc67f88-1014-4f35-9c93-843b322e844c"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.08678,
+          "tool_name": "fetch_humidity",
+          "exec_id": "27665bdf-e4e8-4814-b738-d74149e8109a"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.087008416,
+          "tool_name": "fetch_humidity",
+          "exec_id": "eea9a3ca-ac9d-4e6f-98c1-ce64db712182"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.087194333,
+          "tool_name": "fetch_humidity",
+          "exec_id": "09e13ce0-03bc-4d7a-8f1e-a13ca232464e"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.0874315,
+          "tool_name": "fetch_humidity",
+          "exec_id": "518eea24-9974-4b93-a1de-a92213c49a08"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.08762625,
+          "tool_name": "fetch_humidity",
+          "exec_id": "3dd00b8b-036b-4120-8271-bcada87cff5a"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.087814666,
+          "tool_name": "fetch_humidity",
+          "exec_id": "7a005415-a269-4841-8925-249f006ec4ab"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.087998083,
+          "tool_name": "fetch_humidity",
+          "exec_id": "52e2ca3b-3999-46a4-914c-02593458a4fb"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.088180166,
+          "tool_name": "fetch_humidity",
+          "exec_id": "23b46933-c26f-48b5-b44c-ba5229fa087b"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.088359041,
+          "tool_name": "fetch_humidity",
+          "exec_id": "8793de01-52be-46b3-9f30-d2dff36b28ad"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.088539458,
+          "tool_name": "fetch_humidity",
+          "exec_id": "6e51896f-f3b7-48a3-a42e-bfa6986acb65"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.088725291,
+          "tool_name": "fetch_humidity",
+          "exec_id": "e51b4768-1bbd-4d9e-be4a-85310e6b8933"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.088946833,
+          "tool_name": "fetch_temperature",
+          "exec_id": "06ae772d-eefe-49c6-96cf-1e66ac509a6b"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.0891335,
+          "tool_name": "fetch_temperature",
+          "exec_id": "34551940-3058-434e-8183-6bc1b7dd740a"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.089312708,
+          "tool_name": "fetch_temperature",
+          "exec_id": "47ef23d3-c683-40fc-affe-b6e16c2b6c27"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.089489208,
+          "tool_name": "fetch_temperature",
+          "exec_id": "c0674163-9fc0-4616-8855-e78751ad818c"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.089671625,
+          "tool_name": "fetch_temperature",
+          "exec_id": "f4265ecf-5484-4775-b300-e32e122e6d2d"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.089852666,
+          "tool_name": "fetch_temperature",
+          "exec_id": "6119d930-069e-413d-9205-5e561a187d61"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.090033958,
+          "tool_name": "fetch_temperature",
+          "exec_id": "f3ee5e4e-ca8b-4256-a23d-9ce7c32b5c45"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.090220208,
+          "tool_name": "fetch_temperature",
+          "exec_id": "6f5ed4a3-a899-4545-89f9-ac71e509fecc"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.0904445,
+          "tool_name": "fetch_temperature",
+          "exec_id": "7a9efa10-a394-4ab5-bd7d-8fb7b78cea5d"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.090639041,
+          "tool_name": "fetch_temperature",
+          "exec_id": "ac58a78b-15e6-4d2f-b103-57916ae1854f"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.090822375,
+          "tool_name": "fetch_temperature",
+          "exec_id": "df86e928-ffd4-48e3-876f-10ead2ce2211"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.0909975,
+          "tool_name": "fetch_temperature",
+          "exec_id": "6aeff4f1-8469-4cb6-9931-53f7e6b1b343"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.091184458,
+          "tool_name": "fetch_temperature",
+          "exec_id": "60db86df-9117-4685-acc5-3a7e3217c6f8"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.091363958,
+          "tool_name": "fetch_temperature",
+          "exec_id": "41da77c0-1342-4176-b825-390195757fc4"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.091554833,
+          "tool_name": "fetch_temperature",
+          "exec_id": "dc5edf22-3f52-4ac1-ac89-785e29514c0f"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.0917365,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a0863574-486d-4792-a112-d683cdee0fc7"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.091956041,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a4b9fd2e-47a0-4810-a198-08bbc341fa7d"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.092146958,
+          "tool_name": "fetch_temperature",
+          "exec_id": "fa2824f0-8d38-4996-97af-9f3eb57c2d30"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.092333208,
+          "tool_name": "fetch_temperature",
+          "exec_id": "59d7ba19-81fc-4609-8daa-6e5aedd95be5"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.092508875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "267f8f4f-f840-498b-a49b-2f6ca5786dc5"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.09269575,
+          "tool_name": "fetch_temperature",
+          "exec_id": "9054c8e7-bfff-48f9-b54b-6595d3476718"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.092871,
+          "tool_name": "fetch_temperature",
+          "exec_id": "912f49e7-e62d-4e3b-adba-3da7c6408e9d"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.093051666,
+          "tool_name": "fetch_temperature",
+          "exec_id": "992339ee-d39d-4368-b156-f66b850667f6"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.093231416,
+          "tool_name": "fetch_temperature",
+          "exec_id": "5326d3e8-5cfb-45be-9e65-07f4b123278f"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.093455458,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a22afca0-006d-4e3e-9ead-d18057d1862b"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.093634125,
+          "tool_name": "fetch_humidity",
+          "exec_id": "e8926837-c9c5-499b-88ec-9964f1bbb905"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.093813208,
+          "tool_name": "fetch_humidity",
+          "exec_id": "dc772de9-f02a-438a-8e7a-6138998ee1ba"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.093988541,
+          "tool_name": "fetch_humidity",
+          "exec_id": "c8dd6f45-d23c-45f2-92c1-ad7b76b44c63"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.094175708,
+          "tool_name": "fetch_humidity",
+          "exec_id": "5f176fd8-5a9e-4509-b5b6-b3a4c6851717"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.094357166,
+          "tool_name": "fetch_humidity",
+          "exec_id": "86b15c66-7bb6-44b1-b4d9-16da9c184d46"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.094537166,
+          "tool_name": "fetch_humidity",
+          "exec_id": "ccb75d92-a1ab-4a36-9b3b-7be65717b680"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.0947185,
+          "tool_name": "fetch_humidity",
+          "exec_id": "6e8718b6-b09b-4c29-a080-9bfd911f95d3"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.094940791,
+          "tool_name": "fetch_humidity",
+          "exec_id": "3e21b068-a6cd-4df3-8590-88a76705d3cb"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.095126166,
+          "tool_name": "fetch_humidity",
+          "exec_id": "1b98315b-0e3b-4126-9823-d3572bf5bd60"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.095303125,
+          "tool_name": "fetch_humidity",
+          "exec_id": "fe2d337b-03c1-46c6-bd24-789547dc6349"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.095480041,
+          "tool_name": "fetch_humidity",
+          "exec_id": "6c988483-fbf4-45bc-81c5-daa9f9c3b50e"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.095661125,
+          "tool_name": "fetch_humidity",
+          "exec_id": "fd443ba9-800e-4e7d-94bd-04c48061ddea"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.095839708,
+          "tool_name": "fetch_humidity",
+          "exec_id": "2843e3a9-6a92-413f-9055-dc10643c4f66"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.096030041,
+          "tool_name": "fetch_humidity",
+          "exec_id": "0b43966b-ee35-44f2-b306-2cb03cd4c647"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.096207458,
+          "tool_name": "fetch_humidity",
+          "exec_id": "e0e04721-5c1f-4f7a-9e1e-d985605859b7"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.096892375,
+          "tool_name": "fetch_humidity",
+          "exec_id": "991bb1c4-117d-45a4-b21a-6f593f2347e0"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.097086208,
+          "tool_name": "fetch_humidity",
+          "exec_id": "ec8a26cc-3e04-49f4-85e5-b8b93267ab66"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.097267416,
+          "tool_name": "fetch_humidity",
+          "exec_id": "3eee5e90-6071-47f1-b651-18d57dd4e773"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.097450833,
+          "tool_name": "fetch_humidity",
+          "exec_id": "3d50020a-b80f-4410-a085-14c8bc9d5e56"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.097629916,
+          "tool_name": "fetch_humidity",
+          "exec_id": "d7d6d4a0-ce1a-48b6-bd88-4264f610a8eb"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.097808333,
+          "tool_name": "fetch_humidity",
+          "exec_id": "7f0a2174-a4f2-456d-b11e-1696f9752896"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.097989875,
+          "tool_name": "fetch_humidity",
+          "exec_id": "59b334b9-2515-4eef-9256-dbcb444942d3"
+        },
+        {
+          "event": "tool_exec_start",
+          "ts": 12086.098169541,
+          "tool_name": "fetch_humidity",
+          "exec_id": "683e32d9-f136-44da-ac96-cb2746fdc252"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12093.483530625,
+          "tool_name": "fetch_temperature",
+          "exec_id": "512d63e6-880e-43e7-828d-76e936f68323"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12093.486472875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "22ce1786-f620-487c-b723-ef26258058e0"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12093.4869495,
+          "tool_name": "fetch_temperature",
+          "exec_id": "42311106-dbf4-4438-8634-45090a248eaf"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12093.487945875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "9781bd0f-55c6-4fc5-b672-916ae17eee53"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12093.488478,
+          "tool_name": "fetch_temperature",
+          "exec_id": "79462e49-b0c2-451c-b836-f8dadeebf885"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12093.489149541,
+          "tool_name": "fetch_temperature",
+          "exec_id": "6693c516-ec3a-49e4-b6e1-2da756ce387c"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12093.489562041,
+          "tool_name": "fetch_temperature",
+          "exec_id": "cdca5422-46e6-4474-b19c-c6730a9a78b8"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12093.489948083,
+          "tool_name": "fetch_temperature",
+          "exec_id": "ec1a9373-30ec-4fc7-a768-77fd67c7d7aa"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12094.476603458,
+          "tool_name": "fetch_temperature",
+          "exec_id": "7f7dffbf-410c-4c41-bb66-7f58091c2a17"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12094.47929575,
+          "tool_name": "fetch_temperature",
+          "exec_id": "b23faf39-0f4b-499f-8484-dd418886cc3d"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12094.479918541,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a92ee6c4-4a14-4d6b-aa0c-da65cc963dc5"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12094.480763083,
+          "tool_name": "fetch_temperature",
+          "exec_id": "4bea9317-a678-4175-a95d-3e99f3c9e8aa"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12094.482123875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "c05e547a-b5b3-4bf9-af4c-4ed0681294c9"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12094.485443,
+          "tool_name": "fetch_temperature",
+          "exec_id": "412e2699-e6f7-4e8c-9efb-dc1c5f3166e3"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12094.486723375,
+          "tool_name": "fetch_temperature",
+          "exec_id": "3ec38004-9b7e-413a-8d4e-253db35b9f13"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12094.487143291,
+          "tool_name": "fetch_temperature",
+          "exec_id": "8a168baf-f79f-49fc-a4b9-36e41d52da0e"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12095.482305,
+          "tool_name": "fetch_temperature",
+          "exec_id": "579a091a-a2b3-491c-ad97-cceb0218c51a"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12095.48883275,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a4c7b26e-ba03-4c74-9337-207d1df3c663"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12095.489758333,
+          "tool_name": "fetch_temperature",
+          "exec_id": "e3a21121-dff1-471f-b328-afe8f4941079"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12095.491279208,
+          "tool_name": "fetch_temperature",
+          "exec_id": "2322a0a8-c106-47ae-b944-9f2fcc9228bc"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12095.492726875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "09619969-a0a4-47ef-85ea-e0b4f0308ea4"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12095.492797916,
+          "tool_name": "fetch_temperature",
+          "exec_id": "e1678659-0aa3-4439-a506-7853db9eeabf"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12095.493111333,
+          "tool_name": "fetch_temperature",
+          "exec_id": "7b179f03-0ca5-478d-9fda-d84085e3bb0b"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12095.493424333,
+          "tool_name": "fetch_temperature",
+          "exec_id": "7aa106a4-99ef-400d-9524-23a0cafddaaf"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12096.486979041,
+          "tool_name": "fetch_humidity",
+          "exec_id": "b8e06185-662f-481c-a335-bb5118a691dc"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12096.491629208,
+          "tool_name": "fetch_humidity",
+          "exec_id": "20e6a0a2-ae1e-46de-ada1-aeadda257f75"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12096.493625083,
+          "tool_name": "fetch_humidity",
+          "exec_id": "11ea86fa-59da-42ac-adc1-cab350189513"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12096.494746916,
+          "tool_name": "fetch_humidity",
+          "exec_id": "49fff688-e2f3-4ebb-905d-9f0b7e266803"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12096.498172666,
+          "tool_name": "fetch_humidity",
+          "exec_id": "ca01d143-45be-4d10-8e90-535cad28ca83"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12096.499252291,
+          "tool_name": "fetch_humidity",
+          "exec_id": "3cd98cb2-f74e-4465-bf8e-4153d7cb792d"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12096.500023458,
+          "tool_name": "fetch_humidity",
+          "exec_id": "954037b7-8c84-4f8e-bb13-176068b63f06"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12096.500559833,
+          "tool_name": "fetch_humidity",
+          "exec_id": "094a8b11-f0cd-42ae-86b4-49ff5e0ada3e"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12097.491985666,
+          "tool_name": "fetch_humidity",
+          "exec_id": "1678755d-9c74-412d-80d6-8b53f408ace7"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12097.495165875,
+          "tool_name": "fetch_humidity",
+          "exec_id": "dd31e2cb-3cf6-4973-a132-988895c9a947"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12097.496001791,
+          "tool_name": "fetch_humidity",
+          "exec_id": "81de1868-90e6-451e-a6b3-03deb1581c35"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12097.496095625,
+          "tool_name": "fetch_humidity",
+          "exec_id": "088ad510-4b86-4d16-8e07-ddb91963a2ff"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12097.503893541,
+          "tool_name": "fetch_humidity",
+          "exec_id": "056397cf-4395-4a79-a5ca-27414b715801"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12097.504586125,
+          "tool_name": "fetch_humidity",
+          "exec_id": "8fe21ee1-690d-4f3b-8efa-9fa2a35670ac"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12097.505344625,
+          "tool_name": "fetch_humidity",
+          "exec_id": "ce7a673c-90df-46e5-988e-5f989955f960"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12097.505765458,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a4c26706-ee1f-48a9-a91f-0ef54ac9cfb6"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12098.494924,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a5c356f4-0371-4bd1-a839-a7df83d6d704"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12098.496543208,
+          "tool_name": "fetch_humidity",
+          "exec_id": "122cd251-4787-4c8d-9f21-0c24e3a35d97"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12098.49763525,
+          "tool_name": "fetch_humidity",
+          "exec_id": "7b9f161f-b429-415a-9fdf-9023a8b1d09f"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12098.49824275,
+          "tool_name": "fetch_humidity",
+          "exec_id": "8717ba4d-a7d7-451b-97b7-b2667afe03a2"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12098.506781583,
+          "tool_name": "fetch_humidity",
+          "exec_id": "d9d2ddd7-dcf9-434c-b248-f2aa6b33c78c"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12098.507506375,
+          "tool_name": "fetch_humidity",
+          "exec_id": "9e37d57b-a12c-43ca-8a3a-d5e878688a5a"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12098.508574291,
+          "tool_name": "fetch_humidity",
+          "exec_id": "d0855a2d-c446-488f-8fcf-7ca0c1a25eda"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12098.509168333,
+          "tool_name": "fetch_humidity",
+          "exec_id": "fe222d7b-c599-4ff7-9961-64b795806fd4"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12099.499397208,
+          "tool_name": "fetch_temperature",
+          "exec_id": "897553ef-8784-47af-9572-67a7bef1f99d"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12099.500714708,
+          "tool_name": "fetch_temperature",
+          "exec_id": "c7394ae5-dc14-40d0-a800-1dfbd19dc6d4"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12099.50140875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "210bef77-00d5-4f13-859e-1caa9fc8ca2e"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12099.502229833,
+          "tool_name": "fetch_temperature",
+          "exec_id": "addcfde5-4bb5-4b6c-ab35-0e4d63c53438"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12099.51287725,
+          "tool_name": "fetch_temperature",
+          "exec_id": "8253b3a7-da77-490e-985d-e3b8082fdc94"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12099.513960666,
+          "tool_name": "fetch_temperature",
+          "exec_id": "f9fd86e0-1ad0-43b7-9ed9-0b0475e149e7"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12099.514686,
+          "tool_name": "fetch_temperature",
+          "exec_id": "2104aeab-5778-4346-ab6f-7f3c6d6a1f53"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12099.515603708,
+          "tool_name": "fetch_temperature",
+          "exec_id": "2ce51387-28f8-4267-b7e8-da1a99753b31"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12100.502200083,
+          "tool_name": "fetch_temperature",
+          "exec_id": "99eb8346-47a9-4ae0-9d3d-0e6fe052bb76"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12100.50323975,
+          "tool_name": "fetch_temperature",
+          "exec_id": "9e10bbf2-4e7c-435d-83b0-4250558a0871"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12100.503768041,
+          "tool_name": "fetch_temperature",
+          "exec_id": "c65b1e67-ade9-4892-b1a9-58c236f92c53"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12100.503848791,
+          "tool_name": "fetch_temperature",
+          "exec_id": "9ca02d2e-a29b-4440-a563-8a32ff8c538e"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12100.51410075,
+          "tool_name": "fetch_temperature",
+          "exec_id": "d0a8d693-a6ef-4c31-93d1-4bb6f3f257d5"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12100.5146475,
+          "tool_name": "fetch_temperature",
+          "exec_id": "0f15d59e-96ea-4347-9c92-6b41ced96c2e"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12100.515419833,
+          "tool_name": "fetch_temperature",
+          "exec_id": "c7c77115-c66f-404b-9ca5-1180ee7c4287"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12100.516515833,
+          "tool_name": "fetch_temperature",
+          "exec_id": "b2d9d53f-1a71-40c9-bc95-6b9012e0ef77"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12101.505633458,
+          "tool_name": "fetch_temperature",
+          "exec_id": "5ca805ea-0816-48d4-b46e-28e3ee6de266"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12101.50714525,
+          "tool_name": "fetch_temperature",
+          "exec_id": "e0b1a68d-c109-49d0-a967-b1992724e8a6"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12101.507324125,
+          "tool_name": "fetch_temperature",
+          "exec_id": "4fc6d998-beab-4a7b-ac1f-adedcd9ba3ab"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12101.508097458,
+          "tool_name": "fetch_temperature",
+          "exec_id": "10af39ab-b830-49a6-a2b5-ebe4a854cb98"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12101.516635916,
+          "tool_name": "fetch_temperature",
+          "exec_id": "3d0e06ac-e0c6-46e3-862f-b901dfbd9cbb"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12101.519738083,
+          "tool_name": "fetch_temperature",
+          "exec_id": "53394c71-5742-4ee9-9201-30c72bc24129"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12101.521192208,
+          "tool_name": "fetch_temperature",
+          "exec_id": "97bbe365-19b6-4d33-b4f5-ffaf71f9b71c"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12101.522789666,
+          "tool_name": "fetch_temperature",
+          "exec_id": "f704375b-df4a-4f29-a036-30222f76a062"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12102.50938475,
+          "tool_name": "fetch_humidity",
+          "exec_id": "91388695-b091-4b5e-be20-f304702acf50"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12102.510919666,
+          "tool_name": "fetch_humidity",
+          "exec_id": "b31512b1-514b-4b9e-8796-7fc375944c50"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12102.511061916,
+          "tool_name": "fetch_humidity",
+          "exec_id": "de3f8bc6-fc95-46b7-b181-4ade043520d0"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12102.511548041,
+          "tool_name": "fetch_humidity",
+          "exec_id": "8abffc6e-d4b3-4eee-a703-d172b91b18a7"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12102.5212585,
+          "tool_name": "fetch_humidity",
+          "exec_id": "81291826-a711-472a-aa44-2e41db71f9b6"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12102.522034416,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a2f12bcb-985c-42d5-a344-f087cb88f0b8"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12102.523196583,
+          "tool_name": "fetch_humidity",
+          "exec_id": "2573b811-32a1-4336-91b1-e9310fb7f220"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12102.525454875,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a538c7d1-bd38-474a-8633-cabb0283635e"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12103.512599416,
+          "tool_name": "fetch_humidity",
+          "exec_id": "4b5c106b-e22d-49f5-a709-1353c2f473c1"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12103.51385475,
+          "tool_name": "fetch_humidity",
+          "exec_id": "18f49c67-b8c9-492e-a7ff-1bc702e59145"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12103.514779541,
+          "tool_name": "fetch_humidity",
+          "exec_id": "3a8e8c64-a8b3-4f4e-9a68-1bc60910a2e1"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12103.515386875,
+          "tool_name": "fetch_humidity",
+          "exec_id": "2eb565d6-cf3e-4be3-92e8-f264a47aca89"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12103.523695916,
+          "tool_name": "fetch_humidity",
+          "exec_id": "acc67f88-1014-4f35-9c93-843b322e844c"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12103.524249583,
+          "tool_name": "fetch_humidity",
+          "exec_id": "27665bdf-e4e8-4814-b738-d74149e8109a"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12103.526220625,
+          "tool_name": "fetch_humidity",
+          "exec_id": "eea9a3ca-ac9d-4e6f-98c1-ce64db712182"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12103.528602583,
+          "tool_name": "fetch_humidity",
+          "exec_id": "09e13ce0-03bc-4d7a-8f1e-a13ca232464e"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12104.516259041,
+          "tool_name": "fetch_humidity",
+          "exec_id": "7a005415-a269-4841-8925-249f006ec4ab"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12104.517396375,
+          "tool_name": "fetch_humidity",
+          "exec_id": "3dd00b8b-036b-4120-8271-bcada87cff5a"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12104.518155958,
+          "tool_name": "fetch_humidity",
+          "exec_id": "518eea24-9974-4b93-a1de-a92213c49a08"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12104.518928666,
+          "tool_name": "fetch_humidity",
+          "exec_id": "52e2ca3b-3999-46a4-914c-02593458a4fb"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12104.527764625,
+          "tool_name": "fetch_humidity",
+          "exec_id": "23b46933-c26f-48b5-b44c-ba5229fa087b"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12104.528622625,
+          "tool_name": "fetch_humidity",
+          "exec_id": "8793de01-52be-46b3-9f30-d2dff36b28ad"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12104.529243,
+          "tool_name": "fetch_humidity",
+          "exec_id": "6e51896f-f3b7-48a3-a42e-bfa6986acb65"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12104.531370375,
+          "tool_name": "fetch_humidity",
+          "exec_id": "e51b4768-1bbd-4d9e-be4a-85310e6b8933"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12105.518677125,
+          "tool_name": "fetch_temperature",
+          "exec_id": "34551940-3058-434e-8183-6bc1b7dd740a"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12105.519451958,
+          "tool_name": "fetch_temperature",
+          "exec_id": "06ae772d-eefe-49c6-96cf-1e66ac509a6b"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12105.5200845,
+          "tool_name": "fetch_temperature",
+          "exec_id": "47ef23d3-c683-40fc-affe-b6e16c2b6c27"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12105.520717791,
+          "tool_name": "fetch_temperature",
+          "exec_id": "c0674163-9fc0-4616-8855-e78751ad818c"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12105.529115541,
+          "tool_name": "fetch_temperature",
+          "exec_id": "6119d930-069e-413d-9205-5e561a187d61"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12105.529491083,
+          "tool_name": "fetch_temperature",
+          "exec_id": "f4265ecf-5484-4775-b300-e32e122e6d2d"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12105.5314035,
+          "tool_name": "fetch_temperature",
+          "exec_id": "f3ee5e4e-ca8b-4256-a23d-9ce7c32b5c45"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12105.532403625,
+          "tool_name": "fetch_temperature",
+          "exec_id": "6f5ed4a3-a899-4545-89f9-ac71e509fecc"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12106.52268875,
+          "tool_name": "fetch_temperature",
+          "exec_id": "df86e928-ffd4-48e3-876f-10ead2ce2211"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12106.523929125,
+          "tool_name": "fetch_temperature",
+          "exec_id": "ac58a78b-15e6-4d2f-b103-57916ae1854f"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12106.524361083,
+          "tool_name": "fetch_temperature",
+          "exec_id": "7a9efa10-a394-4ab5-bd7d-8fb7b78cea5d"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12106.524986125,
+          "tool_name": "fetch_temperature",
+          "exec_id": "6aeff4f1-8469-4cb6-9931-53f7e6b1b343"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12106.532122958,
+          "tool_name": "fetch_temperature",
+          "exec_id": "60db86df-9117-4685-acc5-3a7e3217c6f8"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12106.532815708,
+          "tool_name": "fetch_temperature",
+          "exec_id": "41da77c0-1342-4176-b825-390195757fc4"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12106.536472416,
+          "tool_name": "fetch_temperature",
+          "exec_id": "dc5edf22-3f52-4ac1-ac89-785e29514c0f"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12106.538355333,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a0863574-486d-4792-a112-d683cdee0fc7"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12107.527112083,
+          "tool_name": "fetch_temperature",
+          "exec_id": "fa2824f0-8d38-4996-97af-9f3eb57c2d30"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12107.528116916,
+          "tool_name": "fetch_temperature",
+          "exec_id": "a4b9fd2e-47a0-4810-a198-08bbc341fa7d"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12107.529167916,
+          "tool_name": "fetch_temperature",
+          "exec_id": "59d7ba19-81fc-4609-8daa-6e5aedd95be5"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12107.52984175,
+          "tool_name": "fetch_temperature",
+          "exec_id": "267f8f4f-f840-498b-a49b-2f6ca5786dc5"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12107.537596333,
+          "tool_name": "fetch_temperature",
+          "exec_id": "9054c8e7-bfff-48f9-b54b-6595d3476718"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12107.538330041,
+          "tool_name": "fetch_temperature",
+          "exec_id": "912f49e7-e62d-4e3b-adba-3da7c6408e9d"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12107.538993208,
+          "tool_name": "fetch_temperature",
+          "exec_id": "992339ee-d39d-4368-b156-f66b850667f6"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12107.540231416,
+          "tool_name": "fetch_temperature",
+          "exec_id": "5326d3e8-5cfb-45be-9e65-07f4b123278f"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12108.53091125,
+          "tool_name": "fetch_humidity",
+          "exec_id": "a22afca0-006d-4e3e-9ead-d18057d1862b"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12108.531983,
+          "tool_name": "fetch_humidity",
+          "exec_id": "e8926837-c9c5-499b-88ec-9964f1bbb905"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12108.532099541,
+          "tool_name": "fetch_humidity",
+          "exec_id": "dc772de9-f02a-438a-8e7a-6138998ee1ba"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12108.532926041,
+          "tool_name": "fetch_humidity",
+          "exec_id": "c8dd6f45-d23c-45f2-92c1-ad7b76b44c63"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12108.540066958,
+          "tool_name": "fetch_humidity",
+          "exec_id": "86b15c66-7bb6-44b1-b4d9-16da9c184d46"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12108.540907083,
+          "tool_name": "fetch_humidity",
+          "exec_id": "5f176fd8-5a9e-4509-b5b6-b3a4c6851717"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12108.5416985,
+          "tool_name": "fetch_humidity",
+          "exec_id": "ccb75d92-a1ab-4a36-9b3b-7be65717b680"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12108.542782833,
+          "tool_name": "fetch_humidity",
+          "exec_id": "6e8718b6-b09b-4c29-a080-9bfd911f95d3"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12109.533460041,
+          "tool_name": "fetch_humidity",
+          "exec_id": "fe2d337b-03c1-46c6-bd24-789547dc6349"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12109.534647958,
+          "tool_name": "fetch_humidity",
+          "exec_id": "1b98315b-0e3b-4126-9823-d3572bf5bd60"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12109.535602875,
+          "tool_name": "fetch_humidity",
+          "exec_id": "3e21b068-a6cd-4df3-8590-88a76705d3cb"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12109.536261166,
+          "tool_name": "fetch_humidity",
+          "exec_id": "6c988483-fbf4-45bc-81c5-daa9f9c3b50e"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12109.54323275,
+          "tool_name": "fetch_humidity",
+          "exec_id": "fd443ba9-800e-4e7d-94bd-04c48061ddea"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12109.543853333,
+          "tool_name": "fetch_humidity",
+          "exec_id": "2843e3a9-6a92-413f-9055-dc10643c4f66"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12109.544352916,
+          "tool_name": "fetch_humidity",
+          "exec_id": "0b43966b-ee35-44f2-b306-2cb03cd4c647"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12109.545631916,
+          "tool_name": "fetch_humidity",
+          "exec_id": "e0e04721-5c1f-4f7a-9e1e-d985605859b7"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12110.540117125,
+          "tool_name": "fetch_humidity",
+          "exec_id": "991bb1c4-117d-45a4-b21a-6f593f2347e0"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12110.541256416,
+          "tool_name": "fetch_humidity",
+          "exec_id": "3eee5e90-6071-47f1-b651-18d57dd4e773"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12110.541876791,
+          "tool_name": "fetch_humidity",
+          "exec_id": "ec8a26cc-3e04-49f4-85e5-b8b93267ab66"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12110.542572666,
+          "tool_name": "fetch_humidity",
+          "exec_id": "3d50020a-b80f-4410-a085-14c8bc9d5e56"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12110.545739416,
+          "tool_name": "fetch_humidity",
+          "exec_id": "d7d6d4a0-ce1a-48b6-bd88-4264f610a8eb"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12110.546313375,
+          "tool_name": "fetch_humidity",
+          "exec_id": "7f0a2174-a4f2-456d-b11e-1696f9752896"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12110.547229458,
+          "tool_name": "fetch_humidity",
+          "exec_id": "59b334b9-2515-4eef-9256-dbcb444942d3"
+        },
+        {
+          "event": "tool_exec_end",
+          "ts": 12110.548466791,
+          "tool_name": "fetch_humidity",
+          "exec_id": "683e32d9-f136-44da-ac96-cb2746fdc252"
+        }
+      ]
     }
   ]
 }

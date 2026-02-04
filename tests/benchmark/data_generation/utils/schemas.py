@@ -53,11 +53,11 @@ class WorkloadResult(BaseModel):
 	"""Raw metrics/result values from a workload run."""
 
 	total_makespan: float
-	total_overhead_makespan: float
+	events: List[Dict[str, Any]]  # Profiling events from the engine
 
 
 class BenchmarkedRecord(BenchmarkConfig):
 	"""Full experiment record: metadata plus workload results."""
 
 	total_makespan: float
-	total_overhead_makespan: float
+	events: List[Dict[str, Any]]  # Profiling events from the engine

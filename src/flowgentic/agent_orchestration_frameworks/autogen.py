@@ -1,4 +1,6 @@
 from functools import wraps
+import time
+import uuid
 from typing import Any, Callable
 
 from flowgentic.agent_orchestration_frameworks.base import AgentOrchestrator
@@ -14,10 +16,32 @@ class AutoGenOrchestrator(AgentOrchestrator):
 		Wraps a tool function so it executes via the flowgentic engine.
 		autogen reads the signature from the wrapper (via @wraps).
 		"""
+		tool_name = getattr(func, "__name__", str(func))
+		wrap_id = str(uuid.uuid4())
+
+		# Emit setup start event
+		self.engine.emit(
+			{
+				"event": "tool_wrap_start",
+				"ts": time.perf_counter(),
+				"tool_name": tool_name,
+				"wrap_id": wrap_id,
+			}
+		)
 
 		@wraps(func)
 		async def wrapper(*args, **kwargs):
 			return await self.engine.execute_tool(func, *args, **kwargs)
+
+		# Emit setup end event
+		self.engine.emit(
+			{
+				"event": "tool_wrap_end",
+				"ts": time.perf_counter(),
+				"tool_name": tool_name,
+				"wrap_id": wrap_id,
+			}
+		)
 
 		return wrapper
 
@@ -25,4 +49,29 @@ class AutoGenOrchestrator(AgentOrchestrator):
 		"""
 		Wraps a function to be used as a custom Reply function in AutoGen.
 		"""
-		return self.engine.wrap_node(node_func)
+		node_name = getattr(node_func, "__name__", str(node_func))
+		wrap_id = str(uuid.uuid4())
+
+		# Emit node wrap start event
+		self.engine.emit(
+			{
+				"event": "node_wrap_start",
+				"ts": time.perf_counter(),
+				"node_name": node_name,
+				"wrap_id": wrap_id,
+			}
+		)
+
+		wrapped_node = self.engine.wrap_node(node_func)
+
+		# Emit node wrap end event
+		self.engine.emit(
+			{
+				"event": "node_wrap_end",
+				"ts": time.perf_counter(),
+				"node_name": node_name,
+				"wrap_id": wrap_id,
+			}
+		)
+
+		return wrapped_node
