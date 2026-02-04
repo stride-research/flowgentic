@@ -13,6 +13,9 @@ from tests.benchmark.data_generation.experiments.base.base_experiment import (
 from tests.benchmark.data_generation.experiments.synthethic_adaptive.main import (
 	SynthethicAdaptive,
 )
+from tests.benchmark.data_generation.experiments.backend_comparison.main import (
+	BackendComparison,
+)
 from tests.benchmark.data_generation.utils.io_utils import IOUtils
 from tests.benchmark.data_generation.utils.schemas import (
 	BenchmarkConfig,
@@ -70,7 +73,10 @@ async def main():
 	benchmark = FlowGenticBenchmarkManager()
 
 	# Experiment 2
-	benchmark.register_experiment("syntethic_adaptive", SynthethicAdaptive)
+	#benchmark.register_experiment("syntethic_adaptive", SynthethicAdaptive)
+
+	# Experiment 3: Backend comparison (AsyncFlow vs Parsl)
+	benchmark.register_experiment("backend_comparison", BackendComparison)
 
 	# Execution of experiments
 	await benchmark.run_registerd_experiments()
