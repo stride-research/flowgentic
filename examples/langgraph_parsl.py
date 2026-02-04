@@ -46,14 +46,14 @@ async def start_app():
 	orchestrator = LanGraphOrchestrator(engine)
 
 	# --- DEFINE HPC TOOLS ---
-	@orchestrator.hpc_tool
+	@orchestrator.hpc_task
 	async def fetch_temperature(location: str = "SFO"):
 		"""Fetches temperature of a given city."""
 		logger.debug(f"Executing temperature tool")
 		await asyncio.sleep(2)
 		return {"temperature": 70, "location": location}
 
-	@orchestrator.hpc_tool
+	@orchestrator.hpc_task
 	async def fetch_humidity(location: str = "SFO"):
 		"""Fetches humidity of a given city."""
 		logger.debug(f"Execute humidity tool")
@@ -64,7 +64,7 @@ async def start_app():
 	llm = DummyLanggraphModelProvider(calls_per_tool=1).bind_tools(tools)
 
 	# --- DEFINE GRAPH NODES ---
-	@orchestrator.hpc_node
+	@orchestrator.hpc_block
 	async def chatbot_logic(state: WorkflowState):
 		response = await llm.ainvoke(state.messages)
 		return {"messages": [response]}

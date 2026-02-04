@@ -18,10 +18,7 @@ import time
 from langgraph.prebuilt import ToolNode
 
 
-from tests.benchmark.data_generation.utils.schemas import (
-	WorkloadConfig,
-	WorkloadResult,
-)
+from tests.benchmark.data_generation.utils.schemas import WorkloadConfig
 from tests.benchmark.data_generation.workload.base_workload import BaseWorkload
 
 
@@ -46,21 +43,25 @@ class LangraphWorkload(BaseWorkload):
 	def __init__(self, workload_config: WorkloadConfig) -> None:
 		super().__init__(workload_config=workload_config)
 
-	async def run(self, engine: BaseEngine) -> WorkloadResult:
+	async def run(self, engine: BaseEngine) -> float:
+		"""
+		Run the workload and return the total makespan in seconds.
+		Events are captured by the engine's observer.
+		"""
 		t_execution_start = time.perf_counter()
 
 		# --- INITIALIZE FLOWGENTIC ---
 		orchestrator = LanGraphOrchestrator(engine)
 
-		# --- DEFINE HPC TOOLS ---
-		@orchestrator.hpc_tool(service=True)
+		# --- DEFINE HPC TASKS ---
+		@orchestrator.hpc_task()
 		async def fetch_temperature(location: str = "SFO"):
 			"""Fetches temperature of a given city."""
 			logger.debug(f"Executing temperature tool")
 			await asyncio.sleep(self.tool_execution_duration_time)
 			return {"temperature": 70, "location": location}
 
-		@orchestrator.hpc_tool
+		@orchestrator.hpc_task
 		async def fetch_humidity(location: str = "SFO"):
 			"""Fetches humidity of a given city."""
 			logger.debug(f"Execute humidity tool")
@@ -73,7 +74,7 @@ class LangraphWorkload(BaseWorkload):
 		).bind_tools(tools)
 
 		# --- DEFINE GRAPH NODES ---
-		@orchestrator.hpc_node
+		@orchestrator.hpc_block
 		async def chatbot_logic(state: WorkflowState):
 			response = await llm.ainvoke(state.messages)
 			return {"messages": [response]}
@@ -112,7 +113,4 @@ class LangraphWorkload(BaseWorkload):
 
 		t_execution_end = time.perf_counter()
 
-		return WorkloadResult(
-			total_makespan=t_execution_end - t_execution_start,
-			total_overhead_makespan=-1.0,
-		)
+		return t_execution_end - t_execution_start

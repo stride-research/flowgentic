@@ -59,14 +59,14 @@ async def start_app():
 	orchestrator = LanGraphOrchestrator(engine)
 
 	# --- DEFINE HPC TOOLS ---
-	@orchestrator.hpc_tool
+	@orchestrator.hpc_task
 	async def fetch_temperature(location: str = "SFO") -> dict:
 		"""Fetches temperature of a given city."""
 		logger.info(f"Executing temperature tool for {location}")
 		await asyncio.sleep(2)
 		return {"temperature": 70, "location": location}
 
-	@orchestrator.hpc_tool
+	@orchestrator.hpc_task
 	async def fetch_humidity(location: str = "SFO") -> dict:
 		"""Fetches humidity of a given city."""
 		logger.info(f"Executing humidity tool for {location}")

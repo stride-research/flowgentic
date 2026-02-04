@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
 import json
-from typing import Any, Dict
+from typing import Any, Dict, List
 import logging
 
-from tests.benchmark.data_generation.utils.schemas import WorkloadConfig
+from tests.benchmark.data_generation.utils.schemas import WorkloadConfig, WorkloadResult
 from tests.benchmark.data_generation.workload.base_workload import BaseWorkload
 from tests.benchmark.data_generation.workload.utils.engine import resolve_engine
 
@@ -26,16 +26,20 @@ class BaseExperiment(ABC):
 
 	async def run_workload(
 		self, workload_orchestrator: BaseWorkload, workload_config: WorkloadConfig
-	):
+	) -> WorkloadResult:
+		# Event collector for profiling
+		events: List[Dict[str, Any]] = []
+
 		# Single workload with shared backend across all agents
 		workload: BaseWorkload = workload_orchestrator(workload_config=workload_config)
 		engine = await resolve_engine(
 			engine_id=workload_config.engine_id,
 			n_of_backend_slots=workload_config.n_of_backend_slots,
+			observer=events.append,  # Simple observer: just append to list
 		)
-		results = await workload.run(engine)
+		makespan = await workload.run(engine)
 
-		return results
+		return WorkloadResult(total_makespan=makespan, events=events)
 
 	@abstractmethod
 	async def run_experiment(
