@@ -1,14 +1,18 @@
 from abc import ABC, abstractmethod
-from typing import Any, List, Tuple, Dict
+from typing import Any, Callable, List, Optional, Tuple, Dict
 
 
 class BaseEngine(ABC):
 	@abstractmethod
-	async def execute_tools(
-		self, tools_to_use: List[Tuple[str, Dict]], tools: Dict[str, Any]
+	async def execute_tool(
+		self,
+		func: Callable,
+		*args,
+		task_kwargs: Optional[Dict[str, Any]] = None,
+		**kwargs,
 	) -> Dict[str, Any]:
 		pass
 
 	@abstractmethod
-	async def wrap_agent_run(self, agent_logic_fn, *args, **kwargs):
+	async def wrap_node(self, node_func: Callable):
 		pass

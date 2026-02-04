@@ -1,12 +1,8 @@
-import asyncio
-import json
-from typing import List, Tuple, Dict, Any
-from openai.types.chat import ChatCompletionMessageFunctionToolCall
-from radical.asyncflow import WorkflowEngine
-from flowgentic.backend_engines.base import BaseEngine
-from flowgentic.core.tool.tool import Tool
+from typing import Callable, Dict, Any, Optional, Tuple
 
 import logging
+from radical.asyncflow import WorkflowEngine
+from flowgentic.backend_engines.base import BaseEngine
 
 logger = logging.getLogger(__name__)
 
@@ -14,42 +10,33 @@ logger = logging.getLogger(__name__)
 class AsyncFlowEngine(BaseEngine):
 	def __init__(self, flow: WorkflowEngine):
 		self.flow = flow
-		self._task_registry = {}
+		self._task_registry: Dict[
+			Tuple[Callable, Tuple[Tuple[str, Any], ...]], Any
+		] = {}
 
-	async def execute_tools(
+	async def execute_tool(
 		self,
-		tools_to_use: List[ChatCompletionMessageFunctionToolCall],
-		tools: Dict[str, Tool],
+		func: Callable,
+		*args,
+		task_kwargs: Optional[Dict[str, Any]] = None,
+		**kwargs,
 	) -> Dict[str, Any]:
-		futures = []
-		task_names = []
+		task_kwargs = task_kwargs or {}
+		key = (func, tuple(sorted(task_kwargs.items())))
 
-		logger.debug(f"tools_to_use: {tools_to_use}")
+		if key not in self._task_registry:
+			# Pass wrapper-level params into task creation here
+			self._task_registry[key] = self.flow.function_task(func, **task_kwargs)
 
-		for tool in tools_to_use:
-			func = tool.function
-			if func.name not in self._task_registry:
-				self._task_registry[func.name] = self.flow.function_task(
-					tools[func.name].func
-				)
+		task = self._task_registry[key]
+		return await task(*args, **kwargs)
 
-			task = self._task_registry[func.name]
-			futures.append(task(**json.loads(func.arguments)))
-			task_names.append(func.name)
-
-		# Concurrent execution
-		results = await asyncio.gather(*futures)
-		return dict(zip(task_names, results))
-
-	async def wrap_agent_run(self, agent_logic_fn, *args, **kwargs):
-		"""
-		Wraps the agent loop in an AsyncFlow block.
-		This allows the entire agent 'thought' to be a managed unit on the HPC.
-		"""
-
+	def wrap_node(self, node_func: Callable):
 		@self.flow.block
-		async def agent_block(*fn_args, **fn_kwargs):
-			return await agent_logic_fn(*fn_args, **fn_kwargs)
+		async def node_block(*args, **kwargs):
+			return await node_func(*args, **kwargs)
 
-		# Trigger the block and return the future
-		return await agent_block(*args, **kwargs)
+		async def async_node_wrapper(*args, **kwargs):
+			return await node_block(*args, **kwargs)
+
+		return async_node_wrapper
