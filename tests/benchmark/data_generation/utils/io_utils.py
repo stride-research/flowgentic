@@ -7,7 +7,6 @@ from tests.benchmark.data_generation.utils.schemas import BenchmarkConfig
 
 class IOUtils:
 	def __init__(self, config_path: Path = Path("tests/benchmark/config.yml")) -> None:
-		self.config = self._load_config(config_path)
 		self.config_path = config_path
 		self.benchmark_config = self.get_run_config()
 		self._create_core_directories(self.benchmark_config.run_name)
@@ -18,12 +17,16 @@ class IOUtils:
 
 	def get_run_config(self):
 		"""Parses the config.yml"""
-		run_name = self.config["run_name"]
-		run_description = self.config["run_description"]
+		# Read the yaml
+		config_yaml = self._load_config(self.config_path)
 
-		workload_id = self.config["workload_id"]
+		# Create object out of config
+		run_name = config_yaml["run_name"]
+		run_description = config_yaml["run_description"]
 
-		environment = self.config["environment"]
+		workload_id = config_yaml["workload_id"]
+
+		environment = config_yaml["environment"]
 		n_of_agents = int(environment["n_of_agents"])
 		n_of_tool_calls_per_agent = int(environment["n_of_tool_calls_per_agent"])
 		n_of_backend_slots = int(environment["n_of_backend_slots"])

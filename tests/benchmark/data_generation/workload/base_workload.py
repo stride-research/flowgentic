@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from flowgentic.backend_engines.base import BaseEngine
 from tests.benchmark.data_generation.utils.schemas import (
 	WorkloadConfig,
-	BenchamarkWorkloadResult,
+	WorkloadResult,
 )
 
 
@@ -18,5 +18,5 @@ class BaseWorkload(ABC):
 		self.tool_execution_duration_time = workload_config.tool_execution_duration_time
 
 	@abstractmethod
-	async def run(self, engine: BaseEngine) -> BenchamarkWorkloadResult:
+	async def run(self, engine: BaseEngine) -> WorkloadResult:
 		pass

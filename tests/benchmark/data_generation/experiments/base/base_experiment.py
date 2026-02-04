@@ -3,6 +3,10 @@ import json
 from typing import Any, Dict
 import logging
 
+from tests.benchmark.data_generation.utils.schemas import WorkloadConfig
+from tests.benchmark.data_generation.workload.base_workload import BaseWorkload
+from tests.benchmark.data_generation.workload.utils.engine import resolve_engine
+
 logger = logging.getLogger(__name__)
 
 
@@ -20,8 +24,21 @@ class BaseExperiment(ABC):
 		self.data_dir = data_dir
 		self.plots_dir = plots_dir
 
+	async def run_workload(
+		self, workload_orchestrator: BaseWorkload, workload_config: WorkloadConfig
+	):
+		# Single workload with shared backend across all agents
+		workload: BaseWorkload = workload_orchestrator(workload_config=workload_config)
+		engine = await resolve_engine(
+			engine_id=workload_config.engine_id,
+			n_of_backend_slots=workload_config.n_of_backend_slots,
+		)
+		results = await workload.run(engine)
+
+		return results
+
 	@abstractmethod
-	def run_experiment(
+	async def run_experiment(
 		self,
 	) -> Dict[Any, Any]:  # Data expected to come out format is meant to be JSON-like
 		pass

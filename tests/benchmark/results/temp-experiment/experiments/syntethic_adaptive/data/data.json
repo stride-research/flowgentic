@@ -1,6 +1,102 @@
 {
-  "OUTPUT": {
-    "subexperiment1": 1,
-    "subexperiment2": 2
-  }
+  "strong_scaling-op-work": [
+    {
+      "run_name": "temp-experiment",
+      "run_description": "foo description",
+      "workload_id": "langgraph_asyncflow",
+      "n_of_agents": 3,
+      "n_of_tool_calls_per_agent": 3,
+      "n_of_backend_slots": 1,
+      "workload_type": "fixed_agents_vary_tools",
+      "tool_execution_duration_time": 3,
+      "total_makespan": 56.38747062499988,
+      "total_overhead_makespan": -1.0
+    },
+    {
+      "run_name": "temp-experiment",
+      "run_description": "foo description",
+      "workload_id": "langgraph_asyncflow",
+      "n_of_agents": 3,
+      "n_of_tool_calls_per_agent": 3,
+      "n_of_backend_slots": 2,
+      "workload_type": "fixed_agents_vary_tools",
+      "tool_execution_duration_time": 3,
+      "total_makespan": 29.439475834000405,
+      "total_overhead_makespan": -1.0
+    },
+    {
+      "run_name": "temp-experiment",
+      "run_description": "foo description",
+      "workload_id": "langgraph_asyncflow",
+      "n_of_agents": 3,
+      "n_of_tool_calls_per_agent": 3,
+      "n_of_backend_slots": 4,
+      "workload_type": "fixed_agents_vary_tools",
+      "tool_execution_duration_time": 3,
+      "total_makespan": 18.363147167000534,
+      "total_overhead_makespan": -1.0
+    },
+    {
+      "run_name": "temp-experiment",
+      "run_description": "foo description",
+      "workload_id": "langgraph_asyncflow",
+      "n_of_agents": 3,
+      "n_of_tool_calls_per_agent": 3,
+      "n_of_backend_slots": 8,
+      "workload_type": "fixed_agents_vary_tools",
+      "tool_execution_duration_time": 3,
+      "total_makespan": 14.448866290999831,
+      "total_overhead_makespan": -1.0
+    }
+  ],
+  "weak_scaling-op-work": [
+    {
+      "run_name": "temp-experiment",
+      "run_description": "foo description",
+      "workload_id": "langgraph_asyncflow",
+      "n_of_agents": 3,
+      "n_of_tool_calls_per_agent": 3,
+      "n_of_backend_slots": 1,
+      "workload_type": "fixed_agents_vary_tools",
+      "tool_execution_duration_time": 3,
+      "total_makespan": 56.34318245899976,
+      "total_overhead_makespan": -1.0
+    },
+    {
+      "run_name": "temp-experiment",
+      "run_description": "foo description",
+      "workload_id": "langgraph_asyncflow",
+      "n_of_agents": 3,
+      "n_of_tool_calls_per_agent": 6,
+      "n_of_backend_slots": 2,
+      "workload_type": "fixed_agents_vary_tools",
+      "tool_execution_duration_time": 3,
+      "total_makespan": 56.84708304099968,
+      "total_overhead_makespan": -1.0
+    },
+    {
+      "run_name": "temp-experiment",
+      "run_description": "foo description",
+      "workload_id": "langgraph_asyncflow",
+      "n_of_agents": 3,
+      "n_of_tool_calls_per_agent": 12,
+      "n_of_backend_slots": 4,
+      "workload_type": "fixed_agents_vary_tools",
+      "tool_execution_duration_time": 3,
+      "total_makespan": 56.85689033399922,
+      "total_overhead_makespan": -1.0
+    },
+    {
+      "run_name": "temp-experiment",
+      "run_description": "foo description",
+      "workload_id": "langgraph_asyncflow",
+      "n_of_agents": 3,
+      "n_of_tool_calls_per_agent": 24,
+      "n_of_backend_slots": 8,
+      "workload_type": "fixed_agents_vary_tools",
+      "tool_execution_duration_time": 3,
+      "total_makespan": 60.81627050000043,
+      "total_overhead_makespan": -1.0
+    }
+  ]
 }

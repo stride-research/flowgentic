@@ -35,25 +35,29 @@ class BenchmarkConfig(BaseModel):
 	tool_execution_duration_time: int
 
 
-class BenchmarkResult(BenchmarkConfig):
-	total_makespan: float
-	total_flowgentic_makespan: float
-
-
 class WorkloadResult(BaseModel):
 	result: Dict[str, Any]
 	flowgentic_overhead: float
 	execution_time: float
 
 
-class BenchamarkWorkloadResult(BaseModel):
-	total_makespan: float
-	total_flowgentic_makespan: float
-
-
-class WorkloadConfig:
+class WorkloadConfig(BaseModel):
 	n_of_agents: int
 	n_of_tool_calls_per_agent: int
 	n_of_backend_slots: int
 	tool_execution_duration_time: int
 	engine_id: EngineIDs
+
+
+class WorkloadResult(BaseModel):
+	"""Raw metrics/result values from a workload run."""
+
+	total_makespan: float
+	total_overhead_makespan: float
+
+
+class BenchmarkedRecord(BenchmarkConfig):
+	"""Full experiment record: metadata plus workload results."""
+
+	total_makespan: float
+	total_overhead_makespan: float
