@@ -21,6 +21,7 @@ dist/
 .env
 .env
 .env.*
+/venv/
 
 # AI/ML & LangGraph
 *.pkl
