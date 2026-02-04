@@ -94,7 +94,7 @@ class SynthethicAdaptive(BaseExperiment):
 				# Results
 				total_makespan=workload_result.total_makespan,
 				events=workload_result.events,
-			).model_dump(mode="json")  # mode="json" ensures enums serialize as strings
+			).model_dump(mode="json")
 			logger.debug(f"Writing to logs: {benchmark_result}")
 
 			workloads_results.append(benchmark_result)
