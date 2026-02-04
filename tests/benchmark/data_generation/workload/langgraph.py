@@ -20,7 +20,7 @@ from langgraph.prebuilt import ToolNode
 
 from tests.benchmark.data_generation.utils.schemas import (
 	WorkloadConfig,
-	BenchamarkWorkloadResult,
+	WorkloadResult,
 )
 from tests.benchmark.data_generation.workload.base_workload import BaseWorkload
 
@@ -37,10 +37,16 @@ class WorkflowState(BaseModel):
 
 
 class LangraphWorkload(BaseWorkload):
+	"""
+	Defines langgraph workload with configurable:
+		- number of agents
+		-tool calls per agents
+	"""
+
 	def __init__(self, workload_config: WorkloadConfig) -> None:
 		super().__init__(workload_config=workload_config)
 
-	async def run(self, engine: BaseEngine) -> BenchamarkWorkloadResult:
+	async def run(self, engine: BaseEngine) -> WorkloadResult:
 		t_execution_start = time.perf_counter()
 
 		# --- INITIALIZE FLOWGENTIC ---
@@ -80,7 +86,7 @@ class LangraphWorkload(BaseWorkload):
 			return "end"
 
 		# --- COMPILE GRAPH ---
-		async def run_single_agent():
+		async def instantiate_agent():
 			workflow = StateGraph(WorkflowState)
 			workflow.add_node("agent", chatbot_logic)
 			workflow.add_node("tools", ToolNode(tools))
@@ -101,11 +107,12 @@ class LangraphWorkload(BaseWorkload):
 			}
 			return await app.ainvoke(input_state)
 
-		results = await asyncio.gather(*[run_single_agent() for i in self.n_of_agents])
+		workloads = [instantiate_agent() for i in range(self.n_of_agents)]
+		results = await asyncio.gather(*workloads)
 
 		t_execution_end = time.perf_counter()
 
-		return BenchamarkWorkloadResult(
+		return WorkloadResult(
 			total_makespan=t_execution_end - t_execution_start,
-			total_flowgentic_makespan=-1.0,
+			total_overhead_makespan=-1.0,
 		)

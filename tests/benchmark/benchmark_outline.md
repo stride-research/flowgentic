@@ -42,6 +42,27 @@ Midnight feb 4
 2. Report coordination (i.e., flowgentic) overhead
 3. Report throughput
 
+#### Plot description
+1) Makespan
+- Strong scaling (fix worklaod, increase backend slots):
+      1) 
+      - x-axis: increasing number of backend slots
+      - y-axis: efficiency 
+      2) 
+      - x-axis: increasing number of backend slots
+      - y-axis: speedup
+- Weak scaling (increase worklaod by fixed ratio and backend slots):
+      1) 
+      - x-axis: increasing number of backend slots
+      - y-axis: efficiency 
+      2) 
+      - x-axis: increasing number of backend slots
+      - y-axis: speedup
+2) Overhead 
+3) Throughput
+
+
+
 #### Responsible 
 Javi 
 #### Deadline
