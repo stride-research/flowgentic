@@ -33,7 +33,7 @@ class BenchmarkConfig(BaseModel):
 	# 2) Edited by the benchmarking program
 	workload_type: WorkloadType = WorkloadType.FIXED_AGENTS_VARY_TOOLS
 	tool_execution_duration_time: int
-
+	experiments: Dict[str, Any] = {}
 
 class WorkloadResult(BaseModel):
 	result: Dict[str, Any]

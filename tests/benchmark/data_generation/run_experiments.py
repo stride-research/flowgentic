@@ -13,6 +13,9 @@ from tests.benchmark.data_generation.experiments.base.base_experiment import (
 from tests.benchmark.data_generation.experiments.synthethic_adaptive.main import (
 	SynthethicAdaptive,
 )
+from tests.benchmark.data_generation.experiments.coordination_overhead.main import (
+	CoordinationOverheadExperiment,
+)
 from tests.benchmark.data_generation.utils.io_utils import IOUtils
 from tests.benchmark.data_generation.utils.schemas import (
 	BenchmarkConfig,
@@ -68,7 +71,10 @@ async def main():
 	"""Run all benchmarks"""
 
 	benchmark = FlowGenticBenchmarkManager()
-
+	# Experiment 1b
+	benchmark.register_experiment(
+		"coordination_overhead", CoordinationOverheadExperiment
+	)
 	# Experiment 2
 	benchmark.register_experiment("syntethic_adaptive", SynthethicAdaptive)
 

@@ -31,7 +31,8 @@ class IOUtils:
 		n_of_tool_calls_per_agent = int(environment["n_of_tool_calls_per_agent"])
 		n_of_backend_slots = int(environment["n_of_backend_slots"])
 		tool_execution_duration_time = int(environment["tool_execution_duration_time"])
-
+		experiments = config_yaml.get("experiments", {})
+		
 		return BenchmarkConfig(
 			run_name=run_name,
 			run_description=run_description,
@@ -40,6 +41,7 @@ class IOUtils:
 			n_of_tool_calls_per_agent=n_of_tool_calls_per_agent,
 			n_of_backend_slots=n_of_backend_slots,
 			tool_execution_duration_time=tool_execution_duration_time,
+			experiments=experiments,
 		)
 
 	def _create_core_directories(self, run_configuration_name: str):
