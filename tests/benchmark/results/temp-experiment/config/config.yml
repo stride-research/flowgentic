@@ -7,3 +7,10 @@ environment:
   n_of_backend_slots: 3 # Will be elevated to the power of 2 (1, 2, 4, 8)
   tool_execution_duration_time: 3
 workload_id: "langgraph_asyncflow"
+
+experiment_1a:
+  # Series: each value becomes one line on the saturation plot (n_of_backend_slots)
+  ensemble_sizes: [2, 4, 8]
+  # Sweep: total tool invocations (n_agents=1 fixed, calls_per_tool = invocations / 2)
+  tool_invocations_sweep: [2, 4, 6, 8, 12, 16, 20, 24, 30, 40]
+  tool_execution_duration_time: 2

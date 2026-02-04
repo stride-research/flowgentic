@@ -1,7 +1,6 @@
 from concurrent.futures import ProcessPoolExecutor
 from typing import Any, Callable, Dict, Optional
 
-from autogen.code_utils import ThreadPoolExecutor
 from radical.asyncflow import ConcurrentExecutionBackend, WorkflowEngine
 
 from flowgentic.backend_engines.radical_asyncflow import AsyncFlowEngine
