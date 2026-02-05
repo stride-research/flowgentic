@@ -75,6 +75,9 @@ class Experiment1a(BaseExperiment):
 				# Derive calls_per_tool from total invocations
 				# total_invocations = n_agents * calls_per_tool * N_TOOLS
 				# With n_agents=1: calls_per_tool = total_invocations / N_TOOLS
+				assert total_invocations % N_TOOLS == 0, (
+					f"total_invocations ({total_invocations}) must be divisible by N_TOOLS ({N_TOOLS})"
+				)
 				calls_per_tool = total_invocations // N_TOOLS
 
 				logger.info(
