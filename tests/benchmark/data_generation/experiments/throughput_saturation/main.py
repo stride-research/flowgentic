@@ -6,8 +6,8 @@ from typing import Any, Dict, List
 from tests.benchmark.data_generation.experiments.base.base_experiment import (
 	BaseExperiment,
 )
-from tests.benchmark.data_generation.experiments.experiment_1a.utils.plots import (
-	Experiment1aPlotter,
+from tests.benchmark.data_generation.experiments.throughput_saturation.utils.plots import (
+	ThroughputSaturationPlotter,
 )
 from tests.benchmark.data_generation.utils.schemas import (
 	BenchmarkConfig,
@@ -23,9 +23,9 @@ N_TOOLS = 2  # fetch_temperature, fetch_humidity — fixed by LangraphWorkload
 CONFIG_PATH = Path("tests/benchmark/config.yml")
 
 
-class Experiment1a(BaseExperiment):
+class ThroughputSaturation(BaseExperiment):
 	"""
-	Fig 1a: Coordination throughput vs invocation rate (saturation curve).
+	Throughput saturation experiment: coordination throughput vs invocation rate.
 
 	Sweeps tool_invocations to increase offered load while keeping n_agents=1.
 	This reduces per-agent orchestration overhead compared to sweeping agents.
@@ -45,14 +45,14 @@ class Experiment1a(BaseExperiment):
 	) -> None:
 		super().__init__(data_dir, plots_dir)
 		self.benchmark_config = benchmark_config
-		self.plotter = Experiment1aPlotter(plots_dir=plots_dir)
+		self.plotter = ThroughputSaturationPlotter(plots_dir=plots_dir)
 		self._load_experiment_config()
 
 	def _load_experiment_config(self):
 		"""Read experiment-specific sweep parameters from config.yml."""
 		with open(CONFIG_PATH) as f:
 			raw = yaml.safe_load(f)
-		exp_cfg = raw.get("experiment_1a", {})
+		exp_cfg = raw.get("throughput_saturation", {})
 
 		self.ensemble_sizes: List[int] = exp_cfg.get("ensemble_sizes", [2, 4, 8])
 		self.tool_invocations_sweep: List[int] = exp_cfg.get(

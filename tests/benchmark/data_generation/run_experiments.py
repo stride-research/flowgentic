@@ -10,8 +10,8 @@ import shutil
 from tests.benchmark.data_generation.experiments.base.base_experiment import (
 	BaseExperiment,
 )
-from tests.benchmark.data_generation.experiments.experiment_1a.main import (
-	Experiment1a,
+from tests.benchmark.data_generation.experiments.throughput_saturation.main import (
+	ThroughputSaturation,
 )
 from tests.benchmark.data_generation.experiments.synthethic_adaptive.main import (
 	SynthethicAdaptive,
@@ -72,8 +72,8 @@ async def main():
 
 	benchmark = FlowGenticBenchmarkManager()
 
-	# Experiment 1a
-	benchmark.register_experiment("experiment_1a", Experiment1a)
+	# Throughput saturation experiment
+	benchmark.register_experiment("throughput_saturation", ThroughputSaturation)
 
 	# Experiment 2
 	benchmark.register_experiment("syntethic_adaptive", SynthethicAdaptive)

@@ -9,9 +9,9 @@ from tests.benchmark.data_generation.experiments.base.base_plots import BasePlot
 logger = logging.getLogger(__name__)
 
 
-class Experiment1aPlotter(BasePlotter):
+class ThroughputSaturationPlotter(BasePlotter):
 	"""
-	Generates Fig 1a: Coordination throughput vs offered load (saturation curve).
+	Generates throughput saturation plot: coordination throughput vs offered load.
 
 	Each series is an ensemble size (n_of_backend_slots). Expected shape: a
 	near-diagonal region that transitions into a flat plateau. Larger ensemble
@@ -54,7 +54,7 @@ class Experiment1aPlotter(BasePlotter):
 		ax.set_xlabel("Offered Load (invocations/s)", fontsize=13)
 		ax.set_ylabel("Sustained Throughput (invocations/s)", fontsize=13)
 		ax.set_title(
-			"Fig 1a \u2014 Coordination Throughput vs Invocation Rate\n(Saturation Curve)",
+			"Coordination Throughput vs Invocation Rate\n(Saturation Curve)",
 			fontsize=14,
 		)
 		ax.legend(loc="lower right", fontsize=11)
@@ -65,10 +65,10 @@ class Experiment1aPlotter(BasePlotter):
 		plt.tight_layout()
 
 		if self.plots_dir:
-			plot_path = self.plots_dir / "fig1a_saturation_curve.png"
+			plot_path = self.plots_dir / "throughput_vs_load.png"
 			fig.savefig(plot_path, dpi=150, bbox_inches="tight")
 			logger.info(f"Saved plot: {plot_path}")
 		else:
-			logger.warning("No plots_dir set, cannot save fig1a_saturation_curve.png")
+			logger.warning("No plots_dir set, cannot save throughput_vs_load.png")
 
 		plt.close(fig)

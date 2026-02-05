@@ -8,7 +8,7 @@ environment:
   tool_execution_duration_time: 3
 workload_id: "langgraph_asyncflow"
 
-experiment_1a:
+throughput_saturation:
   # Series: each value becomes one line on the saturation plot (n_of_backend_slots)
   ensemble_sizes: [2, 4, 8]
   # Sweep: total tool invocations (n_agents=1 fixed, calls_per_tool = invocations / 2)
