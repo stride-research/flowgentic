@@ -39,28 +39,32 @@ class BaseExperiment(ABC):
 		)
 		makespan = await workload.run(engine)
 
+		# Shutdown the engine to release resources (ProcessPoolExecutor)
+		await engine.flow.shutdown()
+
 		return WorkloadResult(total_makespan=makespan, events=events)
 
 	@abstractmethod
-	async def run_experiment(
-		self,
-	) -> Dict[Any, Any]:  # Data expected to come out format is meant to be JSON-like
+	async def run_experiment(self) -> None:
+		"""Run experiment. Data should be written to disk incrementally."""
 		pass
 
 	@abstractmethod
 	def generate_plots(self, data: Dict[Any, Any]):
 		pass
 
-	def save_results(
-		self, data: Dict[Any, Any]
-	):  # Data expected to come in format is meant to be JSON-like
-		self.store_data_to_disk(data)
+	def finalize(self):
+		"""Read data from disk and generate plots."""
+		data = self.load_data_from_disk()
 		self.generate_plots(data)
 
 	def store_data_to_disk(self, data: Dict[Any, Any]):
-		"""Store results to disk
-		1. Create a file in the corresponding folder (self.experiment_path_dir)
-		"""
+		"""Store results to disk."""
 		with open(self.data_dir / "data.json", "w") as f:
 			json.dump(data, f, indent=2)
 		logger.info(f"✓ Results saved to {self.data_dir}")
+
+	def load_data_from_disk(self) -> Dict[Any, Any]:
+		"""Load results from disk."""
+		with open(self.data_dir / "data.json", "r") as f:
+			return json.load(f)

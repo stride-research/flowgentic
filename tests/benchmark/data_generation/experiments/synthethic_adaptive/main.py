@@ -99,7 +99,9 @@ class SynthethicAdaptive(BaseExperiment):
 
 			workloads_results.append(benchmark_result)
 
-		self.results[experiment_name] = workloads_results
+			# Write to disk after each iteration (incremental save)
+			self.results[experiment_name] = workloads_results
+			self.store_data_to_disk(self.results)
 
 	async def run_strong_scaling(self, config: BenchmarkConfig) -> None:
 		"""
@@ -119,17 +121,13 @@ class SynthethicAdaptive(BaseExperiment):
 		experiment_name = f"weak_scaling-{'noop' if is_noop else 'op'}-work"
 		await self._run_scaling_experiment(config, "weak", experiment_name)
 
-	async def run_experiment(
-		self,
-	) -> Dict[Any, Any]:  # Data expected to come out format is meant to be JSON-like
+	async def run_experiment(self) -> None:
+		"""Run experiment. Data is written to disk incrementally."""
 		# 1) STRONG SCALING: Fixed workload, varying backend slots
 		await self.run_strong_scaling(self.benchmark_config)
 
 		# 2) WEAK SCALING: Workload scales with backend slots (tool_calls * p)
 		await self.run_weak_scaling(self.benchmark_config)
-
-		logger.debug(f"RESULTS ARE: {self.results}")
-		return self.results
 
 	def generate_plots(self, data: Dict[Any, Any]):
 		self.plotter.plot_results(data=data)
