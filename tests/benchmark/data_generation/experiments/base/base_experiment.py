@@ -32,15 +32,12 @@ class BaseExperiment(ABC):
 
 		# Single workload with shared backend across all agents
 		workload: BaseWorkload = workload_orchestrator(workload_config=workload_config)
-		engine = await resolve_engine(
+		async with await resolve_engine(
 			engine_id=workload_config.engine_id,
 			n_of_backend_slots=workload_config.n_of_backend_slots,
 			observer=events.append,  # Simple observer: just append to list
-		)
-		makespan = await workload.run(engine)
-
-		# Shutdown the engine to release resources (ProcessPoolExecutor)
-		await engine.flow.shutdown()
+		) as engine:
+			makespan = await workload.run(engine)
 
 		return WorkloadResult(total_makespan=makespan, events=events)
 
