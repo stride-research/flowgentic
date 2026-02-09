@@ -32,7 +32,7 @@ class BaseExperiment(ABC):
 
 		# Single workload with shared backend across all agents
 		workload: BaseWorkload = workload_orchestrator(workload_config=workload_config)
-		async with await resolve_engine(
+		async with resolve_engine(
 			engine_id=workload_config.engine_id,
 			n_of_backend_slots=workload_config.n_of_backend_slots,
 			observer=events.append,  # Simple observer: just append to list
