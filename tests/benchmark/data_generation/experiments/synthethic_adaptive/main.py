@@ -65,7 +65,7 @@ class SynthethicAdaptive(BaseExperiment):
 				n_tool_calls = config.n_of_tool_calls_per_agent
 			else:
 				# Weak scaling: workload scales with backend slots
-				WORKLOAD_PER_SLOT = 2  # Each slot handles 2 tool calls
+				WORKLOAD_PER_SLOT = 2
 				n_tool_calls = WORKLOAD_PER_SLOT * backend_slots
 
 			workload_config = WorkloadConfig(
