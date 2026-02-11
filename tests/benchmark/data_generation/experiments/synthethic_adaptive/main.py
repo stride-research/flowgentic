@@ -56,7 +56,7 @@ class SynthethicAdaptive(BaseExperiment):
 		workloads_results = []
 		backend_slots_options = [2**i for i in range(config.n_of_backend_slots + 1)]
 
-		for backend_slots in backend_slots_options:
+		for backend_slots in reversed(backend_slots_options):
 			logger.info(f"\n--- Testing p={backend_slots} backend slots ---")
 
 			# Key difference: how n_of_tool_calls_per_agent is calculated
@@ -124,11 +124,11 @@ class SynthethicAdaptive(BaseExperiment):
 
 	async def run_experiment(self) -> None:
 		"""Run experiment. Data is written to disk incrementally."""
-		# 2) WEAK SCALING: Workload scales with backend slots (tool_calls * p)
-		await self.run_weak_scaling(self.benchmark_config)
-
 		# 1) STRONG SCALING: Fixed workload, varying backend slots
 		await self.run_strong_scaling(self.benchmark_config)
+		
+		# 2) WEAK SCALING: Workload scales with backend slots (tool_calls * p)
+		await self.run_weak_scaling(self.benchmark_config)
 
 	def generate_plots(self, data: Dict[Any, Any]):
 		self.plotter.plot_results(data=data)

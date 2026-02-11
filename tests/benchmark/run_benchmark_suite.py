@@ -40,9 +40,13 @@ TOOL_EXECUTION_DURATION = 3
 # This generates p in {1, 2, 4, 8, 16, 32, 64, 128, 256, 512}
 MAX_BACKEND_SLOTS_EXPONENT = 9
 
+# REPETITIONS 
+N_OF_ITERATIONS = 3
+
 # Workload sizes (N = total tool invocations)
 # N = 2^10 = 1024, 2^14 = 16384, 2^17 = 131072
 WORKLOAD_SIZES = [
+	#2**7,  # 1024 - start with this
 	2**10,  # 1024 - start with this
 	# 2**14,  # 16384 - uncomment for full suite
 	# 2**17,  # 131072 - uncomment for full suite
@@ -118,47 +122,50 @@ def main():
 	total_runs = len(WORKLOAD_SIZES)
 	completed = 0
 	failed = []
+	for run_version in range(1, N_OF_ITERATIONS+1):
+		for n_total in WORKLOAD_SIZES:
+			n_agents = calculate_agents_for_workload(n_total, TOOLS_PER_AGENT)
 
-	for n_total in WORKLOAD_SIZES:
-		n_agents = calculate_agents_for_workload(n_total, TOOLS_PER_AGENT)
+			if n_agents == 2:
+				return 
 
-		# Generate unique run name
-		run_name = f"strong-N{n_total}-k{TOOLS_PER_AGENT}-{timestamp}"
+			# Generate unique run name
+			run_name = f"strong-N{n_total}-k{TOOLS_PER_AGENT}-version{run_version}-{timestamp}"
 
-		print(f"\n{'=' * 60}")
-		print(f"RUN {completed + 1}/{total_runs}")
-		print(f"{'=' * 60}")
-		print(f"  Run name: {run_name}")
-		print(f"  Total tool invocations (N): {n_total}")
-		print(f"  Agents (A): {n_agents}")
-		print(f"  Tools per agent (k): {TOOLS_PER_AGENT}")
-		print(f"  Backend slots (p): 1 to {2**MAX_BACKEND_SLOTS_EXPONENT}")
-		print(f"  Results will be in: tests/benchmark/results/{run_name}/")
-		print("-" * 60)
+			print(f"\n{'=' * 60}")
+			print(f"RUN {completed + 1}/{total_runs*N_OF_ITERATIONS}")
+			print(f"{'=' * 60}")
+			print(f"  Run name: {run_name}")
+			print(f"  Total tool invocations (N): {n_total}")
+			print(f"  Agents (A): {n_agents}")
+			print(f"  Tools per agent (k): {TOOLS_PER_AGENT}")
+			print(f"  Backend slots (p): 1 to {2**MAX_BACKEND_SLOTS_EXPONENT}")
+			print(f"  Results will be in: tests/benchmark/results/{run_name}/")
+			print("-" * 60)
 
-		# Generate and write config
-		config = generate_config(
-			run_name=run_name,
-			n_agents=n_agents,
-			n_tools_per_agent=TOOLS_PER_AGENT,
-			n_backend_slots_exp=MAX_BACKEND_SLOTS_EXPONENT,
-			tool_duration=TOOL_EXECUTION_DURATION,
-		)
-		write_config(config)
+			# Generate and write config
+			config = generate_config(
+				run_name=run_name,
+				n_agents=n_agents,
+				n_tools_per_agent=TOOLS_PER_AGENT,
+				n_backend_slots_exp=MAX_BACKEND_SLOTS_EXPONENT,
+				tool_duration=TOOL_EXECUTION_DURATION,
+			)
+			write_config(config)
 
-		print(f"Config written. Starting benchmark...")
-		print("-" * 60)
+			print(f"Config written. Starting benchmark...")
+			print("-" * 60)
 
-		# Run benchmark
-		exit_code = run_benchmark()
+			# Run benchmark
+			exit_code = run_benchmark()
 
-		if exit_code == 0:
-			print(f"\n✓ Run completed successfully!")
-			print(f"  Results available at: tests/benchmark/results/{run_name}/")
-			completed += 1
-		else:
-			print(f"\n✗ Run failed with exit code {exit_code}")
-			failed.append(run_name)
+			if exit_code == 0:
+				print(f"\n✓ Run completed successfully!")
+				print(f"  Results available at: tests/benchmark/results/{run_name}/")
+				completed += 1
+			else:
+				print(f"\n✗ Run failed with exit code {exit_code}")
+				failed.append(run_name)
 
 	# Summary
 	print("\n" + "=" * 60)
