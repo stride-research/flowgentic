@@ -1,28 +1,31 @@
 from concurrent.futures import ProcessPoolExecutor
+from contextlib import asynccontextmanager
 from typing import Any, Callable, Dict, Optional
 
 from radical.asyncflow import ConcurrentExecutionBackend, WorkflowEngine
 
 from flowgentic.backend_engines.radical_asyncflow import AsyncFlowEngine
 
+import multiprocessing
 
+
+@asynccontextmanager
 async def resolve_engine(
 	engine_id: str,
 	n_of_backend_slots: int,
 	observer: Optional[Callable[[Dict[str, Any]], None]] = None,
 ):
-	"""
-	Create and return the appropriate engine based on engine_id.
-
-	Args:
-		engine_id: Identifier for the engine type
-		n_of_backend_slots: Number of worker slots for the backend
-		observer: Optional callback for profiling events
-	"""
 	if engine_id == "asyncflow":
-		backend = await ConcurrentExecutionBackend(
-			ProcessPoolExecutor(max_workers=n_of_backend_slots)
-		)
-		flow = await WorkflowEngine.create(backend)
-		return AsyncFlowEngine(flow, observer=observer)
-	raise Exception(f"Didnt match any engine for engine_id: {engine_id}")
+		ctx = multiprocessing.get_context("spawn")
+
+		executor = ProcessPoolExecutor(max_workers=n_of_backend_slots, mp_context=ctx)
+
+		try:
+			backend = await ConcurrentExecutionBackend(executor)
+			flow = await WorkflowEngine.create(backend)
+			yield AsyncFlowEngine(flow, observer=observer)
+		finally:
+			# 3. Shutdown the flow, then manually shut down the executor
+			await flow.shutdown()
+	else:
+		raise Exception(f"Didnt match any engine for engine_id: {engine_id}")

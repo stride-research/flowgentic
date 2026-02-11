@@ -35,12 +35,6 @@ class BenchmarkConfig(BaseModel):
 	tool_execution_duration_time: int
 
 
-class WorkloadResult(BaseModel):
-	result: Dict[str, Any]
-	flowgentic_overhead: float
-	execution_time: float
-
-
 class WorkloadConfig(BaseModel):
 	n_of_agents: int
 	n_of_tool_calls_per_agent: int

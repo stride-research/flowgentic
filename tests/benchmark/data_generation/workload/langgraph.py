@@ -68,7 +68,7 @@ class LangraphWorkload(BaseWorkload):
 			await asyncio.sleep(self.tool_execution_duration_time)
 			return {"humidity": 50, "location": location}
 
-		tools = [fetch_temperature, fetch_humidity]
+		tools = [fetch_temperature]
 		llm = DummyLanggraphModelProvider(
 			calls_per_tool=self.n_of_tool_calls_per_agent
 		).bind_tools(tools)

@@ -61,10 +61,10 @@ class FlowGenticBenchmarkManager:
 			experiment_instance: BaseExperiment = experiment_class(
 				self.benchmark_config, data_dir, plots_dir
 			)
-			experiment_results: Dict[
-				Any, Any
-			] = await experiment_instance.run_experiment()
-			experiment_instance.save_results(experiment_results)
+			# Run experiment (writes to disk incrementally)
+			await experiment_instance.run_experiment()
+			# Read from disk and generate plots
+			experiment_instance.finalize()
 
 
 async def main():

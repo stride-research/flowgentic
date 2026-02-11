@@ -39,3 +39,6 @@ examples-ag-parsl:  ## AutoGen + Parsl
 # 3) Benchmark
 benchmark: ## Run the experiments in the benchmarking
 	$(VENV_ACTIVATE) && python3 -m tests.benchmark.data_generation.run_experiments
+
+benchmark-suite: ## Run the full benchmark suite with multiple configs
+	$(VENV_ACTIVATE) && python3 -m tests.benchmark.run_benchmark_suite

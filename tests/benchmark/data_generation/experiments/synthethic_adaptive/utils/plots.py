@@ -7,6 +7,9 @@ import numpy as np
 
 from tests.benchmark.data_generation.experiments.base.base_plots import BasePlotter
 
+# Silence matplotlib's verbose font manager DEBUG logs
+logging.getLogger("matplotlib.font_manager").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 
@@ -19,7 +22,6 @@ def _extract_event_durations(events: List[Dict]) -> Dict[str, List[float]]:
 	- 'block_wrap': list of block wrapping durations
 	- 'task_exec': list of task execution durations
 	"""
-	# Group events by type
 	starts = {}
 	ends = {}
 
@@ -39,7 +41,6 @@ def _extract_event_durations(events: List[Dict]) -> Dict[str, List[float]]:
 		elif event_type == "task_exec_end":
 			ends[("task_exec", e["exec_id"])] = e["ts"]
 
-	# Match and compute durations
 	durations = {"task_wrap": [], "block_wrap": [], "task_exec": []}
 
 	for key, start_ts in starts.items():
