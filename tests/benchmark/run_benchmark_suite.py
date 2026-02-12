@@ -41,15 +41,14 @@ TOOL_EXECUTION_DURATION = 3
 MAX_BACKEND_SLOTS_EXPONENT = 9
 
 # REPETITIONS 
-N_OF_ITERATIONS = 3
+N_OF_ITERATIONS = 1
 
 # Workload sizes (N = total tool invocations)
 # N = 2^10 = 1024, 2^14 = 16384, 2^17 = 131072
 WORKLOAD_SIZES = [
-	#2**7,  # 1024 - start with this
-	2**10,  # 1024 - start with this
-	# 2**14,  # 16384 - uncomment for full suite
-	# 2**17,  # 131072 - uncomment for full suite
+	2**14,  # 16384 - uncomment for full suite
+	2**13,  # 16384 - uncomment for full suite
+	2**12,  # 1024 - start with this
 ]
 
 # Number of repetitions per configuration (for variance)

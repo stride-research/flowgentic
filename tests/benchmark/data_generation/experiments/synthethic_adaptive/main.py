@@ -54,7 +54,7 @@ class SynthethicAdaptive(BaseExperiment):
 		logger.info(f"Config is: {config.model_dump_json(indent=4)}")
 
 		workloads_results = []
-		backend_slots_options = [2**i for i in range(config.n_of_backend_slots + 1)]
+		backend_slots_options = [2**i for i in range(4, config.n_of_backend_slots + 1)]
 
 		for backend_slots in reversed(backend_slots_options):
 			logger.info(f"\n--- Testing p={backend_slots} backend slots ---")
