@@ -40,20 +40,13 @@ TOOL_EXECUTION_DURATION = 3
 # This generates p in {1, 2, 4, 8, 16, 32, 64, 128, 256, 512}
 MAX_BACKEND_SLOTS_EXPONENT = 9
 
-# REPETITIONS 
-N_OF_ITERATIONS = 1
+# REPETITIONS
+N_OF_ITERATIONS = 3
 
 # Workload sizes (N = total tool invocations)
-# N = 2^10 = 1024, 2^14 = 16384, 2^17 = 131072
 WORKLOAD_SIZES = [
-	2**14,  # 16384 - uncomment for full suite
-	2**13,  # 16384 - uncomment for full suite
-	2**12,  # 1024 - start with this
+	2**17,
 ]
-
-# Number of repetitions per configuration (for variance)
-# NOTE: Multi-run is commented out for now - uncomment when needed
-# REPETITIONS = 1
 
 
 # ============================================================================
@@ -121,18 +114,17 @@ def main():
 	total_runs = len(WORKLOAD_SIZES)
 	completed = 0
 	failed = []
-	for run_version in range(1, N_OF_ITERATIONS+1):
+	for run_version in range(1, N_OF_ITERATIONS + 1):
 		for n_total in WORKLOAD_SIZES:
 			n_agents = calculate_agents_for_workload(n_total, TOOLS_PER_AGENT)
 
-			if n_agents == 2:
-				return 
-
 			# Generate unique run name
-			run_name = f"strong-N{n_total}-k{TOOLS_PER_AGENT}-version{run_version}-{timestamp}"
+			run_name = (
+				f"strong-N{n_total}-k{TOOLS_PER_AGENT}-version{run_version}-{timestamp}"
+			)
 
 			print(f"\n{'=' * 60}")
-			print(f"RUN {completed + 1}/{total_runs*N_OF_ITERATIONS}")
+			print(f"RUN {completed + 1}/{total_runs * N_OF_ITERATIONS}")
 			print(f"{'=' * 60}")
 			print(f"  Run name: {run_name}")
 			print(f"  Total tool invocations (N): {n_total}")

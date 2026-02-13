@@ -56,20 +56,25 @@ class SynthethicAdaptive(BaseExperiment):
 		workloads_results = []
 		backend_slots_options = [2**i for i in range(4, config.n_of_backend_slots + 1)]
 
+		# Weak scaling ratio info
+		p_max = max(backend_slots_options)
+		reference_N = config.n_of_agents * config.n_of_tool_calls_per_agent
+		workload_per_slot = reference_N // p_max  # N(p) = workload_per_slot * p
+
 		for backend_slots in reversed(backend_slots_options):
 			logger.info(f"\n--- Testing p={backend_slots} backend slots ---")
 
-			# Key difference: how n_of_tool_calls_per_agent is calculated
 			if scaling_type == "strong":
-				# Strong scaling: fixed workload
+				# Strong scaling: fixed workload N = reference_N
 				n_tool_calls = config.n_of_tool_calls_per_agent
+				n_agents = config.n_of_agents
 			else:
-				# Weak scaling: workload scales with backend slots
-				WORKLOAD_PER_SLOT = 2
-				n_tool_calls = WORKLOAD_PER_SLOT * backend_slots
+				# Weak scaling: N scales with p, N(p) = workload_per_slot * p
+				n_tool_calls = workload_per_slot
+				n_agents = backend_slots
 
 			workload_config = WorkloadConfig(
-				n_of_agents=config.n_of_agents,
+				n_of_agents=n_agents,
 				n_of_tool_calls_per_agent=n_tool_calls,
 				n_of_backend_slots=backend_slots,
 				tool_execution_duration_time=config.tool_execution_duration_time,
@@ -87,7 +92,7 @@ class SynthethicAdaptive(BaseExperiment):
 				run_name=config.run_name,
 				run_description=config.run_description,
 				workload_id=config.workload_id,
-				n_of_agents=config.n_of_agents,
+				n_of_agents=n_agents,
 				n_of_tool_calls_per_agent=n_tool_calls,
 				n_of_backend_slots=backend_slots,
 				workload_type=config.workload_type,
@@ -126,7 +131,7 @@ class SynthethicAdaptive(BaseExperiment):
 		"""Run experiment. Data is written to disk incrementally."""
 		# 1) STRONG SCALING: Fixed workload, varying backend slots
 		await self.run_strong_scaling(self.benchmark_config)
-		
+
 		# 2) WEAK SCALING: Workload scales with backend slots (tool_calls * p)
 		await self.run_weak_scaling(self.benchmark_config)
 
