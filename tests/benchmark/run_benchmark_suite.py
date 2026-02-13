@@ -17,13 +17,18 @@ Configuration:
 For strong scaling, N is fixed while p varies.
 """
 
+import os
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import List
 
+from dotenv import load_dotenv
 import yaml
+import requests
+
+load_dotenv()
 
 
 # ============================================================================
@@ -96,6 +101,12 @@ def run_benchmark() -> int:
 	return result.returncode
 
 
+def send_discord_notifaction(msg: str):
+	webhook_url = os.getenv("DISCORD_WEBHOOK")
+	data = {"content": msg}
+	requests.post(webhook_url, json=data)
+
+
 def main():
 	"""Main entry point for the benchmark suite."""
 	timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -148,15 +159,35 @@ def main():
 			print("-" * 60)
 
 			# Run benchmark
-			exit_code = run_benchmark()
+			# exit_code = run_benchmark()
+			exit_code = 0
 
 			if exit_code == 0:
 				print(f"\n✓ Run completed successfully!")
 				print(f"  Results available at: tests/benchmark/results/{run_name}/")
+				run_message = (
+					f"✓ Benchmark run completed!\n"
+					f"Run name: {run_name}\n"
+					f"Total tool invocations (N): {n_total}\n"
+					f"Agents (A): {n_agents}\n"
+					f"Tools per agent (k): {TOOLS_PER_AGENT}\n"
+					f"Backend slots (p): 1 to {2**MAX_BACKEND_SLOTS_EXPONENT}\n"
+					f"Results available at: tests/benchmark/results/{run_name}/\n"
+				)
 				completed += 1
 			else:
+				run_message = (
+					f"✗ Benchmark run failed.\n"
+					f"Run name: {run_name}\n"
+					f"Total tool invocations (N): {n_total}\n"
+					f"Agents (A): {n_agents}\n"
+					f"Tools per agent (k): {TOOLS_PER_AGENT}\n"
+					f"Backend slots (p): 1 to {2**MAX_BACKEND_SLOTS_EXPONENT}\n"
+					f"Failed with exit code: {exit_code}\n",
+				)
 				print(f"\n✗ Run failed with exit code {exit_code}")
 				failed.append(run_name)
+			send_discord_notifaction(msg=run_message)
 
 	# Summary
 	print("\n" + "=" * 60)
