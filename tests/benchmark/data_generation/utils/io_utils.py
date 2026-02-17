@@ -4,6 +4,12 @@ import yaml
 
 from tests.benchmark.data_generation.utils.schemas import BenchmarkConfig
 
+from dotenv import load_dotenv
+import os
+import requests
+
+load_dotenv()
+
 
 class IOUtils:
 	def __init__(self, config_path: Path = Path("tests/benchmark/config.yml")) -> None:
@@ -78,3 +84,25 @@ class IOUtils:
 		plots_dir.mkdir(parents=True, exist_ok=True)
 
 		return data_dir, plots_dir
+
+class DiscordNotifier:
+	def __init__(self):
+		self.webhook_url = os.getenv("DISCORD_WEBHOOK")
+	
+	def send_discord_notification(self, msg: str, image_path: str = None):
+		if not self.webhook_url:
+			return None
+		
+		payload = {"content": msg}
+		
+		if image_path and os.path.exists(image_path):
+			with open(image_path, "rb") as f:
+				files = {
+					"file": (os.path.basename(image_path), f, "image/png")
+				}
+				# Send both data (text) and files (image)
+				response = requests.post(self.webhook_url, data=payload, files=files)
+		else:
+			response = requests.post(self.webhook_url, json=payload)
+		
+		return response

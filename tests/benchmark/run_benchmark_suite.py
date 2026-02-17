@@ -24,11 +24,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import List
 
-from dotenv import load_dotenv
 import yaml
 import requests
 
-load_dotenv()
+
+from tests.benchmark.data_generation.utils.io_utils import DiscordNotifier
+
 
 
 # ============================================================================
@@ -46,11 +47,11 @@ TOOL_EXECUTION_DURATION = 3
 MAX_BACKEND_SLOTS_EXPONENT = 9
 
 # REPETITIONS
-N_OF_ITERATIONS = 3
+N_OF_ITERATIONS = 1
 
 # Workload sizes (N = total tool invocations)
 WORKLOAD_SIZES = [
-	2**17,
+	2**3,
 ]
 
 
@@ -101,12 +102,6 @@ def run_benchmark() -> int:
 	return result.returncode
 
 
-def send_discord_notifaction(msg: str):
-	webhook_url = os.getenv("DISCORD_WEBHOOK")
-	data = {"content": msg}
-	requests.post(webhook_url, json=data)
-
-
 def main():
 	"""Main entry point for the benchmark suite."""
 	timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -131,7 +126,7 @@ def main():
 
 			# Generate unique run name
 			run_name = (
-				f"strong-N{n_total}-k{TOOLS_PER_AGENT}-version{run_version}-{timestamp}"
+				f"N{n_total}-k{TOOLS_PER_AGENT}-k{2**MAX_BACKEND_SLOTS_EXPONENT}-version{run_version}-{timestamp}"
 			)
 
 			print(f"\n{'=' * 60}")
@@ -159,35 +154,30 @@ def main():
 			print("-" * 60)
 
 			# Run benchmark
-			# exit_code = run_benchmark()
-			exit_code = 0
+			exit_code = run_benchmark()
 
 			if exit_code == 0:
 				print(f"\n✓ Run completed successfully!")
 				print(f"  Results available at: tests/benchmark/results/{run_name}/")
 				run_message = (
-					f"✓ Benchmark run completed!\n"
-					f"Run name: {run_name}\n"
-					f"Total tool invocations (N): {n_total}\n"
-					f"Agents (A): {n_agents}\n"
-					f"Tools per agent (k): {TOOLS_PER_AGENT}\n"
-					f"Backend slots (p): 1 to {2**MAX_BACKEND_SLOTS_EXPONENT}\n"
-					f"Results available at: tests/benchmark/results/{run_name}/\n"
+					f"✅ **Benchmark run completed!**\n"
+					f"**Run name:** `{run_name}` | **Version:** `{run_version}`\n"
+					f"**N:** `{n_total}` | **A:** `{n_agents}` | **k:** `{TOOLS_PER_AGENT}`\n"
+					f"**Backend slots (p):** `1` to `{2**MAX_BACKEND_SLOTS_EXPONENT}`\n"
+					f"📁 Results: `tests/benchmark/results/{run_name}/`"
 				)
 				completed += 1
 			else:
 				run_message = (
-					f"✗ Benchmark run failed.\n"
-					f"Run name: {run_name}\n"
-					f"Total tool invocations (N): {n_total}\n"
-					f"Agents (A): {n_agents}\n"
-					f"Tools per agent (k): {TOOLS_PER_AGENT}\n"
-					f"Backend slots (p): 1 to {2**MAX_BACKEND_SLOTS_EXPONENT}\n"
-					f"Failed with exit code: {exit_code}\n",
+					f"❌ **Benchmark run failed**\n"
+					f"**Run name:** `{run_name}` | **Version:** `{run_version}`\n"
+					f"**N:** `{n_total}` | **A:** `{n_agents}` | **k:** `{TOOLS_PER_AGENT}`\n"
+					f"**Backend slots (p):** `1` to `{2**MAX_BACKEND_SLOTS_EXPONENT}`\n"
+					f"**Exit code:** `{exit_code}`"
 				)
 				print(f"\n✗ Run failed with exit code {exit_code}")
 				failed.append(run_name)
-			send_discord_notifaction(msg=run_message)
+			DiscordNotifier().send_discord_notification(msg=run_message)
 
 	# Summary
 	print("\n" + "=" * 60)
