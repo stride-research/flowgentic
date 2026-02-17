@@ -27,5 +27,6 @@ async def resolve_engine(
 		finally:
 			# 3. Shutdown the flow, then manually shut down the executor
 			await flow.shutdown()
+			executor.shutdown(wait=True)
 	else:
 		raise Exception(f"Didnt match any engine for engine_id: {engine_id}")

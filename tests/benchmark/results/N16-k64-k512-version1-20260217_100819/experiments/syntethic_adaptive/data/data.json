@@ -1,0 +1,298 @@
+{
+  "weak_scaling-op-work": [
+    {
+      "run_name": "N16-k64-k512-version1-20260217_100819",
+      "run_description": "Strong scaling: 0 agents x 64 tools = 0 total invocations",
+      "workload_id": "langgraph_asyncflow",
+      "n_of_agents": 16,
+      "n_of_tool_calls_per_agent": 0,
+      "n_of_backend_slots": 16,
+      "workload_type": "fixed_agents_vary_tools",
+      "tool_execution_duration_time": 3,
+      "total_makespan": 0.03466981300152838,
+      "events": [
+        {
+          "event": "task_wrap_start",
+          "ts": 431280.76914604,
+          "task_name": "fetch_temperature",
+          "wrap_id": "05eca143-401c-4f6a-85c4-77d637920ada"
+        },
+        {
+          "event": "task_wrap_end",
+          "ts": 431280.770852687,
+          "task_name": "fetch_temperature",
+          "wrap_id": "05eca143-401c-4f6a-85c4-77d637920ada"
+        },
+        {
+          "event": "task_wrap_start",
+          "ts": 431280.770867409,
+          "task_name": "fetch_humidity",
+          "wrap_id": "f7bb0f0b-da3b-4346-be6b-a0db1b3fb6fb"
+        },
+        {
+          "event": "task_wrap_end",
+          "ts": 431280.771792798,
+          "task_name": "fetch_humidity",
+          "wrap_id": "f7bb0f0b-da3b-4346-be6b-a0db1b3fb6fb"
+        },
+        {
+          "event": "block_wrap_start",
+          "ts": 431280.771872165,
+          "block_name": "chatbot_logic",
+          "wrap_id": "9d4a7a8c-eee3-4c98-b6f2-47815f7f9160"
+        },
+        {
+          "event": "block_wrap_end",
+          "ts": 431280.771893166,
+          "block_name": "chatbot_logic",
+          "wrap_id": "9d4a7a8c-eee3-4c98-b6f2-47815f7f9160"
+        }
+      ]
+    },
+    {
+      "run_name": "N16-k64-k512-version1-20260217_100819",
+      "run_description": "Strong scaling: 0 agents x 64 tools = 0 total invocations",
+      "workload_id": "langgraph_asyncflow",
+      "n_of_agents": 32,
+      "n_of_tool_calls_per_agent": 0,
+      "n_of_backend_slots": 32,
+      "workload_type": "fixed_agents_vary_tools",
+      "tool_execution_duration_time": 3,
+      "total_makespan": 0.05970971001079306,
+      "events": [
+        {
+          "event": "task_wrap_start",
+          "ts": 431281.127047333,
+          "task_name": "fetch_temperature",
+          "wrap_id": "3a344858-9618-4719-a931-147cd17e4a7d"
+        },
+        {
+          "event": "task_wrap_end",
+          "ts": 431281.128164975,
+          "task_name": "fetch_temperature",
+          "wrap_id": "3a344858-9618-4719-a931-147cd17e4a7d"
+        },
+        {
+          "event": "task_wrap_start",
+          "ts": 431281.128178886,
+          "task_name": "fetch_humidity",
+          "wrap_id": "c59e9d20-2524-4689-b986-93fc6cbb66c0"
+        },
+        {
+          "event": "task_wrap_end",
+          "ts": 431281.129072018,
+          "task_name": "fetch_humidity",
+          "wrap_id": "c59e9d20-2524-4689-b986-93fc6cbb66c0"
+        },
+        {
+          "event": "block_wrap_start",
+          "ts": 431281.129128631,
+          "block_name": "chatbot_logic",
+          "wrap_id": "5624666f-2865-4988-bbb2-f58895734901"
+        },
+        {
+          "event": "block_wrap_end",
+          "ts": 431281.129147549,
+          "block_name": "chatbot_logic",
+          "wrap_id": "5624666f-2865-4988-bbb2-f58895734901"
+        }
+      ]
+    },
+    {
+      "run_name": "N16-k64-k512-version1-20260217_100819",
+      "run_description": "Strong scaling: 0 agents x 64 tools = 0 total invocations",
+      "workload_id": "langgraph_asyncflow",
+      "n_of_agents": 64,
+      "n_of_tool_calls_per_agent": 0,
+      "n_of_backend_slots": 64,
+      "workload_type": "fixed_agents_vary_tools",
+      "tool_execution_duration_time": 3,
+      "total_makespan": 0.31141896604094654,
+      "events": [
+        {
+          "event": "task_wrap_start",
+          "ts": 431281.417812386,
+          "task_name": "fetch_temperature",
+          "wrap_id": "c74c844a-be75-4992-8449-e9a05a72ae23"
+        },
+        {
+          "event": "task_wrap_end",
+          "ts": 431281.419718216,
+          "task_name": "fetch_temperature",
+          "wrap_id": "c74c844a-be75-4992-8449-e9a05a72ae23"
+        },
+        {
+          "event": "task_wrap_start",
+          "ts": 431281.419733559,
+          "task_name": "fetch_humidity",
+          "wrap_id": "8ae972e2-ffd9-4aa9-bada-1959470f60d0"
+        },
+        {
+          "event": "task_wrap_end",
+          "ts": 431281.420828498,
+          "task_name": "fetch_humidity",
+          "wrap_id": "8ae972e2-ffd9-4aa9-bada-1959470f60d0"
+        },
+        {
+          "event": "block_wrap_start",
+          "ts": 431281.420937508,
+          "block_name": "chatbot_logic",
+          "wrap_id": "c17e736b-93ca-4aaf-b379-c8b0939689e5"
+        },
+        {
+          "event": "block_wrap_end",
+          "ts": 431281.420962565,
+          "block_name": "chatbot_logic",
+          "wrap_id": "c17e736b-93ca-4aaf-b379-c8b0939689e5"
+        }
+      ]
+    },
+    {
+      "run_name": "N16-k64-k512-version1-20260217_100819",
+      "run_description": "Strong scaling: 0 agents x 64 tools = 0 total invocations",
+      "workload_id": "langgraph_asyncflow",
+      "n_of_agents": 128,
+      "n_of_tool_calls_per_agent": 0,
+      "n_of_backend_slots": 128,
+      "workload_type": "fixed_agents_vary_tools",
+      "tool_execution_duration_time": 3,
+      "total_makespan": 0.23695207695709541,
+      "events": [
+        {
+          "event": "task_wrap_start",
+          "ts": 431281.94826792,
+          "task_name": "fetch_temperature",
+          "wrap_id": "0c22fed4-f921-43d5-9a35-8d6df5131c5f"
+        },
+        {
+          "event": "task_wrap_end",
+          "ts": 431281.949878726,
+          "task_name": "fetch_temperature",
+          "wrap_id": "0c22fed4-f921-43d5-9a35-8d6df5131c5f"
+        },
+        {
+          "event": "task_wrap_start",
+          "ts": 431281.949893217,
+          "task_name": "fetch_humidity",
+          "wrap_id": "6d8976aa-97e2-4d18-b60d-8fafd7373bbc"
+        },
+        {
+          "event": "task_wrap_end",
+          "ts": 431281.950925494,
+          "task_name": "fetch_humidity",
+          "wrap_id": "6d8976aa-97e2-4d18-b60d-8fafd7373bbc"
+        },
+        {
+          "event": "block_wrap_start",
+          "ts": 431281.951021335,
+          "block_name": "chatbot_logic",
+          "wrap_id": "7ab6addc-6ab4-485a-af5c-3daa04c6ad93"
+        },
+        {
+          "event": "block_wrap_end",
+          "ts": 431281.951043828,
+          "block_name": "chatbot_logic",
+          "wrap_id": "7ab6addc-6ab4-485a-af5c-3daa04c6ad93"
+        }
+      ]
+    },
+    {
+      "run_name": "N16-k64-k512-version1-20260217_100819",
+      "run_description": "Strong scaling: 0 agents x 64 tools = 0 total invocations",
+      "workload_id": "langgraph_asyncflow",
+      "n_of_agents": 256,
+      "n_of_tool_calls_per_agent": 0,
+      "n_of_backend_slots": 256,
+      "workload_type": "fixed_agents_vary_tools",
+      "tool_execution_duration_time": 3,
+      "total_makespan": 0.8232199649792165,
+      "events": [
+        {
+          "event": "task_wrap_start",
+          "ts": 431282.392546441,
+          "task_name": "fetch_temperature",
+          "wrap_id": "945d2b1e-52bf-4a4f-a94a-920d510001ce"
+        },
+        {
+          "event": "task_wrap_end",
+          "ts": 431282.394560159,
+          "task_name": "fetch_temperature",
+          "wrap_id": "945d2b1e-52bf-4a4f-a94a-920d510001ce"
+        },
+        {
+          "event": "task_wrap_start",
+          "ts": 431282.394575582,
+          "task_name": "fetch_humidity",
+          "wrap_id": "dd468086-2a94-463b-9484-8ece6b3e9252"
+        },
+        {
+          "event": "task_wrap_end",
+          "ts": 431282.395635719,
+          "task_name": "fetch_humidity",
+          "wrap_id": "dd468086-2a94-463b-9484-8ece6b3e9252"
+        },
+        {
+          "event": "block_wrap_start",
+          "ts": 431282.39575218,
+          "block_name": "chatbot_logic",
+          "wrap_id": "10b6b003-0393-4e12-8204-8eca747694c0"
+        },
+        {
+          "event": "block_wrap_end",
+          "ts": 431282.395777547,
+          "block_name": "chatbot_logic",
+          "wrap_id": "10b6b003-0393-4e12-8204-8eca747694c0"
+        }
+      ]
+    },
+    {
+      "run_name": "N16-k64-k512-version1-20260217_100819",
+      "run_description": "Strong scaling: 0 agents x 64 tools = 0 total invocations",
+      "workload_id": "langgraph_asyncflow",
+      "n_of_agents": 512,
+      "n_of_tool_calls_per_agent": 0,
+      "n_of_backend_slots": 512,
+      "workload_type": "fixed_agents_vary_tools",
+      "tool_execution_duration_time": 3,
+      "total_makespan": 1.4972118510049768,
+      "events": [
+        {
+          "event": "task_wrap_start",
+          "ts": 431283.45525569,
+          "task_name": "fetch_temperature",
+          "wrap_id": "f74a39fc-179f-4f5b-a8bd-c66e79bde01f"
+        },
+        {
+          "event": "task_wrap_end",
+          "ts": 431283.456904422,
+          "task_name": "fetch_temperature",
+          "wrap_id": "f74a39fc-179f-4f5b-a8bd-c66e79bde01f"
+        },
+        {
+          "event": "task_wrap_start",
+          "ts": 431283.456918884,
+          "task_name": "fetch_humidity",
+          "wrap_id": "a624884a-ff56-4da3-978d-111dc1cb07de"
+        },
+        {
+          "event": "task_wrap_end",
+          "ts": 431283.457969006,
+          "task_name": "fetch_humidity",
+          "wrap_id": "a624884a-ff56-4da3-978d-111dc1cb07de"
+        },
+        {
+          "event": "block_wrap_start",
+          "ts": 431283.458061302,
+          "block_name": "chatbot_logic",
+          "wrap_id": "7ff46220-05af-4219-a3bb-c73d2357c5aa"
+        },
+        {
+          "event": "block_wrap_end",
+          "ts": 431283.458082673,
+          "block_name": "chatbot_logic",
+          "wrap_id": "7ff46220-05af-4219-a3bb-c73d2357c5aa"
+        }
+      ]
+    }
+  ]
+}
