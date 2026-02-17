@@ -51,7 +51,7 @@ N_OF_ITERATIONS = 1
 
 # Workload sizes (N = total tool invocations)
 WORKLOAD_SIZES = [
-	2**3,
+	2**15,
 ]
 
 
@@ -155,6 +155,7 @@ def main():
 
 			# Run benchmark
 			exit_code = run_benchmark()
+			ended_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 			if exit_code == 0:
 				print(f"\n✓ Run completed successfully!")
@@ -162,6 +163,7 @@ def main():
 				run_message = (
 					f"✅ **Benchmark run completed!**\n"
 					f"**Run name:** `{run_name}` | **Version:** `{run_version}`\n"
+					f"**Ended at:** `{ended_at}`\n"
 					f"**N:** `{n_total}` | **A:** `{n_agents}` | **k:** `{TOOLS_PER_AGENT}`\n"
 					f"**Backend slots (p):** `1` to `{2**MAX_BACKEND_SLOTS_EXPONENT}`\n"
 					f"📁 Results: `tests/benchmark/results/{run_name}/`"
@@ -171,6 +173,7 @@ def main():
 				run_message = (
 					f"❌ **Benchmark run failed**\n"
 					f"**Run name:** `{run_name}` | **Version:** `{run_version}`\n"
+					f"**Ended at:** `{ended_at}`\n"
 					f"**N:** `{n_total}` | **A:** `{n_agents}` | **k:** `{TOOLS_PER_AGENT}`\n"
 					f"**Backend slots (p):** `1` to `{2**MAX_BACKEND_SLOTS_EXPONENT}`\n"
 					f"**Exit code:** `{exit_code}`"
