@@ -11,7 +11,7 @@ authors = [
 requires-python = ">=3.10"
 dependencies = [
     "langgraph>=0.6.6",
-    "radical-asyncflow @ git+https://github.com/radical-cybertools/radical.asyncflow.git@protoype/dragon",
+    "radical-asyncflow",
     "langchain-openai",
     "langchain",
     "langchain-ollama",
@@ -26,7 +26,6 @@ dependencies = [
     "autogen>=0.10.4",
     "parsl>=2026.1.19",
     "cloudpickle>=3.1.2",
-    "dragonhpc"
 ]
 
 [project.optional-dependencies]
@@ -99,7 +98,7 @@ dev = [
 
 [tool.uv.sources]
 academy-py = { git = "https://github.com/proxystore/academy" }
-radical-asyncflow = { git = "https://github.com/radical-cybertools/radical.asyncflow.git", branch = "protoype/dragon" }
+radical-asyncflow = { git = "https://github.com/radical-cybertools/radical.asyncflow.git", branch = "main" }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
