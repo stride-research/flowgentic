@@ -1,8 +1,8 @@
 environment:
-  n_of_agents: 512
-  n_of_backend_slots: 9
-  n_of_tool_calls_per_agent: 64
-  tool_execution_duration_time: 3
+  n_of_agents: 2
+  n_of_backend_slots: 2
+  n_of_tool_calls_per_agent: 1
+  tool_execution_duration_time: 2
 run_description: 'Strong scaling: 512 agents x 64 tools = 32768 total invocations'
 run_name: N32768-k64-k512-version1-20260217_104215
 workload_id: langgraph_asyncflow

@@ -32,6 +32,7 @@ ScalingType = Literal["strong", "weak"]
 
 def send_discord_notifaction(msg: str):
 	webhook_url = os.getenv("DISCORD_WEBHOOK")
+	assert webhook_url, f"'DISCORD_WEBHOOK' environmental variable is not set"
 	data = {"content": msg}
 	requests.post(webhook_url, json=data)
 
@@ -64,7 +65,7 @@ class SynthethicAdaptive(BaseExperiment):
 		logger.info(f"Config is: {config.model_dump_json(indent=4)}")
 
 		workloads_results = []
-		backend_slots_options = [2**i for i in range(4, config.n_of_backend_slots + 1)]
+		backend_slots_options = [2**i for i in range(config.n_of_backend_slots + 1)] # TODO: switch for i in range(4,...)
 
 		# Weak scaling ratio info
 		p_max = max(backend_slots_options)

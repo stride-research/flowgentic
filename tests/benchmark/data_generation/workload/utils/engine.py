@@ -3,12 +3,11 @@ from contextlib import asynccontextmanager
 from typing import Any, Callable, Dict, Optional
 
 from autogen.code_utils import ThreadPoolExecutor
-from radical.asyncflow import ConcurrentExecutionBackend, WorkflowEngine
+from radical.asyncflow import WorkflowEngine, DragonExecutionBackendV2
 
 from flowgentic.backend_engines.radical_asyncflow import AsyncFlowEngine
 
-import multiprocessing
-
+import multiprocessing as mp
 
 @asynccontextmanager
 async def resolve_engine(
@@ -17,17 +16,15 @@ async def resolve_engine(
 	observer: Optional[Callable[[Dict[str, Any]], None]] = None,
 ):
 	if engine_id == "asyncflow":
-		ctx = multiprocessing.get_context("spawn")
-
-		executor = ProcessPoolExecutor(max_workers=n_of_backend_slots, mp_context=ctx)
+		# Set Dragon as multiprocessing backend
+		mp.set_start_method("dragon")
 
 		try:
-			backend = await ConcurrentExecutionBackend(executor)
+			backend = await DragonExecutionBackendV2()
 			flow = await WorkflowEngine.create(backend)
 			yield AsyncFlowEngine(flow, observer=observer)
 		finally:
 			# 3. Shutdown the flow, then manually shut down the executor
 			await flow.shutdown()
-			executor.shutdown(wait=True)
 	else:
 		raise Exception(f"Didnt match any engine for engine_id: {engine_id}")
