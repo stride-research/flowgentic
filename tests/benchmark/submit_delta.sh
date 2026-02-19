@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=flowgentic-dragon-debug
+#SBATCH --job-name=flowgentic-dragon-first-debug
 #SBATCH --account=bebo-delta-cpu
 #SBATCH --partition=cpu
 #SBATCH --nodes=2
