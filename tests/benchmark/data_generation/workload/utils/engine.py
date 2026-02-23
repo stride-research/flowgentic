@@ -9,6 +9,8 @@ from flowgentic.backend_engines.radical_asyncflow import AsyncFlowEngine
 
 import multiprocessing as mp
 
+mp.set_start_method("dragon")
+
 @asynccontextmanager
 async def resolve_engine(
 	engine_id: str,
@@ -16,8 +18,6 @@ async def resolve_engine(
 	observer: Optional[Callable[[Dict[str, Any]], None]] = None,
 ):
 	if engine_id == "asyncflow":
-		# Set Dragon as multiprocessing backend
-		mp.set_start_method("dragon")
 
 		try:
 			backend = await DragonExecutionBackendV2()

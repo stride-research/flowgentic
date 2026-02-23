@@ -1,3 +1,6 @@
+import sys, os
+sys.path.insert(0, os.getcwd())
+
 import asyncio
 import logging
 from datetime import datetime
@@ -89,5 +92,4 @@ async def main():
 	await benchmark.run_registerd_experiments()
 
 
-if __name__ == "__main__":
-	asyncio.run(main())
+asyncio.run(main())

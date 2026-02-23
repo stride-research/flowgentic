@@ -34,6 +34,6 @@ echo "=== Config written ==="
 cat tests/benchmark/config.yml
 
 echo "=== Launching with Dragon ==="
-dragon python -m tests.benchmark.data_generation.run_experiments
+dragon tests/benchmark/data_generation/run_experiments.py
 
 echo "=== Done at $(date) ==="

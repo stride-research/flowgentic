@@ -22,7 +22,7 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(GREEN)%-15s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 install: ## Installation
 	uv venv $(VENV_PATH) --python 3.10
-	uv pip install -e ".[dev]"
+	uv pip install --no-cache-e ".[dev]"
 
 # 2) Examples
 examples-lg-asyncflow:  ## Langgraph + Asyncflow
@@ -50,6 +50,6 @@ cluster-debug: ## Starts interactive debug session
 	salloc --account=bebo-delta-gpu \
 		--partition=gpuA100x4-interactive \
 		--nodes=2 \
+		--ntasks-per-node=4 \
 		--gpus-per-node=1 \
-		--exclusive \
 		--time=01:00:00
