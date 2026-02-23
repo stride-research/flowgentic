@@ -1,5 +1,6 @@
 import logging
 import yaml
+import numpy as np
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -18,6 +19,88 @@ from tests.benchmark.data_generation.utils.schemas import (
 from tests.benchmark.data_generation.workload.langgraph import LangraphWorkload
 
 logger = logging.getLogger(__name__)
+
+
+def compute_latency_stats(events: List[Dict[str, Any]]) -> Dict[str, float]:
+	"""
+	Compute latency statistics from QueuedEngine events.
+
+	Extracts end-to-end latency (t_complete - t_submit) for each invocation
+	and computes percentile statistics.
+
+	Args:
+		events: List of engine events containing t_submit, t_dispatched, t_complete
+
+	Returns:
+		Dict with latency statistics: p50, p95, p99, mean, max, and component breakdowns
+	"""
+	# Build lookup of submit times by task_id
+	submit_times: Dict[str, float] = {}
+	dispatch_times: Dict[str, float] = {}
+	complete_times: Dict[str, float] = {}
+
+	for event in events:
+		event_type = event.get("event")
+		task_id = event.get("task_id")
+
+		if not task_id:
+			continue
+
+		if event_type == "t_submit":
+			submit_times[task_id] = event.get("ts", 0)
+		elif event_type == "t_dispatched":
+			dispatch_times[task_id] = event.get("ts", 0)
+		elif event_type == "t_complete":
+			complete_times[task_id] = event.get("ts", 0)
+
+	# Compute latencies for completed tasks
+	end_to_end_latencies = []
+	queue_delays = []
+	exec_times = []
+
+	for task_id in complete_times:
+		if task_id in submit_times:
+			e2e = complete_times[task_id] - submit_times[task_id]
+			end_to_end_latencies.append(e2e)
+
+			if task_id in dispatch_times:
+				queue_delay = dispatch_times[task_id] - submit_times[task_id]
+				exec_time = complete_times[task_id] - dispatch_times[task_id]
+				queue_delays.append(queue_delay)
+				exec_times.append(exec_time)
+
+	if not end_to_end_latencies:
+		return {
+			"latency_p50": 0.0,
+			"latency_p95": 0.0,
+			"latency_p99": 0.0,
+			"latency_mean": 0.0,
+			"latency_max": 0.0,
+			"queue_delay_p95": 0.0,
+			"exec_time_p95": 0.0,
+			"n_completed": 0,
+		}
+
+	latencies = np.array(end_to_end_latencies)
+
+	stats = {
+		"latency_p50": float(np.percentile(latencies, 50)),
+		"latency_p95": float(np.percentile(latencies, 95)),
+		"latency_p99": float(np.percentile(latencies, 99)),
+		"latency_mean": float(np.mean(latencies)),
+		"latency_max": float(np.max(latencies)),
+		"n_completed": len(end_to_end_latencies),
+	}
+
+	if queue_delays:
+		stats["queue_delay_p95"] = float(np.percentile(queue_delays, 95))
+		stats["exec_time_p95"] = float(np.percentile(exec_times, 95))
+	else:
+		stats["queue_delay_p95"] = 0.0
+		stats["exec_time_p95"] = 0.0
+
+	return stats
+
 
 N_TOOLS = 2  # fetch_temperature, fetch_humidity — fixed by LangraphWorkload
 CONFIG_PATH = Path("tests/benchmark/config.yml")
@@ -49,7 +132,7 @@ class ThroughputSaturation(BaseExperiment):
 		self._load_experiment_config()
 
 	def _load_experiment_config(self):
-		"""Read experiment-specific sweep parameters from config.yml."""
+		"""Read experiment-specific sweep parameters from shared config.yml."""
 		with open(CONFIG_PATH) as f:
 			raw = yaml.safe_load(f)
 		exp_cfg = raw.get("throughput_saturation", {})
@@ -89,7 +172,7 @@ class ThroughputSaturation(BaseExperiment):
 					n_of_tool_calls_per_agent=calls_per_tool,
 					n_of_backend_slots=ensemble_size,
 					tool_execution_duration_time=self.tool_duration,
-					engine_id=EngineIDs.ASYNCFLOW.value,
+					engine_id=EngineIDs.ASYNCFLOW_QUEUED.value,  # Open-loop queueing
 				)
 
 				workload_result: WorkloadResult = await self.run_workload(
@@ -100,10 +183,14 @@ class ThroughputSaturation(BaseExperiment):
 				offered_load = total_invocations / self.tool_duration
 				throughput = total_invocations / workload_result.total_makespan
 
+				# Compute latency statistics from queue events
+				latency_stats = compute_latency_stats(workload_result.events)
+
 				logger.info(
 					f"    offered_load={offered_load:.2f} inv/s  "
 					f"throughput={throughput:.2f} inv/s  "
-					f"makespan={workload_result.total_makespan:.2f}s"
+					f"makespan={workload_result.total_makespan:.2f}s  "
+					f"p95_latency={latency_stats['latency_p95']:.3f}s"
 				)
 
 				series_results.append(
@@ -116,11 +203,24 @@ class ThroughputSaturation(BaseExperiment):
 						"offered_load": offered_load,
 						"throughput": throughput,
 						"total_makespan": workload_result.total_makespan,
+						# Latency statistics
+						"latency_p50": latency_stats["latency_p50"],
+						"latency_p95": latency_stats["latency_p95"],
+						"latency_p99": latency_stats["latency_p99"],
+						"latency_mean": latency_stats["latency_mean"],
+						"latency_max": latency_stats["latency_max"],
+						"queue_delay_p95": latency_stats["queue_delay_p95"],
+						"exec_time_p95": latency_stats["exec_time_p95"],
+						"n_completed": latency_stats["n_completed"],
+						# Raw events for offline analysis
 						"events": workload_result.events,
 					}
 				)
 
 			results[series_key] = series_results
+
+		# Save results to disk for finalize() to read
+		self.store_data_to_disk(results)
 
 		return results
 

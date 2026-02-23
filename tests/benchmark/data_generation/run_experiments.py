@@ -33,6 +33,33 @@ from tests.benchmark.data_generation.utils.io_utils import DiscordNotifier
 
 logger = logging.getLogger(__name__)
 
+CONFIG_PATH = Path("tests/benchmark/config.yml")
+
+
+def _load_raw_config() -> Dict[str, Any]:
+	"""Load raw YAML config."""
+	with open(CONFIG_PATH) as f:
+		return yaml.safe_load(f)
+
+
+def _create_experiment_dirs(run_name: str, experiment_name: str) -> tuple:
+	"""Create output directories for an experiment."""
+	output_dir = Path(f"tests/benchmark/results/{run_name}")
+	experiment_dir = output_dir / "experiments" / experiment_name
+	data_dir = experiment_dir / "data"
+	plots_dir = experiment_dir / "plots"
+	config_dir = output_dir / "config"
+
+	# Create all directories
+	data_dir.mkdir(parents=True, exist_ok=True)
+	plots_dir.mkdir(parents=True, exist_ok=True)
+	config_dir.mkdir(parents=True, exist_ok=True)
+
+	# Copy config for reproducibility
+	shutil.copy(CONFIG_PATH, config_dir / "config.yml")
+
+	return data_dir, plots_dir
+
 
 class FlowGenticBenchmarkManager:
 	"""Benchmark harness for FlowGentic scaling tests"""
@@ -40,15 +67,26 @@ class FlowGenticBenchmarkManager:
 	def __init__(self, config_path: Path = Path("tests/benchmark/config.yml")):
 		self.io_utils = IOUtils(config_path)
 		self.benchmark_config = self.io_utils.benchmark_config
+		self.raw_config = _load_raw_config()
 		self.results: Dict[str, List[Dict]] = {}
 		self.experiments: Dict[str, BaseExperiment] = {}
 
 	def register_experiment(
 		self, experiment_name: str, experiment_class: BaseExperiment
 	):
-		data_dir, plots_dir = self.io_utils.create_experiment_directory(
-			experiment_name=experiment_name
-		)
+		# Check if experiment has its own run_name in config
+		exp_config = self.raw_config.get(experiment_name, {})
+		exp_run_name = exp_config.get("run_name")
+
+		if exp_run_name:
+			# Use experiment-specific run_name
+			data_dir, plots_dir = _create_experiment_dirs(exp_run_name, experiment_name)
+		else:
+			# Fall back to global run_name (original behavior)
+			data_dir, plots_dir = self.io_utils.create_experiment_directory(
+				experiment_name=experiment_name
+			)
+
 		self.experiments[experiment_name] = {
 			"experiment_class": experiment_class,
 			"data_dir": data_dir,

@@ -6,3 +6,10 @@ environment:
 run_description: 'Strong scaling: 512 agents x 64 tools = 32768 total invocations'
 run_name: N32768-k64-k512-version1-20260217_104215
 workload_id: langgraph_asyncflow
+
+# Throughput Saturation Experiment Config
+throughput_saturation:
+  run_name: throughput-saturation-S2-4-8-D2
+  ensemble_sizes: [2, 4, 8]
+  tool_invocations_sweep: [2, 4, 6, 8, 12, 16, 20, 24, 30, 40]
+  tool_execution_duration_time: 2
