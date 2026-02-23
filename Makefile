@@ -46,11 +46,10 @@ benchmark-suite: ## Run the full benchmark suite with multiple configs
 sbatch-start: ## Starts batch for testing
 	sbatch tests/benchmark/submit_delta.sh
 
-cluster-debug: ## Starts dynamic session
+cluster-debug: ## Starts interactive debug session
 	salloc --account=bebo-delta-gpu \
-       --partition=gpuA100x4-interactive \
-       --nodes=2 \
-       --ntasks-per-node=1 \
-       --cpus-per-task=4 \
-       --mem=16g \
-       --time=01:00:00
+		--partition=gpuA100x4-interactive \
+		--nodes=2 \
+		--gpus-per-node=1 \
+		--exclusive \
+		--time=01:00:00

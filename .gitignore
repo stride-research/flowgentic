@@ -19,7 +19,7 @@ dist/
 
 .venv/
 .env
-.env
+.env*
 .env.*
 
 # AI/ML & LangGraph
