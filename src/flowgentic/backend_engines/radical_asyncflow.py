@@ -1,9 +1,9 @@
-from typing import Callable, Dict, Any, Optional, Tuple
-import time
-import uuid
-
 import logging
+import time
+from typing import Any, Callable, Dict, Optional, Tuple
+
 from radical.asyncflow import WorkflowEngine
+
 from flowgentic.backend_engines.base import BaseEngine
 
 logger = logging.getLogger(__name__)
@@ -26,38 +26,50 @@ class AsyncFlowEngine(BaseEngine):
 		func: Callable,
 		*args,
 		task_kwargs: Optional[Dict[str, Any]] = None,
+		invocation_id: Optional[str] = None,
 		**kwargs,
 	) -> Dict[str, Any]:
 		task_kwargs = task_kwargs or {}
 		key = (func, tuple(sorted(task_kwargs.items())))
 
-		if key not in self._task_registry:
-			# Pass wrapper-level params into task creation here
+		# Track whether the task descriptor was already cached
+		cache_hit = key in self._task_registry
+		if not cache_hit:
 			self._task_registry[key] = self.flow.function_task(func, **task_kwargs)
 
 		task = self._task_registry[key]
 		task_name = getattr(func, "__name__", str(func))
-		exec_id = str(uuid.uuid4())
 
-		# Emit start event
+		# Ts_resolve_end: Task descriptor resolved from registry
 		self.emit(
 			{
-				"event": "task_exec_start",
+				"event": "tool_resolve_end",
 				"ts": time.perf_counter(),
-				"task_name": task_name,
-				"exec_id": exec_id,
+				"tool_name": task_name,
+				"invocation_id": invocation_id,
+				"cache_hit": cache_hit,
+			}
+		)
+
+		# Ts_bookkeep_end: Metadata done, about to enter AsyncFlow
+		self.emit(
+			{
+				"event": "tool_bookkeep_end",
+				"ts": time.perf_counter(),
+				"tool_name": task_name,
+				"invocation_id": invocation_id,
 			}
 		)
 
 		result = await task(*args, **kwargs)
 
-		# Emit end event
+		# Ts_collect_start: Result received from AsyncFlow
 		self.emit(
 			{
-				"event": "task_exec_end",
+				"event": "tool_collect_start",
 				"ts": time.perf_counter(),
-				"task_name": task_name,
-				"exec_id": exec_id,
+				"tool_name": task_name,
+				"invocation_id": invocation_id,
 			}
 		)
 
