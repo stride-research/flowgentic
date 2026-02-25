@@ -6,6 +6,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from tests.benchmark.data_generation.experiments.base.base_plots import BasePlotter
+from tests.benchmark.data_generation.utils.io_utils import DiscordNotifier
+
+# Silence matplotlib's verbose font manager DEBUG logs
+logging.getLogger("matplotlib.font_manager").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +23,6 @@ def _extract_event_durations(events: List[Dict]) -> Dict[str, List[float]]:
 	- 'block_wrap': list of block wrapping durations
 	- 'task_exec': list of task execution durations
 	"""
-	# Group events by type
 	starts = {}
 	ends = {}
 
@@ -39,7 +42,6 @@ def _extract_event_durations(events: List[Dict]) -> Dict[str, List[float]]:
 		elif event_type == "task_exec_end":
 			ends[("task_exec", e["exec_id"])] = e["ts"]
 
-	# Match and compute durations
 	durations = {"task_wrap": [], "block_wrap": [], "task_exec": []}
 
 	for key, start_ts in starts.items():
@@ -98,6 +100,7 @@ class SyntheticAdaptivePlotter(BasePlotter):
 	def __init__(self, plots_dir: Optional[Path] = None) -> None:
 		super().__init__()
 		self.plots_dir = plots_dir
+		self.discord_notifier = DiscordNotifier()
 
 	def set_plots_dir(self, plots_dir: Path) -> None:
 		"""Set the plots directory after initialization."""
@@ -132,8 +135,13 @@ class SyntheticAdaptivePlotter(BasePlotter):
 		Generate strong scaling plots: speedup and efficiency.
 
 		Strong scaling: fixed workload, increasing backend slots.
-		- Speedup = T(1) / T(p)
-		- Efficiency = Speedup / p = T(1) / (p * T(p))
+		Uses relative parallelism (p/p_min) so the baseline doesn't need to
+		start at p=1. This correctly handles experiments that exclude small
+		slot counts.
+
+		- Speedup = T(p_min) / T(p)
+		- Relative parallelism factor = p / p_min
+		- Efficiency = Speedup / (p / p_min)
 		"""
 		if not records:
 			logger.warning(f"No records for {experiment_name}, skipping plots.")
@@ -146,29 +154,39 @@ class SyntheticAdaptivePlotter(BasePlotter):
 		backend_slots = [r["n_of_backend_slots"] for r in sorted_records]
 		makespans = [r["total_makespan"] for r in sorted_records]
 
-		# Calculate speedup and efficiency
-		t1 = makespans[0]  # Baseline: makespan with 1 slot
-		speedups = [t1 / t_p for t_p in makespans]
-		efficiencies = [s / p for s, p in zip(speedups, backend_slots)]
+		# Calculate speedup and efficiency using relative parallelism
+		p_min = backend_slots[0]
+		t_baseline = makespans[0]  # Baseline: makespan with smallest slot count
+		speedups = [t_baseline / t_p for t_p in makespans]
+		# Relative parallelism factor: how many times more slots vs baseline
+		relative_p = [p / p_min for p in backend_slots]
+		efficiencies = [s / rp for s, rp in zip(speedups, relative_p)]
 
 		# Get metadata for titles
 		run_name = sorted_records[0].get("run_name", "unknown")
 		n_agents = sorted_records[0].get("n_of_agents", "?")
 		n_tools = sorted_records[0].get("n_of_tool_calls_per_agent", "?")
+		N_total = n_agents * n_tools if isinstance(n_agents, int) and isinstance(n_tools, int) else "?"
 
 		# Create subdirectory for strong scaling makespan plots
 		makespan_subdir = "strong_scaling/makespan"
 
-		# Plot speedup
+		# Build subtitle with baseline info
+		baseline_note = f"p₀={p_min}" if p_min > 1 else ""
+		subtitle = f"N={N_total}, {n_agents} agents × {n_tools} tools/agent"
+		if baseline_note:
+			subtitle += f", {baseline_note}"
+
+		# Plot speedup (relative to baseline)
 		self._create_scaling_plot(
 			x_values=backend_slots,
 			y_values=speedups,
-			title=f"Strong Scaling: Speedup\n({n_agents} agents, {n_tools} tool calls/agent)",
+			title=f"Strong Scaling: Speedup\n({subtitle})",
 			xlabel="Number of Backend Slots (p)",
-			ylabel="Speedup (T₁/Tₚ)",
+			ylabel=f"Speedup (T(p₀)/T(p))",
 			filename="speedup.png",
 			subdirectory=makespan_subdir,
-			ideal_line=backend_slots,  # Ideal speedup = p (linear)
+			ideal_line=relative_p,  # Ideal speedup = p/p_min (linear)
 			ideal_label="Ideal (linear)",
 		)
 
@@ -176,9 +194,9 @@ class SyntheticAdaptivePlotter(BasePlotter):
 		self._create_scaling_plot(
 			x_values=backend_slots,
 			y_values=efficiencies,
-			title=f"Strong Scaling: Efficiency\n({n_agents} agents, {n_tools} tool calls/agent)",
+			title=f"Strong Scaling: Efficiency\n({subtitle})",
 			xlabel="Number of Backend Slots (p)",
-			ylabel="Efficiency (Speedup/p)",
+			ylabel="Efficiency (Speedup / (p/p₀))",
 			filename="efficiency.png",
 			subdirectory=makespan_subdir,
 			ideal_line=[1.0] * len(backend_slots),  # Ideal efficiency = 1
@@ -190,7 +208,7 @@ class SyntheticAdaptivePlotter(BasePlotter):
 		self._create_scaling_plot(
 			x_values=backend_slots,
 			y_values=makespans,
-			title=f"Strong Scaling: Makespan\n({n_agents} agents, {n_tools} tool calls/agent)",
+			title=f"Strong Scaling: Makespan\n({subtitle})",
 			xlabel="Number of Backend Slots (p)",
 			ylabel="Makespan (seconds)",
 			filename="makespan.png",
@@ -206,8 +224,11 @@ class SyntheticAdaptivePlotter(BasePlotter):
 		Generate weak scaling plots: speedup and efficiency.
 
 		Weak scaling: workload increases proportionally with backend slots.
-		- Efficiency = T(1) / T(p)  (ideally stays at 1)
-		- Scaled Speedup = (p * T₁) / Tₚ
+		Uses relative parallelism (p/p_min) so the baseline doesn't need to
+		start at p=1.
+
+		- Efficiency = T(p_min) / T(p)  (ideally stays at 1)
+		- Scaled Speedup = (p/p_min) * T(p_min) / T(p)
 		"""
 		if not records:
 			logger.warning(f"No records for {experiment_name}, skipping plots.")
@@ -220,12 +241,14 @@ class SyntheticAdaptivePlotter(BasePlotter):
 		backend_slots = [r["n_of_backend_slots"] for r in sorted_records]
 		makespans = [r["total_makespan"] for r in sorted_records]
 
-		# Calculate weak scaling metrics
-		t1 = makespans[0]
-		# Weak scaling efficiency: T(1)/T(p) - should stay near 1 if scaling well
-		efficiencies = [t1 / t_p for t_p in makespans]
-		# Scaled speedup: how much faster we are vs sequential execution of scaled workload
-		scaled_speedups = [(p * t1) / t_p for p, t_p in zip(backend_slots, makespans)]
+		# Calculate weak scaling metrics using relative parallelism
+		p_min = backend_slots[0]
+		t_baseline = makespans[0]
+		relative_p = [p / p_min for p in backend_slots]
+		# Weak scaling efficiency: T(p_min)/T(p) - should stay near 1 if scaling well
+		efficiencies = [t_baseline / t_p for t_p in makespans]
+		# Scaled speedup: how much faster vs sequential execution of scaled workload
+		scaled_speedups = [rp * t_baseline / t_p for rp, t_p in zip(relative_p, makespans)]
 
 		# Get metadata for titles
 		run_name = sorted_records[0].get("run_name", "unknown")
@@ -233,14 +256,16 @@ class SyntheticAdaptivePlotter(BasePlotter):
 
 		# Create subdirectory for weak scaling makespan plots
 		makespan_subdir = "weak_scaling/makespan"
+		baseline_note = f", p₀={p_min}" if p_min > 1 else ""
+		subtitle = f"{n_agents} agents, workload ∝ p{baseline_note}"
 
 		# Plot efficiency
 		self._create_scaling_plot(
 			x_values=backend_slots,
 			y_values=efficiencies,
-			title=f"Weak Scaling: Efficiency\n({n_agents} agents, workload ∝ p)",
+			title=f"Weak Scaling: Efficiency\n({subtitle})",
 			xlabel="Number of Backend Slots (p)",
-			ylabel="Efficiency (T₁/Tₚ)",
+			ylabel="Efficiency (T(p₀)/T(p))",
 			filename="efficiency.png",
 			subdirectory=makespan_subdir,
 			ideal_line=[1.0] * len(backend_slots),
@@ -252,12 +277,12 @@ class SyntheticAdaptivePlotter(BasePlotter):
 		self._create_scaling_plot(
 			x_values=backend_slots,
 			y_values=scaled_speedups,
-			title=f"Weak Scaling: Scaled Speedup\n({n_agents} agents, workload ∝ p)",
+			title=f"Weak Scaling: Scaled Speedup\n({subtitle})",
 			xlabel="Number of Backend Slots (p)",
-			ylabel="Scaled Speedup (p·T₁/Tₚ)",
+			ylabel="Scaled Speedup ((p/p₀)·T(p₀)/T(p))",
 			filename="speedup.png",
 			subdirectory=makespan_subdir,
-			ideal_line=backend_slots,
+			ideal_line=relative_p,
 			ideal_label="Ideal (linear)",
 		)
 
@@ -279,6 +304,9 @@ class SyntheticAdaptivePlotter(BasePlotter):
 		"""Create a single scaling plot with optional ideal reference line."""
 		fig, ax = plt.subplots(figsize=(8, 6))
 
+		# Set logarithmic x-axis
+		ax.set_xscale('log')
+
 		# Plot actual values
 		ax.plot(x_values, y_values, "bo-", linewidth=2, markersize=8, label="Measured")
 
@@ -291,12 +319,12 @@ class SyntheticAdaptivePlotter(BasePlotter):
 		ax.set_xlabel(xlabel, fontsize=12)
 		ax.set_ylabel(ylabel, fontsize=12)
 		ax.set_title(title, fontsize=14)
-		ax.grid(True, alpha=0.3)
+		ax.grid(True, alpha=0.3, which='both')
 		ax.legend(loc="best")
 
 		# Set x-axis to show actual slot values
 		ax.set_xticks(x_values)
-		ax.set_xticklabels([str(x) for x in x_values])
+		ax.set_xticklabels([str(int(x)) for x in x_values])
 
 		if y_max is not None:
 			ax.set_ylim(bottom=0, top=y_max)
@@ -317,6 +345,17 @@ class SyntheticAdaptivePlotter(BasePlotter):
 
 			fig.savefig(plot_path, dpi=150, bbox_inches="tight")
 			logger.info(f"Saved plot: {plot_path}")
+			
+			# Send plot to Discord
+			plot_description = f"📊 **{subdirectory}/{filename}**" if subdirectory else f"📊 **{filename}**"
+			try:
+				self.discord_notifier.send_discord_notification(
+					msg=plot_description,
+					image_path=str(plot_path)
+				)
+				logger.info(f"Sent plot to Discord: {plot_path}")
+			except Exception as e:
+				logger.warning(f"Failed to send plot to Discord: {e}")
 		else:
 			logger.warning(f"No plots_dir set, cannot save {filename}")
 
@@ -519,8 +558,14 @@ class SyntheticAdaptivePlotter(BasePlotter):
 		"""Create a stacked bar chart."""
 		fig, ax = plt.subplots(figsize=(8, 6))
 
-		x_positions = np.arange(len(x_values))
-		width = 0.6
+		# Use actual x_values for positioning on log scale
+		x_positions = np.array(x_values)
+		# Calculate appropriate bar width for log scale (proportional to value)
+		if len(x_positions) > 1:
+			width = x_positions * 0.3  # Width proportional to x value
+		else:
+			width = x_positions[0] * 0.3
+		
 		bottom = np.zeros(len(x_values))
 
 		colors = plt.cm.Set2.colors
@@ -528,18 +573,20 @@ class SyntheticAdaptivePlotter(BasePlotter):
 			ax.bar(
 				x_positions,
 				values,
-				width,
+				width=width,
 				label=label,
 				bottom=bottom,
 				color=colors[i % len(colors)],
 			)
 			bottom += np.array(values)
 
+		# Set logarithmic x-axis
+		ax.set_xscale('log')
 		ax.set_xlabel(xlabel, fontsize=12)
 		ax.set_ylabel(ylabel, fontsize=12)
 		ax.set_title(title, fontsize=14)
-		ax.set_xticks(x_positions)
-		ax.set_xticklabels([str(x) for x in x_values])
+		ax.set_xticks(x_values)
+		ax.set_xticklabels([str(int(x)) for x in x_values])
 		ax.legend(loc="best")
 		ax.grid(True, alpha=0.3, axis="y")
 
@@ -563,25 +610,36 @@ class SyntheticAdaptivePlotter(BasePlotter):
 		# Filter out empty lists
 		filtered_data = []
 		filtered_labels = []
+		filtered_positions = []
 		for d, label in zip(data, labels):
 			if d:
 				filtered_data.append(d)
 				filtered_labels.append(label)
+				# Convert label to numeric value for log positioning
+				try:
+					filtered_positions.append(float(label))
+				except ValueError:
+					# If label is not numeric, use index
+					filtered_positions.append(len(filtered_positions) + 1)
 
 		if not filtered_data:
 			plt.close(fig)
 			return
 
-		bp = ax.boxplot(filtered_data, patch_artist=True)
+		# Use numeric positions for log scale
+		bp = ax.boxplot(filtered_data, positions=filtered_positions, patch_artist=True)
 
 		# Style the boxes
 		for patch in bp["boxes"]:
 			patch.set_facecolor("lightblue")
 			patch.set_alpha(0.7)
 
+		# Set logarithmic x-axis
+		ax.set_xscale('log')
 		ax.set_xlabel(xlabel, fontsize=12)
 		ax.set_ylabel(ylabel, fontsize=12)
 		ax.set_title(title, fontsize=14)
+		ax.set_xticks(filtered_positions)
 		ax.set_xticklabels(filtered_labels)
 		ax.grid(True, alpha=0.3, axis="y")
 
@@ -592,7 +650,7 @@ class SyntheticAdaptivePlotter(BasePlotter):
 	def _save_plot(
 		self, fig: plt.Figure, filename: str, subdirectory: Optional[str] = None
 	) -> None:
-		"""Save a plot to the configured directory."""
+		"""Save a plot to the configured directory and send to Discord."""
 		if self.plots_dir:
 			if subdirectory:
 				subdir_path = self.plots_dir / subdirectory
@@ -603,5 +661,16 @@ class SyntheticAdaptivePlotter(BasePlotter):
 
 			fig.savefig(plot_path, dpi=150, bbox_inches="tight")
 			logger.info(f"Saved plot: {plot_path}")
+			
+			# Send plot to Discord
+			plot_description = f"📊 **{subdirectory}/{filename}**" if subdirectory else f"📊 **{filename}**"
+			try:
+				self.discord_notifier.send_discord_notification(
+					msg=plot_description,
+					image_path=str(plot_path)
+				)
+				logger.info(f"Sent plot to Discord: {plot_path}")
+			except Exception as e:
+				logger.warning(f"Failed to send plot to Discord: {e}")
 		else:
 			logger.warning(f"No plots_dir set, cannot save {filename}")

@@ -21,7 +21,6 @@ dist/
 .env
 .env
 .env.*
-/venv/
 
 # AI/ML & LangGraph
 *.pkl
@@ -43,3 +42,7 @@ logs/
 *.tmp
 
 uv.lock
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md
+.venv/

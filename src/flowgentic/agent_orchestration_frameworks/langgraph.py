@@ -1,10 +1,12 @@
-from functools import wraps
 import time
 import uuid
+from functools import wraps
 from typing import Any, Callable, Optional
+
+from langchain_core.tools import tool as langchain_tool
+
 from flowgentic.agent_orchestration_frameworks.base import AgentOrchestrator
 from flowgentic.backend_engines.base import BaseEngine
-from langchain_core.tools import tool as langchain_tool
 
 
 class LanGraphOrchestrator(AgentOrchestrator):
@@ -21,27 +23,55 @@ class LanGraphOrchestrator(AgentOrchestrator):
 			# Emit setup start event
 			self.engine.emit(
 				{
-					"event": "task_wrap_start",
+					"event": "tool_wrap_start",
 					"ts": time.perf_counter(),
-					"task_name": task_name,
+					"tool_name": task_name,
 					"wrap_id": wrap_id,
 				}
 			)
 
 			@wraps(f)
 			async def wrapper(*args, **kwargs):
-				return await self.engine.execute_tool(
-					f, *args, task_kwargs=task_kwargs, **kwargs
+				invocation_id = str(uuid.uuid4())
+
+				# Ts_invoke_start: LangGraph calls tool, FlowGentic intercepts
+				self.engine.emit(
+					{
+						"event": "tool_invoke_start",
+						"ts": time.perf_counter(),
+						"tool_name": task_name,
+						"invocation_id": invocation_id,
+					}
 				)
+
+				result = await self.engine.execute_tool(
+					f,
+					*args,
+					task_kwargs=task_kwargs,
+					invocation_id=invocation_id,
+					**kwargs,
+				)
+
+				# Ts_collect_end: Result returned to LangGraph
+				self.engine.emit(
+					{
+						"event": "tool_invoke_end",
+						"ts": time.perf_counter(),
+						"tool_name": task_name,
+						"invocation_id": invocation_id,
+					}
+				)
+
+				return result
 
 			wrapped_tool = langchain_tool(wrapper)
 
 			# Emit setup end event
 			self.engine.emit(
 				{
-					"event": "task_wrap_end",
+					"event": "tool_wrap_end",
 					"ts": time.perf_counter(),
-					"task_name": task_name,
+					"tool_name": task_name,
 					"wrap_id": wrap_id,
 				}
 			)

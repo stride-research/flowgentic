@@ -1,6 +1,6 @@
 import asyncio
 import logging
-import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -27,6 +27,9 @@ from tests.benchmark.data_generation.utils.schemas import (
 from tests.benchmark.data_generation.workload.base_workload import BaseWorkload
 from tests.benchmark.data_generation.workload.utils.engine import resolve_engine
 from tests.benchmark.data_generation.workload.langgraph import LangraphWorkload
+
+from tests.benchmark.data_generation.utils.io_utils import DiscordNotifier
+
 
 logger = logging.getLogger(__name__)
 
@@ -55,16 +58,26 @@ class FlowGenticBenchmarkManager:
 
 	async def run_registerd_experiments(self):
 		for experiment_name, experiment_metadata in self.experiments.items():
+			started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+			config_json = self.benchmark_config.model_dump_json(indent=2)
+			msg = (
+				f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+				f"🚀 **Starting experiment**\n"
+				f"**Experiment:** `{experiment_name}`\n"
+				f"**Started at:** `{started_at}`\n"
+				f"**Config:**\n```json\n{config_json}\n```"
+			)
+			DiscordNotifier().send_discord_notification(msg=msg)
 			experiment_class = experiment_metadata.get("experiment_class")
 			data_dir = experiment_metadata.get("data_dir")
 			plots_dir = experiment_metadata.get("plots_dir")
 			experiment_instance: BaseExperiment = experiment_class(
 				self.benchmark_config, data_dir, plots_dir
 			)
-			experiment_results: Dict[
-				Any, Any
-			] = await experiment_instance.run_experiment()
-			experiment_instance.save_results(experiment_results)
+			# Run experiment (writes to disk incrementally)
+			await experiment_instance.run_experiment()
+			# Read from disk and generate plots
+			experiment_instance.finalize()
 
 
 async def main():
