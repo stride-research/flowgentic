@@ -92,11 +92,3 @@ class ParslEngine(BaseEngine):
 		return async_node_wrapper
 	
 	
-	def wrap_node(self, node_func: Callable):
-		node_app = self._make_parsl_app(node_func)
-
-		async def async_node_wrapper(*args, **kwargs):
-			future = node_app(*args, **kwargs)
-			return await asyncio.to_thread(future.result)
-
-		return async_node_wrapper
