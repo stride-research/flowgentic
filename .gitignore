@@ -42,3 +42,7 @@ logs/
 *.tmp
 
 uv.lock
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md
+.venv/
