@@ -100,6 +100,7 @@ class BackendComparison(BaseExperiment):
 			)
 
 		logger.info("Backend comparison experiment complete.")
+		self.store_data_to_disk(results)
 		return results
 
 	def generate_plots(self, data: Dict[Any, Any]):

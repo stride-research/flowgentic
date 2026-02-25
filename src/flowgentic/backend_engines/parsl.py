@@ -16,6 +16,7 @@ class ParslEngine(BaseEngine):
 		observer: Optional[Callable[[Dict[str, Any]], None]] = None,
 	):
 		super().__init__(observer=observer)
+		parsl.clear()
 		parsl.load(config)
 
 		self._task_registry: Dict[str, Any] = {}
