@@ -46,7 +46,7 @@ class ParslEngine(BaseEngine):
 
 		task_app = self._task_registry[task_name]
 
-		# Ts_resolve_end: Task descriptor resolved from registry
+		# Ts_resolve_end: Task descriptor resolved, about to enter Parsl
 		self.emit(
 			{
 				"event": "tool_resolve_end",
@@ -54,16 +54,6 @@ class ParslEngine(BaseEngine):
 				"tool_name": task_name,
 				"invocation_id": invocation_id,
 				"cache_hit": cache_hit,
-			}
-		)
-
-		# Ts_bookkeep_end: Metadata done, about to enter Parsl
-		self.emit(
-			{
-				"event": "tool_bookkeep_end",
-				"ts": time.perf_counter(),
-				"tool_name": task_name,
-				"invocation_id": invocation_id,
 			}
 		)
 
