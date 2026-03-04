@@ -45,7 +45,7 @@ class AsyncFlowEngine(BaseEngine):
 				"cache_hit": cache_hit,
 			}
 		)
-		
+
 		if not cache_hit:
 			self._task_registry[key] = self.flow.function_task(func, **task_kwargs)
 
