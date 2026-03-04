@@ -1,8 +1,8 @@
 """Tests for FlowGentic tool lifecycle instrumentation.
 
-Verifies that all 7 timestamps (wrap_start, wrap_end, invoke_start,
-resolve_end, bookkeep_end, collect_start, invoke_end) are emitted in
-correct chronological order, that derived durations are non-negative,
+Verifies that all 6 timestamps (wrap_start, wrap_end, invoke_start,
+resolve_end, collect_start, invoke_end) are emitted in correct
+chronological order, that derived durations are non-negative,
 and that cache_hit tracking works correctly.
 """
 
@@ -11,7 +11,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pytest
 
-from flowgentic.agent_orchestration_frameworks.langgraph import LanGraphOrchestrator
+from flowgentic.agent_orchestration_frameworks.langgraph import \
+    LanGraphOrchestrator
 from flowgentic.backend_engines.base import BaseEngine
 
 
@@ -22,8 +23,8 @@ from flowgentic.backend_engines.base import BaseEngine
 class FakeAsyncFlowEngine(BaseEngine):
 	"""A lightweight stand-in for AsyncFlowEngine.
 
-	Reproduces the same resolve / bookkeep / collect emit pattern
-	so the full lifecycle can be tested end-to-end with the real
+	Reproduces the same resolve / collect emit pattern so the full
+	lifecycle can be tested end-to-end with the real
 	LanGraphOrchestrator.
 	"""
 
@@ -65,16 +66,6 @@ class FakeAsyncFlowEngine(BaseEngine):
 				"tool_name": task_name,
 				"invocation_id": invocation_id,
 				"cache_hit": cache_hit,
-			}
-		)
-
-		# Ts_bookkeep_end
-		self.emit(
-			{
-				"event": "tool_bookkeep_end",
-				"ts": time.perf_counter(),
-				"tool_name": task_name,
-				"invocation_id": invocation_id,
 			}
 		)
 
@@ -121,7 +112,7 @@ def _events_by_name(
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_full_lifecycle_timestamps():
-	"""All 7 lifecycle events are emitted in chronological order."""
+	"""All 6 lifecycle events are emitted in chronological order."""
 	events, observer = _collect_events()
 	engine = FakeAsyncFlowEngine(observer=observer)
 	orchestrator = LanGraphOrchestrator(engine=engine)
@@ -145,7 +136,6 @@ async def test_full_lifecycle_timestamps():
 		"tool_wrap_end",
 		"tool_invoke_start",
 		"tool_resolve_end",
-		"tool_bookkeep_end",
 		"tool_collect_start",
 		"tool_invoke_end",
 	]
@@ -166,7 +156,7 @@ async def test_full_lifecycle_timestamps():
 
 @pytest.mark.asyncio
 async def test_derived_durations_non_negative():
-	"""D_resolve, D_bookkeep, D_collect, D_overhead, D_total >= 0."""
+	"""D_resolve, D_collect, D_overhead, D_total >= 0."""
 	events, observer = _collect_events()
 	engine = FakeAsyncFlowEngine(observer=observer)
 	orchestrator = LanGraphOrchestrator(engine=engine)
@@ -182,20 +172,17 @@ async def test_derived_durations_non_negative():
 
 	ts_invoke_start = by_name["tool_invoke_start"]["ts"]
 	ts_resolve_end = by_name["tool_resolve_end"]["ts"]
-	ts_bookkeep_end = by_name["tool_bookkeep_end"]["ts"]
 	ts_collect_start = by_name["tool_collect_start"]["ts"]
 	ts_invoke_end = by_name["tool_invoke_end"]["ts"]
 
 	d_resolve = ts_resolve_end - ts_invoke_start
-	d_bookkeep = ts_bookkeep_end - ts_resolve_end
-	d_asyncflow = ts_collect_start - ts_bookkeep_end
+	d_backend = ts_collect_start - ts_resolve_end
 	d_collect = ts_invoke_end - ts_collect_start
-	d_overhead = d_resolve + d_bookkeep + d_collect
+	d_overhead = d_resolve + d_collect
 	d_total = ts_invoke_end - ts_invoke_start
 
 	assert d_resolve >= 0, f"D_resolve is negative: {d_resolve}"
-	assert d_bookkeep >= 0, f"D_bookkeep is negative: {d_bookkeep}"
-	assert d_asyncflow >= 0, f"D_asyncflow is negative: {d_asyncflow}"
+	assert d_backend >= 0, f"D_backend is negative: {d_backend}"
 	assert d_collect >= 0, f"D_collect is negative: {d_collect}"
 	assert d_overhead >= 0, f"D_overhead is negative: {d_overhead}"
 	assert d_total >= 0, f"D_total is negative: {d_total}"
@@ -250,7 +237,7 @@ async def test_invocation_id_consistency():
 	invocation_events = [
 		e for e in events if "invocation_id" in e
 	]
-	assert len(invocation_events) == 5  # invoke_start, resolve_end, bookkeep_end, collect_start, invoke_end
+	assert len(invocation_events) == 4  # invoke_start, resolve_end, collect_start, invoke_end
 
 	invocation_ids = {e["invocation_id"] for e in invocation_events}
 	assert len(invocation_ids) == 1, (
