@@ -1,0 +1,228 @@
+import logging
+import yaml
+import numpy as np
+from pathlib import Path
+from typing import Any, Dict, List
+
+from tests.benchmark.data_generation.experiments.base.base_experiment import (
+	BaseExperiment,
+)
+from tests.benchmark.data_generation.experiments.throughput_saturation.utils.plots import (
+	ThroughputSaturationPlotter,
+)
+from tests.benchmark.data_generation.utils.schemas import (
+	BenchmarkConfig,
+	EngineIDs,
+	WorkloadConfig,
+	WorkloadResult,
+)
+from tests.benchmark.data_generation.workload.langgraph import LangraphWorkload
+
+logger = logging.getLogger(__name__)
+
+
+def compute_latency_stats(events: List[Dict[str, Any]]) -> Dict[str, float]:
+	"""
+	Compute latency statistics from QueuedEngine events.
+
+	Extracts end-to-end latency (t_complete - t_submit) for each invocation
+	and computes percentile statistics.
+
+	Args:
+		events: List of engine events containing t_submit, t_dispatched, t_complete
+
+	Returns:
+		Dict with latency statistics: p50, p95, p99, mean, max, and component breakdowns
+	"""
+	# Build lookup of submit times by task_id
+	submit_times: Dict[str, float] = {}
+	dispatch_times: Dict[str, float] = {}
+	complete_times: Dict[str, float] = {}
+
+	for event in events:
+		event_type = event.get("event")
+		task_id = event.get("task_id")
+
+		if not task_id:
+			continue
+
+		if event_type == "t_submit":
+			submit_times[task_id] = event.get("ts", 0)
+		elif event_type == "t_dispatched":
+			dispatch_times[task_id] = event.get("ts", 0)
+		elif event_type == "t_complete":
+			complete_times[task_id] = event.get("ts", 0)
+
+	# Compute latencies for completed tasks
+	end_to_end_latencies = []
+	queue_delays = []
+	exec_times = []
+
+	for task_id in complete_times:
+		if task_id in submit_times:
+			e2e = complete_times[task_id] - submit_times[task_id]
+			end_to_end_latencies.append(e2e)
+
+			if task_id in dispatch_times:
+				queue_delay = dispatch_times[task_id] - submit_times[task_id]
+				exec_time = complete_times[task_id] - dispatch_times[task_id]
+				queue_delays.append(queue_delay)
+				exec_times.append(exec_time)
+
+	if not end_to_end_latencies:
+		return {
+			"latency_p50": 0.0,
+			"latency_p95": 0.0,
+			"latency_p99": 0.0,
+			"latency_mean": 0.0,
+			"latency_max": 0.0,
+			"queue_delay_p95": 0.0,
+			"exec_time_p95": 0.0,
+			"n_completed": 0,
+		}
+
+	latencies = np.array(end_to_end_latencies)
+
+	stats = {
+		"latency_p50": float(np.percentile(latencies, 50)),
+		"latency_p95": float(np.percentile(latencies, 95)),
+		"latency_p99": float(np.percentile(latencies, 99)),
+		"latency_mean": float(np.mean(latencies)),
+		"latency_max": float(np.max(latencies)),
+		"n_completed": len(end_to_end_latencies),
+	}
+
+	if queue_delays:
+		stats["queue_delay_p95"] = float(np.percentile(queue_delays, 95))
+		stats["exec_time_p95"] = float(np.percentile(exec_times, 95))
+	else:
+		stats["queue_delay_p95"] = 0.0
+		stats["exec_time_p95"] = 0.0
+
+	return stats
+
+
+N_TOOLS = 2  # fetch_temperature, fetch_humidity — fixed by LangraphWorkload
+CONFIG_PATH = Path("tests/benchmark/config.yml")
+
+
+class ThroughputSaturation(BaseExperiment):
+	"""
+	Throughput saturation experiment: coordination throughput vs invocation rate.
+
+	Sweeps tool_invocations to increase offered load while keeping n_agents=1.
+	This reduces per-agent orchestration overhead compared to sweeping agents.
+	Each ensemble_size (n_of_backend_slots) becomes one series on the plot.
+
+	Formulas:
+		total_invocations = calls_per_tool * N_TOOLS (with n_agents=1)
+		offered_load      = total_invocations / tool_execution_duration_time
+		throughput        = total_invocations / actual_makespan
+
+	Expected shape: curves plateau at S / D (slots / duration).
+	Larger ensemble sizes yield a higher plateau.
+	"""
+
+	def __init__(
+		self, benchmark_config: BenchmarkConfig, data_dir: str, plots_dir: str
+	) -> None:
+		super().__init__(data_dir, plots_dir)
+		self.benchmark_config = benchmark_config
+		self.plotter = ThroughputSaturationPlotter(plots_dir=plots_dir)
+		self._load_experiment_config()
+
+	def _load_experiment_config(self):
+		"""Read experiment-specific sweep parameters from shared config.yml."""
+		with open(CONFIG_PATH) as f:
+			raw = yaml.safe_load(f)
+		exp_cfg = raw.get("throughput_saturation", {})
+
+		self.ensemble_sizes: List[int] = exp_cfg.get("ensemble_sizes", [2, 4, 8])
+		self.tool_invocations_sweep: List[int] = exp_cfg.get(
+			"tool_invocations_sweep", [2, 4, 6, 8, 12, 16, 20, 24, 30, 40]
+		)
+		self.tool_duration: int = exp_cfg.get("tool_execution_duration_time", 2)
+
+	async def run_experiment(self) -> Dict[Any, Any]:
+		results: Dict[str, List[Dict[str, Any]]] = {}
+
+		# Fixed: 1 agent to minimize orchestration overhead
+		n_agents = 1
+
+		for ensemble_size in self.ensemble_sizes:
+			series_key = f"ensemble_size_{ensemble_size}"
+			logger.info(f"=== {series_key} (n_of_backend_slots={ensemble_size}) ===")
+			series_results: List[Dict[str, Any]] = []
+
+			for total_invocations in self.tool_invocations_sweep:
+				# Derive calls_per_tool from total invocations
+				# total_invocations = n_agents * calls_per_tool * N_TOOLS
+				# With n_agents=1: calls_per_tool = total_invocations / N_TOOLS
+				assert total_invocations % N_TOOLS == 0, (
+					f"total_invocations ({total_invocations}) must be divisible by N_TOOLS ({N_TOOLS})"
+				)
+				calls_per_tool = total_invocations // N_TOOLS
+
+				logger.info(
+					f"  total_invocations={total_invocations} (calls_per_tool={calls_per_tool})"
+				)
+
+				workload_config = WorkloadConfig(
+					n_of_agents=n_agents,
+					n_of_tool_calls_per_agent=calls_per_tool,
+					n_of_backend_slots=ensemble_size,
+					tool_execution_duration_time=self.tool_duration,
+					engine_id=EngineIDs.ASYNCFLOW_QUEUED.value,  # Open-loop queueing
+				)
+
+				workload_result: WorkloadResult = await self.run_workload(
+					workload_orchestrator=LangraphWorkload,
+					workload_config=workload_config,
+				)
+
+				offered_load = total_invocations / self.tool_duration
+				throughput = total_invocations / workload_result.total_makespan
+
+				# Compute latency statistics from queue events
+				latency_stats = compute_latency_stats(workload_result.events)
+
+				logger.info(
+					f"    offered_load={offered_load:.2f} inv/s  "
+					f"throughput={throughput:.2f} inv/s  "
+					f"makespan={workload_result.total_makespan:.2f}s  "
+					f"p95_latency={latency_stats['latency_p95']:.3f}s"
+				)
+
+				series_results.append(
+					{
+						"ensemble_size": ensemble_size,
+						"n_agents": n_agents,
+						"calls_per_tool": calls_per_tool,
+						"tool_execution_duration_time": self.tool_duration,
+						"total_invocations": total_invocations,
+						"offered_load": offered_load,
+						"throughput": throughput,
+						"total_makespan": workload_result.total_makespan,
+						# Latency statistics
+						"latency_p50": latency_stats["latency_p50"],
+						"latency_p95": latency_stats["latency_p95"],
+						"latency_p99": latency_stats["latency_p99"],
+						"latency_mean": latency_stats["latency_mean"],
+						"latency_max": latency_stats["latency_max"],
+						"queue_delay_p95": latency_stats["queue_delay_p95"],
+						"exec_time_p95": latency_stats["exec_time_p95"],
+						"n_completed": latency_stats["n_completed"],
+						# Raw events for offline analysis
+						"events": workload_result.events,
+					}
+				)
+
+			results[series_key] = series_results
+
+		# Save results to disk for finalize() to read
+		self.store_data_to_disk(results)
+
+		return results
+
+	def generate_plots(self, data: Dict[Any, Any]):
+		self.plotter.plot_results(data)

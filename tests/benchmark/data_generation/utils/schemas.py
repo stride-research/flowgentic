@@ -14,6 +14,7 @@ class WorkloadType(str, Enum):
 
 class EngineIDs(str, Enum):
 	ASYNCFLOW = "asyncflow"
+	ASYNCFLOW_QUEUED = "asyncflow_queued"  # Open-loop queueing wrapper
 	PARSL = "parsl"
 
 
