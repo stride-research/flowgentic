@@ -34,13 +34,8 @@ class AsyncFlowEngine(BaseEngine):
 
 		# Track whether the task descriptor was already cached
 		cache_hit = key in self._task_registry
-		if not cache_hit:
-			self._task_registry[key] = self.flow.function_task(func, **task_kwargs)
 
-		task = self._task_registry[key]
-		task_name = getattr(func, "__name__", str(func))
-
-		# Ts_resolve_end: Task descriptor resolved from registry
+		# Ts_resolve_end: Task descriptor resolved, about to enter AsyncFlow
 		self.emit(
 			{
 				"event": "tool_resolve_end",
@@ -51,15 +46,11 @@ class AsyncFlowEngine(BaseEngine):
 			}
 		)
 
-		# Ts_bookkeep_end: Metadata done, about to enter AsyncFlow
-		self.emit(
-			{
-				"event": "tool_bookkeep_end",
-				"ts": time.perf_counter(),
-				"tool_name": task_name,
-				"invocation_id": invocation_id,
-			}
-		)
+		if not cache_hit:
+			self._task_registry[key] = self.flow.function_task(func, **task_kwargs)
+
+		task = self._task_registry[key]
+		task_name = getattr(func, "__name__", str(func))
 
 		result = await task(*args, **kwargs)
 

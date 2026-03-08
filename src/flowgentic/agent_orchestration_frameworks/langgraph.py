@@ -3,10 +3,20 @@ import uuid
 from functools import wraps
 from typing import Any, Callable, Optional
 
-from langchain_core.tools import tool as langchain_tool
-
 from flowgentic.agent_orchestration_frameworks.base import AgentOrchestrator
 from flowgentic.backend_engines.base import BaseEngine
+
+
+def _langchain_tool(func: Callable) -> Callable:
+	"""Lazy wrapper so langchain-core is only imported when actually used."""
+	try:
+		from langchain_core.tools import tool as _tool
+	except ModuleNotFoundError as exc:
+		raise ImportError(
+			"langchain-core is required for LanGraphOrchestrator. "
+			'Install it with: pip install "flowgentic[langgraph]"'
+		) from exc
+	return _tool(func)
 
 
 class LanGraphOrchestrator(AgentOrchestrator):
@@ -64,7 +74,7 @@ class LanGraphOrchestrator(AgentOrchestrator):
 
 				return result
 
-			wrapped_tool = langchain_tool(wrapper)
+			wrapped_tool = _langchain_tool(wrapper)
 
 			# Emit setup end event
 			self.engine.emit(
