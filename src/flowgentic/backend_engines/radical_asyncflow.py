@@ -32,6 +32,8 @@ class AsyncFlowEngine(BaseEngine):
 		task_kwargs = task_kwargs or {}
 		key = (func, tuple(sorted(task_kwargs.items())))
 
+		task_name = getattr(func, "__name__", str(func))
+
 		# Track whether the task descriptor was already cached
 		cache_hit = key in self._task_registry
 
@@ -50,7 +52,6 @@ class AsyncFlowEngine(BaseEngine):
 			self._task_registry[key] = self.flow.function_task(func, **task_kwargs)
 
 		task = self._task_registry[key]
-		task_name = getattr(func, "__name__", str(func))
 
 		result = await task(*args, **kwargs)
 
