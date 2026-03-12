@@ -1,10 +1,22 @@
-from functools import wraps
 import time
 import uuid
+from functools import wraps
 from typing import Any, Callable, Optional
+
 from flowgentic.agent_orchestration_frameworks.base import AgentOrchestrator
 from flowgentic.backend_engines.base import BaseEngine
-from langchain_core.tools import tool as langchain_tool
+
+
+def _langchain_tool(func: Callable) -> Callable:
+	"""Lazy wrapper so langchain-core is only imported when actually used."""
+	try:
+		from langchain_core.tools import tool as _tool
+	except ModuleNotFoundError as exc:
+		raise ImportError(
+			"langchain-core is required for LanGraphOrchestrator. "
+			'Install it with: pip install "flowgentic[langgraph]"'
+		) from exc
+	return _tool(func)
 
 
 class LanGraphOrchestrator(AgentOrchestrator):
@@ -21,27 +33,55 @@ class LanGraphOrchestrator(AgentOrchestrator):
 			# Emit setup start event
 			self.engine.emit(
 				{
-					"event": "task_wrap_start",
+					"event": "tool_wrap_start",
 					"ts": time.perf_counter(),
-					"task_name": task_name,
+					"tool_name": task_name,
 					"wrap_id": wrap_id,
 				}
 			)
 
 			@wraps(f)
 			async def wrapper(*args, **kwargs):
-				return await self.engine.execute_tool(
-					f, *args, task_kwargs=task_kwargs, **kwargs
+				invocation_id = str(uuid.uuid4())
+
+				# Ts_invoke_start: LangGraph calls tool, FlowGentic intercepts
+				self.engine.emit(
+					{
+						"event": "tool_invoke_start",
+						"ts": time.perf_counter(),
+						"tool_name": task_name,
+						"invocation_id": invocation_id,
+					}
 				)
 
-			wrapped_tool = langchain_tool(wrapper)
+				result = await self.engine.execute_tool(
+					f,
+					*args,
+					task_kwargs=task_kwargs,
+					invocation_id=invocation_id,
+					**kwargs,
+				)
+
+				# Ts_collect_end: Result returned to LangGraph
+				self.engine.emit(
+					{
+						"event": "tool_invoke_end",
+						"ts": time.perf_counter(),
+						"tool_name": task_name,
+						"invocation_id": invocation_id,
+					}
+				)
+
+				return result
+
+			wrapped_tool = _langchain_tool(wrapper)
 
 			# Emit setup end event
 			self.engine.emit(
 				{
-					"event": "task_wrap_end",
+					"event": "tool_wrap_end",
 					"ts": time.perf_counter(),
-					"task_name": task_name,
+					"tool_name": task_name,
 					"wrap_id": wrap_id,
 				}
 			)

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Callable, List, Optional, Tuple, Dict
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 
 class BaseEngine(ABC):
@@ -22,6 +22,7 @@ class BaseEngine(ABC):
 		func: Callable,
 		*args,
 		task_kwargs: Optional[Dict[str, Any]] = None,
+		invocation_id: Optional[str] = None,
 		**kwargs,
 	) -> Dict[str, Any]:
 		pass
