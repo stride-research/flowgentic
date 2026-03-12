@@ -1,5 +1,18 @@
 # Hierarchical Agent Pattern: Supervisor of Supervisors
 
+!!! warning "Outdated API — work in progress"
+    The code examples in this page reference the old Flowgentic API (`LangraphIntegration`, `AsyncFlowType`, `agents_manager`, `ConcurrentExecutionBackend`, introspection, etc.), which has been removed.
+
+    The current API uses two decorators:
+
+    ```python
+    @orchestrator.hpc_task   # wraps tool functions → offloaded to HPC backend
+    @orchestrator.hpc_block  # wraps graph nodes   → offloaded to HPC backend
+    ```
+
+    See the [Chatbot tutorial](chatbot.md) for a working end-to-end example and [Architecture](../architecture.md) for the full decorator reference.
+    This page is kept for its **conceptual content** (hierarchical routing, multi-level supervision, antipatterns) while the code examples are being updated.
+
 This guide explains the hierarchical (multi-level supervisor) design pattern, an advanced extension of the supervisor pattern that enables scalable, multi-layered agent coordination.
 
 ## Understanding the Hierarchical Pattern

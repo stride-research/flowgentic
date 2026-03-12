@@ -1,5 +1,18 @@
 # Building a Supervisor Agent Workflow with FlowGentic
 
+!!! warning "Outdated API — work in progress"
+    The code examples in this page reference the old Flowgentic API (`LangraphIntegration`, `AsyncFlowType`, `agents_manager`, `ConcurrentExecutionBackend`, introspection, etc.), which has been removed.
+
+    The current API uses two decorators:
+
+    ```python
+    @orchestrator.hpc_task   # wraps tool functions → offloaded to HPC backend
+    @orchestrator.hpc_block  # wraps graph nodes   → offloaded to HPC backend
+    ```
+
+    See the [Chatbot tutorial](chatbot.md) for a working end-to-end example and [Architecture](../architecture.md) for the full decorator reference.
+    This page is kept for its **conceptual content** (supervisor routing, parallel fan-out, antipatterns) while the code examples are being updated.
+
 This guide explains the supervisor design pattern in multi-agent architectures and shows how to implement it with FlowGentic's LangGraph integration.
 
 ## Understanding the Supervisor Pattern

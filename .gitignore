@@ -41,8 +41,11 @@ logs/
 # Temporary files
 *.tmp
 
-agent_run_data/
-im-working.txt
+uv.lock
 
-# examples/**/agent_execution_results/
-*.db
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md
+.venv/
+
+
+tests/benchmark/results/
