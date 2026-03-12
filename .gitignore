@@ -48,4 +48,4 @@ uv.lock
 .venv/
 
 
-**/experiments/** 
+tests/benchmark/results/
