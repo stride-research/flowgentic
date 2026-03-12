@@ -57,7 +57,7 @@ jobs:
           - name: "Install dependencies"
             run: |
               source .venv/bin/activate
-              pip install -e ".[dev]"
+              pip install -e ".[langgraph,asyncflow,dev]"
             shell: bash
 
           - name: Run python tests with coverage

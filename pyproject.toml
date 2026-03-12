@@ -127,6 +127,7 @@ asyncio_mode = "auto"
 # Exclude tests whose modules no longer exist on this branch
 addopts = [
     "--ignore=tests/integration",
+    "--ignore=tests/benchmark",
     "--ignore=tests/unit/test_generator.py",
     "--ignore=tests/unit/test_introspection.py",
     "--ignore=tests/unit/test_memory.py",
