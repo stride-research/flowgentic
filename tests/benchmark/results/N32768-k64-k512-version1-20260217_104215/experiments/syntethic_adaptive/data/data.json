@@ -9,55 +9,225 @@
       "n_of_backend_slots": 1,
       "workload_type": "fixed_agents_vary_tools",
       "tool_execution_duration_time": 1,
-      "total_makespan": 17.500345417298377,
+      "total_makespan": 28.08294075820595,
       "events": [
         {
           "event": "task_wrap_start",
-          "ts": 5114334.267538274,
+          "ts": 2382211.615434577,
           "task_name": "fetch_temperature",
-          "wrap_id": "c89f57b2-a412-40de-aa93-2fde0355472b"
+          "wrap_id": "a766588e-f5dd-40f3-ab55-b549f2bb0d4f"
         },
         {
           "event": "task_wrap_end",
-          "ts": 5114334.27008701,
+          "ts": 2382211.617621075,
           "task_name": "fetch_temperature",
-          "wrap_id": "c89f57b2-a412-40de-aa93-2fde0355472b"
+          "wrap_id": "a766588e-f5dd-40f3-ab55-b549f2bb0d4f"
         },
         {
           "event": "task_wrap_start",
-          "ts": 5114334.270109082,
+          "ts": 2382211.617640752,
           "task_name": "fetch_humidity",
-          "wrap_id": "04b7fdb5-ab43-4479-8d2c-e695d89e9d1e"
+          "wrap_id": "f0e355c0-f07b-463e-8771-ebe6ecbe23df"
         },
         {
           "event": "task_wrap_end",
-          "ts": 5114334.27180353,
+          "ts": 2382211.619327392,
           "task_name": "fetch_humidity",
-          "wrap_id": "04b7fdb5-ab43-4479-8d2c-e695d89e9d1e"
+          "wrap_id": "f0e355c0-f07b-463e-8771-ebe6ecbe23df"
         },
         {
           "event": "block_wrap_start",
-          "ts": 5114334.27193704,
+          "ts": 2382211.619454991,
           "block_name": "chatbot_logic",
-          "wrap_id": "e9c96726-941d-420c-954f-a9db2f822ef2"
+          "wrap_id": "1b863cd8-7c2d-4624-97df-4e012d23e74a"
         },
         {
           "event": "block_wrap_end",
-          "ts": 5114334.271971915,
+          "ts": 2382211.619487402,
           "block_name": "chatbot_logic",
-          "wrap_id": "e9c96726-941d-420c-954f-a9db2f822ef2"
+          "wrap_id": "1b863cd8-7c2d-4624-97df-4e012d23e74a"
         },
         {
           "event": "task_exec_start",
-          "ts": 5114334.414696384,
+          "ts": 2382211.641496147,
           "task_name": "fetch_temperature",
-          "exec_id": "ae72cd4a-bc8a-4683-9112-e543bc00f08b"
+          "exec_id": "b07cc3b4-adbf-4c34-8af1-de13ddad9182"
         },
         {
           "event": "task_exec_end",
-          "ts": 5114351.673793555,
+          "ts": 2382239.685050083,
           "task_name": "fetch_temperature",
-          "exec_id": "ae72cd4a-bc8a-4683-9112-e543bc00f08b"
+          "exec_id": "b07cc3b4-adbf-4c34-8af1-de13ddad9182"
+        }
+      ]
+    },
+    {
+      "run_name": "N32768-k64-k512-version1-20260217_104215",
+      "run_description": "Running from Deltaaaaaa'",
+      "workload_id": "langgraph_asyncflow",
+      "n_of_agents": 2,
+      "n_of_tool_calls_per_agent": 1,
+      "n_of_backend_slots": 2,
+      "workload_type": "fixed_agents_vary_tools",
+      "tool_execution_duration_time": 1,
+      "total_makespan": 33.10682633286342,
+      "events": [
+        {
+          "event": "task_wrap_start",
+          "ts": 2382253.481721088,
+          "task_name": "fetch_temperature",
+          "wrap_id": "cb7e9542-c402-4b38-92cd-39cb4e3c3058"
+        },
+        {
+          "event": "task_wrap_end",
+          "ts": 2382253.48463009,
+          "task_name": "fetch_temperature",
+          "wrap_id": "cb7e9542-c402-4b38-92cd-39cb4e3c3058"
+        },
+        {
+          "event": "task_wrap_start",
+          "ts": 2382253.484650298,
+          "task_name": "fetch_humidity",
+          "wrap_id": "3a8c02de-b41f-472f-9310-b1d5120f3328"
+        },
+        {
+          "event": "task_wrap_end",
+          "ts": 2382253.486446965,
+          "task_name": "fetch_humidity",
+          "wrap_id": "3a8c02de-b41f-472f-9310-b1d5120f3328"
+        },
+        {
+          "event": "block_wrap_start",
+          "ts": 2382253.486600573,
+          "block_name": "chatbot_logic",
+          "wrap_id": "455bc5ce-238d-482b-925a-50bb4a02b31f"
+        },
+        {
+          "event": "block_wrap_end",
+          "ts": 2382253.486637482,
+          "block_name": "chatbot_logic",
+          "wrap_id": "455bc5ce-238d-482b-925a-50bb4a02b31f"
+        },
+        {
+          "event": "task_exec_start",
+          "ts": 2382253.497251973,
+          "task_name": "fetch_temperature",
+          "exec_id": "6a63cf36-69c6-43ad-b582-14d13f5eca89"
+        },
+        {
+          "event": "task_exec_start",
+          "ts": 2382253.497821411,
+          "task_name": "fetch_temperature",
+          "exec_id": "c80ea6f3-4685-45c8-899d-76c55b650279"
+        },
+        {
+          "event": "task_exec_end",
+          "ts": 2382286.57405313,
+          "task_name": "fetch_temperature",
+          "exec_id": "6a63cf36-69c6-43ad-b582-14d13f5eca89"
+        },
+        {
+          "event": "task_exec_end",
+          "ts": 2382286.574396634,
+          "task_name": "fetch_temperature",
+          "exec_id": "c80ea6f3-4685-45c8-899d-76c55b650279"
+        }
+      ]
+    },
+    {
+      "run_name": "N32768-k64-k512-version1-20260217_104215",
+      "run_description": "Running from Deltaaaaaa'",
+      "workload_id": "langgraph_asyncflow",
+      "n_of_agents": 4,
+      "n_of_tool_calls_per_agent": 1,
+      "n_of_backend_slots": 4,
+      "workload_type": "fixed_agents_vary_tools",
+      "tool_execution_duration_time": 1,
+      "total_makespan": 32.134637949988246,
+      "events": [
+        {
+          "event": "task_wrap_start",
+          "ts": 2382297.76297421,
+          "task_name": "fetch_temperature",
+          "wrap_id": "a8650049-1d7e-448b-b08f-c69eecee6b91"
+        },
+        {
+          "event": "task_wrap_end",
+          "ts": 2382297.765652218,
+          "task_name": "fetch_temperature",
+          "wrap_id": "a8650049-1d7e-448b-b08f-c69eecee6b91"
+        },
+        {
+          "event": "task_wrap_start",
+          "ts": 2382297.765672176,
+          "task_name": "fetch_humidity",
+          "wrap_id": "a8ed3bcf-82bc-4889-822b-c82adc6798ae"
+        },
+        {
+          "event": "task_wrap_end",
+          "ts": 2382297.767546778,
+          "task_name": "fetch_humidity",
+          "wrap_id": "a8ed3bcf-82bc-4889-822b-c82adc6798ae"
+        },
+        {
+          "event": "block_wrap_start",
+          "ts": 2382297.767679237,
+          "block_name": "chatbot_logic",
+          "wrap_id": "bb34d706-b698-427e-885e-c44b390c29f9"
+        },
+        {
+          "event": "block_wrap_end",
+          "ts": 2382297.76771302,
+          "block_name": "chatbot_logic",
+          "wrap_id": "bb34d706-b698-427e-885e-c44b390c29f9"
+        },
+        {
+          "event": "task_exec_start",
+          "ts": 2382297.782305496,
+          "task_name": "fetch_temperature",
+          "exec_id": "131b971c-7160-4f37-9db4-11ebd77fe910"
+        },
+        {
+          "event": "task_exec_start",
+          "ts": 2382297.782624634,
+          "task_name": "fetch_temperature",
+          "exec_id": "98455b50-9199-47ab-a999-ed6a0ddca9ee"
+        },
+        {
+          "event": "task_exec_start",
+          "ts": 2382297.783080769,
+          "task_name": "fetch_temperature",
+          "exec_id": "0b926c48-3ec2-4e1e-bfc6-33b39dba2e21"
+        },
+        {
+          "event": "task_exec_start",
+          "ts": 2382297.784023075,
+          "task_name": "fetch_temperature",
+          "exec_id": "a85ebb49-0867-4ced-a3ae-c9e51e86bb1d"
+        },
+        {
+          "event": "task_exec_end",
+          "ts": 2382329.835050801,
+          "task_name": "fetch_temperature",
+          "exec_id": "131b971c-7160-4f37-9db4-11ebd77fe910"
+        },
+        {
+          "event": "task_exec_end",
+          "ts": 2382329.835379106,
+          "task_name": "fetch_temperature",
+          "exec_id": "98455b50-9199-47ab-a999-ed6a0ddca9ee"
+        },
+        {
+          "event": "task_exec_end",
+          "ts": 2382329.835430482,
+          "task_name": "fetch_temperature",
+          "exec_id": "0b926c48-3ec2-4e1e-bfc6-33b39dba2e21"
+        },
+        {
+          "event": "task_exec_end",
+          "ts": 2382329.835477541,
+          "task_name": "fetch_temperature",
+          "exec_id": "a85ebb49-0867-4ced-a3ae-c9e51e86bb1d"
         }
       ]
     }

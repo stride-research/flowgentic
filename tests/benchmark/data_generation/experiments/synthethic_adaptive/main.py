@@ -65,7 +65,7 @@ class SynthethicAdaptive(BaseExperiment):
 		logger.info(f"Config is: {config.model_dump_json(indent=4)}")
 
 		workloads_results = []
-		backend_slots_options = [2**i for i in range(config.n_of_backend_slots + 1)] # TODO: switch for i in range(4,...)
+		backend_slots_options = [2**i for i in range(4, config.n_of_backend_slots + 1)]
 
 		# Weak scaling ratio info
 		p_max = max(backend_slots_options)
@@ -154,7 +154,7 @@ class SynthethicAdaptive(BaseExperiment):
 	async def run_experiment(self) -> None:
 		"""Run experiment. Data is written to disk incrementally."""
 		# 1) STRONG SCALING: Fixed workload, varying backend slots
-		#await self.run_strong_scaling(self.benchmark_config)
+		await self.run_strong_scaling(self.benchmark_config)
 
 		# 2) WEAK SCALING: Workload scales with backend slots (tool_calls * p)
 		await self.run_weak_scaling(self.benchmark_config)

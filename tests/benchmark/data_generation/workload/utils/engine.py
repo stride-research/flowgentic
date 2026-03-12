@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from typing import Any, Callable, Dict, Optional
 
 from autogen.code_utils import ThreadPoolExecutor
-from radical.asyncflow import WorkflowEngine, DragonExecutionBackendV2
+from radical.asyncflow import WorkflowEngine, DragonExecutionBackendV3
 
 from flowgentic.backend_engines.radical_asyncflow import AsyncFlowEngine
 
@@ -20,7 +20,7 @@ async def resolve_engine(
 	if engine_id == "asyncflow":
 
 		try:
-			backend = await DragonExecutionBackendV2()
+			backend = await DragonExecutionBackendV3()
 			flow = await WorkflowEngine.create(backend)
 			yield AsyncFlowEngine(flow, observer=observer)
 		finally:

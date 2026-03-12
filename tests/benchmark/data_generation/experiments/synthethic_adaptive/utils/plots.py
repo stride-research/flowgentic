@@ -188,6 +188,7 @@ class SyntheticAdaptivePlotter(BasePlotter):
 			subdirectory=makespan_subdir,
 			ideal_line=relative_p,  # Ideal speedup = p/p_min (linear)
 			ideal_label="Ideal (linear)",
+			y_log=True,
 		)
 
 		# Plot efficiency
@@ -284,6 +285,7 @@ class SyntheticAdaptivePlotter(BasePlotter):
 			subdirectory=makespan_subdir,
 			ideal_line=relative_p,
 			ideal_label="Ideal (linear)",
+			y_log=True,
 		)
 
 		logger.info(f"Generated weak scaling makespan plots in {makespan_subdir}/")
@@ -300,12 +302,15 @@ class SyntheticAdaptivePlotter(BasePlotter):
 		ideal_line: Optional[List[float]] = None,
 		ideal_label: str = "Ideal",
 		y_max: Optional[float] = None,
+		y_log: bool = False,
 	) -> None:
 		"""Create a single scaling plot with optional ideal reference line."""
 		fig, ax = plt.subplots(figsize=(8, 6))
 
-		# Set logarithmic x-axis
+		# Set logarithmic x-axis (and y-axis for log-log scaling plots)
 		ax.set_xscale('log')
+		if y_log:
+			ax.set_yscale('log')
 
 		# Plot actual values
 		ax.plot(x_values, y_values, "bo-", linewidth=2, markersize=8, label="Measured")
@@ -328,7 +333,7 @@ class SyntheticAdaptivePlotter(BasePlotter):
 
 		if y_max is not None:
 			ax.set_ylim(bottom=0, top=y_max)
-		else:
+		elif not y_log:
 			ax.set_ylim(bottom=0)
 
 		plt.tight_layout()
@@ -539,6 +544,7 @@ class SyntheticAdaptivePlotter(BasePlotter):
 				subdirectory=throughput_subdir,
 				ideal_line=ideal_scaling,
 				ideal_label="Ideal (linear)",
+				y_log=True,
 			)
 
 		logger.info(f"Generated throughput plots in {throughput_subdir}/")
