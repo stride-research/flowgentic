@@ -22,6 +22,7 @@ import os
 import requests
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 
@@ -29,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 ScalingType = Literal["strong", "weak"]
+
 
 def send_discord_notifaction(msg: str):
 	webhook_url = os.getenv("DISCORD_WEBHOOK")
@@ -64,17 +66,21 @@ class SynthethicAdaptive(BaseExperiment):
 		logger.info(f"Config is: {config.model_dump_json(indent=4)}")
 
 		workloads_results = []
-		backend_slots_options = [2**i for i in range(4, config.n_of_backend_slots + 1)]
+		start = (
+			0 if config.n_of_backend_slots < 4 else 4
+		)  # For situations where we dont want min(p) to be 1
+		backend_slots_options = [
+			2**i for i in range(start, config.n_of_backend_slots + 1)
+		]
 
 		# Weak scaling ratio info
 		p_max = max(backend_slots_options)
 		reference_N = config.n_of_agents * config.n_of_tool_calls_per_agent
-		workload_per_slot = reference_N // p_max  # N(p) = workload_per_slot * p
+		workload_per_slot = max(1, reference_N // p_max)  # N(p) = workload_per_slot * p
 
 		options = backend_slots_options
 		if scaling_type == "strong":
 			options = list(reversed(options))
-
 
 		for backend_slots in options:
 			logger.info(f"\n--- Testing p={backend_slots} backend slots ---")
@@ -121,10 +127,10 @@ class SynthethicAdaptive(BaseExperiment):
 			workloads_results.append(benchmark_result)
 
 			msg = (
-			f"🚀 **Iteration Complete: {config.run_name}**\n"
-			f"**Type:** `{scaling_type.upper()}` | **Slots (p):** `{backend_slots}`\n"
-			f"**Agents:** {n_agents} | **Calls/Agent:** {n_tool_calls}\n"
-			f"⏱️ **Makespan:** `{workload_result.total_makespan:.2f}s`"
+				f"🚀 **Iteration Complete: {config.run_name}**\n"
+				f"**Type:** `{scaling_type.upper()}` | **Slots (p):** `{backend_slots}`\n"
+				f"**Agents:** {n_agents} | **Calls/Agent:** {n_tool_calls}\n"
+				f"⏱️ **Makespan:** `{workload_result.total_makespan:.2f}s`"
 			)
 			send_discord_notifaction(msg)
 
@@ -153,7 +159,7 @@ class SynthethicAdaptive(BaseExperiment):
 	async def run_experiment(self) -> None:
 		"""Run experiment. Data is written to disk incrementally."""
 		# 1) STRONG SCALING: Fixed workload, varying backend slots
-		#await self.run_strong_scaling(self.benchmark_config)
+		await self.run_strong_scaling(self.benchmark_config)
 
 		# 2) WEAK SCALING: Workload scales with backend slots (tool_calls * p)
 		await self.run_weak_scaling(self.benchmark_config)

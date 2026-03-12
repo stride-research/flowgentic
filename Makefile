@@ -20,9 +20,15 @@ VENV_ACTIVATE = source $(VENV_PATH)/bin/activate
 help: ## Show this help message
 	@printf "$(BLUE) Available commands: $(RESET)\n"
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(GREEN)%-15s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
-install: ## Installation
+install: ## Install core dev dependencies
 	uv venv $(VENV_PATH) --python 3.10
 	uv pip install -e ".[dev]"
+install-benchmark: ## Install dev + benchmark dependencies (langgraph + asyncflow)
+	uv venv $(VENV_PATH) --python 3.10
+	uv pip install -e ".[langgraph,asyncflow,dev]"
+install-all: ## Install all dependencies (frameworks + runtimes + dev)
+	uv venv $(VENV_PATH) --python 3.10
+	uv pip install -e ".[all,dev]"
 
 # 2) Examples
 examples-lg-asyncflow:  ## Langgraph + Asyncflow
@@ -40,5 +46,5 @@ examples-ag-parsl:  ## AutoGen + Parsl
 benchmark: ## Run the experiments in the benchmarking
 	$(VENV_ACTIVATE) && python3 -m tests.benchmark.data_generation.run_experiments
 
-benchmark-suite: ## Run the full benchmark suite with multiple configs
+benchmark-multiple-workloads: ## Run the full benchmark suite with multiple configs
 	$(VENV_ACTIVATE) && python3 -m tests.benchmark.run_benchmark_suite

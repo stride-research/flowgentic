@@ -45,7 +45,7 @@ class DummyLanggraphModelProvider(BaseChatModel):
 
 		tool_calls = []
 		for name in self.fixed_tool_names:
-			for _ in range(self.calls_per_tool):
+			for _ in range(int(self.calls_per_tool)):
 				tool_calls.append(
 					{
 						"name": name,

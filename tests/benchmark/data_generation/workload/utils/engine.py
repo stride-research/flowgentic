@@ -2,8 +2,7 @@ from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
 from typing import Any, Callable, Dict, Optional
 
-from autogen.code_utils import ThreadPoolExecutor
-from radical.asyncflow import ConcurrentExecutionBackend, WorkflowEngine
+from radical.asyncflow import LocalExecutionBackend, WorkflowEngine
 
 from flowgentic.backend_engines.radical_asyncflow import AsyncFlowEngine
 
@@ -22,7 +21,7 @@ async def resolve_engine(
 		executor = ProcessPoolExecutor(max_workers=n_of_backend_slots, mp_context=ctx)
 
 		try:
-			backend = await ConcurrentExecutionBackend(executor)
+			backend = await LocalExecutionBackend(executor)
 			flow = await WorkflowEngine.create(backend)
 			yield AsyncFlowEngine(flow, observer=observer)
 		finally:

@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import numpy as np
 
 from tests.benchmark.data_generation.experiments.base.base_plots import BasePlotter
@@ -19,9 +20,9 @@ def _extract_event_durations(events: List[Dict]) -> Dict[str, List[float]]:
 	Match start/end events by ID and compute durations.
 
 	Returns dict with keys:
-	- 'task_wrap': list of task wrapping durations
-	- 'block_wrap': list of block wrapping durations
-	- 'task_exec': list of task execution durations
+	- 'task_wrap': list of tool wrapping durations  (tool_wrap_start/end)
+	- 'block_wrap': list of block wrapping durations (block_wrap_start/end)
+	- 'task_exec': list of tool invocation durations (tool_invoke_start/end)
 	"""
 	starts = {}
 	ends = {}
@@ -29,18 +30,18 @@ def _extract_event_durations(events: List[Dict]) -> Dict[str, List[float]]:
 	for e in events:
 		event_type = e["event"]
 
-		if event_type == "task_wrap_start":
+		if event_type == "tool_wrap_start":
 			starts[("task_wrap", e["wrap_id"])] = e["ts"]
-		elif event_type == "task_wrap_end":
+		elif event_type == "tool_wrap_end":
 			ends[("task_wrap", e["wrap_id"])] = e["ts"]
+		elif event_type == "tool_invoke_start":
+			starts[("task_exec", e["invocation_id"])] = e["ts"]
+		elif event_type == "tool_invoke_end":
+			ends[("task_exec", e["invocation_id"])] = e["ts"]
 		elif event_type == "block_wrap_start":
 			starts[("block_wrap", e["wrap_id"])] = e["ts"]
 		elif event_type == "block_wrap_end":
 			ends[("block_wrap", e["wrap_id"])] = e["ts"]
-		elif event_type == "task_exec_start":
-			starts[("task_exec", e["exec_id"])] = e["ts"]
-		elif event_type == "task_exec_end":
-			ends[("task_exec", e["exec_id"])] = e["ts"]
 
 	durations = {"task_wrap": [], "block_wrap": [], "task_exec": []}
 
@@ -166,7 +167,11 @@ class SyntheticAdaptivePlotter(BasePlotter):
 		run_name = sorted_records[0].get("run_name", "unknown")
 		n_agents = sorted_records[0].get("n_of_agents", "?")
 		n_tools = sorted_records[0].get("n_of_tool_calls_per_agent", "?")
-		N_total = n_agents * n_tools if isinstance(n_agents, int) and isinstance(n_tools, int) else "?"
+		N_total = (
+			n_agents * n_tools
+			if isinstance(n_agents, int) and isinstance(n_tools, int)
+			else "?"
+		)
 
 		# Create subdirectory for strong scaling makespan plots
 		makespan_subdir = "strong_scaling/makespan"
@@ -248,7 +253,9 @@ class SyntheticAdaptivePlotter(BasePlotter):
 		# Weak scaling efficiency: T(p_min)/T(p) - should stay near 1 if scaling well
 		efficiencies = [t_baseline / t_p for t_p in makespans]
 		# Scaled speedup: how much faster vs sequential execution of scaled workload
-		scaled_speedups = [rp * t_baseline / t_p for rp, t_p in zip(relative_p, makespans)]
+		scaled_speedups = [
+			rp * t_baseline / t_p for rp, t_p in zip(relative_p, makespans)
+		]
 
 		# Get metadata for titles
 		run_name = sorted_records[0].get("run_name", "unknown")
@@ -304,8 +311,13 @@ class SyntheticAdaptivePlotter(BasePlotter):
 		"""Create a single scaling plot with optional ideal reference line."""
 		fig, ax = plt.subplots(figsize=(8, 6))
 
-		# Set logarithmic x-axis
-		ax.set_xscale('log')
+		# Set logarithmic x-axis, then pin ticks to exact data points only
+		ax.set_xscale("log")
+		ax.xaxis.set_major_locator(mticker.FixedLocator(x_values))
+		ax.xaxis.set_major_formatter(
+			mticker.FixedFormatter([str(int(x)) for x in x_values])
+		)
+		ax.xaxis.set_minor_locator(mticker.NullLocator())
 
 		# Plot actual values
 		ax.plot(x_values, y_values, "bo-", linewidth=2, markersize=8, label="Measured")
@@ -319,12 +331,8 @@ class SyntheticAdaptivePlotter(BasePlotter):
 		ax.set_xlabel(xlabel, fontsize=12)
 		ax.set_ylabel(ylabel, fontsize=12)
 		ax.set_title(title, fontsize=14)
-		ax.grid(True, alpha=0.3, which='both')
+		ax.grid(True, alpha=0.3, which="both")
 		ax.legend(loc="best")
-
-		# Set x-axis to show actual slot values
-		ax.set_xticks(x_values)
-		ax.set_xticklabels([str(int(x)) for x in x_values])
 
 		if y_max is not None:
 			ax.set_ylim(bottom=0, top=y_max)
@@ -345,13 +353,16 @@ class SyntheticAdaptivePlotter(BasePlotter):
 
 			fig.savefig(plot_path, dpi=150, bbox_inches="tight")
 			logger.info(f"Saved plot: {plot_path}")
-			
+
 			# Send plot to Discord
-			plot_description = f"📊 **{subdirectory}/{filename}**" if subdirectory else f"📊 **{filename}**"
+			plot_description = (
+				f"📊 **{subdirectory}/{filename}**"
+				if subdirectory
+				else f"📊 **{filename}**"
+			)
 			try:
 				self.discord_notifier.send_discord_notification(
-					msg=plot_description,
-					image_path=str(plot_path)
+					msg=plot_description, image_path=str(plot_path)
 				)
 				logger.info(f"Sent plot to Discord: {plot_path}")
 			except Exception as e:
@@ -565,7 +576,7 @@ class SyntheticAdaptivePlotter(BasePlotter):
 			width = x_positions * 0.3  # Width proportional to x value
 		else:
 			width = x_positions[0] * 0.3
-		
+
 		bottom = np.zeros(len(x_values))
 
 		colors = plt.cm.Set2.colors
@@ -580,13 +591,16 @@ class SyntheticAdaptivePlotter(BasePlotter):
 			)
 			bottom += np.array(values)
 
-		# Set logarithmic x-axis
-		ax.set_xscale('log')
+		# Set logarithmic x-axis, then pin ticks to exact data points only
+		ax.set_xscale("log")
+		ax.xaxis.set_major_locator(mticker.FixedLocator(list(x_positions)))
+		ax.xaxis.set_major_formatter(
+			mticker.FixedFormatter([str(int(x)) for x in x_values])
+		)
+		ax.xaxis.set_minor_locator(mticker.NullLocator())
 		ax.set_xlabel(xlabel, fontsize=12)
 		ax.set_ylabel(ylabel, fontsize=12)
 		ax.set_title(title, fontsize=14)
-		ax.set_xticks(x_values)
-		ax.set_xticklabels([str(int(x)) for x in x_values])
 		ax.legend(loc="best")
 		ax.grid(True, alpha=0.3, axis="y")
 
@@ -634,13 +648,14 @@ class SyntheticAdaptivePlotter(BasePlotter):
 			patch.set_facecolor("lightblue")
 			patch.set_alpha(0.7)
 
-		# Set logarithmic x-axis
-		ax.set_xscale('log')
+		# Set logarithmic x-axis, then pin ticks to exact data points only
+		ax.set_xscale("log")
+		ax.xaxis.set_major_locator(mticker.FixedLocator(filtered_positions))
+		ax.xaxis.set_major_formatter(mticker.FixedFormatter(filtered_labels))
+		ax.xaxis.set_minor_locator(mticker.NullLocator())
 		ax.set_xlabel(xlabel, fontsize=12)
 		ax.set_ylabel(ylabel, fontsize=12)
 		ax.set_title(title, fontsize=14)
-		ax.set_xticks(filtered_positions)
-		ax.set_xticklabels(filtered_labels)
 		ax.grid(True, alpha=0.3, axis="y")
 
 		plt.tight_layout()
@@ -661,13 +676,16 @@ class SyntheticAdaptivePlotter(BasePlotter):
 
 			fig.savefig(plot_path, dpi=150, bbox_inches="tight")
 			logger.info(f"Saved plot: {plot_path}")
-			
+
 			# Send plot to Discord
-			plot_description = f"📊 **{subdirectory}/{filename}**" if subdirectory else f"📊 **{filename}**"
+			plot_description = (
+				f"📊 **{subdirectory}/{filename}**"
+				if subdirectory
+				else f"📊 **{filename}**"
+			)
 			try:
 				self.discord_notifier.send_discord_notification(
-					msg=plot_description,
-					image_path=str(plot_path)
+					msg=plot_description, image_path=str(plot_path)
 				)
 				logger.info(f"Sent plot to Discord: {plot_path}")
 			except Exception as e:
