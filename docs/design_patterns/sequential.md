@@ -1,5 +1,18 @@
 # Building a Sequential (Pipeline) Workflow with FlowGentic
 
+!!! warning "Outdated API — work in progress"
+    The code examples in this page reference the old Flowgentic API (`LangraphIntegration`, `AsyncFlowType`, `agents_manager`, `ConcurrentExecutionBackend`, introspection, etc.), which has been removed.
+
+    The current API uses two decorators:
+
+    ```python
+    @orchestrator.hpc_task   # wraps tool functions → offloaded to HPC backend
+    @orchestrator.hpc_block  # wraps graph nodes   → offloaded to HPC backend
+    ```
+
+    See the [Chatbot tutorial](chatbot.md) for a working end-to-end example and [Architecture](../architecture.md) for the full decorator reference.
+    This page is kept for its **conceptual content** (state schema design, pipeline structure, antipatterns) while the code examples are being updated.
+
 This guide explains the sequential (pipeline) design pattern in multi-agent architectures and shows a concrete way to implement it with FlowGentic's LangGraph integration.
 
 ## Understanding the Sequential Pattern

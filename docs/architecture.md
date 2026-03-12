@@ -1,99 +1,119 @@
 # Architecture
 
-Flowgentic provides a thin, opinionated layer that standardizes agent components and lets you run the same logic on multi-agent orchestration frameworks (e.g. LangGraph) on HPC workflow engines (e.g. Radical AsyncFlow).
+Flowgentic provides a thin layer that lets the same LangGraph agent code run on HPC workflow engines (RADICAL AsyncFlow, Parsl) via two decorators: `@orchestrator.hpc_task` and `@orchestrator.hpc_block`.
 
-## Architecture: Execution Bridge Pattern
+## Execution Bridge Pattern
 
 ```mermaid
 flowchart TD
-    subgraph HighLevel["High-Level: Agent Framework"]
-        A[Agent Graph Definition]
-        B[Agent Nodes & Tools]
-        C[Conditional Routing]
+    subgraph UserCode["Your LangGraph Code"]
+        A["@orchestrator.hpc_task\ntool functions"]
+        B["@orchestrator.hpc_block\ngraph nodes"]
+        C["StateGraph + ToolNode\n(standard LangGraph)"]
     end
-    
-    subgraph MiddleLayer["Middle Layer: FlowGentic Abstraction"]
-        D[Graph Compiler]
-        E[Node to Task Translation]
-        F[State Serialization]
-        G[Dependency Resolution]
+
+    subgraph Flowgentic["Flowgentic Layer"]
+        D["LanGraphOrchestrator\n— wraps tools & nodes\n— emits lifecycle events"]
+        E["AsyncFlowEngine / ParslEngine\n— schedules tasks\n— collects results"]
     end
-    
-    subgraph LowLevel["Low-Level: HPC Execution Backend"]
-        H[HPC Task Scheduler]
-        I[Parallel Execution Units]
-        J[Distributed Memory/State]
-        K[Resource Manager]
+
+    subgraph Backend["HPC Backend"]
+        F["RADICAL AsyncFlow\nLocalExecutionBackend\n(laptop / cluster)"]
+        G["Parsl\nThreadPoolExecutor\n(laptop / cluster)"]
     end
-    
+
     A --> D
-    B --> E
-    C --> G
-    
+    B --> D
+    C --> D
     D --> E
     E --> F
-    F --> G
-    
-    G --> H
-    H --> I
-    I --> J
-    J --> K
-    
-    K -.->|Results| G
-    G -.->|State Updates| F
-    F -.->|Checkpoints| A
+    E --> G
 ```
 
-## Wrappers
-If you have multiple wrappers inside a node we recommend to adhere to the following pattern in order to stick dependency resolution best practices:
-```mermaid
-flowchart TD
-    subgraph "ASYNCFLOW WRAPPERS"
-        A[EXECUTION_BLOCK]
-        subgraph SERVICES["SERVICE PATTERNS"]
-            direction LR
-            B[SERVICE_TASK<br/>Persistent Internal Services]
-            C[TOOL_AS_SERVICE<br/>LLM-Callable Services]
-        end
-        
-        subgraph TOOLS["AGENT TOOLS"]
-            direction LR
-            D[AGENT_TOOL_AS_FUNCTION<br/>Simple Tools]
-            E[AGENT_TOOL_AS_MCP<br/>MCP Integration]
-        end
-        
-        subgraph TASKS["FUNCTION TASKS"]
-            direction LR
-            F[FUNCTION_TASK<br/>Deterministic Operations]
-        end
-        
-        A -- ORCHESTRATES --> SERVICES
-        A -- ORCHESTRATES --> TOOLS
-        A -- ORCHESTRATES --> TASKS
-    end
-    
-    SERVICES -.->|Caching| B
-    SERVICES -.->|LLM Calls| C
-    TOOLS -.->|Direct Call| D
-    TOOLS -.->|External Server| E
-    TASKS -.->|Pure Functions| F
-    
+## The Two Decorators
 
+### `@orchestrator.hpc_task`
+
+Wraps an `async` function so that when LangGraph's `ToolNode` calls it, the execution is dispatched to the HPC backend instead of running in the local event loop.
+
+```python
+engine       = AsyncFlowEngine(flow)
+orchestrator = LanGraphOrchestrator(engine)
+
+@orchestrator.hpc_task
+async def fetch_weather(city: str = "SFO"):
+    """Returns weather for a city."""
+    await asyncio.sleep(2)          # runs on a backend slot, not the main loop
+    return {"temperature": 22}
 ```
-However, if you don't have multiple dependencies in a given node, you can define the node with the `function_task` execution wrapper. More information [here](https://radical-cybertools.github.io/radical.asyncflow/composite_workflow/?h=block#example-blocks-with-dependency)
 
-### Flow Type Categories
+- The decorated function is also wrapped as a **LangChain tool** (via `@langchain_core.tools.tool`), so it can be passed directly to `ToolNode` and `llm.bind_tools()`.
+- Multiple concurrent invocations are scheduled across available backend slots automatically.
+- Lifecycle events (`tool_wrap_start/end`, `tool_invoke_start/end`) are emitted for observability.
 
-**Service Patterns** (Persistent, Stateful)
-- `SERVICE_TASK`: Internal services with continual uptime (database pools, Redis clients)
-- `TOOL_AS_SERVICE`: LLM-callable services with continual uptime (Weather APIs, search tools)
+### `@orchestrator.hpc_block`
 
-**Agent Tools** (LLM-Callable)
-- `AGENT_TOOL_AS_FUNCTION`: Simple synchronous tools for LLMs
-- `AGENT_TOOL_AS_MCP`: External MCP server integration
+Wraps a LangGraph **node function** so it executes as an HPC block on the backend.
 
-**Function Tasks** 
-- `FUNCTION_TASK`: Non-LLM operations (validation, formatting)
+```python
+@orchestrator.hpc_block
+async def agent_node(state: WorkflowState):
+    response = await llm.ainvoke(state.messages)
+    return {"messages": [response]}
+```
 
-**Execution Block**
-- `EXECUTION_BLOCK`: LangGraph nodes (orchestration layer, optional)
+- Emits `block_wrap_start/end` events.
+- The returned wrapper is a plain async callable — pass it to `workflow.add_node()` as usual.
+
+## Event Model
+
+Both decorators emit structured timing events through the engine's observer. These are used by the benchmarking layer to measure compilation overhead, queueing latency, and execution time.
+
+| Event | Emitted by | Meaning |
+|---|---|---|
+| `tool_wrap_start/end` | `hpc_task` decorator | Tool registration overhead |
+| `tool_invoke_start/end` | `LanGraphOrchestrator` wrapper | Full lifecycle from LangGraph call to result return |
+| `tool_invoke_start/end` | `AsyncFlowEngine.execute_tool` | Actual backend execution (excludes queueing) |
+| `block_wrap_start/end` | `hpc_block` decorator | Node registration overhead |
+
+## Supported Combinations
+
+| Agent Framework | HPC Engine | Status |
+|---|---|---|
+| LangGraph | RADICAL AsyncFlow | ✅ Available |
+| LangGraph | Parsl | ✅ Available |
+| AutoGen | RADICAL AsyncFlow | 🟡 Pre-release |
+| AutoGen | Parsl | 🟡 Pre-release |
+
+See [phased_rollout.md](phased_rollout.md) for the full support matrix.
+
+## Backend Setup
+
+### RADICAL AsyncFlow (recommended for HPC)
+
+```python
+from concurrent.futures import ProcessPoolExecutor
+from radical.asyncflow import LocalExecutionBackend, WorkflowEngine
+from flowgentic.backend_engines.radical_asyncflow import AsyncFlowEngine
+
+backend = await LocalExecutionBackend(ProcessPoolExecutor(max_workers=N))
+flow    = await WorkflowEngine.create(backend)
+engine  = AsyncFlowEngine(flow)
+
+# ... run your agent ...
+
+await flow.shutdown()
+```
+
+Replace `ProcessPoolExecutor` with your cluster executor (e.g. RADICAL Pilot) to scale beyond a single node.
+
+### Parsl
+
+```python
+from parsl.config import Config
+from parsl.executors import ThreadPoolExecutor
+from flowgentic.backend_engines.parsl import ParslEngine
+
+parsl_config = Config(executors=[ThreadPoolExecutor(max_threads=N, label="local")])
+engine       = ParslEngine(parsl_config)
+```

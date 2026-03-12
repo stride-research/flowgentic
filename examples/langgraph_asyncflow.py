@@ -2,8 +2,8 @@ import asyncio
 from typing import Annotated
 from langgraph.graph import StateGraph, add_messages
 from pydantic import BaseModel
-from radical.asyncflow import ConcurrentExecutionBackend, WorkflowEngine
-from concurrent.futures import ThreadPoolExecutor
+from radical.asyncflow import LocalExecutionBackend, WorkflowEngine
+from concurrent.futures import ProcessPoolExecutor
 
 from flowgentic.agent_orchestration_frameworks.langgraph import LanGraphOrchestrator
 from flowgentic.backend_engines.radical_asyncflow import AsyncFlowEngine
@@ -11,7 +11,6 @@ from flowgentic.backend_engines.radical_asyncflow import AsyncFlowEngine
 from flowgentic.core.models.implementations.dummy.langgraph import (
 	DummyLanggraphModelProvider,
 )
-from flowgentic.old.utils.llm_providers import ChatLLMProvider
 import logging
 import time
 
@@ -31,7 +30,7 @@ class WorkflowState(BaseModel):
 
 async def start_app():
 	# --- SETUP HPC BACKEND ---
-	backend = await ConcurrentExecutionBackend(ThreadPoolExecutor(max_workers=2))
+	backend = await LocalExecutionBackend(ProcessPoolExecutor(max_workers=2))
 	flow = await WorkflowEngine.create(backend)
 
 	t_execution_start = time.perf_counter()

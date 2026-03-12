@@ -1,8 +1,0 @@
-environment:
-  n_of_agents: 0
-  n_of_backend_slots: 9
-  n_of_tool_calls_per_agent: 64
-  tool_execution_duration_time: 3
-run_description: 'Strong scaling: 0 agents x 64 tools = 0 total invocations'
-run_name: N16-k64-k512-version1-20260217_100417
-workload_id: langgraph_asyncflow
