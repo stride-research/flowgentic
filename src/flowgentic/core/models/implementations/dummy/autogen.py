@@ -15,11 +15,12 @@ class DummyAutoGenClient:
 		Initialize the dummy client.
 		AutoGen passes config as first positional argument, then kwargs.
 		"""
-		# Merge config dict if provided
 		if isinstance(config, dict):
 			kwargs.update(config)
 		self.model = kwargs.get("model", "dummy-model")
+		self.calls_per_tool = kwargs.get("calls_per_tool", 1)
 		self.fixed_tool_names = []
+		self._tool_call_count = 0
 
 	def create(self, params: Dict[str, Any]) -> Any:
 		"""
@@ -29,7 +30,6 @@ class DummyAutoGenClient:
 		messages = params.get("messages", [])
 		tools = params.get("tools", [])
 
-		# Extract tool names if available
 		if tools:
 			self.fixed_tool_names = [
 				tool.get("function", {}).get("name", tool.get("name", ""))
@@ -37,34 +37,29 @@ class DummyAutoGenClient:
 				if tool.get("function", {}).get("name") or tool.get("name")
 			]
 
-		# Check if last message is a tool result
 		last_message = messages[-1] if messages else {}
-		if last_message.get("role") == "tool" or any(
+		is_tool_result = last_message.get("role") == "tool" or any(
 			msg.get("role") == "tool" for msg in messages[-3:]
-		):
-			# Return a simple completion after tool execution
-			return DummyResponse(
-				content="I have finished the HPC tasks. TERMINATE", model=self.model
-			)
+		)
 
-		# If tools are available, return tool calls
-		if self.fixed_tool_names:
-			tool_calls = []
-			for name in self.fixed_tool_names:
-				tool_calls.append(
-					{
-						"id": f"call_{uuid.uuid4().hex[:8]}",
-						"type": "function",
-						"function": {
-							"name": name,
-							"arguments": "{}",  # Empty args as requested
-						},
-					}
+		if is_tool_result:
+			self._tool_call_count += 1
+			if self._tool_call_count >= self.calls_per_tool:
+				return DummyResponse(
+					content="I have finished the HPC tasks. TERMINATE", model=self.model
 				)
 
+		if self.fixed_tool_names:
+			tool_calls = [
+				{
+					"id": f"call_{uuid.uuid4().hex[:8]}",
+					"type": "function",
+					"function": {"name": name, "arguments": "{}"},
+				}
+				for name in self.fixed_tool_names
+			]
 			return DummyResponse(content="", tool_calls=tool_calls, model=self.model)
 
-		# Default: return a simple message
 		return DummyResponse(content="I understand. TERMINATE", model=self.model)
 
 	def message_retrieval(self, response: Any) -> List[Dict[str, Any]]:
