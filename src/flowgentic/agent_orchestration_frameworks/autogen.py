@@ -19,26 +19,44 @@ class AutoGenOrchestrator(AgentOrchestrator):
 		task_name = getattr(func, "__name__", str(func))
 		wrap_id = str(uuid.uuid4())
 
-		# Emit setup start event
 		self.engine.emit(
 			{
-				"event": "task_wrap_start",
+				"event": "tool_wrap_start",
 				"ts": time.perf_counter(),
-				"task_name": task_name,
+				"tool_name": task_name,
 				"wrap_id": wrap_id,
 			}
 		)
 
 		@wraps(func)
 		async def wrapper(*args, **kwargs):
-			return await self.engine.execute_tool(func, *args, **kwargs)
+			invocation_id = str(uuid.uuid4())
+			self.engine.emit(
+				{
+					"event": "tool_invoke_start",
+					"ts": time.perf_counter(),
+					"tool_name": task_name,
+					"invocation_id": invocation_id,
+				}
+			)
+			result = await self.engine.execute_tool(
+				func, *args, invocation_id=invocation_id, **kwargs
+			)
+			self.engine.emit(
+				{
+					"event": "tool_invoke_end",
+					"ts": time.perf_counter(),
+					"tool_name": task_name,
+					"invocation_id": invocation_id,
+				}
+			)
+			return result
 
-		# Emit setup end event
 		self.engine.emit(
 			{
-				"event": "task_wrap_end",
+				"event": "tool_wrap_end",
 				"ts": time.perf_counter(),
-				"task_name": task_name,
+				"tool_name": task_name,
 				"wrap_id": wrap_id,
 			}
 		)
