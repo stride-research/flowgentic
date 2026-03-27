@@ -19,6 +19,7 @@ class DummyAutoGenClient:
 		if isinstance(config, dict):
 			kwargs.update(config)
 		self.model = kwargs.get("model", "dummy-model")
+		self.calls_per_tool = kwargs.get("calls_per_tool", 1)
 		self.fixed_tool_names = []
 
 	def create(self, params: Dict[str, Any]) -> Any:
@@ -50,17 +51,18 @@ class DummyAutoGenClient:
 		# If tools are available, return tool calls
 		if self.fixed_tool_names:
 			tool_calls = []
-			for name in self.fixed_tool_names:
-				tool_calls.append(
-					{
-						"id": f"call_{uuid.uuid4().hex[:8]}",
-						"type": "function",
-						"function": {
-							"name": name,
-							"arguments": "{}",  # Empty args as requested
-						},
-					}
-				)
+			for _ in range(self.calls_per_tool):
+				for name in self.fixed_tool_names:
+					tool_calls.append(
+						{
+							"id": f"call_{uuid.uuid4().hex[:8]}",
+							"type": "function",
+							"function": {
+								"name": name,
+								"arguments": "{}",  # Empty args as requested
+							},
+						}
+					)
 
 			return DummyResponse(content="", tool_calls=tool_calls, model=self.model)
 
@@ -131,7 +133,7 @@ class DummyChoice:
 
 
 def create_assistant_with_dummy_model(
-	name: str, system_message: str, model: str = "dummy-model", **kwargs
+	name: str, system_message: str, model: str = "dummy-model", calls_per_tool: int = 1, **kwargs
 ) -> AssistantAgent:
 	"""
 	Helper function to create an AssistantAgent with DummyAutoGenClient.
@@ -152,6 +154,7 @@ def create_assistant_with_dummy_model(
 	model_config = {
 		"model": model,
 		"model_client_cls": "DummyAutoGenClient",
+		"calls_per_tool": calls_per_tool,
 	}
 
 	llm_config = {
