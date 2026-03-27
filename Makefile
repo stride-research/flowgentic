@@ -37,6 +37,8 @@ examples-ca-asyncflow:  ## CrewAI + Asyncfow
 	$(VENV_ACTIVATE) && python3 -m examples.crewai_asyncflow
 examples-ag-asyncflow:  ## AutoGen + Asyncfow
 	$(VENV_ACTIVATE) && python3 -m examples.autogen_asyncflow
+examples-ac-asyncflow:  ## Academy + Asyncflow
+	$(VENV_ACTIVATE) && python3 -m examples.academy_asyncflow
 examples-lg-parsl:  ## AutoGen + Parsl
 	$(VENV_ACTIVATE) && python3 -m examples.langgraph_parsl
 examples-ag-parsl:  ## AutoGen + Parsl
