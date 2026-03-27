@@ -133,7 +133,11 @@ class DummyChoice:
 
 
 def create_assistant_with_dummy_model(
-	name: str, system_message: str, model: str = "dummy-model", calls_per_tool: int = 1, **kwargs
+	name: str,
+	system_message: str,
+	model: str = "dummy-model",
+	calls_per_tool: int = 1,
+	**kwargs,
 ) -> AssistantAgent:
 	"""
 	Helper function to create an AssistantAgent with DummyAutoGenClient.
