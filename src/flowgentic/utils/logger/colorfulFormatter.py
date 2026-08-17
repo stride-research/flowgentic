@@ -1,6 +1,6 @@
 import json
 
-from pythonjsonlogger import jsonlogger
+from pythonjsonlogger.json import JsonFormatter
 
 
 # ANSI color codes
@@ -46,7 +46,7 @@ class Colors:
 
 
 # Custom colorful formatter
-class ColoredJSONFormatter(jsonlogger.JsonFormatter):
+class ColoredJSONFormatter(JsonFormatter):
 	"""A JSON formatter that adds colors to the output"""
 
 	LEVEL_COLORS = {

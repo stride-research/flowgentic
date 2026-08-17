@@ -1,0 +1,8 @@
+environment:
+  n_of_agents: 2
+  n_of_backend_slots: 3
+  n_of_tool_calls_per_agent: 2
+  tool_execution_duration_time: 2
+run_description: 'Debugging new event model. Removed plots errors'
+run_name: debug_new_event_model_2
+workload_id: langgraph_asyncflow

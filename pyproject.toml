@@ -10,23 +10,48 @@ authors = [
 ]
 requires-python = ">=3.10"
 dependencies = [
+    "pydantic>=2.0.0",
+    "python-json-logger>=2.0.0",
+    "python-dotenv",
+    "cloudpickle>=3.1.2",
+]
+
+[project.optional-dependencies]
+# --- Per-component extras (pick only what you need) ---
+langgraph = [
     "langgraph>=0.6.6",
-    "radical.asyncflow @ git+https://github.com/radical-cybertools/radical.asyncflow.git@main",
     "langchain-openai",
     "langchain",
     "langchain-ollama",
     "langchain-core",
     "langchain-community",
     "langchain-mcp-adapters",
-    "radical-asyncflow",
-    "python-dotenv",
-    "academy-py",
-    "pydantic>=2.0.0",
-    "python-json-logger>=2.0.0",
-
 ]
-
-[project.optional-dependencies]
+crewai = [
+    "crewai[google-genai]",
+]
+autogen = [
+    "autogen>=0.10.4",
+]
+asyncflow = [
+    "radical-asyncflow",
+]
+parsl = [
+    "parsl>=2026.1.19",
+]
+academy = [
+    "academy-py",
+]
+# --- Convenience bundles ---
+frameworks = [
+    "flowgentic[langgraph,crewai,autogen]",
+]
+runtime = [
+    "flowgentic[asyncflow,parsl,academy]",
+]
+all = [
+    "flowgentic[frameworks,runtime]",
+]
 dev = [
     "ruff>=0.12.11",
     "pre-commit",
@@ -39,8 +64,9 @@ dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "uv>=0.1.0",
-    "pytest-asyncio>=0.21.0",
     "pytest-cov",
+    "matplotlib",
+    "cloudpickle",
 ]
 
 [project.scripts]
@@ -52,10 +78,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.uv.sources]
-academy-py = { git = "https://github.com/proxystore/academy" }
-radical-asyncflow = { git = "https://github.com/radical-cybertools/radical.asyncflow.git" }
 
 [tool.ruff]
 line-length = 88
@@ -96,5 +118,16 @@ dev = [
     "pytest-asyncio>=1.2.0",
 ]
 
+[tool.uv.sources]
+academy-py = { git = "https://github.com/proxystore/academy" }
+radical-asyncflow = { git = "https://github.com/radical-cybertools/radical.asyncflow.git", branch = "main" }
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# Exclude tests whose modules no longer exist on this branch
+addopts = [
+    "--ignore=tests/integration",
+    "--ignore=tests/unit/test_generator.py",
+    "--ignore=tests/unit/test_introspection.py",
+    "--ignore=tests/unit/test_memory.py",
+]

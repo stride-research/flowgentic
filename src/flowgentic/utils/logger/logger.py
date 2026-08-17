@@ -7,7 +7,7 @@ import re
 import sys
 from contextlib import contextmanager
 
-from pythonjsonlogger import jsonlogger
+from pythonjsonlogger.json import JsonFormatter
 
 from .colorfulFormatter import ColoredJSONFormatter
 
@@ -121,7 +121,7 @@ class Logger:
 
 	def __bind_formatter(self):
 		if not self.colorful_output:
-			formatter = jsonlogger.JsonFormatter(
+			formatter = JsonFormatter(
 				"%(asctime)s %(name)s %(levelname)s %(message)s",
 				rename_fields={"levelname": "level", "asctime": "time"},
 			)
@@ -137,12 +137,25 @@ class Logger:
 	def shutdown(self):
 		"""Stops the QueueListener and flushes any remaining logs."""
 		if self.listener:
+			# Enqueue the shutdown message through the normal logging pipeline
+			# so it is ordered correctly relative to other log records.
 			logging.info("Shutting down logging listener...")
-			self.listener.stop()
-			logging.info("Logging listener stopped.")
-		# Remove the queue handler from the root logger to prevent further logging attempts
+
+		# Remove the queue handler so no new messages are enqueued after this
+		# point.
 		if self.queue_handler in self.root_logger.handlers:
 			self.root_logger.removeHandler(self.queue_handler)
+
+		if self.listener:
+			# QueueListener.stop() drains the remaining items (including our
+			# shutdown message) and joins the background thread.  During
+			# interpreter teardown (atexit) the stdout stream may already be
+			# closed, causing a benign ValueError in the handler's emit().
+			# Temporarily silence it so it doesn't leak to the terminal.
+			prev = logging.raiseExceptions
+			logging.raiseExceptions = False
+			self.listener.stop()
+			logging.raiseExceptions = prev
 
 
 LOG_CONTEXT = contextvars.ContextVar("log_context", default={})
