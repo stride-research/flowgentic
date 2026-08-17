@@ -8,11 +8,20 @@ and that cache_hit tracking works correctly.
 
 import uuid
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from unittest.mock import patch
 
 import pytest
 
+import flowgentic.agent_orchestration_frameworks.langgraph as _lg_mod
+
+# Replace _langchain_tool with an identity function so the tests don't
+# require langchain-core.  The lifecycle events are what we're testing,
+# not the LangChain tool decorator.
+_lg_mod._langchain_tool = lambda fn: fn  # type: ignore[attr-defined]
+
 from flowgentic.agent_orchestration_frameworks.langgraph import \
-    LanGraphOrchestrator
+	LanGraphOrchestrator
+
 from flowgentic.backend_engines.base import BaseEngine
 
 
