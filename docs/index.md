@@ -28,9 +28,9 @@ dependencies = [
 # 2) pip3 
 pip3 install "git+https://github.com/stride-research/flowgentic.git@main#egg=flowgentic"
 
-# 3) cloning this repo
-python3.10 -m venv .venv
-make install 
+# 3) cloning this repo (runtime or development environment)
+uv sync --frozen
+uv sync --frozen --extra dev
 
 ```
 If you are in MacOS you may need to install graphviz pluggins:
@@ -69,5 +69,4 @@ flowchart LR
 ```
 
 Explore the sections on the left for patterns, features, API reference, and examples.
-
 

@@ -9,10 +9,8 @@ Thanks for your interest in contributing! This project targets developers buildi
 ```bash
 git clone <your-fork-url>
 cd flowgentic
-python -m venv .venv && source .venv/bin/activate
-pip install -U pip
-pip install -e '.[dev]'
-pre-commit install
+uv sync --frozen --extra dev
+uv run pre-commit install
 ```
 
 ---
@@ -24,9 +22,9 @@ pre-commit install
 - Follow the repository’s Python style (ruff-configured):
 
 ```bash
-ruff check .
-ruff format .
-pytest -q
+uv run --extra dev ruff check .
+uv run --extra dev ruff format .
+uv run --extra dev pytest -q
 ```
 
 ---
@@ -51,8 +49,7 @@ pytest -q
 - To preview:
 
 ```bash
-pip install '.[dev]'
-mkdocs serve
+uv run --extra dev mkdocs serve
 ```
 
 ---
@@ -66,5 +63,4 @@ Be respectful and constructive. We follow the spirit of the Contributor Covenant
 ### License
 
 By contributing, you agree that your contributions will be licensed under the MIT license.
-
 
