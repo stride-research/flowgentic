@@ -1,4 +1,4 @@
-.PHONY: install install-dev format lint docs tests tests-units tests-integration-llm examples-sequential-research examples-sequential-financial examples-supervisor examples-supervisor-sales examples-supervisor-product-research examples-basic examples-parallel-minimal examples-parallel-llm-router examples-mcp-sales-analytics
+.PHONY: install install-dev format lint docs tests tests-units tests-integration-llm examples-ai-hpc-deterministic examples-ai-hpc-agentic examples-sequential-research examples-sequential-financial examples-supervisor examples-supervisor-sales examples-supervisor-product-research examples-basic examples-parallel-minimal examples-parallel-llm-router examples-mcp-sales-analytics
 .DEFAULT_GOAL:= help
 
 
@@ -60,6 +60,12 @@ tests-integration-llm: ## Run opt-in examples that require model credentials
 # ============
 # = EXAMPLES =
 # ============
+
+examples-ai-hpc-deterministic: ## Run the deterministic AI-HPC coupling demo
+	examples/ai-hpc-coupling/run_demo.sh application
+
+examples-ai-hpc-agentic: ## Run the offline agentic AI-HPC coupling demo
+	examples/ai-hpc-coupling/run_agentic_demo.sh application
 
 ## LangGraph
 ### Design Patterns 

@@ -202,6 +202,7 @@ def initial_campaign_state(
                 )
             )
         ],
+        "implementation": "deterministic",
         "cycle": 0,
         "center": INITIAL_CENTER,
         "radius": INITIAL_RADIUS,
@@ -352,6 +353,7 @@ def write_summary(
     service = state["service"]
 
     summary = {
+        "implementation": state.get("implementation", "deterministic"),
         "controller": controller,
         "stop_reason": stop_reason,
         "cycles": state["cycle"],
@@ -374,6 +376,12 @@ def write_summary(
             "events": state["trace"],
         },
     }
+
+    if state.get("agent_trace"):
+        summary["agents"] = {
+            "model": state.get("agent_model", "unknown"),
+            "decisions": state["agent_trace"],
+        }
 
     path = output_dir / "campaign_summary.json"
     path.write_text(json.dumps(summary, indent=2), encoding="utf-8")

@@ -1,4 +1,4 @@
-"""Flowgentic AI-HPC synthetic application demo.
+"""Deterministic Flowgentic AI-HPC synthetic application demo.
 
 Shows the scientific state, the Flowgentic execution mapping, and the agent
 graph. Synthetic science, timing, reporting, and local demo setup live in
@@ -8,67 +8,31 @@ graph. Synthetic science, timing, reporting, and local demo setup live in
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
-from typing import Annotated, Any, TypedDict, cast
+from typing import Any, cast
 
-from demo_support import (SIMULATION_RETRY, SurrogateService,
-                          add_instrumented_nodes, evaluate_candidate,
-                          initial_campaign_state, print_cycle, record_analysis,
-                          record_plan, record_simulations)
-from langchain_core.messages import BaseMessage
-from langgraph.graph import END, START, StateGraph, add_messages
-from langgraph.graph.state import CompiledStateGraph
+from campaign_types import CampaignApplication, CampaignSettings, CampaignState
+from demo_support import (
+    SIMULATION_RETRY,
+    SurrogateService,
+    add_instrumented_nodes,
+    evaluate_candidate,
+    initial_campaign_state,
+    print_cycle,
+    record_analysis,
+    record_plan,
+    record_simulations,
+)
+from langgraph.graph import END, START, StateGraph
 
 from flowgentic.langGraph.execution_wrappers import AsyncFlowType
 from flowgentic.langGraph.main import LangraphIntegration
-
-
-# 1. Application state ---------------------------------------------------------
-@dataclass(frozen=True)
-class CampaignSettings:
-    """Scientific and operational constraints for the campaign."""
-
-    batch_size: int = 4
-    budget: int = 24
-    uncertainty_threshold: float = 0.25
-    max_cycles: int = 8
-    inject_failure: bool = True
-
-
-class CampaignState(TypedDict):
-    """Structured state exchanged by the three agent nodes."""
-
-    messages: Annotated[list[BaseMessage], add_messages]
-    cycle: int
-    center: float
-    radius: float
-    uncertainty: float
-    best_x: float | None
-    best_value: float | None
-    budget: int
-    spent: int
-    candidates: list[float]
-    results: list[dict[str, Any]]
-    trace: list[dict[str, Any]]
-    service: SurrogateService
-    decision: str
-
-
-@dataclass
-class CampaignApplication:
-    """The compiled agent graph and its persistent model service."""
-
-    graph: CompiledStateGraph
-    state: CampaignState
-    service: SurrogateService
-    service_future: asyncio.Future[SurrogateService]
 
 
 async def build_campaign(
     integration: LangraphIntegration,
     settings: CampaignSettings,
 ) -> CampaignApplication:
-    """Map one agentic AI-HPC campaign onto AsyncFlow through Flowgentic."""
+    """Map the deterministic AI-HPC campaign onto AsyncFlow through Flowgentic."""
     flowgentic = integration.execution_wrappers.asyncflow
 
     # 2. Scientific capabilities mapped to execution --------------------------
@@ -111,9 +75,9 @@ async def build_campaign(
     ) -> dict[str, Any]:
         return await service.assimilate(results, radius, cycle)
 
-    # 3. Agent nodes -----------------------------------------------------------
-    # The graph keeps its own messages, state, and routing semantics.
-    # Flowgentic only changes how its nodes and tools execute.
+    # 3. Deterministic graph nodes --------------------------------------------
+    # The graph keeps its own state and routing semantics. Flowgentic only
+    # changes how its nodes and scientific capabilities execute.
     async def plan(state: CampaignState) -> dict[str, Any]:
         proposal = await propose_candidates(
             state["center"], state["radius"], state["cycle"]

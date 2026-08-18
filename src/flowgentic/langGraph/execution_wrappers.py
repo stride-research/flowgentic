@@ -176,8 +176,10 @@ class ExecutionWrappersLangraph:
                         _call, retry_cfg, name=f.__name__
                     )
 
-                print(
-                    f"passed KWARGS IS: {kwargs}, description is: {kwargs.get('tool_description')}"
+                logger.debug(
+                    "Creating tool '%s' with description '%s'",
+                    f.__name__,
+                    kwargs.get("tool_description"),
                 )
                 langraph_tool = tool(
                     tool_wrapper, description=kwargs.get("tool_description")

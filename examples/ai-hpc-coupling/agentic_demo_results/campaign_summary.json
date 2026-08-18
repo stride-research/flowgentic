@@ -1,0 +1,591 @@
+{
+  "implementation": "agentic",
+  "controller": "adr",
+  "stop_reason": "ADR scientific uncertainty goal reached",
+  "cycles": 5,
+  "simulations": 20,
+  "best_x": 2.76961,
+  "best_value": 0.0034089000906396953,
+  "uncertainty": 0.2013137500000001,
+  "service": {
+    "instance_id": "surrogate-service-01",
+    "loads": 1,
+    "requests": 5,
+    "updates": 5
+  },
+  "execution": {
+    "named_backends": [
+      "ai",
+      "compute"
+    ],
+    "max_compute_parallelism": 4,
+    "retries": 1,
+    "events": [
+      {
+        "name": "surrogate.propose",
+        "backend": "ai",
+        "cycle": 0,
+        "started": 281520.934332291,
+        "finished": 281521.015556916,
+        "duration": 0.08122462499886751
+      },
+      {
+        "name": "agent.planner",
+        "backend": "ai",
+        "cycle": 0,
+        "started": 281521.018077708,
+        "finished": 281521.018160791,
+        "duration": 8.308299584314227e-05
+      },
+      {
+        "name": "simulation[0]",
+        "backend": "compute",
+        "cycle": 0,
+        "started": 281521.041040875,
+        "finished": 281521.162194375,
+        "duration": 0.12115349998930469
+      },
+      {
+        "name": "simulation[1]",
+        "backend": "compute",
+        "cycle": 0,
+        "started": 281521.041742333,
+        "finished": 281521.187648333,
+        "duration": 0.14590600004885346
+      },
+      {
+        "name": "simulation[2]",
+        "backend": "compute",
+        "cycle": 0,
+        "started": 281521.041498541,
+        "finished": 281521.212722583,
+        "duration": 0.1712240419583395
+      },
+      {
+        "name": "simulation[3]",
+        "backend": "compute",
+        "cycle": 0,
+        "started": 281521.041781791,
+        "finished": 281521.163164708,
+        "duration": 0.12138291698647663
+      },
+      {
+        "name": "surrogate.update",
+        "backend": "ai",
+        "cycle": 0,
+        "started": 281521.230577125,
+        "finished": 281521.291940375,
+        "duration": 0.06136325001716614
+      },
+      {
+        "name": "agent.analyst",
+        "backend": "ai",
+        "cycle": 0,
+        "started": 281521.29514225,
+        "finished": 281521.295229208,
+        "duration": 8.695799624547362e-05
+      },
+      {
+        "name": "agent.supervisor",
+        "backend": "ai",
+        "cycle": 1,
+        "started": 281521.316848791,
+        "finished": 281521.316893166,
+        "duration": 4.437501775100827e-05
+      },
+      {
+        "name": "surrogate.propose",
+        "backend": "ai",
+        "cycle": 1,
+        "started": 281521.33926375,
+        "finished": 281521.420611,
+        "duration": 0.08134724997216836
+      },
+      {
+        "name": "agent.planner",
+        "backend": "ai",
+        "cycle": 1,
+        "started": 281521.423688875,
+        "finished": 281521.423740666,
+        "duration": 5.17910229973495e-05
+      },
+      {
+        "name": "simulation[0]",
+        "backend": "compute",
+        "cycle": 1,
+        "started": 281521.499212291,
+        "finished": 281521.62031525,
+        "duration": 0.12110295903403312
+      },
+      {
+        "name": "simulation[1]",
+        "backend": "compute",
+        "cycle": 1,
+        "started": 281521.446032583,
+        "finished": 281521.592295583,
+        "duration": 0.14626299997325987
+      },
+      {
+        "name": "simulation[2]",
+        "backend": "compute",
+        "cycle": 1,
+        "started": 281521.446135291,
+        "finished": 281521.617367458,
+        "duration": 0.17123216699110344
+      },
+      {
+        "name": "simulation[3]",
+        "backend": "compute",
+        "cycle": 1,
+        "started": 281521.44624325,
+        "finished": 281521.567579083,
+        "duration": 0.12133583304239437
+      },
+      {
+        "name": "surrogate.update",
+        "backend": "ai",
+        "cycle": 1,
+        "started": 281521.636707791,
+        "finished": 281521.698059,
+        "duration": 0.061351209005806595
+      },
+      {
+        "name": "agent.analyst",
+        "backend": "ai",
+        "cycle": 1,
+        "started": 281521.701459958,
+        "finished": 281521.701549375,
+        "duration": 8.941703708842397e-05
+      },
+      {
+        "name": "agent.supervisor",
+        "backend": "ai",
+        "cycle": 2,
+        "started": 281521.723526833,
+        "finished": 281521.723587791,
+        "duration": 6.0958031099289656e-05
+      },
+      {
+        "name": "surrogate.propose",
+        "backend": "ai",
+        "cycle": 2,
+        "started": 281521.745165625,
+        "finished": 281521.826433708,
+        "duration": 0.08126808301312849
+      },
+      {
+        "name": "agent.planner",
+        "backend": "ai",
+        "cycle": 2,
+        "started": 281521.829148625,
+        "finished": 281521.829232208,
+        "duration": 8.358299965038896e-05
+      },
+      {
+        "name": "simulation[0]",
+        "backend": "compute",
+        "cycle": 2,
+        "started": 281521.851974875,
+        "finished": 281521.973253291,
+        "duration": 0.12127841595793143
+      },
+      {
+        "name": "simulation[1]",
+        "backend": "compute",
+        "cycle": 2,
+        "started": 281521.852210833,
+        "finished": 281521.998224208,
+        "duration": 0.1460133750224486
+      },
+      {
+        "name": "simulation[2]",
+        "backend": "compute",
+        "cycle": 2,
+        "started": 281521.852186416,
+        "finished": 281522.023415833,
+        "duration": 0.17122941702837124
+      },
+      {
+        "name": "simulation[3]",
+        "backend": "compute",
+        "cycle": 2,
+        "started": 281521.852142,
+        "finished": 281521.973694916,
+        "duration": 0.12155291601084173
+      },
+      {
+        "name": "surrogate.update",
+        "backend": "ai",
+        "cycle": 2,
+        "started": 281522.042052291,
+        "finished": 281522.103378791,
+        "duration": 0.06132650002837181
+      },
+      {
+        "name": "agent.analyst",
+        "backend": "ai",
+        "cycle": 2,
+        "started": 281522.106227333,
+        "finished": 281522.106301416,
+        "duration": 7.408298552036285e-05
+      },
+      {
+        "name": "agent.supervisor",
+        "backend": "ai",
+        "cycle": 3,
+        "started": 281522.128849666,
+        "finished": 281522.128913125,
+        "duration": 6.345903966575861e-05
+      },
+      {
+        "name": "surrogate.propose",
+        "backend": "ai",
+        "cycle": 3,
+        "started": 281522.151111416,
+        "finished": 281522.232497625,
+        "duration": 0.08138620899990201
+      },
+      {
+        "name": "agent.planner",
+        "backend": "ai",
+        "cycle": 3,
+        "started": 281522.236259458,
+        "finished": 281522.236336625,
+        "duration": 7.71670020185411e-05
+      },
+      {
+        "name": "simulation[0]",
+        "backend": "compute",
+        "cycle": 3,
+        "started": 281522.258397958,
+        "finished": 281522.379687958,
+        "duration": 0.12128999998094514
+      },
+      {
+        "name": "simulation[1]",
+        "backend": "compute",
+        "cycle": 3,
+        "started": 281522.258501833,
+        "finished": 281522.404708541,
+        "duration": 0.14620670798467472
+      },
+      {
+        "name": "simulation[2]",
+        "backend": "compute",
+        "cycle": 3,
+        "started": 281522.2585735,
+        "finished": 281522.429779125,
+        "duration": 0.1712056250544265
+      },
+      {
+        "name": "simulation[3]",
+        "backend": "compute",
+        "cycle": 3,
+        "started": 281522.2586755,
+        "finished": 281522.380142625,
+        "duration": 0.12146712501998991
+      },
+      {
+        "name": "surrogate.update",
+        "backend": "ai",
+        "cycle": 3,
+        "started": 281522.447198791,
+        "finished": 281522.508622125,
+        "duration": 0.06142333400202915
+      },
+      {
+        "name": "agent.analyst",
+        "backend": "ai",
+        "cycle": 3,
+        "started": 281522.512396166,
+        "finished": 281522.512478041,
+        "duration": 8.187501225620508e-05
+      },
+      {
+        "name": "agent.supervisor",
+        "backend": "ai",
+        "cycle": 4,
+        "started": 281522.535115458,
+        "finished": 281522.535164458,
+        "duration": 4.899996565654874e-05
+      },
+      {
+        "name": "surrogate.propose",
+        "backend": "ai",
+        "cycle": 4,
+        "started": 281522.556582958,
+        "finished": 281522.637862166,
+        "duration": 0.08127920801052824
+      },
+      {
+        "name": "agent.planner",
+        "backend": "ai",
+        "cycle": 4,
+        "started": 281522.641221458,
+        "finished": 281522.641311958,
+        "duration": 9.050004882737994e-05
+      },
+      {
+        "name": "simulation[0]",
+        "backend": "compute",
+        "cycle": 4,
+        "started": 281522.663715541,
+        "finished": 281522.785250916,
+        "duration": 0.12153537495760247
+      },
+      {
+        "name": "simulation[1]",
+        "backend": "compute",
+        "cycle": 4,
+        "started": 281522.663934041,
+        "finished": 281522.8101325,
+        "duration": 0.1461984590278007
+      },
+      {
+        "name": "simulation[2]",
+        "backend": "compute",
+        "cycle": 4,
+        "started": 281522.664198375,
+        "finished": 281522.83477725,
+        "duration": 0.1705788749968633
+      },
+      {
+        "name": "simulation[3]",
+        "backend": "compute",
+        "cycle": 4,
+        "started": 281522.664162916,
+        "finished": 281522.785337541,
+        "duration": 0.12117462500464171
+      },
+      {
+        "name": "surrogate.update",
+        "backend": "ai",
+        "cycle": 4,
+        "started": 281522.854596625,
+        "finished": 281522.915921458,
+        "duration": 0.06132483296096325
+      },
+      {
+        "name": "agent.analyst",
+        "backend": "ai",
+        "cycle": 4,
+        "started": 281522.918416666,
+        "finished": 281522.918495041,
+        "duration": 7.83750438131392e-05
+      },
+      {
+        "name": "agent.supervisor",
+        "backend": "ai",
+        "cycle": 5,
+        "started": 281522.941088208,
+        "finished": 281522.941160333,
+        "duration": 7.212499622255564e-05
+      }
+    ]
+  },
+  "agents": {
+    "model": "rehearsal-agents",
+    "decisions": [
+      {
+        "agent": "planner",
+        "cycle": 0,
+        "decision": {
+          "candidates": [
+            -4.0,
+            -1.333333,
+            1.333333,
+            4.0
+          ],
+          "rationale": "Use the balanced strategy with a surrogate-informed batch while respecting the fixed batch-size and search-bound policies.",
+          "accepted_candidates": [
+            -4.0,
+            -1.333333,
+            1.333333,
+            4.0
+          ]
+        },
+        "policy_status": "agent proposal accepted"
+      },
+      {
+        "agent": "analyst",
+        "cycle": 1,
+        "decision": {
+          "recommendation": "continue",
+          "interpretation": "The new evidence reduces uncertainty to 2.2000; the hard convergence threshold is 0.2500."
+        },
+        "policy_status": "advisory; hard policy evaluated by controller"
+      },
+      {
+        "agent": "supervisor",
+        "cycle": 1,
+        "decision": {
+          "recommendation": "continue",
+          "next_strategy": "explore",
+          "rationale": "Coordinate the next cycle with a explore strategy while ADR or application policy retains authority over stopping and budget.",
+          "enforced_recommendation": "continue"
+        },
+        "policy_status": "supervisor recommendation accepted"
+      },
+      {
+        "agent": "planner",
+        "cycle": 1,
+        "decision": {
+          "candidates": [
+            1.8,
+            3.266667,
+            4.733333,
+            6.2
+          ],
+          "rationale": "Use the explore strategy with a surrogate-informed batch while respecting the fixed batch-size and search-bound policies.",
+          "accepted_candidates": [
+            1.8,
+            3.266667,
+            4.733333,
+            6.2
+          ]
+        },
+        "policy_status": "agent proposal accepted"
+      },
+      {
+        "agent": "analyst",
+        "cycle": 2,
+        "decision": {
+          "recommendation": "continue",
+          "interpretation": "The new evidence reduces uncertainty to 1.2100; the hard convergence threshold is 0.2500."
+        },
+        "policy_status": "advisory; hard policy evaluated by controller"
+      },
+      {
+        "agent": "supervisor",
+        "cycle": 2,
+        "decision": {
+          "recommendation": "continue",
+          "next_strategy": "explore",
+          "rationale": "Coordinate the next cycle with a explore strategy while ADR or application policy retains authority over stopping and budget.",
+          "enforced_recommendation": "continue"
+        },
+        "policy_status": "supervisor recommendation accepted"
+      },
+      {
+        "agent": "planner",
+        "cycle": 2,
+        "decision": {
+          "candidates": [
+            2.056667,
+            2.863334,
+            3.67,
+            4.476667
+          ],
+          "rationale": "Use the explore strategy with a surrogate-informed batch while respecting the fixed batch-size and search-bound policies.",
+          "accepted_candidates": [
+            2.056667,
+            2.863334,
+            3.67,
+            4.476667
+          ]
+        },
+        "policy_status": "agent proposal accepted"
+      },
+      {
+        "agent": "analyst",
+        "cycle": 3,
+        "decision": {
+          "recommendation": "continue",
+          "interpretation": "The new evidence reduces uncertainty to 0.6655; the hard convergence threshold is 0.2500."
+        },
+        "policy_status": "advisory; hard policy evaluated by controller"
+      },
+      {
+        "agent": "supervisor",
+        "cycle": 3,
+        "decision": {
+          "recommendation": "continue",
+          "next_strategy": "balanced",
+          "rationale": "Coordinate the next cycle with a balanced strategy while ADR or application policy retains authority over stopping and budget.",
+          "enforced_recommendation": "continue"
+        },
+        "policy_status": "supervisor recommendation accepted"
+      },
+      {
+        "agent": "planner",
+        "cycle": 3,
+        "decision": {
+          "candidates": [
+            2.197834,
+            2.641501,
+            3.085167,
+            3.528834
+          ],
+          "rationale": "Use the balanced strategy with a surrogate-informed batch while respecting the fixed batch-size and search-bound policies.",
+          "accepted_candidates": [
+            2.197834,
+            2.641501,
+            3.085167,
+            3.528834
+          ]
+        },
+        "policy_status": "agent proposal accepted"
+      },
+      {
+        "agent": "analyst",
+        "cycle": 4,
+        "decision": {
+          "recommendation": "continue",
+          "interpretation": "The new evidence reduces uncertainty to 0.3660; the hard convergence threshold is 0.2500."
+        },
+        "policy_status": "advisory; hard policy evaluated by controller"
+      },
+      {
+        "agent": "supervisor",
+        "cycle": 4,
+        "decision": {
+          "recommendation": "continue",
+          "next_strategy": "exploit",
+          "rationale": "Coordinate the next cycle with a exploit strategy while ADR or application policy retains authority over stopping and budget.",
+          "enforced_recommendation": "continue"
+        },
+        "policy_status": "supervisor recommendation accepted"
+      },
+      {
+        "agent": "planner",
+        "cycle": 4,
+        "decision": {
+          "candidates": [
+            2.513392,
+            2.598798,
+            2.684204,
+            2.76961
+          ],
+          "rationale": "Use the exploit strategy with a surrogate-informed batch while respecting the fixed batch-size and search-bound policies.",
+          "accepted_candidates": [
+            2.513392,
+            2.598798,
+            2.684204,
+            2.76961
+          ]
+        },
+        "policy_status": "agent proposal accepted"
+      },
+      {
+        "agent": "analyst",
+        "cycle": 5,
+        "decision": {
+          "recommendation": "stop",
+          "interpretation": "The new evidence reduces uncertainty to 0.2013; the hard convergence threshold is 0.2500."
+        },
+        "policy_status": "advisory; hard policy evaluated by controller"
+      },
+      {
+        "agent": "supervisor",
+        "cycle": 5,
+        "decision": {
+          "recommendation": "stop",
+          "next_strategy": "exploit",
+          "rationale": "Coordinate the next cycle with a exploit strategy while ADR or application policy retains authority over stopping and budget.",
+          "enforced_recommendation": "stop"
+        },
+        "policy_status": "supervisor agrees with hard stop"
+      }
+    ]
+  }
+}

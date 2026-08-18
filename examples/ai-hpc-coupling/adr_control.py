@@ -6,9 +6,9 @@ observe-decide-act control.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
-from application import CampaignApplication, CampaignSettings, CampaignState
+from campaign_types import CampaignApplication, CampaignSettings, CampaignState
 from demo_support import print_cycle
 from radical.adr import Decision, Operator, Policy, act, decide, goals, observe
 from radical.adr.goals import AnyGoal, Goal
@@ -20,12 +20,15 @@ async def run_with_adr_control(
     application: CampaignApplication,
     settings: CampaignSettings,
     engine: WorkflowEngine,
+    cycle_printer: Callable[[dict[str, Any], str], None] = print_cycle,
 ) -> tuple[CampaignState, str]:
-    """Let ADR iterate the same agent graph until a campaign goal is met."""
+    """Let ADR iterate the supplied graph until a campaign goal is met."""
 
     class CampaignOperator(Operator):
         def __init__(self) -> None:
-            super().__init__(engine, max_cycles=settings.max_cycles)
+            # ADR cycle 0 dispatches the first action; one final control cycle
+            # is required to observe the last completed scientific cycle.
+            super().__init__(engine, max_cycles=settings.max_cycles + 1)
             self._campaign_state = application.state
 
         @goals
@@ -86,6 +89,7 @@ async def run_with_adr_control(
             if (
                 state["uncertainty"] <= settings.uncertainty_threshold
                 or state["spent"] >= state["budget"]
+                or state["cycle"] >= settings.max_cycles
             ):
                 return Decision(stop=True)
 
@@ -99,7 +103,7 @@ async def run_with_adr_control(
     previous_cycle = application.state["cycle"]
     async for _snapshot in operator.run():
         if operator._campaign_state["cycle"] != previous_cycle:
-            print_cycle(operator._campaign_state, "ADR")
+            cycle_printer(operator._campaign_state, "ADR")
             previous_cycle = operator._campaign_state["cycle"]
 
     state = operator._campaign_state
