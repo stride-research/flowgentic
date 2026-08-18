@@ -1,4 +1,4 @@
-.PHONY: install format lint docs tests examples-sequential-research examples-sequential-financial examples-supervisor examples-supervisor-sales examples-supervisor-product-research examples-basic examples-parallel-minimal examples-parallel-llm-router examples-mcp-sales-analytics
+.PHONY: install install-dev format lint docs tests tests-units tests-integration-llm examples-sequential-research examples-sequential-financial examples-supervisor examples-supervisor-sales examples-supervisor-product-research examples-basic examples-parallel-minimal examples-parallel-llm-router examples-mcp-sales-analytics
 .DEFAULT_GOAL:= help
 
 
@@ -9,8 +9,9 @@ YELLOW = \033[33m
 BLUE = \033[34m
 RESET = \033[0m
 
-VENV_PATH =  ./.venv
-VENV_ACTIVATE = source $(VENV_PATH)/bin/activate
+UV ?= uv
+UV_RUN = $(UV) run
+UV_RUN_DEV = $(UV) run --extra dev
 
 help: 
 	@echo "$(BLUE)Available commands:$(RESET)"
@@ -20,46 +21,41 @@ help:
 # =  SET-UP  =
 # ============
 
-install: #Install dependencies with pip => install graphviz 
-	$(VENV_ACTIVATE) && pip install -e "."
-	$(VENV_ACTIVATE) &&  pre-commit install
-	$(VENV_ACTIVATE) && pip install --config-settings="--global-option=build_ext" \
-		--config-settings="--global-option=-I$$(brew --prefix graphviz)/include/" \
-		--config-settings="--global-option=-L$$(brew --prefix graphviz)/lib/" \
-		pygraphviz
-install-dev: 
-	$(VENV_ACTIVATE) && pip install -e ".[dev]"
-	$(VENV_ACTIVATE) &&  pre-commit install
-	$(VENV_ACTIVATE) && pip install --config-settings="--global-option=build_ext" \
-		--config-settings="--global-option=-I$$(brew --prefix graphviz)/include/" \
-		--config-settings="--global-option=-L$$(brew --prefix graphviz)/lib/" \
-		pygraphviz
+install: ## Create or update the locked runtime environment
+	$(UV) sync --frozen
+
+install-dev: ## Create or update the locked development environment
+	$(UV) sync --frozen --extra dev
+	$(UV_RUN_DEV) pre-commit install
 
 
 # ============
 # =   CI/CD  =
 # ============
 format:
-	$(VENV_ACTIVATE) && ruff format .
+	$(UV_RUN_DEV) ruff format .
 
 lint:
-	$(VENV_ACTIVATE) && ruff check --fix .
+	$(UV_RUN_DEV) ruff check .
 docs:	## Renders docs locally
-	$(VENV_ACTIVATE) &&  mkdocs serve
+	$(UV_RUN_DEV) mkdocs serve
 tests: ## Run tests
-	$(VENV_ACTIVATE) && pytest -vv -s \
+	$(UV_RUN_DEV) pytest -vv \
                   --cov=flowgentic \
                   --cov-report=html:coverage_report \
                   --cov-report=term-missing \
                   --cov-report=term:skip-covered \
                   tests/
-tests-units: 
-	$(VENV_ACTIVATE) && pytest -vv -s \
+tests-units: ## Run unit tests
+	$(UV_RUN_DEV) pytest -vv \
 				--cov=flowgentic \
 				--cov-report=html:coverage_report \
 				--cov-report=term-missing \
 				--cov-report=term:skip-covered \
 				tests/unit
+
+tests-integration-llm: ## Run opt-in examples that require model credentials
+	FLOWGENTIC_RUN_LLM_INTEGRATION=1 $(UV_RUN_DEV) pytest -vv tests/integration
 
 # ============
 # = EXAMPLES =
@@ -68,17 +64,17 @@ tests-units:
 ## LangGraph
 ### Design Patterns 
 examples-chatbot-toy: 
-	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.chatbot.toy
+	$(UV_RUN) python -m examples.langgraph-integration.design_patterns.chatbot.toy
 examples-sequential-research:
-	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.research_agent.main
+	$(UV_RUN) python -m examples.langgraph-integration.design_patterns.sequential.research_agent.main
 examples-supervisor-toy: 
-	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.supervisor.toy.main
+	$(UV_RUN) python -m examples.langgraph-integration.design_patterns.supervisor.toy.main
 #### Memory
 examples-sequential-research-memory:
-	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.design_patterns.sequential.research_agent_memory.main
+	$(UV_RUN) python -m examples.langgraph-integration.design_patterns.sequential.research_agent_memory.main
 ### Services
 examples-services-intermittent-task: 
-	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.service-task.service-intermittent
+	$(UV_RUN) python -m examples.langgraph-integration.service-task.service-intermittent
 ### Miscellaneous
 examples-runtime-graph:
-	$(VENV_ACTIVATE) && python3 -m examples.langgraph-integration.miscellaneous.runtime-graph-creation
+	$(UV_RUN) python -m examples.langgraph-integration.miscellaneous.runtime-graph-creation

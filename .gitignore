@@ -18,7 +18,8 @@ dist/
 # Virtual environments
 
 .venv/
-.env
+.direnv/
+.uv-cache/
 .env
 .env.*
 

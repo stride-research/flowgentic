@@ -1,0 +1,4 @@
+# Keep uv's disposable cache inside the repository so local tools and sandboxed
+# coding agents can use the same project environment without writing to a
+# system-managed Python or a user-global cache.
+cache-dir = ".uv-cache"
