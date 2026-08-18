@@ -246,8 +246,8 @@ class Extractor:
 					)
 
 		# Get state keys - handle Pydantic model and dicts
-		if hasattr(state_after, "model_fields"):
-			state_keys = list(state_after.model_fields.keys())
+		if isinstance(state_after, BaseModel):
+			state_keys = list(type(state_after).model_fields.keys())
 		elif isinstance(state_after, dict):
 			state_keys = list(state_after.keys())
 		else:

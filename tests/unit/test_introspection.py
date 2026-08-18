@@ -1,4 +1,5 @@
 import pickle
+from pathlib import Path
 from langgraph.graph import add_messages
 import pytest
 from typing import Annotated, List
@@ -23,7 +24,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class TestState(BaseModel):
+class SampleState(BaseModel):
 	messages: Annotated[List[BaseMessage], add_messages] = []
 	counter: int = 1
 
@@ -32,22 +33,23 @@ class TestState(BaseModel):
 async def test_state_extraction_via_introspect_node():
 	introspector = GraphIntrospector()
 
-	async def sample_node(state: TestState) -> TestState:
+	async def sample_node(state: SampleState) -> SampleState:
 		"""A great description for a great sample node"""
-		file_handler = open("tests/utils/response.obj", "rb")
-		msg = pickle.load(file_handler)
+		fixture_path = Path(__file__).parent / "utils" / "response.obj"
+		with fixture_path.open("rb") as file_handler:
+			msg = pickle.load(file_handler)
 		state.messages.extend(msg.get("messages"))
 		state.counter += 1
 		return state
 
 	wrapped = introspector.introspect_node(sample_node, node_name="sample_node")
 
-	before = TestState()
+	before = SampleState()
 	after = await wrapped(before)
 	logger.debug(f"RECORD IS: {introspector._records}")
 
 	# Return type
-	assert isinstance(after, TestState)
+	assert isinstance(after, SampleState)
 	assert len(after.messages) == 5
 
 	# Records

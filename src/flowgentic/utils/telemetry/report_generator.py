@@ -467,8 +467,8 @@ class ReportGenerator:
             f.write("## Final State Summary\n\n")
             if self._final_state:
                 # Get state keys - handle Pydantic model
-                if hasattr(self._final_state, "model_fields"):
-                    state_keys = list(self._final_state.model_fields.keys())
+                if isinstance(self._final_state, BaseModel):
+                    state_keys = list(type(self._final_state).model_fields.keys())
                     f.write(f"**State Keys:** `{', '.join(state_keys)}`\n\n")
                     for key in state_keys:
                         value = getattr(self._final_state, key, None)

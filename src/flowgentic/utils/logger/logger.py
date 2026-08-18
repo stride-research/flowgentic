@@ -7,7 +7,7 @@ import re
 import sys
 from contextlib import contextmanager
 
-from pythonjsonlogger import jsonlogger
+from pythonjsonlogger import json as jsonlogger
 
 from .colorfulFormatter import ColoredJSONFormatter
 
@@ -76,7 +76,11 @@ class ContextAwareQueueHandler(logging.handlers.QueueHandler):
 
 
 class Logger:
-	def __init__(self, colorful_output=True, logger_level: str = logging.DEBUG) -> None:
+	def __init__(
+		self,
+		colorful_output=True,
+		logger_level: str | int = logging.DEBUG,
+	) -> None:
 		self.colorful_output = colorful_output
 		self.queue_handler = self.__set_up_queue_handler()
 		self.root_logger = logging.getLogger()
@@ -85,7 +89,10 @@ class Logger:
 
 		atexit.register(self.shutdown)
 
-	def _resolve_logger_level(self, logger_level: str):
+	def _resolve_logger_level(self, logger_level: str | int) -> int:
+		if isinstance(logger_level, int):
+			return logger_level
+
 		logger_level = logger_level.lower().strip()
 		if logger_level == "notset":
 			return logging.NOTSET
@@ -136,13 +143,15 @@ class Logger:
 
 	def shutdown(self):
 		"""Stops the QueueListener and flushes any remaining logs."""
-		if self.listener:
-			logging.info("Shutting down logging listener...")
-			self.listener.stop()
-			logging.info("Logging listener stopped.")
-		# Remove the queue handler from the root logger to prevent further logging attempts
 		if self.queue_handler in self.root_logger.handlers:
 			self.root_logger.removeHandler(self.queue_handler)
+
+		# Do not enqueue status messages while the listener is stopping. Test runners
+		# may already have closed the captured output stream at interpreter shutdown.
+		listener = self.listener
+		self.listener = None
+		if listener:
+			listener.stop()
 
 
 LOG_CONTEXT = contextvars.ContextVar("log_context", default={})
