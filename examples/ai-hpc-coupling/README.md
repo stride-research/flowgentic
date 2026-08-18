@@ -61,7 +61,7 @@ The equivalent direct command is:
 
 ```bash
 PYTHONPATH="$PWD/src:/Users/mturilli/github/radical/radical.asyncflow/src" \
-  .direnv/venv-py311/bin/python \
+  .venv/bin/python \
   examples/ai-hpc-coupling/flowgentic_campaign.py
 ```
 

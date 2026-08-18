@@ -7,7 +7,7 @@ workspace_root="$(cd "${flowgentic_root}/../.." && pwd)"
 
 asyncflow_src="${ASYNCFLOW_SRC:-${workspace_root}/radical/radical.asyncflow/src}"
 adr_src="${ADR_SRC:-${workspace_root}/radical/radical.adr/src}"
-python_bin="${FLOWGENTIC_PYTHON:-${flowgentic_root}/.direnv/venv-py311/bin/python}"
+python_bin="${FLOWGENTIC_PYTHON:-${flowgentic_root}/.venv/bin/python}"
 controller="${1:-application}"
 
 if [[ "${controller}" != "application" && "${controller}" != "adr" ]]; then
