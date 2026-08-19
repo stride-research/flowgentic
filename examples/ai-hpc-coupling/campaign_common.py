@@ -299,6 +299,7 @@ def write_summary(
 
     if state.get("agent_trace"):
         summary["agents"] = {
+            "framework": state.get("agent_framework", "langgraph"),
             "model": state.get("agent_model", "unknown"),
             "decisions": state["agent_trace"],
         }
