@@ -1,4 +1,4 @@
-"""State and policy types shared by both AI-HPC demo implementations."""
+"""LangGraph state and application types used by the Flowgentic demos."""
 
 from __future__ import annotations
 
@@ -6,21 +6,10 @@ import asyncio
 from dataclasses import dataclass
 from typing import Annotated, Any, TypedDict
 
-from demo_support import SurrogateService
+from campaign_common import CampaignSettings, SurrogateService
 from langchain_core.messages import BaseMessage
 from langgraph.graph import add_messages
 from langgraph.graph.state import CompiledStateGraph
-
-
-@dataclass(frozen=True)
-class CampaignSettings:
-    """Scientific and operational constraints shared by both implementations."""
-
-    batch_size: int = 4
-    budget: int = 24
-    uncertainty_threshold: float = 0.25
-    max_cycles: int = 8
-    inject_failure: bool = True
 
 
 class CampaignState(TypedDict):

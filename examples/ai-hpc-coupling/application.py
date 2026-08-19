@@ -1,8 +1,8 @@
 """Deterministic Flowgentic AI-HPC synthetic application demo.
 
 Shows the scientific state, the Flowgentic execution mapping, and the agent
-graph. Synthetic science, timing, reporting, and local demo setup live in
-``demo_support.py``.
+graph. Shared science and resources live in ``campaign_common.py``;
+Flowgentic-specific instrumentation lives in ``demo_support.py``.
 """
 
 from __future__ import annotations
@@ -94,9 +94,7 @@ async def build_campaign(
                     state["cycle"],
                     index,
                     fail_once=(
-                        settings.inject_failure
-                        and state["cycle"] == 1
-                        and index == 0
+                        settings.inject_failure and state["cycle"] == 1 and index == 0
                     ),
                 )
                 for index, x in enumerate(candidates)

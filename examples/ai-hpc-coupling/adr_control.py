@@ -1,19 +1,37 @@
-"""ADR campaign control for the Flowgentic AI-HPC synthetic application.
+"""ADR campaign control shared by the AI-HPC synthetic applications.
 
-Shows the distinction between agent-graph execution and campaign-level
-observe-decide-act control.
+Shows the distinction between application-cycle execution and campaign-level
+observe-decide-act control. ADR can wrap either a compiled agent graph or the
+direct AsyncFlow RADICAL baseline.
 """
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable, Protocol, cast
 
-from campaign_types import CampaignApplication, CampaignSettings, CampaignState
-from demo_support import print_cycle
+from campaign_common import CampaignSettings, print_cycle
 from radical.adr import Decision, Operator, Policy, act, decide, goals, observe
 from radical.adr.goals import AnyGoal, Goal
 from radical.adr.state import Snapshot
 from radical.asyncflow import WorkflowEngine
+
+
+class InvokableGraph(Protocol):
+    """Minimal graph interface used by the retained LangGraph applications."""
+
+    async def ainvoke(self, state: dict[str, Any]) -> dict[str, Any]: ...
+
+
+class CampaignApplication(Protocol):
+    """State interface shared by direct and graph-based applications."""
+
+    state: dict[str, Any]
+
+
+class GraphApplication(CampaignApplication, Protocol):
+    """Additional interface supplied by the retained LangGraph applications."""
+
+    graph: InvokableGraph
 
 
 async def run_with_adr_control(
@@ -21,8 +39,11 @@ async def run_with_adr_control(
     settings: CampaignSettings,
     engine: WorkflowEngine,
     cycle_printer: Callable[[dict[str, Any], str], None] = print_cycle,
-) -> tuple[CampaignState, str]:
-    """Let ADR iterate the supplied graph until a campaign goal is met."""
+    cycle_executor: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]] | None = None,
+) -> tuple[dict[str, Any], str]:
+    """Let ADR iterate a supplied cycle until a campaign goal is met."""
+    if cycle_executor is None:
+        cycle_executor = cast(GraphApplication, application).graph.ainvoke
 
     class CampaignOperator(Operator):
         def __init__(self) -> None:
@@ -54,11 +75,11 @@ async def run_with_adr_control(
             )
 
         @act
-        async def execute_agent_cycle(
+        async def execute_campaign_cycle(
             self,
-            campaign_state: CampaignState,
-        ) -> CampaignState:
-            return await application.graph.ainvoke(campaign_state)
+            campaign_state: dict[str, Any],
+        ) -> dict[str, Any]:
+            return await cycle_executor(campaign_state)
 
         @observe
         def observe_campaign(self, snapshot: Snapshot) -> dict[str, Any]:
@@ -94,7 +115,7 @@ async def run_with_adr_control(
                 return Decision(stop=True)
 
             return Decision(
-                actions=[self.actions.execute_agent_cycle(campaign_state=state)]
+                actions=[self.actions.execute_campaign_cycle(campaign_state=state)]
             )
 
     operator = CampaignOperator()
