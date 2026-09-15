@@ -28,8 +28,8 @@ from pathlib import Path
 from flowgentic.demos.cnio.v2 import mocks
 from radical.asyncflow import LocalExecutionBackend, WorkflowEngine
 
-from flowgentic.demos.cnio.v2 import report
 from flowgentic.candidates import Candidate, CandidateState
+from flowgentic.demos.cnio.v2 import report
 from flowgentic.events import EventLog, EventType
 
 # Configuration parameters for the stubs
@@ -40,9 +40,8 @@ N_SEQUENCES = 3
 MIN_CONTACTS = 3
 ROSETTA_CUTOFF = -8.0
 
-
-async def main() -> None:
-    log = EventLog(Path.cwd() / "history.jsonl")
+async def run(log: EventLog) -> None:
+    """Execute one campaign, recording everything into `log`."""
     cpu = await LocalExecutionBackend(ThreadPoolExecutor(max_workers=2), name="cpu")
     gpu = await LocalExecutionBackend(ThreadPoolExecutor(max_workers=1), name="gpu")
     flow = await WorkflowEngine.create(backend=[cpu, gpu])
@@ -161,6 +160,8 @@ async def main() -> None:
             candidate_id=c.id,
             step="score_with_rosetta",
             payload={
+                "label": f"{c.results['design_interface']['sequence']}\n"
+                         f"dock {c.results['design_interface']['dock']}",
                 "sequence": c.results["design_interface"]["sequence"],
                 "dock": c.results["design_interface"]["dock"],
                 "mpnn_score": round(c.results["design_interface"]["mpnn_score"], 4),
@@ -185,9 +186,6 @@ async def main() -> None:
     await flow.shutdown()
     summarise(candidates + sequences)
 
-    figure = report.write(Path.cwd() / "history.jsonl", Path.cwd() / "reports")
-    print(f"  science metrics figure   -> {figure.relative_to(Path.cwd())}")
-
 
 def summarise(everything: list[Candidate]) -> None:
     """Print the qualifying table, then account for every candidate created."""
@@ -203,6 +201,14 @@ def summarise(everything: list[Candidate]) -> None:
         counts[c.state.value] = counts.get(c.state.value, 0) + 1
     print(f"\n  {len(everything)} candidates, all accounted for: {counts}")
     print("  full per-candidate record -> history.jsonl")
+
+
+async def main() -> None:
+    """Run one campaign, then render its metrics."""
+    history = Path.cwd() / "history.jsonl"
+    await run(EventLog(history))
+    figure = report.write(history, Path.cwd() / "reports")
+    print(f"  science metrics figure   -> {figure.relative_to(Path.cwd())}")
 
 
 if __name__ == "__main__":
