@@ -5,18 +5,20 @@ units they carry, which direction counts as better and where the cutoff sits
 are facts about protein design, not about logging -- `flowgentic` should not
 know what a ddG is.
 
-**The form changes with the number of candidates**, because per-candidate bars
-stop being readable somewhere around twenty. A real campaign is far larger
-than the smoke-test configuration: CNIO described roughly five poses each
-yielding ten sequences from a single shape, across many shapes, and Matteo's
-summary of how many inputs exist was "potentially a lot". So:
+**Always a distribution, never one bar per candidate.** A real campaign is far
+larger than the smoke-test configuration -- CNIO described roughly five poses
+each yielding ten sequences from a single shape, across many shapes, and
+Matteo's estimate of the input count was "potentially a lot" -- so per-candidate
+marks would be unreadable on any run that matters. Keeping one form means every
+run produces the same picture and two runs can be compared directly, rather
+than the chart silently changing shape with the population size.
 
-  - few candidates  -> one bar per candidate; identity is legible and useful
-  - many candidates -> a distribution per metric; identity stops mattering and
-    the shape of the population is the story
+A small run therefore looks sparse, which is honest: a handful of lonely bins
+is an accurate picture of having almost no data.
 
-Axis bounds are fixed constants in both modes, so two runs are directly
-comparable rather than silently rescaled.
+Axis bounds and bin count are fixed constants for the same reason. The same
+value always lands in the same bin, so nothing is silently rescaled between
+runs.
 """
 
 from __future__ import annotations
@@ -29,14 +31,16 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.ticker import MaxNLocator  # noqa: E402
 
 #: Emphasis encoding: one accent hue against a de-emphasis gray. The
 #: distinction is "this cleared the bar", not "these are different things",
 #: so a categorical scheme would be the wrong tool.
 SURFACE, INK, INK_2, MUTED, ACCENT = "#fcfcfb", "#0b0b0b", "#52514e", "#898781", "#2a78d6"
 
-#: Above this many candidates, switch from bars to distributions.
-BAR_LIMIT = 20
+#: Fixed bin count. Held constant, like the axis bounds, so the same value
+#: always lands in the same bin and two runs can be read side by side.
+BINS = 24
 
 
 @dataclass(frozen=True)
@@ -107,28 +111,6 @@ def _gate_line(ax, panel: Panel, n: int, vertical: bool) -> None:
                 fontsize=8, color=INK_2, va="bottom", ha="right")
 
 
-def _bars(axes, rows: list[dict], primary: Panel) -> None:
-    """One bar per candidate. Used while identity is still readable."""
-    labels = [r.get("label", r["candidate_id"]) for r in rows]
-    colors = [ACCENT if primary.passes(r.get(primary.field)) else MUTED for r in rows]
-    x = range(len(rows))
-
-    for ax, panel in zip(axes, PANELS):
-        values = [r.get(panel.field, 0.0) for r in rows]
-        ax.bar(x, values, color=colors, width=0.62, zorder=3)
-        span = panel.hi - panel.lo
-        for i, v in enumerate(values):
-            below = v < 0
-            ax.text(i, v - span * 0.025 if below else v + span * 0.025, f"{v:.2f}",
-                    ha="center", va="top" if below else "bottom",
-                    fontsize=9, color=INK, zorder=4)
-        ax.set_ylim(panel.lo, panel.hi)
-        ax.set_xticks(list(x))
-        ax.set_xticklabels(labels, fontsize=8, color=INK_2)
-        _style(ax, panel)
-        _gate_line(ax, panel, len(rows), vertical=False)
-
-
 def _distributions(axes, rows: list[dict], primary: Panel) -> None:
     """A stacked histogram per metric. Used once identity stops being legible.
 
@@ -140,16 +122,18 @@ def _distributions(axes, rows: list[dict], primary: Panel) -> None:
     failed = [r for r in rows if not primary.passes(r.get(primary.field))]
 
     for ax, panel in zip(axes, PANELS):
-        bins = 24
         ax.hist(
             [[r.get(panel.field, 0.0) for r in failed],
              [r.get(panel.field, 0.0) for r in passed]],
-            bins=bins, range=(panel.lo, panel.hi), stacked=True,
+            bins=BINS, range=(panel.lo, panel.hi), stacked=True,
             color=[MUTED, ACCENT], zorder=3,
         )
         ax.set_xlim(panel.lo, panel.hi)
         # Headroom so the summary line never lands on top of a tall bin.
         ax.set_ylim(0, ax.get_ylim()[1] * 1.22)
+        # A count axis takes whole numbers. On a small run matplotlib would
+        # otherwise offer "0.5 candidates".
+        ax.yaxis.set_major_locator(MaxNLocator(integer=True, nbins=6))
         _style(ax, panel, ylabel="candidates")
         _gate_line(ax, panel, len(rows), vertical=True)
 
@@ -174,11 +158,10 @@ def write(history: Path, out_dir: Path, filename: str = "metrics.png") -> Path:
 
     primary = PANELS[0]
     rows = sorted(rows, key=lambda r: r.get(primary.field, 0.0))
-    per_candidate = len(rows) <= BAR_LIMIT
 
     fig, axes = plt.subplots(1, len(PANELS), figsize=(4.3 * len(PANELS), 4.6),
                              facecolor=SURFACE)
-    (_bars if per_candidate else _distributions)(axes, rows, primary)
+    _distributions(axes, rows, primary)
 
     n_passed = sum(primary.passes(r.get(primary.field)) for r in rows)
     handles = [plt.Rectangle((0, 0), 1, 1, color=c) for c in (ACCENT, MUTED)]
