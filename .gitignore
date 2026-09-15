@@ -29,3 +29,7 @@ htmlcov/
 runs/
 *.jsonl
 slurm_logs/
+
+# run artifacts
+reports/
+history.jsonl

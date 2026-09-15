@@ -5,6 +5,7 @@ description = "Execution coordination layer for adaptive, agent-driven HPC workf
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "matplotlib>=3.11.2",
     "radical-asyncflow>=0.5.1",
 ]
 

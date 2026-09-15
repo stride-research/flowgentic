@@ -28,6 +28,7 @@ from pathlib import Path
 from flowgentic.demos.cnio.v2 import mocks
 from radical.asyncflow import LocalExecutionBackend, WorkflowEngine
 
+from flowgentic.demos.cnio.v2 import report
 from flowgentic.candidates import Candidate, CandidateState
 from flowgentic.events import EventLog, EventType
 
@@ -182,10 +183,13 @@ async def main() -> None:
 
     log.emit(EventType.RUN_FINISHED)
     await flow.shutdown()
-    report(candidates + sequences)
+    summarise(candidates + sequences)
+
+    figure = report.write(Path.cwd() / "history.jsonl", Path.cwd() / "reports")
+    print(f"  science metrics figure   -> {figure.relative_to(Path.cwd())}")
 
 
-def report(everything: list[Candidate]) -> None:
+def summarise(everything: list[Candidate]) -> None:
     """Print the qualifying table, then account for every candidate created."""
     scored = [c for c in everything if c.has_completed("score_with_rosetta")]
     print(f"\n  {'seq':>6} {'ddG':>7} {'pLDDT':>6} {'RMSD':>6}   outcome")

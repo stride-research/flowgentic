@@ -27,4 +27,5 @@ demo-v2: install ## Run the naive CageFlow pipeline with mocked stages
 
 clean: ## Remove generated run artifacts
 	rm -f history.jsonl
+	rm -rf reports
 	find . -name "__pycache__" -type d -not -path "./.venv/*" -exec rm -rf {} + 2>/dev/null || true
