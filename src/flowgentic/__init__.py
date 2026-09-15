@@ -1,8 +1,3 @@
-from .utils import Logger
+"""Execution coordination layer for adaptive, agent-driven HPC workflows."""
 
-from .settings.extract_settings import APP_SETTINGS
-
-logger_level = APP_SETTINGS["logger"]["level"]
-logger_instance = Logger(
-	colorful_output=True, logger_level=logger_level
-)  # Initiating logger
+__version__ = "0.1.0"

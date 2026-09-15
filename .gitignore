@@ -1,48 +1,31 @@
-# IDE
-.idea/
-.vscode/
-.DS_Store
-
-# Python
+# Python-generated files
 __pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-.Python
+*.py[oc]
 build/
 dist/
+wheels/
 *.egg-info/
-.eggs/
-*.egg
 
 # Virtual environments
-
 .venv/
-.env
+venv/
+
+# Secrets — never commit
 .env
 .env.*
+*.env
 
-# AI/ML & LangGraph
-*.pkl
-*.pickle
-*.model
-*.weights
-*.ckpt
-*.pth
-*.bin
-wandb/
-mlruns/
-.mlflow/
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 
-# Logs
-*.log
-logs/
+# OS
+.DS_Store
 
-# Temporary files
-*.tmp
-
-agent_run_data/
-im-working.txt
-
-# examples/**/agent_execution_results/
-*.db
+# Run artifacts (mock + real pipeline output)
+runs/
+*.jsonl
+slurm_logs/

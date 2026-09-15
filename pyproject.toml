@@ -1,100 +1,21 @@
 [project]
 name = "flowgentic"
 version = "0.1.0"
-description = "A library to enable running agentic frameworks on HPC environments."
+description = "Execution coordination layer for adaptive, agent-driven HPC workflows"
 readme = "README.md"
-authors = [
-    { name = "Javier Dominguez", email = "jdominguez.ieu2023@student.ie.edu"},
-    { name = "Yousef Amirghofran", email = "yamirghofran.ieu2023@student.ie.edu" },
-    { name = "Matteo Turilli", email = "mturilli@faculty.ie.edu"}
-]
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 dependencies = [
-    "langgraph>=0.6.6",
-    "radical.asyncflow @ git+https://github.com/radical-cybertools/radical.asyncflow.git@main",
-    "langchain-openai",
-    "langchain",
-    "langchain-ollama",
-    "langchain-core",
-    "langchain-community",
-    "langchain-mcp-adapters",
-    "radical-asyncflow",
-    "python-dotenv",
-    "academy-py",
-    "pydantic>=2.0.0",
-    "python-json-logger>=2.0.0",
-
+    "radical-asyncflow>=0.5.1",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "ruff>=0.12.11",
-    "pre-commit",
-    "mkdocs-material",
-    "mkdocstrings[python]",
-    "pymdown-extensions",
-    "mkdocs_gen_files",
-    "mkdocs-literate-nav",
-    "mkdocs-section-index",
-    "pytest>=7.0.0",
-    "pytest-asyncio>=0.21.0",
-    "uv>=0.1.0",
-    "pytest-asyncio>=0.21.0",
-    "pytest-cov",
+    "pytest>=8.0",
 ]
-
-[project.scripts]
-flowgentic = "flowgentic:main"
 
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.uv.sources]
-academy-py = { git = "https://github.com/proxystore/academy" }
-radical-asyncflow = { git = "https://github.com/radical-cybertools/radical.asyncflow.git" }
-
-[tool.ruff]
-line-length = 88
-include = ["./src/*", ]
-
-[tool.ruff.format]
-indent-style = "tab"
-quote-style = "double"
-docstring-code-format = true
-
-[tool.ruff.lint]
-select = [
-      "N",
-      "ANN",
-      "TID",
-      "E",
-      "C4",
-      "G",
-      "FAST001",
-      "FAST002",
-      "FAST003",
-      "ASYNC100",
-      "S101",
-      "S105",
-      "S106",
-      "S107",
-      "S310",
-      "S311",
-      "I", # isort
-]
-
-[tool.ruff.lint.pydocstyle]
-convention = "google"
-
-[dependency-groups]
-dev = [
-    "pytest>=8.4.2",
-    "pytest-asyncio>=1.2.0",
-]
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
+[tool.hatch.build.targets.wheel]
+packages = ["src/flowgentic"]
