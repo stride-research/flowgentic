@@ -33,3 +33,7 @@ slurm_logs/
 # run artifacts
 reports/
 history.jsonl
+
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md
