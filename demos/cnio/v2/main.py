@@ -17,7 +17,18 @@ accounted for, including the ones filtered out early, which is what CageFlow's
 own `history.jsonl` is for: "every dock's outcome -- pass, fail, or full
 progression -- so nothing is silently dropped". That record is produced here.
 
-Run:  uv run python demos/cnio/v2/main.py
+Run (from the repo root):  uv run python -m demos.cnio.v2.main
+
+
+#  NOTES 
+- Exception handling: 
+    - Timeout 
+    - Agentic retry or rule-based for standard errors 
+        - Keep track of all the exceptions faced and decide how to deal w them 
+        - Recall to the program only when its unclear 
+- Deadlines
+    - End of october: phase 3 -- agentic 
+
 """
 
 import asyncio
@@ -25,12 +36,15 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from flowgentic.demos.cnio.v2 import mocks
 from radical.asyncflow import LocalExecutionBackend, WorkflowEngine
 
 from flowgentic.candidates import Candidate, CandidateState
-from flowgentic.demos.cnio.v2 import report
 from flowgentic.events import EventLog, EventType
+
+from . import mocks, report
+
+#: demos/, regardless of which directory the script is invoked from.
+DEMOS_DIR = Path(__file__).resolve().parents[2]
 
 # Configuration parameters for the stubs
 RADII = [35.0, 40.0, 45.0, 50.0]
@@ -205,10 +219,10 @@ def summarise(everything: list[Candidate]) -> None:
 
 async def main() -> None:
     """Run one campaign, then render its metrics."""
-    history = Path.cwd() / "history.jsonl"
+    history = DEMOS_DIR / "history.jsonl"
     await run(EventLog(history))
-    figure = report.write(history, Path.cwd() / "reports")
-    print(f"  science metrics figure   -> {figure.relative_to(Path.cwd())}")
+    figure = report.write(history, DEMOS_DIR / "reports")
+    print(f"  science metrics figure   -> {figure.relative_to(DEMOS_DIR)}")
 
 
 if __name__ == "__main__":

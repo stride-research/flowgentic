@@ -38,18 +38,18 @@ Our architecture:
 ╚═══════════════════════════════════╤══════════════════════════════════╝
                                     │ bar, goals, trust, spread
                                     ▼
-╔══════════════════════════════════════════════════════════════════════╗
+╔════════════════════════════════════════════════════════════════════════╗
 ║  ALLOCATOR                                   cadence: every freed slot ║
 ║                                                                        ║
 ║      c = best_by(value_per_unit, ready)     ← argmax, pure arithmetic  ║
 ║               ╱                    ╲                                   ║
 ║              ▼                      ▼                                  ║
-║   ┌────────────────────┐   ┌──────────────────────┐                   ║
-║   │ TRAJECTORY MODEL   │   │ BUDGET  (a vector)   │                   ║
-║   │ predict → value, σ │   │  gpu ▓▓▓▓░░░░  40 h  │                   ║
-║   │ calibration()      │   │  cpu ▓▓░░░░░░ 900 h  │                   ║
-║   │ update(actual)     │   │  scarcest() → gpu    │                   ║
-║   └─────────▲──────────┘   └──────────────────────┘                   ║
+║   ┌────────────────────┐   ┌──────────────────────┐                    ║
+║   │ TRAJECTORY MODEL   │   │ BUDGET  (a vector)   │                    ║
+║   │ predict → value, σ │   │  gpu ▓▓▓▓░░░░  40 h  │                    ║
+║   │ calibration()      │   │  cpu ▓▓░░░░░░ 900 h  │                    ║
+║   │ update(actual)     │   │  scarcest() → gpu    │                    ║
+║   └─────────▲──────────┘   └──────────────────────┘                    ║
 ╚═════════════╪══════════════════════╤═══════════════════════════════════╝
               │ free labels          │ submit(resource=gpu) · cancel()
               │                      ▼

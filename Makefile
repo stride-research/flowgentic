@@ -20,12 +20,12 @@ demo-v1: install ## Show the v1 architecture sketch (pseudocode, does not execut
 	@echo "$(DIM)we are building toward, not something that runs.$(RESET)"
 	@echo ""
 	@uv run python -c "import ast; \
-	print(ast.get_docstring(ast.parse(open('src/flowgentic/demos/cnio/v1.py').read())) or '')"
+	print(ast.get_docstring(ast.parse(open('demos/cnio/v1.py').read())) or '')"
 
 demo-v2: install ## Run the naive CageFlow pipeline with mocked stages
-	uv run python -m flowgentic.demos.cnio.v2.main
+	uv run python -m demos.cnio.v2.main
 
 clean: ## Remove generated run artifacts
-	rm -f history.jsonl
-	rm -rf reports
+	rm -f demos/history.jsonl
+	rm -rf demos/reports
 	find . -name "__pycache__" -type d -not -path "./.venv/*" -exec rm -rf {} + 2>/dev/null || true
