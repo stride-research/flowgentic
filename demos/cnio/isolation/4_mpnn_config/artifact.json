@@ -1,0 +1,24 @@
+{
+  "selected_dock_index": 1,
+  "pdb_path": "/home/javidsegura/software/isolation/_scratch/cageflow_out/dock_1/docked_assembly.pdb",
+  "pdb_bytes": 655296,
+  "mpnn_config_path": "/home/javidsegura/software/isolation/_scratch/cageflow_out/dock_1/mpnn_input.json",
+  "mpnn_config_keys": [
+    "aa_bias_list",
+    "aa_list",
+    "backbone_noise",
+    "batch_size",
+    "chains_to_design",
+    "design_positions",
+    "homooligomer",
+    "model_name",
+    "num_seq_per_target",
+    "omit_aas",
+    "out_folder",
+    "pdb",
+    "sampling_temp",
+    "seed",
+    "specify_non_fixed",
+    "symmetry_residues"
+  ]
+}

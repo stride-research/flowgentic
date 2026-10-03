@@ -34,6 +34,25 @@ kind of fake science this harness exists to avoid. We check the *contract* (neve
 limit, never includes a failure, always a valid list), not whether we'd have picked the same
 order.
 
+## Correction: Laura's stated criterion for this step is slightly misleading, verified
+
+Laura's own description of what to check at this step: *"PDB file produced for each dock for
+top n docks. If geometry passes, history file indicates 'selected' or 'not selected'."* Checked
+directly against the real code before trusting this:
+
+- **There is no literal `"selected"` status anywhere in CageFlow.** Every status string the code
+  ever writes to history was grepped: `not_selected`, `geometry_failed`, `designed`,
+  `design_failed`, `scored`, `rosetta_scored`, `folded`. A dock being "selected" is *implicit* —
+  it simply isn't marked `not_selected`, and later shows up with status `"designed"` once step 5
+  runs on it.
+- **The PDB file is not written by `select_top_docks()` at all.** It's written by
+  `build_mpnn_config()` — step 4 — via `assembly_path.write_text(docked_oligomer["assembly_pdb"])`.
+
+So her criterion actually describes the *combined downstream effect* of steps 3, 4, and 5, not
+`select_top_docks()` in isolation. **This step's own, real, verifiable contract is only the
+first half** — which indices get kept, and the `not_selected` records for the rest. The PDB-file
+half of her criterion is verified in step 4's isolation instead, where it actually happens.
+
 ## What we are NOT touching
 
 - `CageFlow.select_top_docks()` — the real function, called with real dock and geometry results.
