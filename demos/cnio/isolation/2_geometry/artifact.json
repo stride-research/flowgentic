@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "n_clashes": 0,
+  "n_contacts": 108,
+  "steric_ok": true,
+  "dock_solution": {
+    "spin": 83.0,
+    "lat": 0.0,
+    "lon": 0.0,
+    "radius": 24.25,
+    "score": 10.165913257598877,
+    "contacts": 36,
+    "min_clash": 5.24221658706665,
+    "helix_contacts": 0
+  }
+}

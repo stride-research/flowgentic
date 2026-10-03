@@ -12,6 +12,70 @@ and artifact bookkeeping in every one of those scripts.
 
 Cluster paths below are hardcoded, not discovered, because these scripts
 exist to run in exactly one place: the IE cluster, never locally.
+
+There is no such thing as a "step-only" config in CageFlow. Every stage
+function -- dock_oligomer, evaluate_geometry, select_top_docks,
+design_interface, score_with_rosetta, fold_oligomer -- takes a parameter
+literally named `config`, and all of them receive the SAME dict. Each one
+just reads the handful of keys it cares about via config.get(...) and
+ignores the rest. So a step-scoped config doesn't exist to use instead --
+this full shape is the only input contract her real functions accept.
+
+That also means hand-picking "just the keys this step needs" is riskier
+than it looks: dock_oligomer's own body reads 18 keys, but it ALSO calls
+three helpers defined earlier in the file (_spin_period,
+_resolve_radius_window, _prepare_component) that read 9 more
+(idealise, idealise_ref_chain, max_fidelity_rmsd, radius_search_max,
+spin_period_max_closure, use_spin_period, clash_dist, contact_dist,
+dock_ranges) -- easy to miss on a shallow read of just the one function.
+Using her real, complete, validated config sidesteps that risk entirely.
+
+## Config reference (config.1c5e_probe.json, our isolation default)
+
+Keys WE override in load_config(), and why:
+
+    cage_designer_path   her CNIO path -> our cluster's ProteinBuilder clone
+    mpnn_dir             her CNIO path -> our cluster's ProteinMPNN clone
+    colabfold_bin/_data  unset in probe -> our installed localcolabfold
+    executor             -> "sequential" (the plain for-loop; no Track B yet)
+    scaffold_pdb         made absolute (CageFlow reads it relative to cwd)
+    out_dir              made absolute, under _scratch/
+
+Every other key below comes from HER file, unchanged -- these are not our
+settings, they are what she considers a reasonable small sanity run:
+
+    scaffold_pdb          1c5e_trimer.pdb -- her Oct 2 trimer, 3 identical
+                          95-residue chains
+    symmetry              "T" (tetrahedral) -- how the 3 copies assemble
+    dock_ranges           {radius_step: 0.25, spin_step: 1.0} -- the
+                          docking grid's step sizes. FINER than her
+                          full-scale config's 0.5, not coarser.
+    n_docks               5 -- how many top docks select_top_docks keeps
+    clash_dist            3.0 A -- how close atoms can get before "clash"
+    contact_dist          12.0 A -- how close counts as "in contact"
+    min_contacts          3 -- minimum contacts for a dock to pass geometry
+    num_seq_per_target    4 -- ProteinMPNN sequences generated per dock
+                          (100 in her full-scale config -- this is the
+                          main thing that makes probe cheap)
+    rosetta_score_cutoff  2.0 -- the ddG gate: below this, a design passes
+    rosetta_chi_min       true -- cheap side-chain repacking before scoring
+    rosetta_seed          a fixed seed, for reproducibility
+    fold_oligomers        false in probe -- fold is opt-in; step 9's
+                          isolation overrides this to true explicitly
+    fold_top_n            1 -- how many sequences per dock get folded
+    fold_msa_mode         "mmseqs2_uniref_env" -- ColabFold's MSA mode
+    fold_model_type       "alphafold2_multimer_v3"
+    fold_num_models       1, fold_num_recycle 3, fold_seed, fold_timeout_s
+                          -- ColabFold inference settings
+    flip                  true -- try the flipped placement too
+    select_by             "cbeta" -- how select_top_docks ranks candidates
+    mpnn_force_cpu        true -- run ProteinMPNN on CPU, not GPU
+    thread_mode           "replace" -- how a designed sequence is threaded
+                          onto the structure before Rosetta scoring
+    max_materialized      50 in her file; we further override this
+                          per-script (e.g. 1 for step 1's isolation) --
+                          see that step's own SUCCESS.md for why that is
+                          safe and does not reduce the search itself
 """
 
 from __future__ import annotations
