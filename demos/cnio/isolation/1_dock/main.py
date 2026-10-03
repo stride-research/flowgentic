@@ -12,6 +12,10 @@ from _shared import check, load_config, write_artifact  # noqa: E402
 
 import CageFlow  # noqa: E402
 
+# max_materialized=1: the search grid is still fully scanned and scored
+# (real science, unreduced); this only limits how many of the already-
+# ranked candidates get the expensive step of building 3D coordinates.
+# See SUCCESS.md for the full reasoning and the numbers that back it up.
 config = load_config(max_materialized=1)
 executor = CageFlow.build_executor(config)
 budget = CageFlow.build_budget(config)

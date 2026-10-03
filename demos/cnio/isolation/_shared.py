@@ -30,19 +30,30 @@ spin_period_max_closure, use_spin_period, clash_dist, contact_dist,
 dock_ranges) -- easy to miss on a shallow read of just the one function.
 Using her real, complete, validated config sidesteps that risk entirely.
 
-## Config reference (config.1c5e_probe.json, our isolation default)
+## Config reference
+
+**Everything below explains the VALUES in `config.1c5e_probe.json` specifically** (our
+isolation default -- see DEFAULT_BASE_CONFIG). The key *names* and what each one means are the
+same across any CageFlow config; only the values differ. If `load_config(base=...)` is ever
+pointed at a different file (e.g. her real `config.1c5e_noflip.json`), the key meanings below
+still apply, but re-check the actual values in that file -- don't assume they match what's
+written here.
 
 Keys WE override in load_config(), and why:
 
     cage_designer_path   her CNIO path -> our cluster's ProteinBuilder clone
     mpnn_dir             her CNIO path -> our cluster's ProteinMPNN clone
     colabfold_bin/_data  unset in probe -> our installed localcolabfold
-    executor             -> "sequential" (the plain for-loop; no Track B yet)
     scaffold_pdb         made absolute (CageFlow reads it relative to cwd)
     out_dir              made absolute, under _scratch/
 
+We do NOT override `executor` -- every config already specifies its own (probe already says
+"sequential"; forcing it here would silently undo that choice if `base=` is ever pointed at a
+config that picks something else, like her full-scale config's "process").
+
 Every other key below comes from HER file, unchanged -- these are not our
-settings, they are what she considers a reasonable small sanity run:
+settings, they are what she considers a reasonable small sanity run, and
+the VALUES shown are config.1c5e_probe.json's specifically:
 
     scaffold_pdb          1c5e_trimer.pdb -- her Oct 2 trimer, 3 identical
                           95-residue chains
@@ -137,7 +148,6 @@ def load_config(base: str = DEFAULT_BASE_CONFIG, **overrides) -> dict:
     base["mpnn_dir"] = MPNN_DIR
     base["colabfold_bin"] = COLABFOLD_BIN
     base["colabfold_data"] = COLABFOLD_DATA
-    base["executor"] = "sequential"
     base["scaffold_pdb"] = str(CAGEFLOW_DIR / base["scaffold_pdb"])
     base["out_dir"] = str(SCRATCH_DIR / "cageflow_out")
     base.update(overrides)
