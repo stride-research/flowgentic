@@ -31,9 +31,10 @@ COLABFOLD_DATA = str(COLABFOLD_DIR / "colabfold")
 sys.path.insert(0, str(CAGEFLOW_DIR))
 import CageFlow  # noqa: E402  (path must be set before this import)
 
-#: One shared artifact directory, so a run can be inspected afterward
-#: without re-running anything.
-ARTIFACTS_DIR = Path(__file__).resolve().parent / "artifacts"
+#: Shared scratch dir for things CageFlow itself writes (e.g. the
+#: component_preparation.json report). NOT where artifact.json goes --
+#: each step writes that beside its own isolate.py, see write_artifact().
+SCRATCH_DIR = Path(__file__).resolve().parent / "_scratch"
 
 
 def load_config(**overrides) -> dict:
@@ -59,15 +60,23 @@ def load_config(**overrides) -> dict:
     base["colabfold_data"] = COLABFOLD_DATA
     base["executor"] = "sequential"
     base["scaffold_pdb"] = str(CAGEFLOW_DIR / base["scaffold_pdb"])
-    base["out_dir"] = str(ARTIFACTS_DIR / "cageflow_out")
+    base["out_dir"] = str(SCRATCH_DIR / "cageflow_out")
     base.update(overrides)
     return base
 
 
-def write_artifact(name: str, data) -> Path:
-    """Write one step's result as inspectable JSON, overwriting any prior run."""
-    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
-    path = ARTIFACTS_DIR / f"{name}.json"
+def write_artifact(caller_file: str, data) -> Path:
+    """Write artifact.json beside the calling step's isolate.py.
+
+    Every step's evidence lives next to its own script and SUCCESS.md --
+    one folder per step holds everything about it: how to run it, what
+    passing looks like, and what actually happened last time it ran.
+
+    Args:
+        caller_file: pass `__file__` from the isolate.py calling this.
+        data: JSON-serializable result to record.
+    """
+    path = Path(caller_file).resolve().parent / "artifact.json"
     path.write_text(json.dumps(data, indent=2, default=str))
     return path
 
