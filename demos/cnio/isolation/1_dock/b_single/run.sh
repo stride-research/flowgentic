@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Step 1: dock_oligomer, in isolation. See SUCCESS.md for what this proves.
+# Step 1b: dock_two_component, in isolation. See SUCCESS.md for what this proves.
 set -euo pipefail
 cd "$(dirname "$0")"
 

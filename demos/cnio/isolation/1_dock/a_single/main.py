@@ -1,4 +1,4 @@
-"""Step 1: dock_oligomer.
+"""Step 1a: dock_oligomer (one-component docking).
 
 See SUCCESS.md in this folder for what this proves, what it does not
 touch, and how the input was reduced without reducing the science.
@@ -7,7 +7,7 @@ touch, and how the input was reduced without reducing the science.
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from _shared import check, load_config, write_artifact  # noqa: E402
 
 import CageFlow  # noqa: E402

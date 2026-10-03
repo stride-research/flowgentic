@@ -1,4 +1,4 @@
-# Step 1: `dock_oligomer` — success criteria
+# Step 1a: `dock_oligomer` (one-component) — success criteria
 
 ## What this step is, in plain terms
 
