@@ -111,6 +111,17 @@ def _gate_line(ax, panel: Panel, n: int, vertical: bool) -> None:
                 fontsize=8, color=INK_2, va="bottom", ha="right")
 
 
+def _values(rows: list[dict], panel: Panel) -> list[float]:
+    """The measurements that actually exist for this panel.
+
+    A candidate that was never folded has no pLDDT, and substituting zero would
+    draw it as the worst possible fold rather than as absent. CageFlow folds
+    only `fold_top_n` per dock, so most candidates legitimately have nothing
+    here and the count per panel differs.
+    """
+    return [r[panel.field] for r in rows if r.get(panel.field) is not None]
+
+
 def _distributions(axes, rows: list[dict], primary: Panel) -> None:
     """A stacked histogram per metric. Used once identity stops being legible.
 
@@ -123,8 +134,7 @@ def _distributions(axes, rows: list[dict], primary: Panel) -> None:
 
     for ax, panel in zip(axes, PANELS):
         ax.hist(
-            [[r.get(panel.field, 0.0) for r in failed],
-             [r.get(panel.field, 0.0) for r in passed]],
+            [_values(failed, panel), _values(passed, panel)],
             bins=BINS, range=(panel.lo, panel.hi), stacked=True,
             color=[MUTED, ACCENT], zorder=3,
         )
@@ -138,11 +148,16 @@ def _distributions(axes, rows: list[dict], primary: Panel) -> None:
         _gate_line(ax, panel, len(rows), vertical=True)
 
         # The summary a bar chart gave away for free, restated in text.
-        values = sorted(r.get(panel.field, 0.0) for r in rows)
-        best = values[0] if panel.better == "lower" else values[-1]
-        median = values[len(values) // 2]
-        ax.text(0.99, 0.96, f"best {best:.2f}   median {median:.2f}",
-                transform=ax.transAxes, ha="right", va="top",
+        values = sorted(_values(rows, panel))
+        if values:
+            best = values[0] if panel.better == "lower" else values[-1]
+            median = values[len(values) // 2]
+            note = f"best {best:.2f}   median {median:.2f}"
+            if len(values) < len(rows):
+                note += f"   (n={len(values)})"
+        else:
+            note = "not measured"
+        ax.text(0.99, 0.96, note, transform=ax.transAxes, ha="right", va="top",
                 fontsize=8.5, color=INK_2)
 
 

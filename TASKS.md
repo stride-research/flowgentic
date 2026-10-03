@@ -6,20 +6,21 @@ PROCESS
       Note: swap rather than rewrite. We dont speculate which are the actual scripts out of her code. We wait for her confirmation (i.e., blocked behavior)
 3. Install the stack on the cluster, smoke-test each command independently (me)
 4. Run sequentially the pipeline w barries
-      0. Define metrics
-            a) Best result per GPU-hour => accumulated GPU-consumed for a given result (i.e., science metric such as roseta or pLDDT)
-            b) Time to first acceptable candidate 
-            c) CPU/GPU utilization
-            d) wasted cancelled computer 
-      1. Create pipeline class
-      2. Pipeline step abstraction
-      3. Create mock executables (for each stage)
-      4. Add the metrics into the pipeline class
-      5. Run mcok
-      6. Propose async architecture
-      7. Inteligence layer integration (different policies)
+      1. Test each step isolated
+      2. Add metrics
+            2a. System 
+            2b. Science 
+      3. Run the whole pipeline together
 5. Run asynchronously
 5. Run w inteligence layer 
+      - Replication w noisy rosetta
+      - Multi-metric validation
+      - Add decision making here: ddG is a **preference, with a fallback**, not a requirement. Its own docstring: *"Prefers real
+Rosetta ddG where it exists and falls back to the ProteinMPNN score otherwise... so folding still
+works on a pipeline that never reached Rosetta, just ranked on weaker evidence."*
+
+
+
 
 All the classes:
 Candidate    the unit that flows. id, state, provenance (which dock/seq), accumulated results

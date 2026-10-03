@@ -29,10 +29,14 @@ htmlcov/
 runs/
 *.jsonl
 slurm_logs/
-
-# run artifacts
 reports/
 history.jsonl
+
+# ...but reference material is not a run artifact. Laura's real CageFlow output
+# is checked in deliberately: it is the schema we have to produce, and the only
+# example of it we have.
+!demos/cnio/reference/
+!demos/cnio/reference/*.jsonl
 
 
 #Ignore vscode AI rules
