@@ -106,12 +106,6 @@ COLABFOLD_DATA = str(COLABFOLD_DIR / "colabfold")
 sys.path.insert(0, str(CAGEFLOW_DIR))
 import CageFlow  # noqa: E402  (path must be set before this import)
 
-#: Shared scratch dir for things CageFlow itself writes (e.g. the
-#: component_preparation.json report). NOT where artifact.json goes --
-#: each step writes that beside its own main.py, see write_artifact().
-SCRATCH_DIR = Path(__file__).resolve().parent / "_scratch"
-
-
 #: config.1c5e_noflip.json is the literal config Laura pointed to when she
 #: pushed 1c5e_trimer.pdb (b24916b touches exactly these two files). It is
 #: full-scale: num_seq_per_target=100, fold_oligomers=true -- too expensive
@@ -124,7 +118,7 @@ SCRATCH_DIR = Path(__file__).resolve().parent / "_scratch"
 DEFAULT_BASE_CONFIG = "config.1c5e_probe.json"
 
 
-def load_config(base: str = DEFAULT_BASE_CONFIG, **overrides) -> dict:
+def load_config(caller_file: str, base: str = DEFAULT_BASE_CONFIG, **overrides) -> dict:
     """One of Laura's own configs, repointed at our cluster clones.
 
     Starting from HER config rather than a hand-built dict means every
@@ -132,7 +126,17 @@ def load_config(base: str = DEFAULT_BASE_CONFIG, **overrides) -> dict:
     runs -- the whole point of isolation is testing her pipeline, not a
     reimplementation of its inputs.
 
+    `out_dir` is derived from `caller_file`, giving every step its OWN
+    on-disk scratch space (`<step folder>/_scratch/cageflow_out`). Earlier
+    versions pointed every step at one shared directory, so running step 5
+    silently overwrote step 4's on-disk files for the same dock indices --
+    each script still produced a correct result on its own, but one
+    step's run could corrupt another's leftover artifacts. One real input
+    per caller_file keeps steps independent on disk, matching
+    write_artifact()'s existing pattern.
+
     Args:
+        caller_file: pass `__file__` from the calling main.py.
         base: filename under CageFlow's configs/ to start from. Defaults
             to the lightweight probe config; pass e.g.
             "config.1c5e_noflip.json" for the full-scale one she handed us.
@@ -149,7 +153,7 @@ def load_config(base: str = DEFAULT_BASE_CONFIG, **overrides) -> dict:
     base["colabfold_bin"] = COLABFOLD_BIN
     base["colabfold_data"] = COLABFOLD_DATA
     base["scaffold_pdb"] = str(CAGEFLOW_DIR / base["scaffold_pdb"])
-    base["out_dir"] = str(SCRATCH_DIR / "cageflow_out")
+    base["out_dir"] = str(Path(caller_file).resolve().parent / "_scratch" / "cageflow_out")
     base.update(overrides)
     return base
 

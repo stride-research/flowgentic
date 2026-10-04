@@ -17,7 +17,7 @@ import CageFlow  # noqa: E402
 # observable with more than one candidate to choose among. The search
 # grid is still scanned at full density either way; we are only keeping
 # more of the already-ranked candidates than step 1 did. See SUCCESS.md.
-config = load_config(max_materialized=4, n_docks=2)
+config = load_config(__file__, max_materialized=4, n_docks=2)
 executor = CageFlow.build_executor(config)
 budget = CageFlow.build_budget(config)
 

@@ -16,7 +16,7 @@ import CageFlow  # noqa: E402
 # (real science, unreduced); this only limits how many of the already-
 # ranked candidates get the expensive step of building 3D coordinates.
 # See SUCCESS.md for the full reasoning and the numbers that back it up.
-config = load_config(max_materialized=1)
+config = load_config(__file__, max_materialized=1)
 executor = CageFlow.build_executor(config)
 budget = CageFlow.build_budget(config)
 

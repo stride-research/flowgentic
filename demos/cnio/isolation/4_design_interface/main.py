@@ -15,7 +15,7 @@ import CageFlow  # noqa: E402
 # Same reasoning as step 3: need more than one dock so there's something
 # real to select and design. max_materialized=4, n_docks=2 -- the search
 # grid is still unreduced, see 1_dock's SUCCESS.md.
-config = load_config(max_materialized=4, n_docks=2)
+config = load_config(__file__, max_materialized=4, n_docks=2)
 executor = CageFlow.build_executor(config)
 budget = CageFlow.build_budget(config)
 
@@ -39,34 +39,44 @@ check("design_interface returned a dict keyed by selected dock indices",
 check("at least one dock designed successfully",
       len(designed) > 0, f"got {len(designed)} of {len(selected)} selected")
 
-i = next(iter(designed))
-sequences = designed[i]
 n_expected = config["num_seq_per_target"]
 
-check(f"designed the expected number of sequences ({n_expected})",
-      len(sequences) == n_expected, f"got {len(sequences)}")
-check("every design carries a non-empty sequence and a real score",
-      all(d.get("seq") and isinstance(d.get("score"), float) for d in sequences),
-      str(sequences[0]) if sequences else "no designs")
+# Checked for EVERY dock that designed successfully, not just the first.
+# Docks genuinely differ in interface size -- a real run showed dock 1
+# with 432 design positions and dock 3 with 396 -- so "the first one was
+# fine" does not establish the others were. The sequence COUNT is
+# config-driven and so should be identical per dock; the sequences
+# themselves are not.
+for i, sequences in sorted(designed.items()):
+    check(f"dock {i}: designed the expected number of sequences ({n_expected})",
+          len(sequences) == n_expected, f"got {len(sequences)}")
+    check(f"dock {i}: every design carries a non-empty sequence and a real score",
+          all(d.get("seq") and isinstance(d.get("score"), float) for d in sequences),
+          str(sequences[0]) if sequences else "no designs")
 
-# The retired standalone mpnn_config step's check, now verified as a side
-# effect of the real call above instead of calling build_mpnn_config
-# ourselves.
-pdb_path = Path(config["out_dir"]) / f"dock_{i}" / "docked_assembly.pdb"
-mpnn_cfg_path = Path(config["out_dir"]) / f"dock_{i}" / "mpnn_input.json"
-check("the PDB file for the designed dock was written to disk",
-      pdb_path.exists() and pdb_path.read_text() == docks[i]["assembly_pdb"],
-      str(pdb_path))
-check("the ProteinMPNN config file was written to disk",
-      mpnn_cfg_path.exists(), str(mpnn_cfg_path))
+    # The retired standalone mpnn_config step's check, now verified as a
+    # side effect of the real call above rather than by calling
+    # build_mpnn_config ourselves -- also per dock.
+    pdb_path = Path(config["out_dir"]) / f"dock_{i}" / "docked_assembly.pdb"
+    mpnn_cfg_path = Path(config["out_dir"]) / f"dock_{i}" / "mpnn_input.json"
+    check(f"dock {i}: the PDB file was written to disk and matches the dock",
+          pdb_path.exists() and pdb_path.read_text() == docks[i]["assembly_pdb"],
+          str(pdb_path))
+    check(f"dock {i}: the ProteinMPNN config file was written to disk",
+          mpnn_cfg_path.exists(), str(mpnn_cfg_path))
 
 write_artifact(__file__, {
-    "designed_dock_index": i,
-    "n_sequences": len(sequences),
-    "sequences": [{"seq": d["seq"], "score": d["score"]} for d in sequences],
-    "pdb_path": str(pdb_path),
-    "mpnn_config_path": str(mpnn_cfg_path),
+    "n_docks_designed": len(designed),
+    "docks": {
+        str(i): {
+            "n_sequences": len(seqs),
+            "sequences": [{"seq": d["seq"], "score": d["score"]} for d in seqs],
+            "pdb_path": str(Path(config["out_dir"]) / f"dock_{i}" / "docked_assembly.pdb"),
+        }
+        for i, seqs in sorted(designed.items())
+    },
 })
 
-print(f"\ndesigned {len(sequences)} sequences for dock {i}, "
-      f"scores: {[round(d['score'], 3) for d in sequences]}")
+for i, seqs in sorted(designed.items()):
+    print(f"\ndesigned {len(seqs)} sequences for dock {i}, "
+          f"scores: {[round(d['score'], 3) for d in seqs]}")

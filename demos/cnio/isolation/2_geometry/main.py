@@ -15,7 +15,7 @@ import CageFlow  # noqa: E402
 # max_materialized=1: same reasoning as step 1 -- we only need one real
 # dock to feed geometry, the search itself is unreduced. See 1_dock's
 # SUCCESS.md for the full argument.
-config = load_config(max_materialized=1)
+config = load_config(__file__, max_materialized=1)
 executor = CageFlow.build_executor(config)
 budget = CageFlow.build_budget(config)
 

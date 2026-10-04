@@ -25,12 +25,23 @@ updated to this single module for consistency.
 
 - `design_interface()` returns a dict keyed only by the dock indices it actually designed.
 - At least one dock designed successfully.
-- The number of sequences matches `config["num_seq_per_target"]` exactly (4 in our probe config).
-- Every design carries a real, non-empty sequence and a real numeric score.
+- **For every dock that designed successfully** (not just the first — see below): the number of
+  sequences matches `config["num_seq_per_target"]` exactly (4 in our probe config), every design
+  carries a real non-empty sequence and a real numeric score, and the PDB/config side effects
+  (next bullet) are present.
 - **The PDB-file half of step 3's criterion (deferred here — see step 3's SUCCESS.md)**: the
   dock's structure was actually written to disk by `build_mpnn_config()`, called internally, and
   its bytes match the dock's own `assembly_pdb` exactly. We check this as a side effect of
   calling the real top-level function, not by calling the internal helper ourselves.
+
+## Why every dock, not just one
+
+An earlier version only inspected one arbitrary dock. That misses something real: docks genuinely
+differ in interface size — this run shows dock 1 with 432 design positions and dock 3 with 396 —
+so confirming the checks hold for one dock says nothing about whether they hold for another. The
+sequence *count* is config-driven and so is guaranteed uniform across docks by construction; the
+sequences themselves are not, and only checking every dock that actually succeeded catches a bug
+that might only manifest for one dock's specific interface shape.
 
 ## What we are NOT touching
 
@@ -44,25 +55,31 @@ updated to this single module for consistency.
 
 ```
   [PASS] at least one dock was selected to design  -- got 2
-  [PASS] design_interface returned a dict keyed by selected dock indices  -- keys=[1], selected=[1, 3]
-  [PASS] at least one dock designed successfully  -- got 1 of 2 selected
-  [PASS] designed the expected number of sequences (4)  -- got 4
-  [PASS] every design carries a non-empty sequence and a real score
-  [PASS] the PDB file for the designed dock was written to disk
-  [PASS] the ProteinMPNN config file was written to disk
+  [PASS] design_interface returned a dict keyed by selected dock indices  -- keys=[1, 3], selected=[1, 3]
+  [PASS] at least one dock designed successfully  -- got 2 of 2 selected
+  [PASS] dock 1: designed the expected number of sequences (4)  -- got 4
+  [PASS] dock 1: every design carries a non-empty sequence and a real score
+  [PASS] dock 1: the PDB file was written to disk and matches the dock
+  [PASS] dock 1: the ProteinMPNN config file was written to disk
+  [PASS] dock 3: designed the expected number of sequences (4)  -- got 4
+  [PASS] dock 3: every design carries a non-empty sequence and a real score
+  [PASS] dock 3: the PDB file was written to disk and matches the dock
+  [PASS] dock 3: the ProteinMPNN config file was written to disk
 
 designed 4 sequences for dock 1, scores: [0.616, 0.6997, 0.7823, 0.7256]
+designed 4 sequences for dock 3, scores: [0.5521, 0.5986, 0.6906, 0.6224]
 ```
 
-Dock 3's design failed in the same run with an unrelated subprocess error — recorded by
+A previous run had dock 3 fail with a transient, unrelated subprocess error — recorded by
 `design_interface()` itself as `status="design_failed"` in history, not silently dropped, exactly
-as her docstring says it should be. Our check only requires *at least one* success, which is the
-honest bar for an isolation test: we're proving the code path works, not that every input
-succeeds every time.
+as her docstring says it should be. Our check only requires *at least one* success for the whole
+step, which is the honest bar for an isolation test: we're proving the code path works, not that
+every input succeeds every time.
 
-Real designed sequences (one shown, scoring 0.7823 — the best of the 4): a 96-residue chain,
-repeated and tied across all 12 symmetric copies of the dock, exactly as `homooligomer: true`
-in the MPNN config specifies.
+Real designed sequences (dock 1's best, scoring 0.7823): a 96-residue chain, repeated and tied
+across all 12 symmetric copies of the dock, exactly as `homooligomer: true` in the MPNN config
+specifies. Dock 1 and dock 3 get genuinely different sequences — different interface, different
+design.
 
 See `artifact.json` in this folder for the full result, including all 4 real sequences, from the
 last cluster run.
