@@ -43,7 +43,7 @@ Keys WE override in load_config(), and why:
 
     cage_designer_path   her CNIO path -> our cluster's ProteinBuilder clone
     mpnn_dir             her CNIO path -> our cluster's ProteinMPNN clone
-    colabfold_bin/_data  unset in probe -> our installed localcolabfold
+    colabfold_bin/_data/_python  unset in probe -> our installed localcolabfold
     scaffold_pdb         made absolute (CageFlow reads it relative to cwd)
     out_dir              made absolute, under _scratch/
 
@@ -102,6 +102,11 @@ MPNN_DIR = str(HOME / "software" / "ProteinMPNN")
 COLABFOLD_DIR = HOME / "software" / "localcolabfold_install" / "localcolabfold"
 COLABFOLD_BIN = str(COLABFOLD_DIR / "colabfold-conda" / "bin" / "colabfold_batch")
 COLABFOLD_DATA = str(COLABFOLD_DIR / "colabfold")
+#: fold.py's MSA-fetch half uses a SEPARATE config key (colabfold_python)
+#: from colabfold_bin, defaulting to Laura's own CNIO path
+#: (/home/lwoods/mambaforge-pypy3/...) if unset -- confirmed this exists
+#: in our own install, same conda env colabfold_batch itself lives in.
+COLABFOLD_PYTHON = str(COLABFOLD_DIR / "colabfold-conda" / "bin" / "python")
 
 sys.path.insert(0, str(CAGEFLOW_DIR))
 import CageFlow  # noqa: E402  (path must be set before this import)
@@ -152,6 +157,7 @@ def load_config(caller_file: str, base: str = DEFAULT_BASE_CONFIG, **overrides) 
     base["mpnn_dir"] = MPNN_DIR
     base["colabfold_bin"] = COLABFOLD_BIN
     base["colabfold_data"] = COLABFOLD_DATA
+    base["colabfold_python"] = COLABFOLD_PYTHON
     base["scaffold_pdb"] = str(CAGEFLOW_DIR / base["scaffold_pdb"])
     base["out_dir"] = str(Path(caller_file).resolve().parent / "_scratch" / "cageflow_out")
     base.update(overrides)

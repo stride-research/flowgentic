@@ -1,3 +1,4 @@
-1. Test each step in isolation
-2. Add metrics 
-3. Run together
+1. Set-up cluster
+2. Test in isolation
+      a) Re-run everything indepedently 
+3. Run all together 
