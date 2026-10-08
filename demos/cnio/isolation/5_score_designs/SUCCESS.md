@@ -8,7 +8,7 @@ mean of the best `config["top_fraction_for_score"]` (75% by default) of its sequ
 number summarizing "how good are this dock's designs overall."
 
 **This number gates nothing.** It's recorded to history and is informational only — the real
-pass/fail gate is Rosetta's ddG (step 7).
+pass/fail gate is Rosetta's ddG (step 6).
 
 ## Why it is slow
 
@@ -17,7 +17,7 @@ reusing another step's output, so it is self-contained — but that means it pay
 real ~90-second cost for *both* selected docks again, on top of whatever score_designs itself
 adds (negligible — it's pure arithmetic over numbers `design_interface` already produced). Steps
 7 onward switch to Laura's own committed real fixture instead, specifically to stop paying this
-cost repeatedly — see step 7's SUCCESS.md.
+cost repeatedly — see step 6's SUCCESS.md.
 
 ## What we are checking
 

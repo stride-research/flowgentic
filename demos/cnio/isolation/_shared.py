@@ -13,6 +13,24 @@ and artifact bookkeeping in every one of those scripts.
 Cluster paths below are hardcoded, not discovered, because these scripts
 exist to run in exactly one place: the IE cluster, never locally.
 
+## One environment, every step
+
+Every `run.sh` does the identical two lines before running `main.py`:
+
+    module load PyTorch/2.1.2-foss-2023a
+    source ~/venvs/cageflow_unified/bin/activate
+
+`module load` alone gives a working numpy/pandas/torch (needed because
+CageFlow.py imports pandas transitively via history_table.py). The venv
+on top adds PyRosetta -- `python3 -m venv --system-site-packages` seeded
+from that module-loaded interpreter, then `pip install pyrosetta`. Before
+this venv existed, PyRosetta only lived in a separate, incompatible venv
+(broken numpy, wrong CPU SIMD baseline), which forced score_with_rosetta's
+isolation step onto a different Python than everyone else and made it
+skip CageFlow.py/config entirely. One venv, used by every step whether it
+needs PyRosetta or not, means there is exactly one environment-setup
+incantation in this whole folder, not two.
+
 There is no such thing as a "step-only" config in CageFlow. Every stage
 function -- dock_oligomer, evaluate_geometry, select_top_docks,
 design_interface, score_with_rosetta, fold_oligomer -- takes a parameter
@@ -71,7 +89,7 @@ the VALUES shown are config.1c5e_probe.json's specifically:
     rosetta_score_cutoff  2.0 -- the ddG gate: below this, a design passes
     rosetta_chi_min       true -- cheap side-chain repacking before scoring
     rosetta_seed          a fixed seed, for reproducibility
-    fold_oligomers        false in probe -- fold is opt-in; step 9's
+    fold_oligomers        false in probe -- fold is opt-in; step 7's
                           isolation overrides this to true explicitly
     fold_top_n            1 -- how many sequences per dock get folded
     fold_msa_mode         "mmseqs2_uniref_env" -- ColabFold's MSA mode
@@ -102,24 +120,12 @@ MPNN_DIR = str(HOME / "software" / "ProteinMPNN")
 COLABFOLD_DIR = HOME / "software" / "localcolabfold_install" / "localcolabfold"
 COLABFOLD_BIN = str(COLABFOLD_DIR / "colabfold-conda" / "bin" / "colabfold_batch")
 COLABFOLD_DATA = str(COLABFOLD_DIR / "colabfold")
-#: fold.py's MSA-fetch half uses a SEPARATE config key (colabfold_python)
-#: from colabfold_bin, defaulting to Laura's own CNIO path
-#: (/home/lwoods/mambaforge-pypy3/...) if unset -- confirmed this exists
-#: in our own install, same conda env colabfold_batch itself lives in.
 COLABFOLD_PYTHON = str(COLABFOLD_DIR / "colabfold-conda" / "bin" / "python")
 
 sys.path.insert(0, str(CAGEFLOW_DIR))
 import CageFlow  # noqa: E402  (path must be set before this import)
 
-#: config.1c5e_noflip.json is the literal config Laura pointed to when she
-#: pushed 1c5e_trimer.pdb (b24916b touches exactly these two files). It is
-#: full-scale: num_seq_per_target=100, fold_oligomers=true -- too expensive
-#: for a per-step isolation check. config.1c5e_probe.json is a DIFFERENT,
-#: pre-existing, lighter sibling in her repo (num_seq_per_target=4,
-#: fold_oligomers=false) that we chose ourselves for isolation, verified to
-#: NOT reduce the actual docking search (its dock_ranges are finer, not
-#: coarser, than the full-scale config's). Use the noflip one explicitly
-#: once we move past per-step isolation to the real reference run.
+
 DEFAULT_BASE_CONFIG = "config.1c5e_probe.json"
 
 

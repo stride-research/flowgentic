@@ -29,15 +29,14 @@ check("at least one dock has designs to score", len(designed) > 0, f"got {len(de
 
 scored = CageFlow.score_designs(designed, docks, geometries, config, config["out_dir"])
 
-check("score_designs returned a dict keyed only by docks that were designed",
-      isinstance(scored, dict) and set(scored) <= set(designed),
-      f"keys={sorted(scored)}, designed={sorted(designed)}")
-check("every designed dock got scored",
-      set(scored) == set(designed), f"scored={sorted(scored)}, designed={sorted(designed)}")
+# Unlike design_interface (step 4), score_designs() has no per-dock
+# failure path -- it's an unconditional loop over every key in `designed`
+# (confirmed in CageFlow.py), so scored is always exactly equal to
+# designed, never a strict subset. One equality check, not two.
+check("score_designs returned a dict keyed by exactly the designed docks",
+      isinstance(scored, dict) and set(scored) == set(designed),
+      f"scored={sorted(scored)}, designed={sorted(designed)}")
 
-# Checked for EVERY scored dock, not just the first -- docks differ in
-# interface size and get genuinely different sequences, so one dock
-# passing says nothing about the others.
 for i, result in sorted(scored.items()):
     per_seq = result["per_seq_scores"]
     group = result["group_score"]

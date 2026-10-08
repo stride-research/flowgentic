@@ -25,10 +25,6 @@ selected = CageFlow.select_top_docks(docks, geometries, config, config["out_dir"
 
 check("at least one dock was seljected to design", len(selected) > 0, f"got {len(selected)}")
 
-# The real top-level call. Internally this calls build_mpnn_config() for
-# each selected dock, which writes the PDB + MPNN config files to disk --
-# we check those as a SIDE EFFECT below, not by calling that helper
-# ourselves. See SUCCESS.md for why this folder absorbed that check.
 designed = CageFlow.design_interface(
     docks, geometries, selected, config, executor, budget,
     config["out_dir"], config["mpnn_dir"])
@@ -42,11 +38,7 @@ check("at least one dock designed successfully",
 n_expected = config["num_seq_per_target"]
 
 # Checked for EVERY dock that designed successfully, not just the first.
-# Docks genuinely differ in interface size -- a real run showed dock 1
-# with 432 design positions and dock 3 with 396 -- so "the first one was
-# fine" does not establish the others were. The sequence COUNT is
-# config-driven and so should be identical per dock; the sequences
-# themselves are not.
+
 for i, sequences in sorted(designed.items()):
     check(f"dock {i}: designed the expected number of sequences ({n_expected})",
           len(sequences) == n_expected, f"got {len(sequences)}")
@@ -57,8 +49,8 @@ for i, sequences in sorted(designed.items()):
     # The retired standalone mpnn_config step's check, now verified as a
     # side effect of the real call above rather than by calling
     # build_mpnn_config ourselves -- also per dock.
-    pdb_path = Path(config["out_dir"]) / f"dock_{i}" / "docked_assembly.pdb"
-    mpnn_cfg_path = Path(config["out_dir"]) / f"dock_{i}" / "mpnn_input.json"
+    pdb_path = Path(config["out_dir"]) / f"dock_{i}" / "docked_assembly.pdb"  #structure ProteinMPNN
+    mpnn_cfg_path = Path(config["out_dir"]) / f"dock_{i}" / "mpnn_input.json" # config for ProteinMPNN
     check(f"dock {i}: the PDB file was written to disk and matches the dock",
           pdb_path.exists() and pdb_path.read_text() == docks[i]["assembly_pdb"],
           str(pdb_path))

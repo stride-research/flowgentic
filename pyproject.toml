@@ -7,6 +7,9 @@ requires-python = ">=3.13"
 dependencies = [
     "matplotlib>=3.11.2",
     "radical-asyncflow>=0.5.1",
+    # Used directly by demos/cnio/metrics/schema.py. Already present
+    # transitively via radical-asyncflow; declared because we import it.
+    "pydantic>=2.0",
 ]
 
 [project.optional-dependencies]

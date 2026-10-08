@@ -1,8 +1,0 @@
-{
-  "pdb_path": "/home/javidsegura/software/isolation/8b_fold_inference/_scratch/msa_unrelaxed_rank_001_alphafold2_multimer_v3_model_1_seed_20260831.pdb",
-  "mean_plddt": 97.2658596491228,
-  "ptm": 0.94,
-  "iptm": 0.93,
-  "rmsd": 0.5379150704937897,
-  "error": null
-}
