@@ -1,13 +1,15 @@
 {
-    "scaffold_pdb": "/home/javidsegura/software/CageFlow/1c5e_trimer.pdb",
+    "_README": "Our frozen, bare-minimum 5dii config. Derived from her configs/config.reference_5dii.short.json (0d1650a), but small/cheap (probe-scale, not the representative 'big' config) and with every key that was implicit made explicit -- see plan Phase 1.1. Used by Track A (1_sync/reference) and Track B equally so parity has a fixed point.",
+
+    "scaffold_pdb": "/home/javidsegura/software/CageFlow/scaffolds/5dii_trimer.pdb",
     "symmetry": "T",
     "cage_designer_path": "/home/javidsegura/software/ProteinBuilder",
     "mpnn_dir": "/home/javidsegura/software/ProteinMPNN",
 
-    "dock_ranges": { "radius_step": 0.25, "spin_step": 1.0 },
+    "dock_ranges": { "radius_step": 0.5, "spin_step": 1.0 },
     "max_materialized": 4,
     "n_docks": 2,
-    "flip": true,
+    "flip": false,
     "select_by": "cbeta",
 
     "clash_dist": 3.0,
@@ -16,6 +18,10 @@
 
     "num_seq_per_target": 2,
     "mpnn_force_cpu": true,
+    "mpnn_threads": 6,
+
+    "postredesign_selection_method": "top_n",
+    "postredesign_selection_top_n": 2,
 
     "rosetta_score_cutoff": 2.0,
     "rosetta_chi_min": true,
@@ -23,8 +29,8 @@
     "thread_mode": "replace",
 
     "fold_oligomers": true,
-    "fold_top_n": 1,
-    "fold_max_total": 1,
+    "fold_unit": "oligomer",
+    "restore_native_gaps": false,
     "fold_msa_mode": "mmseqs2_uniref_env",
     "fold_model_type": "alphafold2_multimer_v3",
     "fold_num_models": 1,
@@ -36,5 +42,5 @@
     "colabfold_python": "/home/javidsegura/software/localcolabfold_install/localcolabfold/colabfold-conda/bin/python",
 
     "executor": "sequential",
-    "out_dir": "/home/javidsegura/software/isolation/1_sync_reference/_scratch/cageflow_out"
+    "out_dir": "/home/javidsegura/software/isolation/1_sync_reference_5dii/_scratch/cageflow_out"
 }

@@ -1,10 +1,10 @@
 {
-  "dock_0_seq_0": {
-    "pdb_path": "/home/javidsegura/software/isolation/7_fold_oligomer/_scratch/cageflow_out/dock_0/fold_seq_0/msa_unrelaxed_rank_001_alphafold2_multimer_v3_model_1_seed_20260831.pdb",
-    "mean_plddt": 97.1702807017544,
-    "ptm": 0.94,
-    "iptm": 0.93,
-    "rmsd": 0.347951260632468,
+  "dock_1_seq_0": {
+    "pdb_path": "/home/javidsegura/software/isolation/7_fold_oligomer/_scratch/cageflow_out/dock_1/fold_seq_0/msa_unrelaxed_rank_001_alphafold2_multimer_v3_model_1_seed_20260831.pdb",
+    "mean_plddt": 91.85101899827288,
+    "ptm": 0.89,
+    "iptm": 0.87,
+    "rmsd": 5.969229763362447,
     "error": null
   }
 }

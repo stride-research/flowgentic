@@ -1,0 +1,142 @@
+[
+  {
+    "stage": "dock_setup",
+    "resource": "cpu",
+    "n_tasks": 1,
+    "elapsed_s_total": 2.761668022023514,
+    "elapsed_s_mean": 2.761668022023514,
+    "elapsed_s_max": 2.761668022023514,
+    "cpu_s_total": 2.761668022023514,
+    "cpu_per_elapsed": 1.0,
+    "peak_rss_mb_max": 0.0,
+    "hosts": [
+      "fortran"
+    ]
+  },
+  {
+    "stage": "prescore",
+    "resource": "cpu",
+    "n_tasks": 8,
+    "elapsed_s_total": 33.031583372998284,
+    "elapsed_s_mean": 4.1289479216247855,
+    "elapsed_s_max": 4.272445180016803,
+    "cpu_s_total": 33.031583372998284,
+    "cpu_per_elapsed": 1.0,
+    "peak_rss_mb_max": 0.0,
+    "hosts": [
+      "fortran"
+    ]
+  },
+  {
+    "stage": "dock_oligomer",
+    "resource": "cpu",
+    "n_tasks": 1,
+    "elapsed_s_total": 0.703934291988844,
+    "elapsed_s_mean": 0.703934291988844,
+    "elapsed_s_max": 0.703934291988844,
+    "cpu_s_total": 0.703934291988844,
+    "cpu_per_elapsed": 1.0,
+    "peak_rss_mb_max": 0.0,
+    "hosts": [
+      "fortran"
+    ]
+  },
+  {
+    "stage": "evaluate_geometry",
+    "resource": "cpu",
+    "n_tasks": 1,
+    "elapsed_s_total": 0.5905606299929786,
+    "elapsed_s_mean": 0.5905606299929786,
+    "elapsed_s_max": 0.5905606299929786,
+    "cpu_s_total": 0.5905606299929786,
+    "cpu_per_elapsed": 1.0,
+    "peak_rss_mb_max": 0.0,
+    "hosts": [
+      "fortran"
+    ]
+  },
+  {
+    "stage": "select_top_docks",
+    "resource": "cpu",
+    "n_tasks": 1,
+    "elapsed_s_total": 0.16998713900102302,
+    "elapsed_s_mean": 0.16998713900102302,
+    "elapsed_s_max": 0.16998713900102302,
+    "cpu_s_total": 0.16998713900102302,
+    "cpu_per_elapsed": 1.0,
+    "peak_rss_mb_max": 0.0,
+    "hosts": [
+      "fortran"
+    ]
+  },
+  {
+    "stage": "design_interface",
+    "resource": "cpu",
+    "n_tasks": 2,
+    "elapsed_s_total": 30.334377909981413,
+    "elapsed_s_mean": 15.167188954990706,
+    "elapsed_s_max": 15.708274551987415,
+    "cpu_s_total": 30.334377909981413,
+    "cpu_per_elapsed": 1.0,
+    "peak_rss_mb_max": 0.0,
+    "hosts": [
+      "fortran"
+    ]
+  },
+  {
+    "stage": "score_designs",
+    "resource": "cpu",
+    "n_tasks": 1,
+    "elapsed_s_total": 0.1154541060095653,
+    "elapsed_s_mean": 0.1154541060095653,
+    "elapsed_s_max": 0.1154541060095653,
+    "cpu_s_total": 0.1154541060095653,
+    "cpu_per_elapsed": 1.0,
+    "peak_rss_mb_max": 0.0,
+    "hosts": [
+      "fortran"
+    ]
+  },
+  {
+    "stage": "score_with_rosetta",
+    "resource": "cpu",
+    "n_tasks": 4,
+    "elapsed_s_total": 258.08099332096754,
+    "elapsed_s_mean": 64.52024833024188,
+    "elapsed_s_max": 65.73683541399078,
+    "cpu_s_total": 258.08099332096754,
+    "cpu_per_elapsed": 1.0,
+    "peak_rss_mb_max": 0.0,
+    "hosts": [
+      "fortran"
+    ]
+  },
+  {
+    "stage": "fold_oligomer",
+    "resource": "gpu",
+    "n_tasks": 4,
+    "elapsed_s_total": 465.4717218579899,
+    "elapsed_s_mean": 116.36793046449748,
+    "elapsed_s_max": 120.86919482599478,
+    "cpu_s_total": 465.4717218579899,
+    "cpu_per_elapsed": 1.0,
+    "peak_rss_mb_max": 0.0,
+    "hosts": [
+      "fortran"
+    ]
+  },
+  {
+    "stage": "export_af3_jobs",
+    "resource": "cpu",
+    "n_tasks": 1,
+    "elapsed_s_total": 0.14207948299008422,
+    "elapsed_s_mean": 0.14207948299008422,
+    "elapsed_s_max": 0.14207948299008422,
+    "cpu_s_total": 0.14207948299008422,
+    "cpu_per_elapsed": 1.0,
+    "peak_rss_mb_max": 0.0,
+    "hosts": [
+      "fortran"
+    ]
+  }
+]

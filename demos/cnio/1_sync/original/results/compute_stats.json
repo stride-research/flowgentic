@@ -1,0 +1,100 @@
+[
+  {
+    "stage": "prescore",
+    "resource": "cpu",
+    "n_tasks": 510,
+    "elapsed_s_total": 35.34098446244025,
+    "elapsed_s_mean": 0.06929604796556911,
+    "elapsed_s_max": 0.0907098609895911,
+    "cpu_s_total": 35.32197922900001,
+    "cpu_per_elapsed": 0.9994622324836356,
+    "peak_rss_mb_max": 163.578125,
+    "hosts": [
+      "fortran"
+    ]
+  },
+  {
+    "stage": "dock_oligomer",
+    "resource": "cpu",
+    "n_tasks": 4,
+    "elapsed_s_total": 0.5391159779683221,
+    "elapsed_s_mean": 0.13477899449208053,
+    "elapsed_s_max": 0.13625649799359962,
+    "cpu_s_total": 0.5387891109999998,
+    "cpu_per_elapsed": 0.9993936982362235,
+    "peak_rss_mb_max": 163.578125,
+    "hosts": [
+      "fortran"
+    ]
+  },
+  {
+    "stage": "evaluate_geometry",
+    "resource": "cpu",
+    "n_tasks": 4,
+    "elapsed_s_total": 0.4079365160432644,
+    "elapsed_s_mean": 0.1019841290108161,
+    "elapsed_s_max": 0.10574350401293486,
+    "cpu_s_total": 0.4068333910000064,
+    "cpu_per_elapsed": 0.9972958413873863,
+    "peak_rss_mb_max": 163.578125,
+    "hosts": [
+      "fortran"
+    ]
+  },
+  {
+    "stage": "design_interface",
+    "resource": "cpu",
+    "n_tasks": 2,
+    "elapsed_s_total": 84.87400404701475,
+    "elapsed_s_mean": 42.437002023507375,
+    "elapsed_s_max": 66.34659579701838,
+    "cpu_s_total": 177.94279752900002,
+    "cpu_per_elapsed": 2.096552407618605,
+    "peak_rss_mb_max": 2035.0078125,
+    "hosts": [
+      "fortran"
+    ]
+  },
+  {
+    "stage": "score_with_rosetta",
+    "resource": "cpu",
+    "n_tasks": 4,
+    "elapsed_s_total": 249.0790618369938,
+    "elapsed_s_mean": 62.26976545924845,
+    "elapsed_s_max": 71.88427084000432,
+    "cpu_s_total": 241.678967248,
+    "cpu_per_elapsed": 0.9702901780084724,
+    "peak_rss_mb_max": 2035.0078125,
+    "hosts": [
+      "fortran"
+    ]
+  },
+  {
+    "stage": "fold_msa",
+    "resource": "cpu",
+    "n_tasks": 4,
+    "elapsed_s_total": 119.70158159002312,
+    "elapsed_s_mean": 29.92539539750578,
+    "elapsed_s_max": 42.4407825859962,
+    "cpu_s_total": 11.843779515000001,
+    "cpu_per_elapsed": 0.09894421909615901,
+    "peak_rss_mb_max": 2035.0078125,
+    "hosts": [
+      "fortran"
+    ]
+  },
+  {
+    "stage": "fold_oligomer",
+    "resource": "gpu",
+    "n_tasks": 4,
+    "elapsed_s_total": 212.45859946598648,
+    "elapsed_s_mean": 53.11464986649662,
+    "elapsed_s_max": 61.16543194898986,
+    "cpu_s_total": 214.99568949999997,
+    "cpu_per_elapsed": 1.0119415737484407,
+    "peak_rss_mb_max": 14627.171875,
+    "hosts": [
+      "fortran"
+    ]
+  }
+]

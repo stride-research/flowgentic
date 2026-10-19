@@ -38,6 +38,14 @@ history.jsonl
 !demos/cnio/reference/
 !demos/cnio/reference/*.jsonl
 
+# ...same reasoning for the Track A/B parity comparison: these are the evidence that the
+# AsyncFlow rewrite reproduces her science, not disposable run output. See
+# demos/cnio/1_sync/PARITY_REPORT.md.
+!demos/cnio/1_sync/original/results/
+!demos/cnio/1_sync/original/results/*.jsonl
+!demos/cnio/1_sync/flowgentic/results/
+!demos/cnio/1_sync/flowgentic/results/*.jsonl
+
 
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md

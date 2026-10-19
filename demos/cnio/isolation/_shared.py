@@ -50,12 +50,18 @@ Using her real, complete, validated config sidesteps that risk entirely.
 
 ## Config reference
 
-**Everything below explains the VALUES in `config.1c5e_probe.json` specifically** (our
-isolation default -- see DEFAULT_BASE_CONFIG). The key *names* and what each one means are the
-same across any CageFlow config; only the values differ. If `load_config(base=...)` is ever
-pointed at a different file (e.g. her real `config.1c5e_noflip.json`), the key meanings below
-still apply, but re-check the actual values in that file -- don't assume they match what's
-written here.
+**Everything below explains the VALUES in `config.flowgentic_5dii_probe.json` specifically**
+(our isolation default -- see DEFAULT_BASE_CONFIG). This file replaced the original
+`config.1c5e_probe.json` on 2026-10-16 when Laura's `b7ba186` deleted it along with the 1c5e
+scaffold ("Untrack old configs and scaffolds; ship only the 5dii golden test"). Unlike the
+original, **this is OUR file, not hers** -- it lives in CageFlow's `configs/` dir only so
+`load_config()`'s existing mechanism keeps working unchanged, but it was authored by us,
+mirroring `demos/cnio/configs/flowgentic_5dii.json` (the absolute-path version used directly by
+the Track A sync reference run) with a relative `scaffold_pdb` as this function expects. The key
+*names* and what each one means are the same across any CageFlow config; only the values differ.
+If `load_config(base=...)` is ever pointed at a different file (e.g. her real
+`config.reference_5dii.json`), the key meanings below still apply, but re-check the actual values
+in that file -- don't assume they match what's written here.
 
 Keys WE override in load_config(), and why:
 
@@ -69,42 +75,65 @@ We do NOT override `executor` -- every config already specifies its own (probe a
 "sequential"; forcing it here would silently undo that choice if `base=` is ever pointed at a
 config that picks something else, like her full-scale config's "process").
 
-Every other key below comes from HER file, unchanged -- these are not our
-settings, they are what she considers a reasonable small sanity run, and
-the VALUES shown are config.1c5e_probe.json's specifically:
+Every other key below is a value WE pinned deliberately (see plan Phase 1.1), not something
+inherited from a file of hers -- the VALUES shown are `config.flowgentic_5dii_probe.json`'s
+specifically:
 
-    scaffold_pdb          1c5e_trimer.pdb -- her Oct 2 trimer, 3 identical
-                          95-residue chains
+    scaffold_pdb          5dii_trimer.pdb -- her current golden-test trimer
+                          (1c5e is gone from her repo as of 0d1650a)
     symmetry              "T" (tetrahedral) -- how the 3 copies assemble
-    dock_ranges           {radius_step: 0.25, spin_step: 1.0} -- the
-                          docking grid's step sizes. FINER than her
-                          full-scale config's 0.5, not coarser.
-    n_docks               5 -- how many top docks select_top_docks keeps
+    dock_ranges           {radius_step: 0.5, spin_step: 1.0} -- matches her
+                          short reference config's grid, not the finer one
+                          the old 1c5e probe used
+    n_docks               2 -- how many top docks select_top_docks keeps
     clash_dist            3.0 A -- how close atoms can get before "clash"
     contact_dist          12.0 A -- how close counts as "in contact"
     min_contacts          3 -- minimum contacts for a dock to pass geometry
-    num_seq_per_target    4 -- ProteinMPNN sequences generated per dock
-                          (100 in her full-scale config -- this is the
-                          main thing that makes probe cheap)
+    num_seq_per_target    2 -- ProteinMPNN sequences generated per dock
+                          (100 in her representative "short" config -- this
+                          is the main thing that makes probe cheap)
+    postredesign_selection_method/_top_n  "top_n" / 2 -- new gate inside
+                          score_with_rosetta as of 0d1650a; pinned
+                          explicitly rather than relying on her default of
+                          10, which would be a silent no-op change if her
+                          default ever moves
     rosetta_score_cutoff  2.0 -- the ddG gate: below this, a design passes
     rosetta_chi_min       true -- cheap side-chain repacking before scoring
     rosetta_seed          a fixed seed, for reproducibility
-    fold_oligomers        false in probe -- fold is opt-in; step 7's
-                          isolation overrides this to true explicitly
-    fold_top_n            1 -- how many sequences per dock get folded
+    fold_oligomers        true -- fold is opt-in elsewhere in the pipeline;
+                          pinned on here since every isolation step through
+                          7 exercises it
+    fold_unit             "oligomer" -- NOT her new default of "cage"
+                          (0d1650a). "cage" folds the whole >5000-residue
+                          assembly, which Ruben explicitly ruled out of
+                          scope on 2026-10-02; this key did not exist in
+                          the old 1c5e probe at all, so there was nothing
+                          to silently inherit wrong before -- it has to be
+                          set explicitly now
+    restore_native_gaps   false -- per Laura's 2026-10-12 handover, this
+                          path has never run end-to-end in a real pipeline
+                          run; don't debug it at the same time as the
+                          orchestrator
     fold_msa_mode         "mmseqs2_uniref_env" -- ColabFold's MSA mode
     fold_model_type       "alphafold2_multimer_v3"
     fold_num_models       1, fold_num_recycle 3, fold_seed, fold_timeout_s
                           -- ColabFold inference settings
-    flip                  true -- try the flipped placement too
+    flip                  false -- matches her short reference config
     select_by             "cbeta" -- how select_top_docks ranks candidates
     mpnn_force_cpu        true -- run ProteinMPNN on CPU, not GPU
+    mpnn_threads          6 -- caps ProteinMPNN's own thread pool, which
+                          otherwise sizes itself from the NODE's core count
+                          (512 here) and ignores the Slurm cgroup; this is
+                          the exact landmine that drained three of Laura's
+                          nodes per her 2026-10-12 handover, so it is
+                          pinned even though our probe's n_docks=2 is far
+                          below the 10-dock case that actually triggered it
     thread_mode           "replace" -- how a designed sequence is threaded
                           onto the structure before Rosetta scoring
-    max_materialized      50 in her file; we further override this
-                          per-script (e.g. 1 for step 1's isolation) --
-                          see that step's own SUCCESS.md for why that is
-                          safe and does not reduce the search itself
+    max_materialized      4 in this file; individual steps may override
+                          further (e.g. 1 for step 1's isolation) -- see
+                          that step's own SUCCESS.md for why that is safe
+                          and does not reduce the search itself
 """
 
 from __future__ import annotations
@@ -126,7 +155,7 @@ sys.path.insert(0, str(CAGEFLOW_DIR))
 import CageFlow  # noqa: E402  (path must be set before this import)
 
 
-DEFAULT_BASE_CONFIG = "config.1c5e_probe.json"
+DEFAULT_BASE_CONFIG = "config.flowgentic_5dii_probe.json"
 
 
 def load_config(caller_file: str, base: str = DEFAULT_BASE_CONFIG, **overrides) -> dict:
