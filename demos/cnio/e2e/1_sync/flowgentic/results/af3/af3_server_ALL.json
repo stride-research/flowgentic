@@ -1,0 +1,66 @@
+[
+  {
+    "name": "cageflow_out_dock1_s2",
+    "modelSeeds": [
+      20260831
+    ],
+    "sequences": [
+      {
+        "proteinChain": {
+          "sequence": "ERFDATPPEPDRPALGVLELTSIARGIRVADAALRTAPSLLLMSRPVCSGKHLLMMRGQVAEVEEAMAAARGVANLRGGSLLDELELPYAHEQLWRFLDAPVVADAESVIVVETTTVCAAIDAADAALKTAPVVLRDMRLAIGIAGKAFFTLTGELADVRAAATVVGKVAGEKLLDIEIIPRPVDELRGRLFF",
+          "count": 12
+        }
+      }
+    ],
+    "dialect": "alphafoldserver",
+    "version": 1
+  },
+  {
+    "name": "cageflow_out_dock1_s1",
+    "modelSeeds": [
+      20260831
+    ],
+    "sequences": [
+      {
+        "proteinChain": {
+          "sequence": "ERFDATPPEPDRPALGVLELTSIARGIEVADVALRTAPSLLLMSRPVCSGKHLLMMRGQVAEVEEAMRAARGVANLNRGSLLDELELPYAHEQLWRFLDAPVVADAESVIVVETTTVCAAIDAADAALKTAPVVLRDMRLAIGIAGKAFFTLTGEPADVEAAKVVVGEVAGDRLLDITFIPRPVDELRGRLFF",
+          "count": 12
+        }
+      }
+    ],
+    "dialect": "alphafoldserver",
+    "version": 1
+  },
+  {
+    "name": "cageflow_out_dock2_s2",
+    "modelSeeds": [
+      20260831
+    ],
+    "sequences": [
+      {
+        "proteinChain": {
+          "sequence": "ERFDATPPEPDRPALGVLELTSIARGITVADAALKRAPSLLLMSRPVCSGKHLLMMRGQPEAVAESMAAARRVARAGAGSLLDELLLPRAHEQLWRFLDAPVVADAESVIIVETTTVCAAIAAADAALKTAPVVLRDMRLAIGIAGKAFFTLTGELADVEAAAAAVRRVAGGRLLELACIARPVDELRGRLFF",
+          "count": 12
+        }
+      }
+    ],
+    "dialect": "alphafoldserver",
+    "version": 1
+  },
+  {
+    "name": "cageflow_out_dock2_s1",
+    "modelSeeds": [
+      20260831
+    ],
+    "sequences": [
+      {
+        "proteinChain": {
+          "sequence": "ERFDATPPEPDRPALGVLELTSIARGITVADAALKRAPSLLLMSRPVCSGKHLLMMRGQPADVAASMLAARLVARSGRGSLLDELLLPEAHEQLWRFLDAPVVADAESVIIVETTTVCAAIAAADAALKTAPVVLRDMRLAIGIAGKAFFTLTGELADVEAAARVVRLVAGGRLLELACIARPVDELRGRLFF",
+          "count": 12
+        }
+      }
+    ],
+    "dialect": "alphafoldserver",
+    "version": 1
+  }
+]

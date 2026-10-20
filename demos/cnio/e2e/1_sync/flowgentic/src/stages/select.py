@@ -3,6 +3,8 @@ it never took an Executor/Budget in the first place, so there is nothing to vend
 """
 from __future__ import annotations
 
+import logging
+
 import flowgentic.metrics as fg
 
 from state import PipelineState
@@ -19,7 +21,7 @@ async def run(flow, config: dict, cage_designer_path: str, out_dir, state: Pipel
         return _cf.select_top_docks(docked_oligomers, geometries, config, str(out_dir))
 
     selected_indices = await task_select(docked_oligomers, geometries)
-    print(f"[select] selected {selected_indices}")
+    logging.info(f"[select] selected {selected_indices}")
 
     state.selected_indices = selected_indices
     return state

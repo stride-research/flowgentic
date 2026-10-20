@@ -1,6 +1,8 @@
 """Export stage: writes the AF3 job manifest (export_af3_jobs()), called directly."""
 from __future__ import annotations
 
+import logging
+
 import flowgentic.metrics as fg
 
 from state import PipelineState
@@ -18,7 +20,7 @@ async def run(flow, config: dict, cage_designer_path: str, out_dir, state: Pipel
             designed_oligomers, docked_oligomers, rosetta_scores, config, str(out_dir))
 
     manifest = await task_export_af3(docked_oligomers)
-    print(f"[export_af3] {len(manifest)} job(s) exported")
+    logging.info(f"[export_af3] {len(manifest)} job(s) exported")
 
     state.manifest = manifest
     return state

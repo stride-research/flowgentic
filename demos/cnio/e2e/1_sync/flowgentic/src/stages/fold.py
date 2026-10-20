@@ -10,6 +10,7 @@ _oligomer_chain_seq's one-chain extraction below is not optional.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 
 import flowgentic.metrics as fg
@@ -36,9 +37,9 @@ async def run(flow, config: dict, cage_designer_path: str, out_dir, state: Pipel
 
     fold_results: dict[int, dict] = {}
     if not config.get("fold_oligomers", False):
-        print("[fold] skipped (fold_oligomers is off)")
+        logging.info("[fold] skipped (fold_oligomers is off)")
     elif not designed_oligomers:
-        print("[fold] skipped (nothing designed)")
+        logging.info("[fold] skipped (nothing designed)")
     else:
         fold_selection = CageFlow.postredesign_selection.select(designed_oligomers, config)
         fold_unit = config.get("fold_unit", "cage")
@@ -74,7 +75,7 @@ async def run(flow, config: dict, cage_designer_path: str, out_dir, state: Pipel
                 fold_items.append((i, j))
 
         if dropped_by_fold:
-            print(f"[fold] {len(dropped_by_fold)} candidate(s) had unresolved positions with no "
+            logging.info(f"[fold] {len(dropped_by_fold)} candidate(s) had unresolved positions with no "
                   f"residue to restore ({sorted(set(dropped_by_fold.values()))} per sequence) -- "
                   f"dropped from the sequence sent to the predictor. Harmless for a numbering "
                   f"skip; for a real unresolved loop set restore_native_gaps=true.")
@@ -90,9 +91,9 @@ async def run(flow, config: dict, cage_designer_path: str, out_dir, state: Pipel
                 "alongside AsyncFlow. Use fold_mode='inline' (the default).")
 
         if not fold_items:
-            print("[fold] no foldable sequences (all docks two-component, or none selected)")
+            logging.info("[fold] no foldable sequences (all docks two-component, or none selected)")
         else:
-            print(f"[fold] predicting {len(fold_items)} sequence(s) with ColabFold "
+            logging.info(f"[fold] predicting {len(fold_items)} sequence(s) with ColabFold "
                   f"(unit={fold_unit}"
                   f"{f'; {len(fold_duplicate_of)} duplicate(s) reused, not refolded' if fold_duplicate_of else ''})")
 
@@ -124,10 +125,14 @@ async def run(flow, config: dict, cage_designer_path: str, out_dir, state: Pipel
                     else:
                         # Never swallow this again: it silently changes which MSA the
                         # prediction is built on, which is a science difference, not a retry.
-                        print(f"[fold] WARNING dock {dock_index} seq {list_index}: MSA prefetch "
+                        # logging, not print: this runs inside a Dragon child, and _prepare()
+                        # (called by flowgentic.metrics.task's wrapper, before this body runs)
+                        # has already pointed this process's root logger at cageflow.log --
+                        # same file the parent and every other child write to, so this warning
+                        # is not only visible in sbatch.out.
+                        logging.warning(f"[fold] dock {dock_index} seq {list_index}: MSA prefetch "
                               f"failed ({msa_result['error']}); ColabFold will compute its own "
-                              f"MSA inline. Results will not match a prefetched-MSA run.",
-                              flush=True)
+                              f"MSA inline. Results will not match a prefetched-MSA run.")
 
                 return dock_index, list_index, _fold_one_sequence(
                     pre["seq"], pre["n_chains"], pre["native_pdb_text"], str(fold_out_dir),
@@ -139,10 +144,10 @@ async def run(flow, config: dict, cage_designer_path: str, out_dir, state: Pipel
             for dock_index, list_index, result in fold_task_results:
                 fold_results.setdefault(dock_index, {})[list_index] = result
                 if result["ok"]:
-                    print(f"[fold] dock {dock_index} seq {list_index}: rmsd={result['rmsd']} "
+                    logging.info(f"[fold] dock {dock_index} seq {list_index}: rmsd={result['rmsd']} "
                           f"pLDDT={result['mean_plddt']} ipTM={result['iptm']}")
                 else:
-                    print(f"[fold] dock {dock_index} seq {list_index} FAILED: {result['error']}")
+                    logging.warning(f"[fold] dock {dock_index} seq {list_index} FAILED: {result['error']}")
 
             # Fan each skipped duplicate's result back out from the copy that did run.
             for (i, j), first_key in fold_duplicate_of.items():

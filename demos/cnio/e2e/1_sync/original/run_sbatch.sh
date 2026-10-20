@@ -10,20 +10,18 @@
 #SBATCH -o /home/javidsegura/software/isolation/1_sync/original/sbatch.out
 #SBATCH -e /home/javidsegura/software/isolation/1_sync/original/sbatch.err
 
-source /etc/profile.d/z01_eessi.sh
 set -euo pipefail
-
 
 REF_DIR="/home/javidsegura/software/isolation/1_sync/original"
 CONFIG="$REF_DIR/config.json"
 
-module load PyTorch/2.1.2-foss-2023a
-source ~/venvs/cageflow_unified/bin/activate
+# Self-contained venv: no `module load`, so PYTHONPATH is never set. See
+# context/current-implementation.md "UPDATE 2026-10-20" for why that matters.
+source ~/.venvs/asyncflow/bin/activate
 
 OUT_DIR="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['out_dir'])" "$CONFIG")"
 mkdir -p "$OUT_DIR"
 cp "$CONFIG" "$OUT_DIR/config.used.json"
-
 
 START=$(date +%s)
 python3 "$REF_DIR/run_original.py" "$CONFIG"

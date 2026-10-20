@@ -4,6 +4,7 @@ state.designed_oligomers.
 from __future__ import annotations
 
 import asyncio
+import logging
 
 import flowgentic.metrics as fg
 
@@ -51,7 +52,7 @@ async def run(flow, config: dict, cage_designer_path: str, out_dir, state: Pipel
         CageFlow.append_history(out_dir, records.dock_outcome(
             dock_index, docked_oligomers[dock_index], geometry, status=summary_status,
             design_summary=design_summary, error=result.get("error")))
-    print(f"[design] {len(designed_oligomers)}/{len(selected_indices)} dock(s) designed")
+    logging.info(f"[design] {len(designed_oligomers)}/{len(selected_indices)} dock(s) designed")
 
     state.designed_oligomers = designed_oligomers
     return state

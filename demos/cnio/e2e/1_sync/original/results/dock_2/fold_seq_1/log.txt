@@ -1,0 +1,12 @@
+2026-10-20 07:58:24,553 Running colabfold 1.6.3 (efbf31c37cedb38cd09c69c1b991910a9866480e)
+2026-10-20 07:58:24,819 Running on GPU
+2026-10-20 07:58:24,870 Found 5 citations for tools or databases
+2026-10-20 07:58:24,870 Query 1/1: msa (length 193)
+2026-10-20 07:58:25,491 Setting max_seq=508, max_extra_seq=1540
+2026-10-20 07:59:00,795 alphafold2_multimer_v3_model_1_seed_20260831 recycle=0 pLDDT=87.2 pTM=0.879 ipTM=0.857
+2026-10-20 07:59:04,877 alphafold2_multimer_v3_model_1_seed_20260831 recycle=1 pLDDT=88 pTM=0.878 ipTM=0.852 tol=4.72
+2026-10-20 07:59:08,971 alphafold2_multimer_v3_model_1_seed_20260831 recycle=2 pLDDT=90.6 pTM=0.895 ipTM=0.87 tol=0.431
+2026-10-20 07:59:08,971 alphafold2_multimer_v3_model_1_seed_20260831 took 39.8s (2 recycles)
+2026-10-20 07:59:09,012 reranking models by 'multimer' metric
+2026-10-20 07:59:09,012 rank_001_alphafold2_multimer_v3_model_1_seed_20260831 pLDDT=90.6 pTM=0.895 ipTM=0.87 ipSAE=A-B:0.759,A-C:0.755,B-C:0.76 pDockQ2=A-B:0.711,A-C:0.706,B-C:0.71
+2026-10-20 07:59:09,278 Done

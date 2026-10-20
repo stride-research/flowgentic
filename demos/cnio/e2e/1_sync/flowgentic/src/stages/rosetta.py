@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 
 import flowgentic.metrics as fg
 
@@ -105,7 +106,7 @@ async def run(flow, config: dict, cage_designer_path: str, out_dir, state: Pipel
             rosetta_items.append((i, j))
 
     n_designed = sum(len(d) for d in designed_oligomers.values())
-    print(f"[rosetta] scoring {len(rosetta_items)} sequence(s) "
+    logging.info(f"[rosetta] scoring {len(rosetta_items)} sequence(s) "
           f"(postredesign_selection {selection_info['method']}) that cleared cutoff={cutoff} "
           f"(of {n_designed} total designed"
           f"{f'; {len(duplicate_of)} duplicate(s) reused, not rescored' if duplicate_of else ''})")
@@ -140,7 +141,7 @@ async def run(flow, config: dict, cage_designer_path: str, out_dir, state: Pipel
             per_dock_state[dock_index]["scored_values"].append(result["metrics"]["dG_separated"])
             scored_by_key[(dock_index, list_index)] = result["metrics"]
         else:
-            print(f"[rosetta] dock {dock_index} seq {list_index} FAILED: {result['error']}")
+            logging.warning(f"[rosetta] dock {dock_index} seq {list_index} FAILED: {result['error']}")
 
     # Fan each skipped duplicate's result back out from the copy that did run -- same as her
     # code: per_seq_metrics stays dense, group_ddg is bit-identical to scoring them separately.
@@ -159,7 +160,7 @@ async def run(flow, config: dict, cage_designer_path: str, out_dir, state: Pipel
         group_ddg = records.group_score(scored_values, top_fraction)
         rosetta_scores[i] = {"per_seq_ddg": per_seq_ddg, "per_seq_metrics": per_seq_metrics,
                               "group_ddg": group_ddg}
-        print(f"[rosetta] dock {i}: {len(scored_values)}/{len(designs)} sequences cleared "
+        logging.info(f"[rosetta] dock {i}: {len(scored_values)}/{len(designs)} sequences cleared "
               f"cutoff={cutoff} and were scored; group_ddg={group_ddg}")
         CageFlow.append_history(out_dir, records.dock_outcome(
             i, docked_oligomers[i], geometries[i], status="rosetta_scored",

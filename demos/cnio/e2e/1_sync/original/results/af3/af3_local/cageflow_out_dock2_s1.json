@@ -1,0 +1,29 @@
+{
+  "name": "cageflow_out_dock2_s1",
+  "modelSeeds": [
+    20260831
+  ],
+  "sequences": [
+    {
+      "protein": {
+        "id": [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E",
+          "F",
+          "G",
+          "H",
+          "I",
+          "J",
+          "K",
+          "L"
+        ],
+        "sequence": "ERFDATPPEPDRPALGVLELTSIARGITVADAALKRAPSLLLMSRPVCSGKHLLMMRGQPADVAASMLAARLVARSGRGSLLDELLLPEAHEQLWRFLDAPVVADAESVIIVETTTVCAAIAAADAALKTAPVVLRDMRLAIGIAGKAFFTLTGELADVEAAARVVRLVAGGRLLELACIARPVDELRGRLFF"
+      }
+    }
+  ],
+  "dialect": "alphafold3",
+  "version": 1
+}

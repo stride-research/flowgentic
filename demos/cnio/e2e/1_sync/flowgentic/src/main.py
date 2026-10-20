@@ -90,6 +90,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import multiprocessing as mp
 import os
 import socket
@@ -144,6 +145,14 @@ async def main():
     out_dir = Path(config["out_dir"])
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Her logging.info/.warning calls are real diagnostics; with no handler they'd go to
+    # Python's lastResort (WARNING+ only, stderr, no file). Dragon children get the same file
+    # via fg_metrics._prepare(), since each is a separate process inheriting none of this.
+    log_path = out_dir / "cageflow.log"
+    logging.basicConfig(level=logging.INFO, format=fg_metrics.LOG_FORMAT,
+                        handlers=[logging.StreamHandler()])
+    fg_metrics.attach_log_file(log_path)
+
     sys.path.insert(0, config["cageflow_dir"])
     # ProteinBuilder's root also needed in the PARENT, not just inside task bodies: some of
     # her parent-side-called helpers (_n_to_materialize -> _prescore_rank_key) internally do
@@ -157,7 +166,11 @@ async def main():
     CageFlow.reset_history(out_dir)
 
     metrics_dir = out_dir / "metrics"
-    fg_metrics.configure(metrics_dir, sys_paths=(config["cageflow_dir"], config["cage_designer_path"]))
+    fg_metrics.configure(
+        metrics_dir,
+        sys_paths=(config["cageflow_dir"], config["cage_designer_path"]),
+        log_path=log_path,
+    )
 
     job_id = os.environ.get("SLURM_JOB_ID", "local")
     run_start = time.monotonic()
@@ -173,6 +186,11 @@ async def main():
 
     backend = await DragonExecutionBackendV1()
     flow = await WorkflowEngine.create(backend=backend)
+
+    # Re-assert the log file: Dragon's runtime bring-up calls basicConfig(force=...) while
+    # standing up the backend above, which drops handlers it did not install -- so without
+    # this, cageflow.log holds only the few lines logged before this point (job 24196).
+    fg_metrics.attach_log_file(log_path)
 
     cage_designer_path = config["cage_designer_path"]
     state = PipelineState()

@@ -3,6 +3,8 @@ produces state.geometries, and writes history records for docks that fail the ga
 """
 from __future__ import annotations
 
+import logging
+
 import flowgentic.metrics as fg
 
 from state import PipelineState
@@ -59,7 +61,7 @@ async def run(flow, config: dict, cage_designer_path: str, out_dir, state: Pipel
         else:
             CageFlow.append_history(
                 out_dir, records.dock_outcome(i, docked_oligomers[i], g, status="geometry_failed"))
-    print(f"[geometry] {n_passed}/{len(geometries)} passed")
+    logging.info(f"[geometry] {n_passed}/{len(geometries)} passed")
 
     state.geometries = geometries
     return state

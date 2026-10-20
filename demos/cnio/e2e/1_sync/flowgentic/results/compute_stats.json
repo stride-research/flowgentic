@@ -1,28 +1,14 @@
 [
   {
-    "stage": "dock_setup",
+    "stage": "design_interface",
     "resource": "cpu",
-    "n_tasks": 1,
-    "elapsed_s_total": 2.761668022023514,
-    "elapsed_s_mean": 2.761668022023514,
-    "elapsed_s_max": 2.761668022023514,
-    "cpu_s_total": 2.761668022023514,
-    "cpu_per_elapsed": 1.0,
-    "peak_rss_mb_max": 0.0,
-    "hosts": [
-      "fortran"
-    ]
-  },
-  {
-    "stage": "prescore",
-    "resource": "cpu",
-    "n_tasks": 8,
-    "elapsed_s_total": 33.031583372998284,
-    "elapsed_s_mean": 4.1289479216247855,
-    "elapsed_s_max": 4.272445180016803,
-    "cpu_s_total": 33.031583372998284,
-    "cpu_per_elapsed": 1.0,
-    "peak_rss_mb_max": 0.0,
+    "n_tasks": 2,
+    "elapsed_s_total": 32.204966105055064,
+    "elapsed_s_mean": 16.102483052527532,
+    "elapsed_s_max": 16.971271129033994,
+    "cpu_s_total": 150.70565499999998,
+    "cpu_per_elapsed": 4.679578128055984,
+    "peak_rss_mb_max": 1989.3671875,
     "hosts": [
       "fortran"
     ]
@@ -31,12 +17,26 @@
     "stage": "dock_oligomer",
     "resource": "cpu",
     "n_tasks": 1,
-    "elapsed_s_total": 0.703934291988844,
-    "elapsed_s_mean": 0.703934291988844,
-    "elapsed_s_max": 0.703934291988844,
-    "cpu_s_total": 0.703934291988844,
-    "cpu_per_elapsed": 1.0,
-    "peak_rss_mb_max": 0.0,
+    "elapsed_s_total": 0.7121717359987088,
+    "elapsed_s_mean": 0.7121717359987088,
+    "elapsed_s_max": 0.7121717359987088,
+    "cpu_s_total": 0.6985480000000001,
+    "cpu_per_elapsed": 0.9808701534895884,
+    "peak_rss_mb_max": 172.1171875,
+    "hosts": [
+      "fortran"
+    ]
+  },
+  {
+    "stage": "dock_setup",
+    "resource": "cpu",
+    "n_tasks": 1,
+    "elapsed_s_total": 2.6997248479747213,
+    "elapsed_s_mean": 2.6997248479747213,
+    "elapsed_s_max": 2.6997248479747213,
+    "cpu_s_total": 2.681488,
+    "cpu_per_elapsed": 0.9932449234638107,
+    "peak_rss_mb_max": 200.90625,
     "hosts": [
       "fortran"
     ]
@@ -45,82 +45,12 @@
     "stage": "evaluate_geometry",
     "resource": "cpu",
     "n_tasks": 1,
-    "elapsed_s_total": 0.5905606299929786,
-    "elapsed_s_mean": 0.5905606299929786,
-    "elapsed_s_max": 0.5905606299929786,
-    "cpu_s_total": 0.5905606299929786,
-    "cpu_per_elapsed": 1.0,
-    "peak_rss_mb_max": 0.0,
-    "hosts": [
-      "fortran"
-    ]
-  },
-  {
-    "stage": "select_top_docks",
-    "resource": "cpu",
-    "n_tasks": 1,
-    "elapsed_s_total": 0.16998713900102302,
-    "elapsed_s_mean": 0.16998713900102302,
-    "elapsed_s_max": 0.16998713900102302,
-    "cpu_s_total": 0.16998713900102302,
-    "cpu_per_elapsed": 1.0,
-    "peak_rss_mb_max": 0.0,
-    "hosts": [
-      "fortran"
-    ]
-  },
-  {
-    "stage": "design_interface",
-    "resource": "cpu",
-    "n_tasks": 2,
-    "elapsed_s_total": 30.334377909981413,
-    "elapsed_s_mean": 15.167188954990706,
-    "elapsed_s_max": 15.708274551987415,
-    "cpu_s_total": 30.334377909981413,
-    "cpu_per_elapsed": 1.0,
-    "peak_rss_mb_max": 0.0,
-    "hosts": [
-      "fortran"
-    ]
-  },
-  {
-    "stage": "score_designs",
-    "resource": "cpu",
-    "n_tasks": 1,
-    "elapsed_s_total": 0.1154541060095653,
-    "elapsed_s_mean": 0.1154541060095653,
-    "elapsed_s_max": 0.1154541060095653,
-    "cpu_s_total": 0.1154541060095653,
-    "cpu_per_elapsed": 1.0,
-    "peak_rss_mb_max": 0.0,
-    "hosts": [
-      "fortran"
-    ]
-  },
-  {
-    "stage": "score_with_rosetta",
-    "resource": "cpu",
-    "n_tasks": 4,
-    "elapsed_s_total": 258.08099332096754,
-    "elapsed_s_mean": 64.52024833024188,
-    "elapsed_s_max": 65.73683541399078,
-    "cpu_s_total": 258.08099332096754,
-    "cpu_per_elapsed": 1.0,
-    "peak_rss_mb_max": 0.0,
-    "hosts": [
-      "fortran"
-    ]
-  },
-  {
-    "stage": "fold_oligomer",
-    "resource": "gpu",
-    "n_tasks": 4,
-    "elapsed_s_total": 465.4717218579899,
-    "elapsed_s_mean": 116.36793046449748,
-    "elapsed_s_max": 120.86919482599478,
-    "cpu_s_total": 465.4717218579899,
-    "cpu_per_elapsed": 1.0,
-    "peak_rss_mb_max": 0.0,
+    "elapsed_s_total": 0.5925648249685764,
+    "elapsed_s_mean": 0.5925648249685764,
+    "elapsed_s_max": 0.5925648249685764,
+    "cpu_s_total": 0.57811,
+    "cpu_per_elapsed": 0.9756063398306793,
+    "peak_rss_mb_max": 184.42578125,
     "hosts": [
       "fortran"
     ]
@@ -129,12 +59,82 @@
     "stage": "export_af3_jobs",
     "resource": "cpu",
     "n_tasks": 1,
-    "elapsed_s_total": 0.14207948299008422,
-    "elapsed_s_mean": 0.14207948299008422,
-    "elapsed_s_max": 0.14207948299008422,
-    "cpu_s_total": 0.14207948299008422,
-    "cpu_per_elapsed": 1.0,
-    "peak_rss_mb_max": 0.0,
+    "elapsed_s_total": 0.13766467798268422,
+    "elapsed_s_mean": 0.13766467798268422,
+    "elapsed_s_max": 0.13766467798268422,
+    "cpu_s_total": 0.11691600000000008,
+    "cpu_per_elapsed": 0.8492810335466446,
+    "peak_rss_mb_max": 172.1171875,
+    "hosts": [
+      "fortran"
+    ]
+  },
+  {
+    "stage": "fold_oligomer",
+    "resource": "gpu",
+    "n_tasks": 4,
+    "elapsed_s_total": 383.68037660006667,
+    "elapsed_s_mean": 95.92009415001667,
+    "elapsed_s_max": 99.83848384901648,
+    "cpu_s_total": 403.11318600000004,
+    "cpu_per_elapsed": 1.0506484318331177,
+    "peak_rss_mb_max": 14631.51953125,
+    "hosts": [
+      "fortran"
+    ]
+  },
+  {
+    "stage": "prescore",
+    "resource": "cpu",
+    "n_tasks": 8,
+    "elapsed_s_total": 33.16877728299005,
+    "elapsed_s_mean": 4.146097160373756,
+    "elapsed_s_max": 4.283278910035733,
+    "cpu_s_total": 33.059241,
+    "cpu_per_elapsed": 0.9966976086560109,
+    "peak_rss_mb_max": 172.1171875,
+    "hosts": [
+      "fortran"
+    ]
+  },
+  {
+    "stage": "score_designs",
+    "resource": "cpu",
+    "n_tasks": 1,
+    "elapsed_s_total": 0.11371062195394188,
+    "elapsed_s_mean": 0.11371062195394188,
+    "elapsed_s_max": 0.11371062195394188,
+    "cpu_s_total": 0.10342500000000004,
+    "cpu_per_elapsed": 0.9095456363073277,
+    "peak_rss_mb_max": 172.1171875,
+    "hosts": [
+      "fortran"
+    ]
+  },
+  {
+    "stage": "score_with_rosetta",
+    "resource": "cpu",
+    "n_tasks": 4,
+    "elapsed_s_total": 263.45578732696595,
+    "elapsed_s_mean": 65.86394683174149,
+    "elapsed_s_max": 67.65041745896451,
+    "cpu_s_total": 263.18813800000004,
+    "cpu_per_elapsed": 0.9989840825677755,
+    "peak_rss_mb_max": 1415.56640625,
+    "hosts": [
+      "fortran"
+    ]
+  },
+  {
+    "stage": "select_top_docks",
+    "resource": "cpu",
+    "n_tasks": 1,
+    "elapsed_s_total": 0.16342373797670007,
+    "elapsed_s_mean": 0.16342373797670007,
+    "elapsed_s_max": 0.16342373797670007,
+    "cpu_s_total": 0.14959700000000004,
+    "cpu_per_elapsed": 0.9153933317895876,
+    "peak_rss_mb_max": 184.31640625,
     "hosts": [
       "fortran"
     ]

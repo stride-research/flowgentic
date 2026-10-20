@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import functools
 import json
+import logging
 import os
 
 # Aliased: the public decorator below takes a parameter called `resource` (the
@@ -43,11 +44,48 @@ from typing import Any, Callable
 # ru_maxrss is kilobytes on Linux, bytes on macOS.
 _RSS_TO_MB = 1 / 1024 if sys.platform != "darwin" else 1 / 1024**2
 
-_config: dict[str, Any] = {"metrics_dir": None, "sys_paths": ()}
+_config: dict[str, Any] = {"metrics_dir": None, "sys_paths": (), "log_path": None}
+
+#: One format for every process that writes to the shared run log, so the parent's lines
+#: and each Dragon child's are greppable together. `processName` is what distinguishes them.
+LOG_FORMAT = "%(asctime)s %(levelname)s [%(processName)s] %(name)s: %(message)s"
+
+
+def attach_log_file(log_path: str | Path, level: int = logging.INFO) -> None:
+    """Point the root logger at `log_path`, idempotently and additively.
+
+    Deliberately NOT `logging.basicConfig`: Dragon reconfigures the root logger during
+    runtime bring-up (`dragon/dlogging/util.py`'s `setup_logging` calls
+    `basicConfig(..., force=...)`, which drops handlers it did not install), so a single
+    early `basicConfig` stops reaching this file partway through a run -- the symptom is a
+    `cageflow.log` holding only the handful of lines logged before Dragon came up. Adding
+    our own handler and re-asserting it after the backend exists survives that; it also
+    leaves Dragon's own handlers alone rather than fighting over the root logger.
+
+    Args:
+        log_path: File every process appends its log lines to. Opened in append mode.
+        level: Root level to ensure, if the current one is higher (never raises it).
+    """
+    target = str(Path(log_path))
+    root = logging.getLogger()
+    already = any(
+        isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", None) == target
+        for h in root.handlers
+    )
+    if not already:
+        handler = logging.FileHandler(target, mode="a")
+        handler.setFormatter(logging.Formatter(LOG_FORMAT))
+        root.addHandler(handler)
+    if root.level == logging.NOTSET or root.level > level:
+        root.setLevel(level)
 
 
 def configure(
-    metrics_dir: str | Path, sys_paths: tuple[str, ...] = (), *, reset: bool = True,
+    metrics_dir: str | Path,
+    sys_paths: tuple[str, ...] = (),
+    *,
+    reset: bool = True,
+    log_path: str | Path | None = None,
 ) -> None:
     """Set the per-run constants every decorated task needs.
 
@@ -72,6 +110,13 @@ def configure(
               dock_setup read n_tasks=3 after three job submissions, each of which
             runs scan_docking exactly once). Mirrors `CageFlow.reset_history(out_dir)`'s
             same "one run, one log" convention for history.jsonl.
+        log_path: If given, every worker calls `logging.basicConfig` to append
+            its own `logging.info`/`.warning` calls (hers and ours) to this file
+            as well as stderr, before the task body runs -- see `_prepare()`. The
+            driver must already have called `logging.basicConfig` on this same
+            path itself; workers only add the handler a fresh process doesn't
+            inherit. `None` (the default) configures nothing here, matching the
+            behavior before this parameter existed.
     """
     path = Path(metrics_dir)
     if reset and path.is_dir():
@@ -80,6 +125,7 @@ def configure(
     path.mkdir(parents=True, exist_ok=True)
     _config["metrics_dir"] = str(path)
     _config["sys_paths"] = tuple(str(p) for p in sys_paths)
+    _config["log_path"] = str(log_path) if log_path else None
 
 
 def task(
@@ -128,6 +174,7 @@ def task(
             would surface as an unresolved future.
     """
     metrics_dir, sys_paths = _config["metrics_dir"], _config["sys_paths"]
+    log_path = _config["log_path"]
     if metrics_dir is None:
         raise RuntimeError(
             "flowgentic.metrics.configure() must be called before decorating tasks"
@@ -145,7 +192,7 @@ def task(
             # the only import path a child can count on.
             from flowgentic.metrics import _prepare, _snapshot, _write
 
-            _prepare(sys_paths)
+            _prepare(sys_paths, log_path)
             before = _snapshot()
             try:
                 return await fn(*args, **kwargs)
@@ -176,11 +223,21 @@ def task(
 # not dead code -- see the module docstring and metrics.task()'s docstring.
 
 
-def _prepare(sys_paths: tuple[str, ...]) -> None:
-    """Put the science code on this worker's `sys.path`. Idempotent."""
+def _prepare(sys_paths: tuple[str, ...], log_path: str | None = None) -> None:
+    """Put the science code on this worker's `sys.path`, and resume logging.
+
+    Each Dragon task is a fresh OS process (see `main.py`'s module docstring,
+    invariant 1), so it inherits neither the parent's `sys.path` nor the parent's
+    log handlers. Without the `attach_log_file` call, every `logging.info`/
+    `.warning` inside a task body -- hers and ours -- goes to Python's lastResort
+    handler (WARNING and above only, stderr only, no file) and her diagnostic
+    lines are silently lost.
+    """
     for path in sys_paths:
         if path not in sys.path:
             sys.path.insert(0, path)
+    if log_path:
+        attach_log_file(log_path)
 
 
 def _snapshot() -> dict[str, float]:

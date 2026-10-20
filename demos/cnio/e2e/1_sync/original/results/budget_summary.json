@@ -1,12 +1,12 @@
 {
   "cpu": {
     "total": Infinity,
-    "spent": 0.13609519011957874,
+    "spent": 0.0966206557386613,
     "remaining": Infinity
   },
   "gpu": {
     "total": Infinity,
-    "spent": 0.059016277629440686,
+    "spent": 0.05524400722945251,
     "remaining": Infinity
   }
 }

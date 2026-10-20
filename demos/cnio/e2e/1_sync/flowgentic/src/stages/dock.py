@@ -14,6 +14,7 @@ PipelineState.
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 import os
 import time
@@ -58,9 +59,9 @@ async def run(flow, config: dict, cage_designer_path: str, out_dir, state: Pipel
             pdb_raw = _Path(config["scaffold_pdb"]).read_text()
             pdb_raw, dropped, skipped = harmonize_chain_residue_ranges(pdb_raw)
             if dropped:
-                print(f"  NOTE: harmonized chain residue ranges before docking: {dropped}")
+                logging.info(f"[dock] harmonized chain residue ranges before docking: {dropped}")
             if skipped:
-                print(f"  WARNING: grouped chains with incompatible residue numbering, left "
+                logging.warning(f"[dock] grouped chains with incompatible residue numbering, left "
                       f"unharmonized: {skipped}. Chains stay unequal, which breaks ProteinMPNN "
                       f"position tying and skews axis/COM estimation.")
 
@@ -120,7 +121,7 @@ async def run(flow, config: dict, cage_designer_path: str, out_dir, state: Pipel
 
         (pdb_raw, canonical_axis, coset_reps, R_align, com, is_high_sym,
          solutions) = await task_dock_setup()
-        print(f"[dock] scan_docking: {len(solutions)} candidate poses")
+        logging.info(f"[dock] scan_docking: {len(solutions)} candidate poses")
 
         # ===================================================================== dock: prescore ===
         max_mat = config.get("max_materialized")
@@ -147,7 +148,7 @@ async def run(flow, config: dict, cage_designer_path: str, out_dir, state: Pipel
             order = sorted(range(len(solutions)), key=CageFlow._prescore_rank_key(prescores, config))
             keep = sorted(order[:n_keep])
             n_ok = sum(1 for p in prescores if p["steric_ok"])
-            print(f"[dock] prescore: {len(solutions)} poses in {time.monotonic() - _t0:.1f}s "
+            logging.info(f"[dock] prescore: {len(solutions)} poses in {time.monotonic() - _t0:.1f}s "
                   f"({n_ok} sterically admissible); materializing {len(keep)}")
             solutions = [solutions[i] for i in keep]
 
@@ -164,7 +165,7 @@ async def run(flow, config: dict, cage_designer_path: str, out_dir, state: Pipel
             ]
 
         docked_oligomers = await task_materialize()
-        print(f"[dock] materialized {len(docked_oligomers)} dock(s)")
+        logging.info(f"[dock] materialized {len(docked_oligomers)} dock(s)")
 
     else:
         # ======================================================== dock: two-component (2c) ===
@@ -202,9 +203,9 @@ async def run(flow, config: dict, cage_designer_path: str, out_dir, state: Pipel
             for label, raw in (("A", pdb_raw_a), ("B", pdb_raw_b)):
                 harmonized, dropped, skipped = harmonize_chain_residue_ranges(raw)
                 if dropped:
-                    print(f"  NOTE: harmonized component {label} chain residue ranges: {dropped}")
+                    logging.info(f"[dock_2c] harmonized component {label} chain residue ranges: {dropped}")
                 if skipped:
-                    print(f"  WARNING: component {label} has grouped chains with incompatible "
+                    logging.warning(f"[dock_2c] component {label} has grouped chains with incompatible "
                           f"residue numbering, left unharmonized: {skipped}. Chains stay unequal, "
                           f"which breaks ProteinMPNN position tying and skews axis/COM estimation.")
                 if label == "A":
@@ -337,7 +338,7 @@ async def run(flow, config: dict, cage_designer_path: str, out_dir, state: Pipel
         n_chunks = max(1, min(config.get("max_workers") or N_PRESCORE_CHUNKS, len(pre_a)))
         chunk_size = -(-len(pre_a) // n_chunks)
         chunks_a = [pre_a[i:i + chunk_size] for i in range(0, len(pre_a), chunk_size)]
-        print(f"[dock_2c] pair search: {len(pre_a)} x {len(pre_b)} = "
+        logging.info(f"[dock_2c] pair search: {len(pre_a)} x {len(pre_b)} = "
               f"{len(pre_a) * len(pre_b)} candidate pairs over {len(chunks_a)} chunk(s)")
 
         @fg.task(flow, name="dock_two_component_pair_search",
@@ -367,7 +368,7 @@ async def run(flow, config: dict, cage_designer_path: str, out_dir, state: Pipel
                 "the two-component pair search found no feasible solution. Try widening "
                 "dock_ranges.radius, raising cross_contact_dist, or lowering "
                 "min_cross_contacts.")
-        print(f"[dock_2c] pair search: {len(solutions)} solution(s) in "
+        logging.info(f"[dock_2c] pair search: {len(solutions)} solution(s) in "
               f"{time.monotonic() - _t0:.1f}s")
 
         # Optional prescore, mirroring the one-component block above -- same chunking
@@ -396,7 +397,7 @@ async def run(flow, config: dict, cage_designer_path: str, out_dir, state: Pipel
             order = sorted(range(len(solutions)), key=CageFlow._prescore_rank_key(prescores, config))
             keep = sorted(order[:n_keep])
             n_ok = sum(1 for p in prescores if p["steric_ok"])
-            print(f"[dock_2c] prescore: {len(solutions)} poses in {time.monotonic() - _t0:.1f}s "
+            logging.info(f"[dock_2c] prescore: {len(solutions)} poses in {time.monotonic() - _t0:.1f}s "
                   f"({n_ok} sterically admissible); materializing {len(keep)}")
             solutions = [solutions[i] for i in keep]
 
@@ -412,7 +413,7 @@ async def run(flow, config: dict, cage_designer_path: str, out_dir, state: Pipel
             ]
 
         docked_oligomers = await task_materialize_2c()
-        print(f"[dock_2c] materialized {len(docked_oligomers)} two-component dock(s)")
+        logging.info(f"[dock_2c] materialized {len(docked_oligomers)} two-component dock(s)")
 
 
     state.docked_oligomers = docked_oligomers

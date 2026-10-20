@@ -11,11 +11,12 @@ requires-python = ">=3.11"
 
 # Intentionally empty: every module in src/flowgentic/ imports stdlib only (json, time,
 # dataclasses, enum, itertools, pathlib, typing). Keeping it that way is a hard
-# requirement, not an accident -- this package gets installed into the cluster's
-# cageflow_unified_dragon_test venv, whose dependency chain is fragile (built with
-# --system-site-packages over an EESSI PyTorch module, plus the PYTHONPATH-drop trick
-# ColabFold needs). A dependency declared here could upgrade something in that venv and
-# break the science stack. Demo-only deps live in the `demos` extra below instead.
+# requirement, not an accident: this package is reinstalled with `--no-deps -e` on every
+# job (scripts/run_sbatch.sh), specifically so that step never triggers pip's resolver
+# against the cluster venv's explicitly pinned science stack (numpy/scipy/torch/pyrosetta,
+# see context/current-implementation.md "UPDATE 2026-10-20"). A dependency declared here
+# would get silently skipped by --no-deps anyway, so add it to the venv explicitly instead
+# of here if it's needed at runtime. Demo-only deps live in the `demos` extra below.
 dependencies = []
 
 [project.optional-dependencies]

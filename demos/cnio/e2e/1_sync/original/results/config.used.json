@@ -40,5 +40,5 @@
     "colabfold_python": "/home/javidsegura/software/localcolabfold_install/localcolabfold/colabfold-conda/bin/python",
 
     "executor": "sequential",
-    "out_dir": "/home/javidsegura/software/isolation/1_sync_reference/_scratch/cageflow_out"
+    "out_dir": "/home/javidsegura/software/isolation/1_sync_original/_scratch/cageflow_out"
 }
