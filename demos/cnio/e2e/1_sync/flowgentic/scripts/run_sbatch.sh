@@ -17,11 +17,27 @@ source /etc/profile.d/z01_eessi.sh
 set -euo pipefail
 
 FG_DIR="/home/javidsegura/software/isolation/1_sync/flowgentic"
-CONFIG="$FG_DIR/config.json"
+CONFIG="$FG_DIR/config/config.json"
 
 module load PyTorch/2.1.2-foss-2023a
 source ~/venvs/cageflow_unified_dragon_test/bin/activate
 export PYTHONUNBUFFERED=1
+
+# The `flowgentic` package must be importable BY THE DRAGON CHILD PROCESSES, not just by
+# this launcher. Every task is wrapped with flowgentic.metrics.task(), which cloudpickle
+# ships by reference -- so each child does `import flowgentic` to deserialize the task at
+# all. A child cannot import loose files shipped next to the job (it inherits none of this
+# process's sys.path), but it CAN import anything in site-packages, which is why the
+# package is installed rather than copied.
+#
+# --no-deps is deliberate and load-bearing: src/flowgentic/ is stdlib-only, and this venv's
+# chain is fragile (built --system-site-packages over the EESSI PyTorch module). Letting
+# pip resolve dependencies here could upgrade radical-asyncflow or pull in something that
+# breaks the science stack. Reinstalled every run so the shipped source is what executes;
+# it is a no-op when unchanged. `set -euo pipefail` above means a failed install aborts the
+# job here rather than letting every task hang on an unimportable module.
+FLOWGENTIC_PKG="/home/javidsegura/software/flowgentic"
+python3 -m pip install --no-deps --quiet -e "$FLOWGENTIC_PKG"
 
 OUT_DIR="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['out_dir'])" "$CONFIG")"
 mkdir -p "$OUT_DIR"
@@ -49,7 +65,7 @@ cp "$CONFIG" "$OUT_DIR/config.used.json"
 # it; capping at 32 G bought nothing and gave the pools a ceiling to hit.
 
 START=$(date +%s)
-dragon -s "$FG_DIR/main.py" "$CONFIG"
+dragon -s "$FG_DIR/src/main.py" "$CONFIG"
 WALL=$(( $(date +%s) - START ))
 echo "wall_s=$WALL"
 echo "$WALL" > "$OUT_DIR/wall_s.txt"

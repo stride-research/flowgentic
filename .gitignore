@@ -14,6 +14,12 @@ venv/
 .env
 .env.*
 *.env
+# ...except the committed templates documenting which vars exist. Must come after the
+# patterns above, and must re-whitelist explicitly: `.env.*` would otherwise swallow
+# `.env.example` itself, so the template that tells people what to configure would never
+# reach the repo.
+!.env.example
+!**/.env.example
 
 # Tooling
 .pytest_cache/
@@ -40,11 +46,11 @@ history.jsonl
 
 # ...same reasoning for the Track A/B parity comparison: these are the evidence that the
 # AsyncFlow rewrite reproduces her science, not disposable run output. See
-# demos/cnio/1_sync/PARITY_REPORT.md.
-!demos/cnio/1_sync/original/results/
-!demos/cnio/1_sync/original/results/*.jsonl
-!demos/cnio/1_sync/flowgentic/results/
-!demos/cnio/1_sync/flowgentic/results/*.jsonl
+# demos/cnio/e2e/1_sync/PARITY_REPORT.md.
+!demos/cnio/e2e/1_sync/original/results/
+!demos/cnio/e2e/1_sync/original/results/*.jsonl
+!demos/cnio/e2e/1_sync/flowgentic/results/
+!demos/cnio/e2e/1_sync/flowgentic/results/*.jsonl
 
 
 #Ignore vscode AI rules

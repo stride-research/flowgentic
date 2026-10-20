@@ -3,16 +3,31 @@ name = "flowgentic"
 version = "0.1.0"
 description = "Execution coordination layer for adaptive, agent-driven HPC workflows"
 readme = "README.md"
-requires-python = ">=3.13"
-dependencies = [
-    "matplotlib>=3.11.2",
-    "radical-asyncflow>=0.5.1",
-    # Used directly by demos/cnio/metrics/schema.py. Already present
-    # transitively via radical-asyncflow; declared because we import it.
-    "pydantic>=2.0",
-]
+# 3.11, not 3.13: this package has to be installable into the IE cluster's EESSI venv,
+# which is Python 3.11.3/3.11.4. Nothing in src/flowgentic/ needs newer syntax (checked:
+# no PEP-695 type params, no 3.12+ constructs). Raising this again would silently make
+# the package uninstallable on the cluster, which is where it actually has to run.
+requires-python = ">=3.11"
+
+# Intentionally empty: every module in src/flowgentic/ imports stdlib only (json, time,
+# dataclasses, enum, itertools, pathlib, typing). Keeping it that way is a hard
+# requirement, not an accident -- this package gets installed into the cluster's
+# cageflow_unified_dragon_test venv, whose dependency chain is fragile (built with
+# --system-site-packages over an EESSI PyTorch module, plus the PYTHONPATH-drop trick
+# ColabFold needs). A dependency declared here could upgrade something in that venv and
+# break the science stack. Demo-only deps live in the `demos` extra below instead.
+dependencies = []
 
 [project.optional-dependencies]
+# What demos/ needs but src/flowgentic/ does not. Install locally with
+# `uv sync --extra demos`; do NOT install this extra on the cluster (see `dependencies`).
+# matplotlib was previously a hard dependency and is dropped entirely -- grepped, nothing
+# in src/ or demos/ imports it.
+demos = [
+    "radical-asyncflow>=0.5.1",
+    # Used directly by demos/cnio/metrics/schema.py.
+    "pydantic>=2.0",
+]
 dev = [
     "pytest>=8.0",
 ]

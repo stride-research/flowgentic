@@ -56,8 +56,9 @@ Using her real, complete, validated config sidesteps that risk entirely.
 scaffold ("Untrack old configs and scaffolds; ship only the 5dii golden test"). Unlike the
 original, **this is OUR file, not hers** -- it lives in CageFlow's `configs/` dir only so
 `load_config()`'s existing mechanism keeps working unchanged, but it was authored by us,
-mirroring `demos/cnio/configs/flowgentic_5dii.json` (the absolute-path version used directly by
-the Track A sync reference run) with a relative `scaffold_pdb` as this function expects. The key
+mirroring `demos/cnio/e2e/1_sync/original/config.json` (the absolute-path version used directly
+by the Track A sync reference run -- `demos/cnio/configs/` was deleted 2026-10-19, never read by
+any code) with a relative `scaffold_pdb` as this function expects. The key
 *names* and what each one means are the same across any CageFlow config; only the values differ.
 If `load_config(base=...)` is ever pointed at a different file (e.g. her real
 `config.reference_5dii.json`), the key meanings below still apply, but re-check the actual values

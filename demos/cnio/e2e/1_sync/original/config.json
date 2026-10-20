@@ -1,7 +1,9 @@
 {
+    "_README": "Our frozen, bare-minimum 5dii config. Derived from her configs/config.reference_5dii.short.json (0d1650a), but small/cheap (probe-scale, not the representative 'big' config) and with every key that was implicit made explicit -- see 2_async plan Phase 1.1. Used by Track A (this file) and Track B (../flowgentic/config/config.json) equally so parity has a fixed point. Carried forward from the now-deleted demos/cnio/configs/flowgentic_5dii.json, which was never read by any code.",
     "scaffold_pdb": "/home/javidsegura/software/CageFlow/scaffolds/5dii_trimer.pdb",
     "symmetry": "T",
     "cage_designer_path": "/home/javidsegura/software/ProteinBuilder",
+    "cageflow_dir": "/home/javidsegura/software/CageFlow",
     "mpnn_dir": "/home/javidsegura/software/ProteinMPNN",
 
     "dock_ranges": { "radius_step": 0.5, "spin_step": 1.0 },
