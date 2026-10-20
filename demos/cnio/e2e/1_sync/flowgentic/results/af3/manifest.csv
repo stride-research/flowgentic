@@ -1,5 +1,0 @@
-rank,job_name,dock_index,sample,list_index,radius,spin,mpnn_score,dG_separated,n_entities,chains_total,tokens,restored_native_gaps
-1,cageflow_out_dock1_s2,1,2,1,30.5,51.0,0.6626,-28.434121510646946,1,12,2316,False
-2,cageflow_out_dock1_s1,1,1,0,30.5,51.0,0.6775,-48.27388222665559,1,12,2316,False
-3,cageflow_out_dock2_s2,2,2,1,30.0,0.0,0.6534,1141.3728390833207,1,12,2316,False
-4,cageflow_out_dock2_s1,2,1,0,30.0,0.0,0.6694,1155.0188047218605,1,12,2316,False

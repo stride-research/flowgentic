@@ -20,15 +20,16 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
-# What demos/ needs but src/flowgentic/ does not. Install locally with
-# `uv sync --extra demos`; do NOT install this extra on the cluster (see `dependencies`).
-# matplotlib was previously a hard dependency and is dropped entirely -- grepped, nothing
-# in src/ or demos/ imports it.
+# What a usecase repo built on top of flowgentic (e.g. cnio_usecase, split out from this
+# repo's former demos/cnio/ on 2026-10-20) needs but src/flowgentic/ itself does not.
+# Install locally with `uv sync --extra demos`; do NOT install this extra on the cluster
+# (see `dependencies`). matplotlib was previously a hard dependency and is dropped
+# entirely -- grepped, nothing in src/ imports it.
 demos = [
     "radical-asyncflow>=0.5.1",
-    # Used directly by demos/cnio/metrics/schema.py.
+    # Used directly by cnio_usecase's metrics/schema.py.
     "pydantic>=2.0",
-    # Used directly by demos/cnio/e2e/1_sync/flowgentic/src/main.py to load .env locally.
+    # Used directly by cnio_usecase's e2e/1_sync/flowgentic/src/main.py to load .env locally.
     # Zero dependencies of its own, but still needs its own explicit install step on the
     # cluster (scripts/run_sbatch.sh) -- same reason radical-asyncflow/rhapsody do: this
     # extra is never installed there, per the comment on `dependencies` above.

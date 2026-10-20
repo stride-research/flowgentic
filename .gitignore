@@ -38,20 +38,6 @@ slurm_logs/
 reports/
 history.jsonl
 
-# ...but reference material is not a run artifact. Laura's real CageFlow output
-# is checked in deliberately: it is the schema we have to produce, and the only
-# example of it we have.
-!demos/cnio/reference/
-!demos/cnio/reference/*.jsonl
-
-# ...same reasoning for the Track A/B parity comparison: these are the evidence that the
-# AsyncFlow rewrite reproduces her science, not disposable run output. See
-# demos/cnio/e2e/1_sync/PARITY_REPORT.md.
-!demos/cnio/e2e/1_sync/original/results/
-!demos/cnio/e2e/1_sync/original/results/*.jsonl
-!demos/cnio/e2e/1_sync/flowgentic/results/
-!demos/cnio/e2e/1_sync/flowgentic/results/*.jsonl
-
 
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
