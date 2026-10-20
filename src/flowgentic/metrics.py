@@ -46,7 +46,9 @@ _RSS_TO_MB = 1 / 1024 if sys.platform != "darwin" else 1 / 1024**2
 _config: dict[str, Any] = {"metrics_dir": None, "sys_paths": ()}
 
 
-def configure(metrics_dir: str | Path, sys_paths: tuple[str, ...] = ()) -> None:
+def configure(
+    metrics_dir: str | Path, sys_paths: tuple[str, ...] = (), *, reset: bool = True,
+) -> None:
     """Set the per-run constants every decorated task needs.
 
     Call once in the driver, before any task is decorated. These values are read
@@ -61,8 +63,20 @@ def configure(metrics_dir: str | Path, sys_paths: tuple[str, ...] = ()) -> None:
             docs/TELEMETRY.md).
         sys_paths: Paths each worker must put on `sys.path` before importing the
             science code.
+        reset: Delete any `*.jsonl` already in `metrics_dir` before this run writes
+            its own. Defaults to True because `metrics_dir` is usually a fixed path
+            under a reused `out_dir`, not a fresh one per job -- without this, a
+            second run's records silently pile up alongside the first's, and
+            compute_stats() then reports the SUM of every run that ever wrote there,
+            not the one that just happened (confirmed: this is exactly what made
+              dock_setup read n_tasks=3 after three job submissions, each of which
+            runs scan_docking exactly once). Mirrors `CageFlow.reset_history(out_dir)`'s
+            same "one run, one log" convention for history.jsonl.
     """
     path = Path(metrics_dir)
+    if reset and path.is_dir():
+        for stale in path.glob("*.jsonl"):
+            stale.unlink()
     path.mkdir(parents=True, exist_ok=True)
     _config["metrics_dir"] = str(path)
     _config["sys_paths"] = tuple(str(p) for p in sys_paths)

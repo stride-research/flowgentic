@@ -23,6 +23,15 @@ module load PyTorch/2.1.2-foss-2023a
 source ~/venvs/cageflow_unified_dragon_test/bin/activate
 export PYTHONUNBUFFERED=1
 
+# Local repo layout (demos/cnio/.env) has three directory levels between the .env file
+# and this script's own flowgentic/ dir (cnio/e2e/1_sync/flowgentic); the cluster
+# deployment collapses demos/cnio/e2e into one "isolation" directory, so that parent
+# count does not hold here. Point main.py at the right file explicitly instead of
+# letting it guess a relative path that is only correct in one of the two places it
+# runs. A missing file here is not an error -- load_dotenv() no-ops and Discord
+# notifications simply stay off, same as never setting this at all.
+export FLOWGENTIC_ENV_FILE="/home/javidsegura/software/isolation/.env"
+
 # The `flowgentic` package must be importable BY THE DRAGON CHILD PROCESSES, not just by
 # this launcher. Every task is wrapped with flowgentic.metrics.task(), which cloudpickle
 # ships by reference -- so each child does `import flowgentic` to deserialize the task at
@@ -36,8 +45,13 @@ export PYTHONUNBUFFERED=1
 # breaks the science stack. Reinstalled every run so the shipped source is what executes;
 # it is a no-op when unchanged. `set -euo pipefail` above means a failed install aborts the
 # job here rather than letting every task hang on an unimportable module.
+#
+# python-dotenv rides along in the same call: it's a separate package the demo driver
+# needs (not flowgentic itself, which still declares zero real dependencies), from
+# pyproject.toml's `demos` extra -- never installed on the cluster otherwise, per that
+# file's own comment. --no-deps costs it nothing: it has no dependencies to skip.
 FLOWGENTIC_PKG="/home/javidsegura/software/flowgentic"
-python3 -m pip install --no-deps --quiet -e "$FLOWGENTIC_PKG"
+python3 -m pip install --no-deps --quiet -e "$FLOWGENTIC_PKG" python-dotenv
 
 OUT_DIR="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['out_dir'])" "$CONFIG")"
 mkdir -p "$OUT_DIR"

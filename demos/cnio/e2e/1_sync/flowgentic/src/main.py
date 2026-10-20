@@ -92,7 +92,9 @@ import asyncio
 import json
 import multiprocessing as mp
 import os
+import socket
 import sys
+import time
 from pathlib import Path
 
 import dragon  # noqa: F401  (must be imported before mp.set_start_method("dragon"))
@@ -103,6 +105,7 @@ import dragon  # noqa: F401  (must be imported before mp.set_start_method("drago
 FLOWGENTIC_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(FLOWGENTIC_DIR / "schema"))
 
+from dotenv import load_dotenv
 from radical.asyncflow import WorkflowEngine
 from rhapsody.backends import DragonExecutionBackendV1
 
@@ -113,6 +116,18 @@ from state import PipelineState
 from stages import design, dock, export, fold, geometry, rosetta, score_designs, select
 
 CONFIG_PATH = Path(sys.argv[1]) if len(sys.argv) > 1 else FLOWGENTIC_DIR / "config" / "config.json"
+
+# Where .env lives differs between the local repo (demos/cnio/.env, three parents above
+# this file's own flowgentic/ dir) and the cluster deployment (isolation/ collapses
+# demos/cnio/e2e into one directory, so the local path's parent count does not apply there).
+# FLOWGENTIC_ENV_FILE lets the launcher (run_sbatch.sh) say exactly where it put the file
+# instead of this script guessing a relative path that is only correct in one of the two
+# places it runs. load_dotenv() is a no-op if the resolved path does not exist, so an unset
+# variable and a missing local .env both silently mean "no Discord notifications" -- exactly
+# like having never set DISCORD_WEBHOOK_URL at all.
+ENV_PATH = Path(os.environ["FLOWGENTIC_ENV_FILE"]) if os.environ.get("FLOWGENTIC_ENV_FILE") \
+    else FLOWGENTIC_DIR.parent.parent.parent / ".env"
+load_dotenv(ENV_PATH)
 
 
 def _load_config() -> dict:
@@ -143,7 +158,18 @@ async def main():
 
     metrics_dir = out_dir / "metrics"
     fg_metrics.configure(metrics_dir, sys_paths=(config["cageflow_dir"], config["cage_designer_path"]))
-    fg_discord.notify(f"**track B** started, job {os.environ.get('SLURM_JOB_ID', 'local')}")
+
+    job_id = os.environ.get("SLURM_JOB_ID", "local")
+    run_start = time.monotonic()
+
+    def elapsed() -> str:
+        """mm:ss since run_start -- the same clock every stage ping and the final
+        wall_s figure read from, so they stay consistent with each other.
+        """
+        m, s = divmod(int(time.monotonic() - run_start), 60)
+        return f"{m:02d}:{s:02d}"
+
+    fg_discord.run_started(job_id=job_id, node=socket.gethostname(), config=config)
 
     backend = await DragonExecutionBackendV1()
     flow = await WorkflowEngine.create(backend=backend)
@@ -157,38 +183,43 @@ async def main():
     cross_contact_dist = config.get("cross_contact_dist", CageFlow.DEFAULT_CROSS_CONTACT_DIST)
     cross_clash_dist = config.get("cross_clash_dist", 3.0)
 
-    fg_discord.notify("dock: starting")
+    fg_discord.notify(f"▶️ dock — starting (t+`{elapsed()}`)")
     state = await dock.run(flow, config, cage_designer_path, out_dir, state,
                             cross_contact_dist, cross_clash_dist)
 
-    fg_discord.notify(f"geometry: starting ({len(state.docked_oligomers)} dock(s))")
+    fg_discord.notify(
+        f"▶️ geometry — starting (t+`{elapsed()}`), {len(state.docked_oligomers)} dock(s) docked")
     state = await geometry.run(flow, config, cage_designer_path, out_dir, state,
                                 cross_contact_dist, cross_clash_dist)
 
-    fg_discord.notify("select: starting")
+    fg_discord.notify(f"▶️ select — starting (t+`{elapsed()}`)")
     state = await select.run(flow, config, cage_designer_path, out_dir, state)
 
     if not state.selected_indices:
         print("Nothing selected -- nothing downstream to run. Writing what we have and exiting.")
-        (out_dir / "compute_stats.json").write_text(
-            json.dumps(fg_metrics.compute_stats(metrics_dir), indent=2))
-        fg_discord.notify("**track B** done -- nothing selected, nothing downstream ran")
+        stats = fg_metrics.compute_stats(metrics_dir)
+        (out_dir / "compute_stats.json").write_text(json.dumps(stats, indent=2))
+        fg_discord.run_finished(
+            job_id=job_id, wall_s=time.monotonic() - run_start,
+            funnel={"docks": len(state.docked_oligomers), "selected": 0}, out_dir=out_dir,
+        )
         await flow.shutdown()
         return
 
-    fg_discord.notify(f"design: starting ({len(state.selected_indices)} dock(s) selected)")
+    fg_discord.notify(
+        f"▶️ design — starting (t+`{elapsed()}`), {len(state.selected_indices)} dock(s) selected")
     state = await design.run(flow, config, cage_designer_path, out_dir, state)
 
-    fg_discord.notify("score_designs: starting")
+    fg_discord.notify(f"▶️ score_designs — starting (t+`{elapsed()}`)")
     state = await score_designs.run(flow, config, cage_designer_path, out_dir, state)
 
-    fg_discord.notify("rosetta: starting")
+    fg_discord.notify(f"▶️ rosetta — starting (t+`{elapsed()}`)")
     state = await rosetta.run(flow, config, cage_designer_path, out_dir, state)
 
-    fg_discord.notify("fold: starting")
+    fg_discord.notify(f"▶️ fold — starting (t+`{elapsed()}`)")
     state = await fold.run(flow, config, cage_designer_path, out_dir, state)
 
-    fg_discord.notify("export_af3: starting")
+    fg_discord.notify(f"▶️ export_af3 — starting (t+`{elapsed()}`)")
     state = await export.run(flow, config, cage_designer_path, out_dir, state)
     print(f"[export_af3] {len(state.manifest)} job(s) exported")
 
@@ -202,17 +233,22 @@ async def main():
 
     n_folded = sum(1 for per_seq in state.fold_results.values()
                    for r in per_seq.values() if r.get("ok"))
-    # n_rosetta_scored is read back out of the aggregated stats rather than kept as a
-    # separate PipelineState field -- score_with_rosetta's n_tasks already equals exactly the
-    # number of (deduplicated) sequences sent to Rosetta, so this avoids adding a field whose
-    # only purpose is one summary line.
     rosetta_row = next((r for r in stats if r["stage"] == "score_with_rosetta"), None)
     n_rosetta_scored = rosetta_row["n_tasks"] if rosetta_row else 0
     print(f"\nTrack B run complete: {len(state.designed_oligomers)} dock(s) designed, "
           f"{n_rosetta_scored} sequence(s) Rosetta-scored, {n_folded} fold(s) succeeded.")
 
-    fg_discord.notify(
-        f"**track B done** {n_rosetta_scored} sequence(s) scored, {n_folded} fold(s) succeeded"
+    fg_discord.run_finished(
+        job_id=job_id, wall_s=time.monotonic() - run_start,
+        funnel={
+            "docks": len(state.docked_oligomers),
+            "selected": len(state.selected_indices),
+            "designed": sum(len(v) for v in state.designed_oligomers.values()),
+            "scored": n_rosetta_scored,
+            "folded": n_folded,
+            "exported": len(state.manifest),
+        },
+        out_dir=out_dir,
     )
 
     await flow.shutdown()

@@ -27,6 +27,11 @@ demos = [
     "radical-asyncflow>=0.5.1",
     # Used directly by demos/cnio/metrics/schema.py.
     "pydantic>=2.0",
+    # Used directly by demos/cnio/e2e/1_sync/flowgentic/src/main.py to load .env locally.
+    # Zero dependencies of its own, but still needs its own explicit install step on the
+    # cluster (scripts/run_sbatch.sh) -- same reason radical-asyncflow/rhapsody do: this
+    # extra is never installed there, per the comment on `dependencies` above.
+    "python-dotenv>=1.0",
 ]
 dev = [
     "pytest>=8.0",
