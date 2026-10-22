@@ -51,3 +51,5 @@ Done-checks for PR C:
 - README and Home give the same status and install commands.
 
 Results (2026-10-22, PR C's body holds the outputs): the strict build exits 0 with no warnings; the grep matches only `docs/status.md`'s note on the retired matrix; a script that compares the README's and Home's Status and Install sections, link targets dropped, prints "identical" for both. The deployed-site check waits for the merge (G2); locally the built site has the new navigation and Home's "This documentation describes Flowgentic 0.3.0".
+
+Deployed-site check (2026-10-22, after PR C merged as `99fd2fd4`): Deploy MkDocs run 39799348237 succeeded; https://stride-research.github.io/flowgentic/ returns HTTP 200 with the new navigation (Home, Getting started, Guides, Features, Design patterns, Evaluation, Project status, Changelog, API reference) and Home's "This documentation describes Flowgentic 0.3.0"; `phased_rollout/` and `features/mcp/` return 404.
