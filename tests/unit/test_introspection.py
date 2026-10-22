@@ -111,3 +111,45 @@ async def test_state_extraction_via_introspect_node():
 	assert "messages" in record.state_diff
 	assert record.start_time <= record.end_time
 	assert record.duration_seconds >= 0
+
+
+@pytest.mark.asyncio
+async def test_tool_calls_read_from_ai_message_tool_calls():
+	"""Tool calls are recorded from AIMessage.tool_calls, not only additional_kwargs."""
+	introspector = GraphIntrospector()
+
+	async def calling_node(state: SampleState) -> SampleState:
+		state.messages.append(
+			AIMessage(
+				content="",
+				tool_calls=[
+					{"name": "search", "args": {"query": "flowgentic"}, "id": "call_1"}
+				],
+				invalid_tool_calls=[
+					{
+						"name": "lookup",
+						"args": "{not json",
+						"id": "call_2",
+						"error": None,
+					}
+				],
+			)
+		)
+		return state
+
+	wrapped = introspector.introspect_node(calling_node, node_name="calling_node")
+	await wrapped(SampleState())
+
+	record = list(introspector._records.values())[-1]
+	assert [tc.model_dump() for tc in record.tool_calls] == [
+		{
+			"tool_name": "search",
+			"tool_args": {"query": "flowgentic"},
+			"tool_call_id": "call_1",
+		},
+		{
+			"tool_name": "lookup",
+			"tool_args": {"error": "malformed_json", "raw_arguments": "{not json"},
+			"tool_call_id": "call_2",
+		},
+	]
