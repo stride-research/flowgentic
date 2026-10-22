@@ -14,9 +14,11 @@ For task-level traces, AsyncFlow itself emits OpenTelemetry spans; see
 runs, the wrapper records its start and end time, the state before and after,
 the messages it added, the tool calls and tool results in those messages, the
 token usage and model name from the messages' metadata, and the keys that
-changed to a non-empty value. Tool calls are read from the OpenAI-format
-`tool_calls` in a message's `additional_kwargs`, so a model whose messages
-carry them only in `AIMessage.tool_calls` shows none. The agentic demo wraps every node as it adds it to the graph,
+changed to a non-empty value. Tool calls are read from `AIMessage.tool_calls`,
+which LangChain also fills from OpenAI-format `additional_kwargs`; a call
+whose arguments are not valid JSON is recorded with its raw arguments. (In
+0.3.0, only `additional_kwargs` was read, so other models' tool calls were
+missing.) The agentic demo wraps every node as it adds it to the graph,
 and tells the introspector which nodes the report lists:
 
 ```python
@@ -45,7 +47,8 @@ it, writing the report raises `ValueError`): it creates `agent_execution_results
 calling file, writes the report, and renders the graph to
 `agent_graph.png` at the top of the report. Rendering needs `pygraphviz`, which
 is not a Flowgentic dependency; without it, the call prints an error and keeps
-the report. Passing `generate_report=True` skips the report.
+the report. Passing `generate_report=False` skips the report. (In 0.3.0 the
+flag was inverted: `True` skipped it.)
 
 ## Read the report
 
