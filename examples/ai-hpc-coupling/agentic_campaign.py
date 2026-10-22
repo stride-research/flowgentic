@@ -3,6 +3,9 @@
 The audience-facing workflow is in ``agentic_application.py``. This runner
 selects an offline rehearsal model or a live LLM, prepares local resources,
 chooses application or ADR campaign control, and writes execution evidence.
+``--integration direct`` runs the same agent graph on AsyncFlow without
+Flowgentic (``direct_agentic_application.py``), with the same decisions,
+resources, retry policy, service lifetime, and stopping rules.
 """
 
 from __future__ import annotations
@@ -10,7 +13,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import AsyncIterator
 
 from agentic_application import (
     build_agentic_campaign,
@@ -22,7 +27,7 @@ from agentic_support import (
     RehearsalDecisionModel,
     print_agentic_cycle,
 )
-from campaign_types import CampaignSettings
+from campaign_types import CampaignApplication, CampaignSettings
 from demo_support import (
     TARGET,
     configure_logging,
@@ -31,7 +36,9 @@ from demo_support import (
     reset_demo_state,
     write_summary,
 )
+from direct_agentic_application import build_direct_agentic_campaign
 from dotenv import load_dotenv
+from radical.asyncflow import WorkflowEngine
 
 from flowgentic.langGraph.main import LangraphIntegration
 from flowgentic.utils.llm_providers import ChatLLMProvider
@@ -56,6 +63,49 @@ def build_decision_model(args: argparse.Namespace) -> AgentDecisionModel:
     )
 
 
+@asynccontextmanager
+async def open_campaign(
+    integration: str,
+    backends: list,
+    settings: CampaignSettings,
+    decision_model: AgentDecisionModel,
+) -> AsyncIterator[
+    tuple[CampaignApplication, WorkflowEngine, LangraphIntegration | None]
+]:
+    """Build the agentic campaign through Flowgentic or on AsyncFlow directly.
+
+    Yields the application, its workflow engine, and the Flowgentic integration
+    (``None`` for the direct version). On exit the resident service is
+    cancelled and the engine shut down.
+    """
+    if integration == "flowgentic":
+        async with LangraphIntegration(backend=backends) as adapter:
+            application = await build_agentic_campaign(
+                adapter,
+                settings,
+                decision_model,
+            )
+            try:
+                yield application, adapter.flow, adapter
+            finally:
+                application.service_future.cancel()
+        return
+
+    flow = await WorkflowEngine.create(backend=backends)
+    try:
+        application = await build_direct_agentic_campaign(
+            flow,
+            settings,
+            decision_model,
+        )
+        try:
+            yield application, flow, None
+        finally:
+            application.service_future.cancel()
+    finally:
+        await flow.shutdown()
+
+
 async def run(args: argparse.Namespace) -> int:
     """Execute one agentic campaign and generate presentation evidence."""
     configure_logging(logging.DEBUG if args.verbose else logging.WARNING)
@@ -72,20 +122,24 @@ async def run(args: argparse.Namespace) -> int:
     decision_model = build_decision_model(args)
     backends = await create_local_backends(args.compute_workers)
 
-    print("\nFlowgentic agentic AI-HPC coupling demo")
-    print("agent graph -> Flowgentic -> AsyncFlow -> AI/compute backends")
+    if args.integration == "flowgentic":
+        print("\nFlowgentic agentic AI-HPC coupling demo")
+        print("agent graph -> Flowgentic -> AsyncFlow -> AI/compute backends")
+    else:
+        print("\nAgentic AI-HPC coupling demo without Flowgentic")
+        print("agent graph -> AsyncFlow -> AI/compute backends")
     print(
         f"controller={args.controller}  agent_mode={args.agent_mode}  "
-        f"model={decision_model.name}"
+        f"integration={args.integration}  model={decision_model.name}"
     )
     print(f"target={TARGET}  budget={args.budget}\n")
 
-    async with LangraphIntegration(backend=backends) as integration:
-        application = await build_agentic_campaign(
-            integration,
-            settings,
-            decision_model,
-        )
+    async with open_campaign(
+        args.integration,
+        backends,
+        settings,
+        decision_model,
+    ) as (application, flow, integration):
         print(
             f"persistent AI service started: {application.service.instance_id} "
             f"(model loads={application.service.loads})"
@@ -98,7 +152,7 @@ async def run(args: argparse.Namespace) -> int:
             state, stop_reason = await run_with_adr_control(
                 application,
                 settings,
-                integration.flow,
+                flow,
                 cycle_printer=print_agentic_cycle,
             )
         else:
@@ -108,14 +162,18 @@ async def run(args: argparse.Namespace) -> int:
             )
 
         output_dir = Path(args.output_dir).resolve()
-        (output_dir / "agent_execution_results").mkdir(parents=True, exist_ok=True)
-        integration.agent_introspector._final_state = state
-        integration.agent_introspector.generate_report(str(output_dir))
+        report_path = output_dir / "agent_execution_results" / "execution_summary.md"
+        if integration is not None:
+            # Flowgentic's node-level report; the direct version has none.
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            integration.agent_introspector._final_state = state
+            integration.agent_introspector.generate_report(str(output_dir))
         summary_path = write_summary(
             output_dir,
             state,
             controller=args.controller,
             stop_reason=stop_reason,
+            integration=args.integration,
         )
 
         parallelism = max_compute_parallelism(state["trace"])
@@ -137,12 +195,8 @@ async def run(args: argparse.Namespace) -> int:
         )
         print(f"  stopped because: {stop_reason}")
         print(f"  machine-readable summary: {summary_path}")
-        print(
-            "  agent execution report: "
-            f"{output_dir / 'agent_execution_results' / 'execution_summary.md'}"
-        )
-
-        application.service_future.cancel()
+        if integration is not None:
+            print(f"  agent execution report: {report_path}")
 
     return 0
 
@@ -156,6 +210,12 @@ def parse_args() -> argparse.Namespace:
         choices=("application", "adr"),
         default="application",
         help="Who owns campaign-level stopping and iteration.",
+    )
+    parser.add_argument(
+        "--integration",
+        choices=("flowgentic", "direct"),
+        default="flowgentic",
+        help="Run the agent graph through Flowgentic or on AsyncFlow directly.",
     )
     parser.add_argument(
         "--agent-mode",

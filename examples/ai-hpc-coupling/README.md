@@ -146,6 +146,16 @@ examples/ai-hpc-coupling/run_agentic_demo.sh application \
 model name and credentials. Live decisions use Pydantic structured output and
 still pass the same deterministic candidate and stop-policy guards.
 
+`--integration direct` runs the same agent graph on AsyncFlow without
+Flowgentic (`direct_agentic_application.py`), with the same decisions,
+resources, retry policy, and stopping rules. It writes no Flowgentic execution
+report. The substitution experiment, `docs/evaluation/substitution.md`, compares
+the two:
+
+```bash
+examples/ai-hpc-coupling/run_agentic_demo.sh application --integration direct
+```
+
 ## Run the agent-augmented RADICAL implementation
 
 This version keeps the scientific cycle in AsyncFlow and uses Flowgentic only
