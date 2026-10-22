@@ -38,10 +38,10 @@ Rules for every requirement below:
 
 ## R3 CI
 
-- [ ] In `.github/workflows/continuous_integration.yml`, run the format check with the locked Ruff through `uv run`, replacing `astral-sh/ruff-action`.
-- [ ] Add a docs job: `uv sync --frozen --extra dev`, then `uv run mkdocs build --strict`. Make `.github/workflows/docs-deployment.yml` build the same way, replacing `pip install -e .`.
-- [ ] Test matrix: Python 3.10 and 3.11, plus 3.12 if D7 says so. The test step runs `uv run pytest` without the matrix interpreter or the dev extra (PR 101 review); pass both, as `uv run --python ${{ matrix.python-version }} --extra dev pytest …`, so each matrix job tests its own Python.
-- [ ] If D9 places them in PR B, fix the 7 strict-build warnings here (the list is in w5-docs.md, Removals and fixes).
+- [x] In `.github/workflows/continuous_integration.yml`, run the format check with the locked Ruff through `uv run`, replacing `astral-sh/ruff-action`.
+- [x] Add a docs job: `uv sync --frozen --extra dev`, then `uv run mkdocs build --strict`. Make `.github/workflows/docs-deployment.yml` build the same way, replacing `pip install -e .`.
+- [x] Test matrix: Python 3.10 and 3.11, plus 3.12 if D7 says so. The test step runs `uv run pytest` without the matrix interpreter or the dev extra (PR 101 review); pass both, as `uv run --python ${{ matrix.python-version }} --extra dev pytest …`, so each matrix job tests its own Python.
+- [x] If D9 places them in PR B, fix the 7 strict-build warnings here (the list is in w5-docs.md, Removals and fixes).
 
     Done-check: every CI job on PR B is green, including bandit, which has not run since August.
 
@@ -69,11 +69,11 @@ Both arms of R5 share this policy code, so it is corrected before the experiment
 
 R5 runs the same agentic application with and without Flowgentic and reports what the adapter supplies. Its report is the evidence for D1.
 
-- [ ] Add `examples/ai-hpc-coupling/direct_agentic_application.py`: `agentic_application.py` with every `flowgentic` decorator and `LangraphIntegration` replaced by direct AsyncFlow calls. The LangGraph graph stays unchanged.
-- [ ] Add `--integration {flowgentic,direct}` to `examples/ai-hpc-coupling/agentic_campaign.py`, so both versions share decisions, budget, resources, retry policy, service lifetime and stopping rules. Its Flowgentic touchpoints today: the `LangraphIntegration(backend=backends)` context, which creates and shuts down the `WorkflowEngine`; `integration.flow`; and `integration.agent_introspector.generate_report(...)`.
-- [ ] Add `tests/integration/test_substitution.py`, modelled on `tests/integration/test_ai_hpc_agentic_demo.py`. It runs both versions in rehearsal mode (`--agent-mode rehearsal`) with identical arguments and failure injection on, then compares their `campaign_summary.json`.
+- [x] Add `examples/ai-hpc-coupling/direct_agentic_application.py`: `agentic_application.py` with every `flowgentic` decorator and `LangraphIntegration` replaced by direct AsyncFlow calls. The LangGraph graph stays unchanged.
+- [x] Add `--integration {flowgentic,direct}` to `examples/ai-hpc-coupling/agentic_campaign.py`, so both versions share decisions, budget, resources, retry policy, service lifetime and stopping rules. Its Flowgentic touchpoints today: the `LangraphIntegration(backend=backends)` context, which creates and shuts down the `WorkflowEngine`; `integration.flow`; and `integration.agent_introspector.generate_report(...)`.
+- [x] Add `tests/integration/test_substitution.py`, modelled on `tests/integration/test_ai_hpc_agentic_demo.py`. It runs both versions in rehearsal mode (`--agent-mode rehearsal`) with identical arguments and failure injection on, then compares their `campaign_summary.json`.
     - If decisions or results differ, the port has a bug: fix it until decisions and results match, then judge the other criteria.
-- [ ] Write the report as `docs/evaluation/substitution.md`. Its table has one row per criterion:
+- [x] Write the report as `docs/evaluation/substitution.md`. Its table has one row per criterion:
     1. Results and scientific state transitions.
     2. Task and invocation identity.
     3. Failure, retry and cancellation.
