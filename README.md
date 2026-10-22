@@ -23,12 +23,8 @@ Documentation: [stride-research.github.io/flowgentic](https://stride-research.gi
 
 Flowgentic 0.3.0 is in maintenance mode. It preserves the July 2026 work as a
 documented, tested snapshot. The LangGraph execution adapter
-(`LangraphIntegration`) is frozen and gets no new features: the
-[substitution experiment](https://stride-research.github.io/flowgentic/evaluation/substitution/) found that, in the
-agentic demo, its only distinct contribution beyond AsyncFlow and LangGraph is
-an implicit retry and timeout on every call and graph node, which re-runs
-scientific work. New applications can bind agents with `bind_agent`, or run
-LangGraph on AsyncFlow directly.
+(`LangraphIntegration`) is frozen and gets no new features New applications can bind 
+agents with `bind_agent`, or run LangGraph on AsyncFlow directly.
 
 | Agent framework | Workflow engine | Backends | Python |
 | --- | --- | --- | --- |
