@@ -69,6 +69,12 @@ jobs:
       - name: "Install dependencies"
         run: uv sync --frozen --extra dev --python ${{ matrix.python-version }}
 
+      # The lock pins LangGraph 1.x and AsyncFlow 0.6.0; record what was tested.
+      - name: "Show tested versions"
+        run: >-
+          uv run --frozen --python ${{ matrix.python-version }} --extra dev python -c
+          "import importlib.metadata as m; print({p: m.version(p) for p in ('langgraph', 'langchain-core', 'langchain', 'radical-asyncflow')})"
+
       - name: Run python tests with coverage
         run: |
           uv run --frozen --python ${{ matrix.python-version }} --extra dev pytest -vv \

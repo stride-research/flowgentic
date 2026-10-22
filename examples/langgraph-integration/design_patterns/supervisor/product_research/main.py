@@ -23,9 +23,9 @@ from dotenv import load_dotenv
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph, START, END, add_messages
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 from pydantic import BaseModel, Field
-from radical.asyncflow import ConcurrentExecutionBackend
+from radical.asyncflow import LocalExecutionBackend
 
 from flowgentic.langGraph.execution_wrappers import AsyncFlowType
 from flowgentic.langGraph.main import LangraphIntegration
@@ -79,7 +79,7 @@ async def main():
 	)
 
 	graph = StateGraph(GraphState)
-	backend = await ConcurrentExecutionBackend(ThreadPoolExecutor())
+	backend = await LocalExecutionBackend(ThreadPoolExecutor())
 
 	async with LangraphIntegration(backend=backend) as agents_manager:
 		# ================================================================
@@ -251,7 +251,7 @@ async def main():
 			logging.info(f"🔧 Technical Specs Agent START - Analyzing: '{state.query}'")
 
 			# Create a ReAct agent for technical analysis with search tools
-			agent = create_react_agent(
+			agent = create_agent(
 				model=ChatLLMProvider(
 					provider="OpenRouter", model="google/gemini-2.5-flash"
 				),
@@ -302,7 +302,7 @@ Be specific, data-driven, and technical. Use industry terminology."""
 			logging.info(f"⭐ User Reviews Agent START - Analyzing: '{state.query}'")
 
 			# Create a ReAct agent for review analysis with search tools
-			agent = create_react_agent(
+			agent = create_agent(
 				model=ChatLLMProvider(
 					provider="OpenRouter", model="google/gemini-2.5-flash"
 				),
@@ -461,7 +461,7 @@ Respond with ONLY the synthesizer name, nothing else.
 			logging.info(f"🔬 Technical Synthesizer: Creating professional report...")
 			start = time.perf_counter()
 
-			synthesizer = create_react_agent(
+			synthesizer = create_agent(
 				model=ChatLLMProvider(
 					provider="OpenRouter", model="google/gemini-2.5-flash"
 				),
@@ -522,7 +522,7 @@ Original query: {state.query}
 			logging.info(f"🛒 Consumer Synthesizer: Creating consumer report...")
 			start = time.perf_counter()
 
-			synthesizer = create_react_agent(
+			synthesizer = create_agent(
 				model=ChatLLMProvider(
 					provider="OpenRouter", model="google/gemini-2.5-flash"
 				),

@@ -11,7 +11,7 @@ from academy.logging import init_logging
 from academy.manager import Manager
 
 from radical.asyncflow import WorkflowEngine
-from radical.asyncflow import ConcurrentExecutionBackend
+from radical.asyncflow import LocalExecutionBackend
 
 from flowcademy.academy import AcademyIntegrationAcademyIntegration
 
@@ -37,7 +37,7 @@ async def main() -> int:
     """
 
     # Create workflow engine
-    backend = await ConcurrentExecutionBackend(ThreadPoolExecutor())
+    backend = await LocalExecutionBackend(ThreadPoolExecutor())
     flow = await WorkflowEngine.create(backend=backend)
 
     # Create integration layer
@@ -86,7 +86,7 @@ async def main_with_dependencies() -> int:
     """
 
     # Create workflow engine
-    backend = await ConcurrentExecutionBackend(ThreadPoolExecutor())
+    backend = await LocalExecutionBackend(ThreadPoolExecutor())
     flow = await WorkflowEngine.create(backend=backend)
 
     async with AcademyIntegration(flow) as integration:
@@ -158,7 +158,7 @@ async def main_concurrent_counters() -> int:
     """
 
     # Create workflow engine
-    backend = await ConcurrentExecutionBackend(ThreadPoolExecutor())
+    backend = await LocalExecutionBackend(ThreadPoolExecutor())
     flow = await WorkflowEngine.create(backend=backend)
 
     async with AcademyIntegration(flow) as integration:

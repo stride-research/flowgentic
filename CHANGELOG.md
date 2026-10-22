@@ -47,13 +47,15 @@ on `main`.
 - Python 3.10 or later is required (0.2.0 allowed 3.9). CI tests 3.10, 3.11
   and 3.12.
 - Dependencies are released versions:
-  - `radical-asyncflow==0.5.0` and `academy-py==0.3.0` come from PyPI instead
+  - `radical-asyncflow==0.6.0` and `academy-py==0.3.0` come from PyPI instead
     of git URLs.
-  - `langgraph` and `langchain-core` are capped below 1.0, the versions the
-    adapter is tested on.
+  - LangGraph, langchain-core and langchain move to 1.x
+    (`>=1.0,<2.0`); the lock tests LangGraph 1.2.16 and langchain-core 1.6.13.
   - `python-json-logger>=3.1.0`.
   - `pyyaml` is declared.
 - `python-dotenv` moved from the core dependencies to the `examples` extra.
+- The LangGraph examples build their agents with `langchain.agents.create_agent`,
+  which replaces LangGraph's deprecated `create_react_agent`.
 - The AI-HPC demo launchers use the installed AsyncFlow, and import a local
   checkout only when `ASYNCFLOW_SRC` is set. `make
   examples-ai-hpc-deterministic` and `make examples-ai-hpc-agentic` create the
@@ -71,6 +73,7 @@ on `main`.
 - The `flowgentic` console script, whose target `flowgentic:main` did not
   exist.
 - The committed results folder `examples/ai-hpc-coupling/agentic_demo_results/`.
+- Two unused `create_react_agent` imports from `flowgentic.langGraph`.
 
 ### Fixed
 
@@ -79,6 +82,8 @@ on `main`.
   `pyyaml` was imported but not declared.
 - The agentic demos' candidate policy no longer rejects a proposal at a bound
   for rounding alone, and never returns a candidate outside its bounds.
+- The LangGraph examples import again: they used `ConcurrentExecutionBackend`,
+  which no AsyncFlow release exports, and now use `LocalExecutionBackend`.
 - Seven `mkdocs build --strict` warnings: three missing annotations and four
   broken links.
 - CI:

@@ -25,6 +25,7 @@ The site builds from `docs/` with MkDocs and deploys from `main` through `.githu
 ## Steps
 
 - [ ] 1. **Pages.** Write and audit the pages in the table.
+    - From W3 R8: `docs/index.md`, `docs/design_patterns/chatbot.md`, `sequential.md` and `supervisor.md` show `ConcurrentExecutionBackend`, which no AsyncFlow release exports; the examples use `LocalExecutionBackend` since R8. `sequential.md` and `supervisor.md` also show `create_react_agent`, which the examples replaced with `langchain.agents.create_agent`.
 - [ ] 2. **Removals.**
     - Remove `docs/features/mcp.md` and the `AGENT_TOOL_AS_MCP` node in `docs/architecture.md`. That flow type exists only on `feature/mcp`, which W2 archives; the status page names `archive/feature/mcp`.
     - Remove `docs/phased_rollout.md`, which shows the retired framework × backend matrix.

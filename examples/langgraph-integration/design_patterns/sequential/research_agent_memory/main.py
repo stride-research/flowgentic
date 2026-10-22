@@ -17,7 +17,7 @@ Run this example:
 """
 
 import asyncio
-from radical.asyncflow import ConcurrentExecutionBackend
+from radical.asyncflow import LocalExecutionBackend
 from concurrent.futures import ThreadPoolExecutor
 from flowgentic.langGraph.main import LangraphIntegration
 from flowgentic.langGraph.memory import MemoryManager, MemoryConfig
@@ -39,7 +39,7 @@ async def start_app():
 	print()
 
 	# Initialize HPC backend
-	backend = await ConcurrentExecutionBackend(ThreadPoolExecutor())
+	backend = await LocalExecutionBackend(ThreadPoolExecutor())
 
 	async with LangraphIntegration(backend=backend) as agents_manager:
 		# Initialize memory manager with importance-based strategy

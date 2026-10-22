@@ -13,7 +13,7 @@ from ..utils.schemas import WorkflowState, AgentOutput, MemoryStats
 from .utils.actions_registry import ActionsRegistry
 from flowgentic.langGraph.execution_wrappers import AsyncFlowType
 from flowgentic.utils.llm_providers import ChatLLMProvider
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
 import logging
@@ -124,7 +124,7 @@ class WorkflowNodes:
 				]
 
 				# Create research agent
-				research_agent = create_react_agent(
+				research_agent = create_agent(
 					model=ChatLLMProvider(
 						provider="OpenRouter", model="google/gemini-2.5-flash"
 					),
@@ -279,7 +279,7 @@ Your task: Conduct comprehensive research on the user's query, leveraging any re
 				]
 
 				# Create synthesis agent
-				synthesis_agent = create_react_agent(
+				synthesis_agent = create_agent(
 					model=ChatLLMProvider(
 						provider="OpenRouter", model="google/gemini-2.5-flash"
 					),

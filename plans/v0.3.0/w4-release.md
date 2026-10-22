@@ -12,7 +12,7 @@ The notes file states:
 
 - What v0.3.0 is: the consolidation snapshot of the July work, and the D1 outcome (maintenance mode, or adapter kept for v0.4.0).
 - Supported composition: LangGraph to AsyncFlow on local backends, on the Python versions D7 chose.
-- Tested environment, from `uv.lock`: LangGraph 0.6.11, langchain-core 0.3.79, AsyncFlow 0.5.0.
+- Tested environment, from `uv.lock`: LangGraph 1.2.16, langchain-core 1.6.13, langchain 1.4.7, AsyncFlow 0.6.0 (R8, D10).
 - Links: the documentation site, the substitution report, tag `snapshot/radical-demo-2026-08`, and the `archive/*` tags from W2.
 - Known limitations: the list in README.md.
 

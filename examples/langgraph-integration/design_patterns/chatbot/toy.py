@@ -17,9 +17,9 @@ from langchain_core.tools import tool
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode, create_react_agent
+from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel
-from radical.asyncflow import ConcurrentExecutionBackend, WorkflowEngine
+from radical.asyncflow import LocalExecutionBackend, WorkflowEngine
 
 from flowgentic.langGraph.execution_wrappers import AsyncFlowType
 from flowgentic.langGraph.utils import LangraphUtils
@@ -46,7 +46,7 @@ A wrapper that returns a task future output, but registers it first
 
 
 async def start_app():
-	backend = await ConcurrentExecutionBackend(ThreadPoolExecutor())
+	backend = await LocalExecutionBackend(ThreadPoolExecutor())
 
 	async with LangraphIntegration(backend=backend) as agents_manager:
 		llm = ChatLLMProvider(provider="OpenRouter", model="google/gemini-2.5-flash")

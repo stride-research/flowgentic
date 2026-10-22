@@ -1,4 +1,4 @@
-from radical.asyncflow import ConcurrentExecutionBackend
+from radical.asyncflow import LocalExecutionBackend
 from concurrent.futures import ThreadPoolExecutor
 from flowgentic.langGraph.main import LangraphIntegration
 from .components.builder import WorkflowBuilder
@@ -9,7 +9,7 @@ from flowgentic.utils.telemetry import GraphIntrospector
 
 
 async def start_app():
-	backend = await ConcurrentExecutionBackend(ThreadPoolExecutor())
+	backend = await LocalExecutionBackend(ThreadPoolExecutor())
 
 	async with LangraphIntegration(backend=backend) as agents_manager:
 		# Build workflow

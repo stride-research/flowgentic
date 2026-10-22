@@ -9,9 +9,9 @@ from dotenv import load_dotenv
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END, add_messages
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 from pydantic import BaseModel, Field
-from radical.asyncflow import ConcurrentExecutionBackend
+from radical.asyncflow import LocalExecutionBackend
 
 from flowgentic.langGraph.execution_wrappers import AsyncFlowType
 from flowgentic.langGraph.main import LangraphIntegration
@@ -47,7 +47,7 @@ async def main():
 	)
 
 	graph = StateGraph(GraphState)
-	backend = await ConcurrentExecutionBackend(ThreadPoolExecutor())
+	backend = await LocalExecutionBackend(ThreadPoolExecutor())
 
 	async with LangraphIntegration(backend=backend) as agents_manager:
 		# Define the routing prompt template
@@ -115,7 +115,7 @@ async def main():
 				return {"final_summary": final_summary}
 
 			# If both agents ran, use LLM to synthesize their outputs
-			synthesis_agent = create_react_agent(
+			synthesis_agent = create_agent(
 				model=ChatLLMProvider(
 					provider="OpenRouter", model="google/gemini-2.5-flash"
 				),
