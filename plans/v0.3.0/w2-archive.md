@@ -100,4 +100,4 @@ Snapshot taken 22 Oct 2026 after `git fetch --prune origin`. "Ahead" is commits 
 ## Restoring and links
 
 - Restore an archived branch: `git push origin 'archive/<branch>^{commit}:refs/heads/<branch>'`.
-- Links that must keep working: CageController cites commit `2e2f8f37` on the kept CNIO branch, and the deck cites `tree/demo/radical`, which stays until D5.
+- Links that must keep working: CageController cites commit `2e2f8f37` on the kept CNIO branch, and the deck cited `tree/demo/radical` until D5. D5 is done (2026-10-22): the deck links `snapshot/radical-demo-2026-08`, and `demo/radical` was deleted.
