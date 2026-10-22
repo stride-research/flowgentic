@@ -97,7 +97,7 @@ async def main():
 			logging.info(f"💬 agent_b END   took_ms={elapsed:.1f}")
 			return {
 				"results": {
-					"agent_b": f"Answer: {state.query} - Parallelism is executing multiple tasks simultaneously!"
+					"agent_B": f"Answer: {state.query} - Parallelism is executing multiple tasks simultaneously!"
 				}
 			}
 		# --8<-- [end:workers]

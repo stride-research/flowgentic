@@ -37,8 +37,9 @@ results. Decisions come from the
 offline rehearsal model (`--agent-mode rehearsal`), with failure injection on:
 the first simulation of cycle 1 fails once and is retried.
 
-Evidence is the test module `tests/integration/test_substitution.py`, run in CI
-with `uv run --extra dev pytest -q tests/integration/test_substitution.py`.
+Evidence is the test module `tests/integration/test_substitution.py`, which CI
+runs with the rest of `tests/`; locally,
+`uv run --extra dev pytest -q tests/integration/test_substitution.py`.
 Its telemetry tests are opt-in (see row 7). Anything not backed by a test is
 marked as code reading or as an observation from a demo run.
 
@@ -115,7 +116,9 @@ remain unexercised; they are unevaluated, not failed:
 
 - Memory: the integration creates a `LangraphMemoryManager`, which this demo
   never uses.
-- The mutable graph (`langGraph/mutable_graph.py`).
+- The mutable graph (`langGraph/mutable_graph.py`). Its example has run in CI
+  since 0.3.0's documentation update (`tests/integration/test_feature_examples.py`),
+  outside this experiment.
 - Live LLM decisions, and with them token accounting (row 5).
 - ADR control (`--controller adr`): unsupported in 0.3.0 (D6). It ran locally
   in both versions against an ADR checkout, but no test covers it.

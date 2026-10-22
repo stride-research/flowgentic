@@ -92,7 +92,7 @@ Single list for the W4 release notes and the W5 status page.
 - ADR mode needs an ADR source checkout (per D6).
 - Not validated: use of a caller-supplied engine, any remote or HPC backend. Cancellation reaching in-flight AsyncFlow tasks is validated on local backends only (R5).
 - Token accounting: the agentic demo records none, even in live mode (R5 report, row 5).
-- The adapter's default retry (3 attempts of at most 30 s each) also wraps graph nodes: a node that runs longer than 30 s fails, and a node that fails re-runs its tasks (R5 report, row 3). Added by W5.
-- The design-pattern examples need a model provider and credentials; CI runs two of them only with `FLOWGENTIC_RUN_LLM_INTEGRATION=1`. Added by W5.
+- The adapter's default retry (3 attempts of at most 30 s each) also wraps graph nodes: a node that runs longer than 30 s fails, and a node that fails with a retryable error re-runs its tasks (R5 report, row 3). Added by W5.
+- The design-pattern examples need a model provider and credentials; `make tests-integration-llm` (`FLOWGENTIC_RUN_LLM_INTEGRATION=1`) runs two of them, and CI never does. Added by W5.
 - `flowgentic.academy` has no tests, and its two examples fail at import (`flowcademy`, noted in R8). Added by W5.
-- Memory: `trim_middle` trims nothing when one place is free, `importance_based` misattributes scores after its first trim, and `summarize` keeps 3 messages under a limit of 2. Found by PR C's code review; documented on the Memory page. Added by W5.
+- Memory: `trim_middle` trims nothing when one place is free, `importance_based` misattributes scores after its first trim, and `summarize` keeps one message more than the limit when 2 or fewer places are free beside the system messages. Found by PR C's code review; documented on the Memory page. Added by W5.

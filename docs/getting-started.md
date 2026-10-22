@@ -117,8 +117,8 @@ Each demo writes its results under `examples/ai-hpc-coupling/`:
 `campaign_summary.json` holds the outcome (`implementation`, `controller`,
 `stop_reason`, `cycles`, `simulations`, `best_x`, `best_value`,
 `uncertainty`), the resident service's counters (`service`), the execution
-evidence (`execution`: named backends, peak compute parallelism, retries and
-one timed event per task) and, for the agentic demo, every agent decision with
+evidence (`execution`: the backend names, then the measured peak compute
+parallelism, retries and one timed event per task) and, for the agentic demo, every agent decision with
 its policy status (`agents`) and the integration that ran (`integration`):
 
 ```bash

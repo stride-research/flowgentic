@@ -50,9 +50,11 @@ application has already created.
 
 ## Decorate functions
 
-`integration.execution_wrappers.asyncflow(flow_type=..., backend=None,
-retry=None, capture_stdio=False, tool_description=None)` registers an async
-function with AsyncFlow. The demo binds it to a short name:
+`integration.execution_wrappers.asyncflow(func=None, *, flow_type, retry=None,
+backend=None, capture_stdio=False, **kwargs)` registers an async function with
+AsyncFlow. `flow_type` is required in practice: without it the decorator fails
+with `AttributeError`. `tool_description` is read from `kwargs`, and other
+keywords are accepted and ignored. The demo binds it to a short name:
 
 ```python
 --8<-- "examples/ai-hpc-coupling/agentic_application.py:decorator-alias"

@@ -41,10 +41,10 @@ and the archived branches.
 
 ## What it provides
 
-- **`bind_agent`** (`flowgentic.agent`) runs an agent component, any object
-  with an `ainvoke(context)` method, as an AsyncFlow task on a named backend.
-  It returns the component's structured decision with the agent's identity and
-  timing.
+- **`bind_agent`** (`flowgentic.agent`) binds an agent component, any object
+  with an `ainvoke(context)` method, to an AsyncFlow task on a named backend.
+  Each call to the bound agent runs the component as that task and returns its
+  structured decision with the agent's identity and timing.
 - **`LangraphIntegration`** (`flowgentic.langGraph`) runs a LangGraph graph's
   tools, services, tasks and nodes as AsyncFlow tasks, with retries, a
   node-level execution report, conversation memory and a graph that changes at

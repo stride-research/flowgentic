@@ -48,9 +48,13 @@ invokes it:
 | `register_node(name, function)` | Registers a new node function; it is not active until added |
 
 `expand_graph`, `reduce_graph` and `update_graph` rebuild the graph and return
-`True`. They change nothing and return `False` when a node is not registered,
-not active, or already active; `register_node` returns `False` when the name is
-taken. A function registered at runtime is added like any other node:
+`True`. They change nothing and return `False` when a node is not registered
+or, for `reduce_graph` and `update_graph`, not active; `expand_graph` also
+returns `False` for a node that is already active. `update_graph` does not
+check that the new node is inactive: replacing a node with one that is already
+active leaves it in the list twice, and the rebuild raises LangGraph's
+`ValueError`. `register_node` returns `False` when the name is taken. A
+function registered at runtime is added like any other node:
 
 ```python
 --8<-- "examples/langgraph-integration/miscellaneous/mutable-graph-creation.py:register-runtime"

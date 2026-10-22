@@ -43,8 +43,9 @@ An edge function reads the stage's result from the state:
 ## An agent stage
 
 The research stage builds an agent with `langchain.agents.create_agent`, gives
-it two tools, and records its output in the state. A failure becomes an entry
-in `state.errors`, which the next edge routes to the error handler:
+it two tools, and records its output in the state. A failure is appended to
+`state.errors` and recorded as `success=False` in the stage's output, which the
+next edge routes to the error handler:
 
 ```python
 --8<-- "examples/langgraph-integration/design_patterns/sequential/research_agent/components/nodes.py:research-agent-node"

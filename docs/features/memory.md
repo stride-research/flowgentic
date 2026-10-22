@@ -23,7 +23,8 @@ The code on this page comes from `tests/unit/test_memory.py`.
 
 ## Trimming strategies
 
-Every strategy keeps all system messages, then fills the rest of the limit:
+Every strategy keeps all system messages, then fills the places left under
+the limit:
 
 | Strategy | Keeps |
 | --- | --- |
@@ -57,14 +58,16 @@ summarize the older messages:
 ```
 
 The summary is a synchronous model call, made while the messages are added.
-If the call fails, the older messages are dropped without a summary. The
-strategy keeps at least two recent messages besides the summary, so with a
-limit of 2 the history holds 3 messages.
+If the call fails, the older messages are dropped without a summary. Besides
+the summary, the strategy keeps up to two recent messages, so it holds one
+message more than the limit when 2 or fewer places are free beside the system
+messages: with a limit of 3 and one system message, 4 messages remain.
 
 ## Add and retrieve interactions
 
-`MemoryManager(config, llm=None)` wraps the short-term history with an async
-interface:
+`MemoryManager(config, llm=None)` wraps the short-term history.
+`add_interaction`, `get_relevant_context` and `consolidate_memory` are
+coroutines; the other methods are plain functions:
 
 ```python
 --8<-- "tests/unit/test_memory.py:memory-manager"
@@ -74,9 +77,10 @@ interface:
   returns the message count, the interaction count and statistics.
 - `get_relevant_context(user_id, query=None)` returns `short_term` (the whole
   history), `memory_stats` and `relevant_messages`. Without a query,
-  `relevant_messages` holds the last 10 messages. With a query, it holds up to
-  10: the 8 that best match the query's words, weighted by importance and
-  recency, and the 3 most recent.
+  `relevant_messages` holds the last 10 messages. With a query, it holds the 8
+  messages that best match the query's words, weighted by importance and
+  recency, then whichever of the 3 most recent are not among them, cut to 10;
+  the cut can drop the newest message.
 - `get_short_term_messages()`, `clear_short_term_memory()`,
   `consolidate_memory()` and `get_memory_health()` read, clear, re-score and
   report on the history.

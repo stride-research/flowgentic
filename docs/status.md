@@ -43,13 +43,17 @@ test suite on Python 3.10, 3.11 and 3.12. The package requires
   in-flight AsyncFlow tasks is validated on local backends only.
 - The adapter's default retry policy (3 attempts of at most 30 s each) also
   wraps graph nodes: a node that runs longer than 30 s fails, and a node that
-  fails re-runs its tasks. See [Fault tolerance](features/fault_tolerance.md).
+  fails with a retryable error re-runs its tasks. See
+  [Fault tolerance](features/fault_tolerance.md).
 - Token accounting: the agentic demo records no tokens, even in live mode
   (substitution report, row 5).
-- The design-pattern examples need a model provider and credentials. CI runs
-  two of them only when `FLOWGENTIC_RUN_LLM_INTEGRATION=1` is set.
+- The design-pattern examples need a model provider and credentials.
+  `tests/integration/test_integration.py` runs two of them when
+  `FLOWGENTIC_RUN_LLM_INTEGRATION=1` is set (`make tests-integration-llm`);
+  CI never sets it.
 - Memory: the `trim_middle` and `importance_based` strategies can keep the
-  wrong messages, and `summarize` can exceed a limit of 2. See
+  wrong messages, and `summarize` can keep one message more than the limit.
+  See
   [Memory](features/memory.md#trimming-strategies).
 - The Academy integration (`flowgentic.academy`) has no tests, and its two
   examples in `examples/academy-integration/` fail at import.

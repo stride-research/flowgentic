@@ -13,8 +13,10 @@ For task-level traces, AsyncFlow itself emits OpenTelemetry spans; see
 `introspector.introspect_node(node, name)` wraps a node. Each time the node
 runs, the wrapper records its start and end time, the state before and after,
 the messages it added, the tool calls and tool results in those messages, the
-token usage and model name from the messages' metadata, and the keys whose
-values changed. The agentic demo wraps every node as it adds it to the graph,
+token usage and model name from the messages' metadata, and the keys that
+changed to a non-empty value. Tool calls are read from the OpenAI-format
+`tool_calls` in a message's `additional_kwargs`, so a model whose messages
+carry them only in `AIMessage.tool_calls` shows none. The agentic demo wraps every node as it adds it to the graph,
 and tells the introspector which nodes the report lists:
 
 ```python
@@ -37,8 +39,9 @@ directory, `~/.flowgentic/config.yml`, the file named by `FLOWGENTIC_CONFIG`,
 or the root of a source checkout. Without one, it uses the same paths as
 defaults.
 
-`integration.generate_execution_artifacts(app, __file__, final_state=state)`
-does the same for a script: it creates `agent_execution_results/` next to the
+`await integration.generate_execution_artifacts(app, __file__, final_state=state)`
+does the same for a script, once `agent_introspector._all_nodes` is set (without
+it, writing the report raises `ValueError`): it creates `agent_execution_results/` next to the
 calling file, writes the report, and renders the graph to
 `agent_graph.png` at the top of the report. Rendering needs `pygraphviz`, which
 is not a Flowgentic dependency; without it, the call prints an error and keeps

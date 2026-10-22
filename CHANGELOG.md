@@ -15,11 +15,12 @@ on `main`.
 
 ### Added
 
-- `flowgentic.agent.bind_agent`: runs a framework-specific agent component as
-  an AsyncFlow task on a named backend, and returns its structured decision with
-  the agent's identity and timing.
+- `flowgentic.agent.bind_agent`: binds a framework-specific agent component to
+  an AsyncFlow task on a named backend; each call runs the component as that
+  task and returns its structured decision with the agent's identity and
+  timing.
 - Named AsyncFlow backends: Flowgentic's `asyncflow` decorator takes `backend=`
-  and passes it to AsyncFlow.
+  and passes it to AsyncFlow, except for `EXECUTION_BLOCK`.
 - Service tasks (`AsyncFlowType.SERVICE_TASK`) for resident AsyncFlow
   services, and `MutableGraph` (`flowgentic.langGraph.mutable_graph`) for
   graphs changed at runtime.
@@ -110,6 +111,8 @@ on `main`.
 - The mutable-graph example's conditional graph always took the standard
   route: its routing flag was missing from the state schema that the graph and
   the router read.
+- The supervisor toy example stored agent B's result as `agent_b`, and its
+  gather node, which reads `agent_B`, passed "N/A" to the synthesis model.
 - CI:
   - `astral-sh/setup-uv` is pinned to an existing release (it publishes no
     `v9` tag).
