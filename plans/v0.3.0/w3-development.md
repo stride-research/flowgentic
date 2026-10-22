@@ -24,13 +24,13 @@ Rules for every requirement below:
 
 ## R2 Packaging metadata
 
-- [ ] In `pyproject.toml`:
+- [x] In `pyproject.toml`:
     - Set `version = "0.3.0"`. Delete `[project.scripts]`: its target `flowgentic:main` does not exist.
     - Replace both git-URL dependencies with releases: `radical-asyncflow==0.5.0` and `academy-py==0.3.0`. Academy stays a core dependency because the API reference imports `flowgentic.academy`.
     - Declare `pyyaml`, which `src/flowgentic/settings/extract_settings.py` imports. Remove `langchain-community` and `langchain-mcp-adapters`, which nothing imports. Move `python-dotenv`, used only by examples, to an `examples` extra.
     - Cap `langgraph<1.0` and `langchain-core<1.0`: the adapter is tested on 0.6.11 and 0.3.79 only.
     - Raise `python-json-logger` from `>=2.0.0` to the first release that ships `pythonjsonlogger.json` (3.1.0 per the PR 101 review; confirm in its changelog). `src/flowgentic/utils/logger/logger.py` and `colorfulFormatter.py` import that module, so a pip install that resolves 2.x cannot import Flowgentic.
-- [ ] Regenerate the lock with `uv lock`. List every package whose locked version changed in PR B's body.
+- [x] Regenerate the lock with `uv lock`. List every package whose locked version changed in PR B's body.
     - If the `uv.lock` diff touches packages R2 does not name: restore the lock and upgrade only R2's packages with `uv lock --upgrade-package <package>`.
     - If tests fail after the relock: compare the PyPI `radical-asyncflow` 0.5.0 wheel with commit `897faac`, which the current lock pins. Pinning to a git commit is the last resort; it makes v0.3.0 GitHub-only (D2).
 

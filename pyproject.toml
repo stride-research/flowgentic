@@ -1,6 +1,6 @@
 [project]
 name = "flowgentic"
-version = "0.1.0"
+version = "0.3.0"
 description = "A library to enable running agentic frameworks on HPC environments."
 readme = "README.md"
 authors = [
@@ -10,23 +10,24 @@ authors = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "langgraph>=0.6.6",
-    "radical-asyncflow @ git+https://github.com/radical-cybertools/radical.asyncflow.git@main",
+    "langgraph>=0.6.6,<1.0",
+    "radical-asyncflow==0.5.0",
     "langchain-openai",
     "langchain",
     "langchain-ollama",
-    "langchain-core",
-    "langchain-community",
-    "langchain-mcp-adapters",
-    "python-dotenv",
-    "academy-py @ git+https://github.com/proxystore/academy.git",
+    "langchain-core<1.0",
+    "academy-py==0.3.0",
     "pydantic>=2.0.0",
-    "python-json-logger>=2.0.0",
-
+    "python-json-logger>=3.1.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
+examples = [
+    "python-dotenv",
+]
 dev = [
+    "flowgentic[examples]",
     "ruff>=0.12.11",
     "pre-commit",
     "mkdocs-material",
@@ -39,9 +40,6 @@ dev = [
     "pytest-asyncio>=1.2.0",
     "pytest-cov",
 ]
-
-[project.scripts]
-flowgentic = "flowgentic:main"
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
