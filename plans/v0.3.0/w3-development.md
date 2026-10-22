@@ -12,7 +12,7 @@ Rules for every requirement below:
 
 ## R0 Plan files
 
-- [x] Make the first commit on `release/v0.3.0` add `plans/v0.3.0/` and `CLAUDE.md`. Until then they stay untracked in Matteo's checkout at `/Users/mturilli/github/stride/flowgentic`; copy them from there when working in another worktree.
+- [x] Make the first commit on `release/v0.3.0` add `plans/v0.3.0/` and `CLAUDE.md`. Until then they stay untracked in Matteo's main checkout; copy them from there when working in another worktree.
 
     Done-check: `git log --format=%s --reverse main..release/v0.3.0 | head -1` names the plan files' commit, and `git status --short plans CLAUDE.md` prints nothing.
 
