@@ -687,7 +687,7 @@ await app.ainvoke(WorkflowState(messages=[SystemMessage("Initialize")]))
 - Check that `@asyncflow` decorator is used correctly
 - Verify async context manager (`async with LangraphIntegration`)
 
-For detailed API documentation, see the [API Reference](../../api/reference.md).
+For detailed API documentation, see the [API Reference](../api/flowgentic/index.md).
 
 Explore other design patterns:
 - [Sequential/Pipeline Pattern](sequential.md) — Interactive conversational agents

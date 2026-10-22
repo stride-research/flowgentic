@@ -61,10 +61,10 @@ Matteo takes each decision. Bring the evidence and the recommendation, and recor
 | D3 | Approval path into `main` | Javier reviews; or Matteo's admin bypass | Ask Javier first; bypass only if no review arrives | W1 step 3 | Javier reviews: Claude requests his review on the merge PR with `gh` (approved as a G7 message on 2026-10-22); admin bypass only if no review arrives, asked at G2. 2026-10-22, PR 101: CodeRabbit and Copilot reviewed it in place of Javier (both comment-only; 5 findings logged as W3 work, PR left unchanged), and Matteo approved G2 with his admin bypass. |
 | D4 | Citation | Keep the 3 listed authors, or add contributors; with or without a Zenodo DOI | Add a `CITATION.cff` listing the contributors Matteo approves; Zenodo only if Matteo enables it | PR C | |
 | D5 | When to delete `demo/radical` | After the deck links the snapshot tag; or keep it | Delete once the deck links `snapshot/radical-demo-2026-08` | After W4 | |
-| D6 | ADR mode in the release | Supported at a stated ADR revision; or documented as unsupported | Unsupported, since ADR is unreleased | PR B | |
-| D7 | Python versions | 3.10–3.11; or 3.10–3.12 | Add 3.12 if the lock resolves and CI is green | PR B | |
-| D8 | R5 amendments A1–A4 (in w3-development.md) | Accept each, reject each | Accept all four | R5 | |
-| D9 | Where the 7 strict-build warning fixes land | PR B (R3); or PR C (W5) as the spec places them | PR B: R3's docs job must pass on PR B, and it fails while the warnings remain | R3 | |
+| D6 | ADR mode in the release | Supported at a stated ADR revision; or documented as unsupported | Unsupported, since ADR is unreleased | PR B | Documented as unsupported (Matteo, 2026-10-22, relayed from the parent session). ADR has no PyPI release or tags; `--controller adr` keeps requiring `ADR_SRC`. |
+| D7 | Python versions | 3.10–3.11; or 3.10–3.12 | Add 3.12 if the lock resolves and CI is green | PR B | 3.10–3.12 (Matteo, 2026-10-22, relayed from the parent session). The locked suite passed locally on all three before CI. |
+| D8 | R5 amendments A1–A4 (in w3-development.md) | Accept each, reject each | Accept all four | R5 | Accept all A1–A4 (Matteo, 2026-10-22, relayed from the parent session). |
+| D9 | Where the 7 strict-build warning fixes land | PR B (R3); or PR C (W5) as the spec places them | PR B: R3's docs job must pass on PR B, and it fails while the warnings remain | R3 | PR B, in R3 (Matteo, 2026-10-22, relayed from the parent session). |
 
 ## PR checks
 

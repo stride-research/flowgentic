@@ -13,12 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
+      - uses: astral-sh/setup-uv@v10.3.1
         with:
-          python-version: '3.x'
-      - run: pip install mkdocs-material mkdocstrings[python] pymdown-extensions mkdocs_gen_files mkdocs-literate-nav mkdocs-section-index
-      - run: pip install -e .
-      - run: mkdocs build
+          enable-cache: true
+      - run: uv sync --frozen --extra dev
+      - run: uv run --frozen --extra dev mkdocs build --strict
       - uses: actions/upload-pages-artifact@v3
         with:
           path: ./site

@@ -7,7 +7,7 @@ at runtime with expand, reduce, and update operations.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Callable, TypedDict
+from typing import Any, Dict, List, Optional, Callable, TypedDict
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
@@ -297,7 +297,9 @@ class MutableGraph(ABC):
 		logger.info(f"✅ UPDATE Complete: {self.active_node_names}")
 		return True
 
-	async def run(self, initial_state: Optional[Dict] = None):
+	async def run(
+		self, initial_state: Optional[Dict] = None
+	) -> Optional[Dict[str, Any]]:
 		"""
 		Execute the current graph configuration.
 

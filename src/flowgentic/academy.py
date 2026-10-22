@@ -6,7 +6,7 @@ This allows Academy agents to be used as workflow tasks in AsyncFlow.
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Type, Union
 
 from academy.agent import Agent
 from academy.exchange.local import LocalExchangeFactory
@@ -135,7 +135,7 @@ class AcademyIntegration:
 
 	def create_workflow_from_academy_chain(
 		self, agents_and_actions: List[tuple], workflow_name: str = "academy_workflow"
-	):
+	) -> Callable[..., Awaitable[Any]]:
 		"""
 		Create a complete workflow from a chain of Academy agents.
 
