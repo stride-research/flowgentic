@@ -40,9 +40,11 @@ The notes file states:
 
     Done-check: `gh release view v0.3.0` lists 2 assets, and the wheel installs from its release URL in a clean venv.
 
-- [ ] 4. **PyPI (G6), only if D2 says yes.** The publish workflow runs through trusted publishing, which Matteo configures.
+- [x] 4. **PyPI (G6), only if D2 says yes.** The publish workflow runs through trusted publishing, which Matteo configures.
 
     Done-check: `pip install flowgentic==0.3.0` succeeds in a clean venv.
+
+    Result: skipped. D2 = GitHub release only (Matteo, 2026-10-22).
 
 - [ ] 5. **Announce.** Draft the note to RADICAL and the deck update that links the snapshot tag and the release, for Matteo to send (G7). Mark step 6 of the roadmap done.
 
