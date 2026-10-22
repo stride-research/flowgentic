@@ -65,8 +65,8 @@ cd flowgentic
 uv sync --locked
 ```
 
-Or build the wheel and install it into a new environment. Once published, the
-v0.3.0 GitHub release carries the same wheel.
+Or build the wheel and install it into a new environment. The
+[v0.3.0 GitHub release](https://github.com/stride-research/flowgentic/releases/tag/v0.3.0) carries the same wheel.
 
 ```bash
 uv build

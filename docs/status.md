@@ -104,9 +104,10 @@ git switch -c feature/mcp archive/feature/mcp
 A maintainer restores the branch on GitHub by pushing the tag's commit to it:
 `git push origin 'archive/<branch>^{commit}:refs/heads/<branch>'`.
 
-The tag `snapshot/radical-demo-2026-08` marks the `demo/radical` branch at
-`dd27bd8b7e6e` (19 August 2026), the July 2026 demos as they stood before
-they were merged into `main`.
+The tag `snapshot/radical-demo-2026-08` marks the July 2026 demos as they
+stood before they were merged into `main`: commit `dd27bd8b7e6e` (19 August
+2026), the tip of the former `demo/radical` branch, which was deleted on
+22 October 2026.
 
 ## Earlier releases
 

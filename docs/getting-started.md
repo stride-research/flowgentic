@@ -22,7 +22,7 @@ uv sync --locked
 out of date. Add `--extra dev` for the test and documentation tools.
 
 To use Flowgentic as a package instead, build the wheel and install it into a
-new environment. Once published, the v0.3.0 GitHub release carries the same
+new environment. The [v0.3.0 GitHub release](https://github.com/stride-research/flowgentic/releases/tag/v0.3.0) carries the same
 wheel.
 
 ```bash
