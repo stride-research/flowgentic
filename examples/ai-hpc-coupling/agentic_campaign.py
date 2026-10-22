@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator
 
@@ -78,32 +78,28 @@ async def open_campaign(
     (``None`` for the direct version). On exit the resident service is
     cancelled and the engine shut down.
     """
-    if integration == "flowgentic":
-        async with LangraphIntegration(backend=backends) as adapter:
+    async with AsyncExitStack() as stack:
+        if integration == "flowgentic":
+            adapter = await stack.enter_async_context(
+                LangraphIntegration(backend=backends)
+            )
+            flow = adapter.flow
             application = await build_agentic_campaign(
                 adapter,
                 settings,
                 decision_model,
             )
-            try:
-                yield application, adapter.flow, adapter
-            finally:
-                application.service_future.cancel()
-        return
-
-    flow = await WorkflowEngine.create(backend=backends)
-    try:
-        application = await build_direct_agentic_campaign(
-            flow,
-            settings,
-            decision_model,
-        )
-        try:
-            yield application, flow, None
-        finally:
-            application.service_future.cancel()
-    finally:
-        await flow.shutdown()
+        else:
+            adapter = None
+            flow = await WorkflowEngine.create(backend=backends)
+            stack.push_async_callback(flow.shutdown)
+            application = await build_direct_agentic_campaign(
+                flow,
+                settings,
+                decision_model,
+            )
+        stack.callback(application.service_future.cancel)
+        yield application, flow, adapter
 
 
 async def run(args: argparse.Namespace) -> int:

@@ -150,9 +150,7 @@ def evenly_spaced(lower: float, upper: float, count: int) -> list[float]:
         points = [
             lower + (upper - lower) * index / (count - 1) for index in range(count)
         ]
-    return [
-        _round_within(min(max(point, lower), upper), lower, upper) for point in points
-    ]
+    return [min(max(round(point, 6), lower), upper) for point in points]
 
 
 def _round_within(value: float, lower_bound: float, upper_bound: float) -> float:

@@ -57,7 +57,7 @@ Requirements: Python >= 3.10 (LangGraph recently discontinued support for python
 
 The repository uses `uv` and the checked-in lockfile so contributors, CI, and
 coding agents resolve the same environment. The default interpreter is Python
-3.10, and CI also verifies Python 3.11.
+3.10, and CI also verifies Python 3.11 and 3.12.
 
 ```bash
 uv sync --frozen
@@ -75,7 +75,8 @@ and refreshes it whenever `pyproject.toml` or `uv.lock` changes.
 Environment variables for LLM providers:
 
 - **OPEN_ROUTER_API_KEY**: required if you use the OpenRouter-backed LLM provider.
-- `.env` files are supported via `python-dotenv` if you call `load_dotenv()`.
+- `.env` files are supported via `python-dotenv` if you call `load_dotenv()`;
+  install it with the `examples` extra (`uv sync --frozen --extra examples`).
 
 ```bash
 export OPEN_ROUTER_API_KEY=sk-or-...

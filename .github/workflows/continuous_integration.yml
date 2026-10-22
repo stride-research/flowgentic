@@ -83,7 +83,7 @@ jobs:
         if: always()
         run: |
           echo "=== Coverage Summary ==="
-          coverage report || echo "Coverage report not available"
+          uv run --frozen --python ${{ matrix.python-version }} --extra dev coverage report || echo "Coverage report not available"
 
       - name: Upload results of test coverage
         uses: actions/upload-artifact@v7

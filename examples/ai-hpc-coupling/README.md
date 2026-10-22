@@ -104,7 +104,8 @@ compiled agent graph without changing its implementation.
 ## Run the RADICAL baseline
 
 From the Flowgentic repository root, create the environment once with
-`uv sync --frozen --extra examples`, then:
+`uv sync --frozen --extra examples` (or `--extra dev`, which includes it, if
+you also develop Flowgentic; `uv sync` removes extras you do not name), then:
 
 ```bash
 examples/ai-hpc-coupling/run_radical_demo.sh application

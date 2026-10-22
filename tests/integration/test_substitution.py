@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import logging
 import subprocess
 import sys
 from collections import Counter
@@ -33,6 +34,16 @@ REPORT = Path("agent_execution_results") / "execution_summary.md"
 
 if str(DEMO_DIR) not in sys.path:
     sys.path.insert(0, str(DEMO_DIR))
+
+
+@pytest.fixture(autouse=True, scope="module")
+def restore_logging_levels() -> Any:
+    """Undo the runner's import-time ``configure_logging()`` after this module."""
+    names = ("", "asyncio", "flowgentic", "radical.adr", "radical.asyncflow")
+    levels = {name: logging.getLogger(name).level for name in names}
+    yield
+    for name, level in levels.items():
+        logging.getLogger(name).setLevel(level)
 
 
 def demo(module: str) -> ModuleType:
@@ -105,12 +116,12 @@ def test_flowgentic_and_direct_versions_match(tmp_path: Path) -> None:
                 "--output-dir",
                 str(output_dir),
             ],
-            check=True,
             cwd=REPOSITORY,
             timeout=120,
             capture_output=True,
             text=True,
         )
+        assert completed.returncode == 0, (integration, completed.stderr)
         for leak in ("never retrieved", "destroyed but it is pending"):
             assert leak not in completed.stderr, (integration, completed.stderr)
         summaries[integration] = json.loads(
