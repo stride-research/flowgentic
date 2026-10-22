@@ -31,7 +31,8 @@ on `main`.
   runs the same agent graph on AsyncFlow without Flowgentic, and the run's
   `campaign_summary.json` records which integration ran. The substitution
   experiment compares the two (`tests/integration/test_substitution.py`,
-  `docs/evaluation/substitution.md`).
+  `docs/evaluation/substitution.md`), including LLM tool selection and an agent
+  handoff driven by a scripted chat model.
 - An `examples` extra (`python-dotenv`), included in `dev`.
 - CI: a strict MkDocs build job, and Python 3.12 in the test matrix.
 - This changelog.
@@ -82,6 +83,9 @@ on `main`.
   `pyyaml` was imported but not declared.
 - The agentic demos' candidate policy no longer rejects a proposal at a bound
   for rounding alone, and never returns a candidate outside its bounds.
+- `create_task_description_handoff_tool`: every handoff failed with
+  `AttributeError`, because the tool called a `GraphIntrospector` method removed
+  in October 2025. The call is gone, and handoffs work.
 - The LangGraph examples import again: they used `ConcurrentExecutionBackend`,
   which no AsyncFlow release exports, and now use `LocalExecutionBackend`.
 - Seven `mkdocs build --strict` warnings: three missing annotations and four

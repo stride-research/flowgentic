@@ -56,6 +56,8 @@ implicit defaults do.
 | 5 | Resource and token accounting | Tasks run on the named backends; observed compute parallelism 4. The node report sums tokens from message metadata. | Same placement and parallelism | Resources: both supply it. Tokens: not tested. | `test_both_versions_place_tasks_on_the_named_backends`: each backend's own task registry shows 4 × `run_simulation` on `compute` and the six AI tasks on `ai`, in both versions. Parallelism comes from `test_flowgentic_and_direct_versions_match`. Tokens need a live LLM run, and none was possible without credentials. Code reading says a live run would record 0 tokens in both versions anyway: `decision_message` in `agentic_support.py` sets usage to zero, and `LangChainDecisionModel._decide` calls `with_structured_output`, which returns the parsed decision rather than the message that carries usage. Recording tokens is a job for the application's decision-model layer; Flowgentic's report can only sum what the messages carry. |
 | 6 | Application code and maintenance | Application module without the shared control loop: 362 lines (319 code lines). The adapter is 601 lines (`main.py`, `execution_wrappers.py`, `fault_tolerance.py`). `LangraphIntegration` also creates a memory manager (`memory.py`, 723 lines) that this demo never uses. | Application module: 378 lines (323 code lines), including 32 lines (22 code) of local helpers (`asyncflow_tool`, `asyncflow_block`) | Both supply it, in about the same code: the direct version has 4 more code lines. The adapter adds code and dependencies to maintain. | Line counts are from `wc -l`, plus a count of non-blank, non-comment, non-docstring lines. The Flowgentic module's control loop (`run_agentic_with_application_control`, 16 code lines) is left out because both versions use it. To offer both versions, the runner gained 76 lines and lost 20. `direct_agentic_application.py` imports nothing from Flowgentic. A direct run in this repository still loads Flowgentic through shared code: the runner imports `LangraphIntegration` and `agentic_application.py`, and `agentic_support.py` imports `demo_support.py`, which imports Flowgentic. A standalone direct application would need none of it. Dependencies (fresh resolve, Python 3.10): Flowgentic's come to 74 third-party packages, the direct version's (`radical-asyncflow==0.6.0`, `langgraph>=1.0,<2.0`, `langchain-core>=1.0,<2.0`) to 42. That is 32 more, plus Flowgentic itself, among them `langchain`, `langchain-openai`, `langchain-ollama`, `academy-py` and `python-json-logger`. Live mode needs a provider package (for example `langchain-openai`) in either version. See also the LangGraph 1.x port below. |
 | 7 | Observability and reporting | `agent_execution_results/execution_summary.md`: per-node duration, state keys, messages and model names | No report unless the application wires in Flowgentic's telemetry module | Node-level report: Flowgentic's telemetry module supplies it, without needing the execution adapter. Task-level spans: both supply them (opt-in). | `test_flowgentic_and_direct_versions_match`: only the Flowgentic run writes the report. `test_flowgentic_report_works_without_the_adapter`: Flowgentic's `GraphIntrospector` (`flowgentic.utils.telemetry`), wrapped around the direct version's nodes, produces the node-level report with no `LangraphIntegration`. The application has to wrap the nodes and set the introspector's private `_all_nodes` and `_final_state`; the Flowgentic version does the same through `add_instrumented_nodes` and the runner. Observed in a demo run's report: it shows 0 tool calls and 0 tool executions, because node code calls the tools directly. AsyncFlow 0.6.0 emits OpenTelemetry spans once `flow.start_telemetry()` runs with RHAPSODY's `TelemetryManager` installed (`rhapsody-py[telemetry]`, a dependency of neither AsyncFlow nor Flowgentic). `test_asyncflow_telemetry_spans` is skipped unless RHAPSODY is installed; it was run locally with `rhapsody-py[telemetry]==0.6.0`. In both versions it asserts 1 workflow span, 4 block spans and 9 task spans per cycle, with each task span carrying `task_id`, `executable` and `status`. It also asserts that every task span is labelled with the default backend (`compute`), including the AI tasks, which row 5 shows ran on `ai`. That mislabelling is an AsyncFlow defect, present in 0.5.0 and 0.6.0. |
+| 8 | LLM tool selection (R5b) | A scripted model's call to `run_simulation`, an `AGENT_TOOL_AS_FUNCTION` tool, runs through LangGraph's `ToolNode` as an AsyncFlow task on `compute` | The same, with the AsyncFlow task wrapped by `langchain_core.tools.tool` through the direct version's `asyncflow_tool` helper | Both supply it | `test_llm_selected_tool_runs_as_an_asyncflow_task`: in both versions the graph produces a human message, the model's tool call, a successful tool message with identical content, and the model's answer. AsyncFlow registers exactly one `run_simulation` task on `compute` per version. The model is scripted (`GenericFakeChatModel`), so this tests the tool path, not a live model's choice. |
+| 9 | Agent handoff (R5b) | `create_task_description_handoff_tool` builds a tool that runs an AsyncFlow task returning `Command(goto=[Send(...)], graph=Command.PARENT)`. As shipped since `09b66146` (2025-10-16), it failed on every call: it called `GraphIntrospector.record_supervisor_event`, which that commit deleted. R5b removed the call. | A 17-line tool that builds the same `Command` in an AsyncFlow task | Both supply it after R5b's fix; before the fix, only the direct version did. | `test_supervisor_hands_off_to_a_worker[flowgentic]` and `[direct]`: a supervisor subgraph's scripted tool call hands the task to the parent graph's `researcher` node, which receives exactly the task description. Before the fix, the Flowgentic case failed with `AttributeError: 'GraphIntrospector' object has no attribute 'record_supervisor_event'` (the failing run is recorded in PR B's body), and the direct case passed. |
 
 ## LangGraph 1.x and AsyncFlow 0.6.0 (amendment A4, R8)
 
@@ -87,15 +89,14 @@ label every task with the default backend. The docs snippets that still show
 
 ## Not tested (amendment A3)
 
-The demo calls its three tools (`query_surrogate`, `run_simulation`,
+The agentic demo calls its three tools (`query_surrogate`, `run_simulation`,
 `update_surrogate`) from node code with `.ainvoke`, and its three reasoning
-functions as plain AsyncFlow tasks. These adapter features were therefore not
-exercised; they are unevaluated, not failed:
+functions as plain AsyncFlow tasks. R5b's scripted tests (rows 8 and 9) cover
+LLM tool selection and handoffs outside the demo. These adapter features
+remain unexercised; they are unevaluated, not failed:
 
-- LLM tool selection (`AGENT_TOOL_AS_FUNCTION` tools chosen by a model).
 - Memory: the integration creates a `LangraphMemoryManager`, which this demo
   never uses.
-- Agent handoffs (`create_task_description_handoff_tool`, `Command`, `Send`).
 - The mutable graph (`langGraph/mutable_graph.py`).
 - Live LLM decisions, and with them token accounting (row 5).
 - ADR control (`--controller adr`): unsupported in 0.3.0 (D6). It ran locally
@@ -113,8 +114,12 @@ The node-level report comes from Flowgentic's telemetry module, which also
 works on the direct version without the adapter. Everything else is supplied
 equally, in about the same application code (the direct version has 4 more
 code lines) and with 32 fewer third-party packages: results, task identity,
-the explicit retry, cancellation, service reuse, cleanup and backend
-placement. Neither version records tokens, and by code reading the gap is in
+the explicit retry, cancellation, service reuse, cleanup, backend placement,
+LLM tool selection and handoffs.
+
+The adapter's handoff tool had failed on every call since October 2025, when
+a refactor deleted the introspection method it called. PR B removes the call;
+no test had covered the path. Neither version records tokens, and by code reading the gap is in
 the application's decision-model layer.
 
 Design recommendation: per-task retry and timeout belong in AsyncFlow, which

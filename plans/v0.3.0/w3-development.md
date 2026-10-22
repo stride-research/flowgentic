@@ -126,7 +126,7 @@ Added by D10. Amendment A3 listed both paths as not tested, because the demo cal
 - [ ] In `tests/integration/test_substitution.py`, add an offline test with a scripted chat model (no credentials). The model's tool calls run through LangGraph's `ToolNode`, in both versions with identical arguments:
     - Tool selection: the model calls a bounded science tool that runs as an AsyncFlow task. In the Flowgentic version that is an `AGENT_TOOL_AS_FUNCTION` tool; in the direct version, an AsyncFlow task wrapped with `langchain_core.tools.tool`.
     - Handoff: a supervisor agent hands off to a worker through Flowgentic's `create_task_description_handoff_tool`, and in the direct version through an equivalent tool that returns `Command(goto=Send(...), graph=Command.PARENT)`.
-- [ ] The handoff tool calls `GraphIntrospector.record_supervisor_event`, which commit `09b66146` (2025-10-16) deleted. Record the as-is failure as D1 evidence. Whether PR B also fixes it waits for Matteo (asked 2026-10-22).
+- [ ] The handoff tool calls `GraphIntrospector.record_supervisor_event`, which commit `09b66146` (2025-10-16) deleted. Record the as-is failure as D1 evidence, then fix it by dropping the call, and test the handoff in both versions. Matteo, 2026-10-22: "Record, then fix".
 - [ ] Add the results to `docs/evaluation/substitution.md` as verdict rows, and take tool selection and handoffs out of "Not tested".
 
     Done-check: the test passes, asserting each version's observed behaviour, and the report's rows cite it.

@@ -3,7 +3,8 @@
 Both versions run the same LangGraph application on AsyncFlow. The Flowgentic
 version goes through ``LangraphIntegration`` and its decorators; the direct
 version calls AsyncFlow itself. ``docs/evaluation/substitution.md`` cites these
-tests as the evidence for each criterion.
+tests as the evidence for each criterion. The last tests (R5b) drive LLM tool
+selection and a supervisor handoff with a scripted chat model.
 """
 
 from __future__ import annotations
@@ -15,11 +16,21 @@ import logging
 import subprocess
 import sys
 from collections import Counter
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Annotated, Any, AsyncIterator
 
 import pytest
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.tools import BaseTool, tool
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.prebuilt import InjectedState, ToolNode, tools_condition
+from langgraph.types import Command, Send
+
+from flowgentic.langGraph.execution_wrappers import AsyncFlowType, BaseLLMAgentState
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 DEMO_DIR = REPOSITORY / "examples" / "ai-hpc-coupling"
@@ -407,3 +418,188 @@ async def test_asyncflow_telemetry_spans(integration: str) -> None:
     # AsyncFlow 0.5.0 labels every task with the default backend, including
     # those that ran on "ai" (test_both_versions_place_tasks_on_the_named_backends).
     assert set(labels.values()) == {"compute"}
+
+
+# --- R5b: LLM tool selection and handoff, driven by a scripted chat model ----
+# The model's tool calls run through LangGraph's ToolNode, as they would for a
+# live LLM. Both versions share the graph and the state schema (Flowgentic's
+# BaseLLMAgentState, a plain Pydantic model with a messages channel).
+
+
+@asynccontextmanager
+async def open_engine(integration: str) -> AsyncIterator[tuple[Any, Any]]:
+    """Yield an AsyncFlow engine and, for Flowgentic, its integration."""
+    backends = await demo("campaign_common").create_local_backends(4)
+    if integration == "flowgentic":
+        from flowgentic.langGraph.main import LangraphIntegration
+
+        async with LangraphIntegration(backend=backends) as adapter:
+            yield adapter.flow, adapter
+        return
+
+    from radical.asyncflow import WorkflowEngine
+
+    flow = await WorkflowEngine.create(backend=backends)
+    try:
+        yield flow, None
+    finally:
+        await flow.shutdown()
+
+
+def agent_graph(
+    model: GenericFakeChatModel, tools: list[BaseTool]
+) -> CompiledStateGraph:
+    """A model node that calls tools through ToolNode until it answers."""
+
+    async def call_model(state: BaseLLMAgentState) -> dict[str, Any]:
+        return {"messages": [await model.ainvoke(state.messages)]}
+
+    graph = StateGraph(BaseLLMAgentState)
+    graph.add_node("model", call_model)
+    graph.add_node("tools", ToolNode(tools))
+    graph.add_edge(START, "model")
+    graph.add_conditional_edges("model", tools_condition)
+    graph.add_edge("tools", "model")
+    return graph.compile()
+
+
+def science_tool(integration: str, flow: Any, adapter: Any) -> BaseTool:
+    """The demo's simulation, exposed as an agent tool on the compute backend."""
+
+    async def run_simulation(x: float) -> dict[str, float]:
+        """Evaluate one candidate with the demo's synthetic simulation."""
+        result = await demo("campaign_common").evaluate_candidate(x, 0, 0)
+        return {"x": result["x"], "value": result["value"]}
+
+    description = "Run one bounded scientific simulation on compute."
+    if integration == "flowgentic":
+        return adapter.execution_wrappers.asyncflow(
+            flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION,
+            backend="compute",
+            tool_description=description,
+        )(run_simulation)
+    direct = demo("direct_agentic_application")
+    return direct.asyncflow_tool(description)(
+        flow.function_task(run_simulation, backend="compute")
+    )
+
+
+def handoff_tool(
+    integration: str, flow: Any, adapter: Any, agent_name: str
+) -> BaseTool:
+    """A tool that hands the task to another agent in the parent graph."""
+    description = f"Hand the task to the {agent_name}."
+    if integration == "flowgentic":
+        return adapter.execution_wrappers.create_task_description_handoff_tool(
+            agent_name, description
+        )
+
+    # Direct: the same Command as Flowgentic's tool, built in an AsyncFlow task.
+    @flow.function_task
+    async def hand_off(task_description: str, state: Any) -> Command:
+        agent_input = {
+            **state.model_dump(),
+            "messages": [HumanMessage(content=task_description)],
+        }
+        return Command(goto=[Send(agent_name, agent_input)], graph=Command.PARENT)
+
+    @tool(f"transfer_to_{agent_name}", description=description)
+    async def transfer(
+        task_description: Annotated[str, "What the next agent should do."],
+        state: Annotated[Any, InjectedState],
+    ) -> Command:
+        return await hand_off(task_description, state)
+
+    return transfer
+
+
+# Criterion 8: the model selects a tool, and the tool runs as an AsyncFlow task.
+async def test_llm_selected_tool_runs_as_an_asyncflow_task() -> None:
+    outcomes = {}
+    for integration in INTEGRATIONS:
+        model = GenericFakeChatModel(
+            messages=iter(
+                [
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": "run_simulation",
+                                "args": {"x": 2.75},
+                                "id": "call-1",
+                            }
+                        ],
+                    ),
+                    AIMessage(content="The simulation at x=2.75 is done."),
+                ]
+            )
+        )
+        async with open_engine(integration) as (flow, adapter):
+            graph = agent_graph(model, [science_tool(integration, flow, adapter)])
+            final = await graph.ainvoke(
+                {"messages": [HumanMessage(content="Evaluate x=2.75.")]}
+            )
+            census = Counter(
+                (
+                    component["description"]["name"],
+                    component["description"]["target_backend"],
+                )
+                for component in flow.components.values()
+            )
+        messages = final["messages"]
+        assert [type(message).__name__ for message in messages] == [
+            "HumanMessage",
+            "AIMessage",
+            "ToolMessage",
+            "AIMessage",
+        ]
+        assert messages[2].name == "run_simulation"
+        assert messages[2].status == "success"
+        assert census == Counter({("run_simulation", "compute"): 1})
+        outcomes[integration] = messages[2].content
+
+    assert outcomes["direct"] == outcomes["flowgentic"]
+    assert "2.75" in outcomes["direct"]
+
+
+# Criterion 9: a supervisor hands off to a worker through a handoff tool.
+@pytest.mark.parametrize("integration", INTEGRATIONS)
+async def test_supervisor_hands_off_to_a_worker(integration: str) -> None:
+    model = GenericFakeChatModel(
+        messages=iter(
+            [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "transfer_to_researcher",
+                            "args": {"task_description": "Evaluate x=2.75."},
+                            "id": "call-1",
+                        }
+                    ],
+                )
+            ]
+        )
+    )
+    received = []
+
+    async def researcher(state: Any) -> dict[str, Any]:
+        # A Send payload reaches its node as sent: here, a plain mapping.
+        received.append([message.content for message in state["messages"]])
+        return {"messages": [AIMessage(content="researcher done")]}
+
+    async with open_engine(integration) as (flow, adapter):
+        supervisor = agent_graph(
+            model, [handoff_tool(integration, flow, adapter, "researcher")]
+        )
+        parent = StateGraph(BaseLLMAgentState)
+        parent.add_node("supervisor", supervisor, destinations=("researcher",))
+        parent.add_node("researcher", researcher)
+        parent.add_edge(START, "supervisor")
+        parent.add_edge("researcher", END)
+        final = await parent.compile().ainvoke(
+            {"messages": [HumanMessage(content="Plan the study.")]}
+        )
+
+    assert received == [["Evaluate x=2.75."]]
+    assert final["messages"][-1].content == "researcher done"

@@ -258,13 +258,6 @@ class ExecutionWrappersLangraph:
 			task_description: str,
 			state: BaseLLMAgentState,
 		) -> Command:
-			self.introspector.record_supervisor_event(
-				state=state,
-				destination=agent_name,
-				task_description=task_description,
-				node_name="supervisor",
-			)
-
 			# Build a plain-mapping payload for Send. Pydantic models are not mappings.
 			task_description_message = HumanMessage(content=task_description)
 			base_state = state.model_dump()
