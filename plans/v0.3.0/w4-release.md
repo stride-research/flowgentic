@@ -58,11 +58,13 @@ The notes file states:
 
     Result: skipped. D2 = GitHub release only (Matteo, 2026-10-22).
 
-- [ ] 5. **Announce.** Draft the note to RADICAL and the deck update that links the snapshot tag and the release, for Matteo to send (G7). Mark step 6 of the roadmap done.
+- [x] 5. **Announce.** Draft the note to RADICAL and the deck update that links the snapshot tag and the release, for Matteo to send (G7). Mark step 6 of the roadmap done.
 
     Done-check: Matteo confirms the note went out.
 
     Drafted (2026-10-22) for Matteo to send: the RADICAL note, and the deck update, which replaces the deck's `tree/demo/radical` link with `snapshot/radical-demo-2026-08` and adds the release. The roadmap's step 6 is his to mark done.
+
+    Result: Matteo confirmed on 2026-10-22, in the W4 session: "The RADICAL note went out."
 
 ## Rollback
 
