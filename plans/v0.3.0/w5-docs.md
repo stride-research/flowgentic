@@ -41,7 +41,7 @@ The site builds from `docs/` with MkDocs and deploys from `main` through `.githu
     Result: both set.
 - [x] 5. **Repository README.** Rewrite `README.md` at the repo root to match Home: status, the one-row support matrix, install, the citation updated to 0.3.0 and 2026 (authors per D4), and a PyPI badge only if D2 says yes.
 
-    Result: rewritten; no PyPI badge (D2 open). `CITATION.cff` added with D4's authors (`uvx cffconvert --validate` passes); the README cites 0.3.0 and 2026 with the same authors.
+    Result: rewritten; no PyPI badge (D2 was open then; W4 recorded it as GitHub release only, no PyPI). `CITATION.cff` added with D4's authors (`uvx cffconvert --validate` passes); the README cites 0.3.0 and 2026 with the same authors.
 
 Done-checks for PR C:
 
