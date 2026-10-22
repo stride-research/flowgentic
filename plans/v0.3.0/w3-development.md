@@ -47,10 +47,10 @@ Rules for every requirement below:
 
 ## R4 Demo launchers
 
-- [ ] `examples/ai-hpc-coupling/run_demo.sh`, `run_radical_demo.sh`, `run_agentic_demo.sh` and `run_augmented_demo.sh` use the installed AsyncFlow by default and prepend `ASYNCFLOW_SRC` to `PYTHONPATH` only when it is set. Today they exit with "AsyncFlow source not found" when `../../radical/radical.asyncflow/src` is missing.
-- [ ] `--controller adr` still requires `ADR_SRC`, because ADR is unreleased. Apply D6: support ADR mode at a stated ADR revision, or document it as unsupported.
+- [x] `examples/ai-hpc-coupling/run_demo.sh`, `run_radical_demo.sh`, `run_agentic_demo.sh` and `run_augmented_demo.sh` use the installed AsyncFlow by default and prepend `ASYNCFLOW_SRC` to `PYTHONPATH` only when it is set. Today they exit with "AsyncFlow source not found" when `../../radical/radical.asyncflow/src` is missing.
+- [x] `--controller adr` still requires `ADR_SRC`, because ADR is unreleased. Apply D6: support ADR mode at a stated ADR revision, or document it as unsupported.
 
-- [ ] Remove the committed `examples/ai-hpc-coupling/agentic_demo_results/` and add `agentic_demo_results/` to `examples/ai-hpc-coupling/.gitignore`, which already ignores the other three demos' result folders (PR 101 review). First check that no test, doc or README links into it.
+- [x] Remove the committed `examples/ai-hpc-coupling/agentic_demo_results/` and add `agentic_demo_results/` to `examples/ai-hpc-coupling/.gitignore`, which already ignores the other three demos' result folders (PR 101 review). First check that no test, doc or README links into it.
 
     Done-check: in a fresh clone with no sibling repositories, `make examples-ai-hpc-deterministic` and `make examples-ai-hpc-agentic` both succeed, and `git status --short` is clean afterwards.
 

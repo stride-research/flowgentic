@@ -5,7 +5,7 @@ demo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 flowgentic_root="$(cd "${demo_dir}/../.." && pwd)"
 workspace_root="$(cd "${flowgentic_root}/../.." && pwd)"
 
-asyncflow_src="${ASYNCFLOW_SRC:-${workspace_root}/radical/radical.asyncflow/src}"
+asyncflow_src="${ASYNCFLOW_SRC:-}"
 adr_src="${ADR_SRC:-${workspace_root}/radical/radical.adr/src}"
 python_bin="${FLOWGENTIC_PYTHON:-${flowgentic_root}/.venv/bin/python}"
 controller="${1:-application}"
@@ -22,19 +22,24 @@ if [[ ! -x "${python_bin}" ]]; then
 	exit 2
 fi
 
-if [[ ! -d "${asyncflow_src}" ]]; then
+# Use the installed AsyncFlow unless ASYNCFLOW_SRC names a local checkout.
+if [[ -n "${asyncflow_src}" && ! -d "${asyncflow_src}" ]]; then
 	echo "AsyncFlow source not found: ${asyncflow_src}" >&2
-	echo "Set ASYNCFLOW_SRC to radical.asyncflow/src." >&2
+	echo "Set ASYNCFLOW_SRC to radical.asyncflow/src, or unset it to use the installed AsyncFlow." >&2
 	exit 2
 fi
 
 if [[ "${controller}" == "adr" && ! -d "${adr_src}" ]]; then
 	echo "ADR source not found: ${adr_src}" >&2
+	echo "ADR mode is unsupported in Flowgentic 0.3.0 and needs an ADR checkout." >&2
 	echo "Set ADR_SRC to radical.adr/src." >&2
 	exit 2
 fi
 
-python_path="${flowgentic_root}/src:${asyncflow_src}"
+python_path="${flowgentic_root}/src"
+if [[ -n "${asyncflow_src}" ]]; then
+	python_path="${asyncflow_src}:${python_path}"
+fi
 if [[ "${controller}" == "adr" ]]; then
 	python_path="${python_path}:${adr_src}"
 fi

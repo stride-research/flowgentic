@@ -8,7 +8,8 @@
 - External-LLM integration tests are opt-in. Run them only when explicitly
   requested, model credentials are configured, and
   `FLOWGENTIC_RUN_LLM_INTEGRATION=1` is set.
-- The AI-HPC demo intentionally imports the linked local AsyncFlow and ADR
-  repositories through `examples/ai-hpc-coupling/run_demo.sh`.
+- The AI-HPC demo launchers in `examples/ai-hpc-coupling/` use the installed
+  AsyncFlow. They import a local AsyncFlow checkout only when `ASYNCFLOW_SRC` is
+  set; the unsupported ADR mode needs an ADR checkout (`ADR_SRC`).
 - Keep audience-facing demo Python under `examples/ai-hpc-coupling/` formatted
   with four spaces per indentation level.

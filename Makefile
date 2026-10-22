@@ -62,10 +62,10 @@ tests-integration-llm: ## Run opt-in examples that require model credentials
 # ============
 
 examples-ai-hpc-deterministic: ## Run the deterministic AI-HPC coupling demo
-	examples/ai-hpc-coupling/run_demo.sh application
+	$(UV_RUN) --frozen --extra examples examples/ai-hpc-coupling/run_demo.sh application
 
 examples-ai-hpc-agentic: ## Run the offline agentic AI-HPC coupling demo
-	examples/ai-hpc-coupling/run_agentic_demo.sh application
+	$(UV_RUN) --frozen --extra examples examples/ai-hpc-coupling/run_agentic_demo.sh application
 
 ## LangGraph
 ### Design Patterns 
