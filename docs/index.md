@@ -4,69 +4,74 @@ title: Flowgentic
 
 # Flowgentic
 
-Build and run modern agentic workflows on HPC with minimal overhead. Flowgentic bridges HPC workflow engines and agent orchestration frameworks, so you can prototype locally and scale to clusters without rewrites.
+Flowgentic runs agent components and LangGraph workflows as tasks on
+[RADICAL AsyncFlow](https://github.com/radical-cybertools/radical.asyncflow).
+This documentation describes Flowgentic 0.3.0.
 
-### What can I use this for?
+## Status
 
-- **HPC execution of agent workflows**: Run multiagent graphs (e.g., langraph) on HPC via multiple HPC workflow engines (e.g., Radical Asyncflow). Note, while the canonical usecase is in an HPC execution context, you can run this in your laptop using as backend the `ConcurrentExecutionBackend`
-- **Concurrent tool and agent blocks**: Offload parallelizable work to HPC backends.
-- **Production-oriented patterns**: Start from examples that implement sequential, supervisor and hierarchical patterns with typed state, tool registries, and error handling.
-- **Memory Capabilities**: Used a range of memory solutions for managing context engineering. From shared-node memory to agent-based summarization, we provide a suite of efficient and scalable memory mechanism
-- **Telemetry**: Analyze your workflow execution with HPC-accomodated telemetry via the [Observe package](https://github.com/stride-research/observe) (under development). We also provide agents introspection that summarize agents decisions, avoiding the hussle of going through thousands of lines of logs.
+Flowgentic 0.3.0 is in maintenance mode. It preserves the July 2026 work as a
+documented, tested snapshot. The LangGraph execution adapter
+(`LangraphIntegration`) is frozen and gets no new features: the
+[substitution experiment](evaluation/substitution.md) found that, in the
+agentic demo, its only distinct contribution beyond AsyncFlow and LangGraph is
+an implicit retry and timeout on every call and graph node, which re-runs
+scientific work. New applications can bind agents with `bind_agent`, or run
+LangGraph on AsyncFlow directly.
 
+| Agent framework | Workflow engine | Backends | Python |
+| --- | --- | --- | --- |
+| LangGraph 1.x | RADICAL AsyncFlow 0.6.0 | Local | 3.10, 3.11, 3.12 |
 
-## Quickstart
-### 1) Installation
+[Project status](status.md) lists the tested versions, the known limitations
+and the archived branches.
+
+## What it provides
+
+- **`bind_agent`** (`flowgentic.agent`) runs an agent component, any object
+  with an `ainvoke(context)` method, as an AsyncFlow task on a named backend.
+  It returns the component's structured decision with the agent's identity and
+  timing. See [Augment an AsyncFlow application](guides/augment-asyncflow-app.md).
+- **`LangraphIntegration`** (`flowgentic.langGraph`) runs a LangGraph graph's
+  tools, services, tasks and nodes as AsyncFlow tasks, with retries, a
+  node-level execution report, conversation memory and a graph that changes at
+  runtime. See [LangGraph on AsyncFlow with Flowgentic](guides/langgraph-on-asyncflow.md).
+  The same graph runs on AsyncFlow without Flowgentic:
+  [LangGraph on AsyncFlow directly](guides/langgraph-direct.md).
+
+## Where it fits in RADICAL
+
+An agent can sit in five places in a RADICAL application. Flowgentic has a part
+in two of them.
+
+| Composition | Owner | Flowgentic part |
+| --- | --- | --- |
+| An agent proposes a decision: LangGraph inside ADR `@decide`, or an AuCaM `CampaignController` | ADR, AuCaM | None |
+| A policy submits scientific work while `@decide` runs | None: it bypasses ADR's bounds, budgets and action IDs | None |
+| An existing application calls an agent at fixed decision points, as an AsyncFlow task | The application | `bind_agent` |
+| An ADR action or AuCaM workflow launches an agent workflow whose tools run through AsyncFlow | AuCaM, AsyncFlow | `LangraphIntegration` (frozen) |
+| An external harness (Claude Code, Codex, OpenClaw) steers a run or submits a campaign | ADR, AuCaM | None |
+
+ADR and AuCaM are not released, and Flowgentic 0.3.0 does not support ADR
+mode; see [Project status](status.md).
+
+## Install
+
+From a clone, with the locked environment:
+
 ```bash
-# 1) pyproject.toml
-dependencies = [
-    ...,
-    "flowgentic @ git+https://github.com/stride-research/flowgentic/flowgentic.git@main",
-    ...
-
-]
-# 2) pip3 
-pip3 install "git+https://github.com/stride-research/flowgentic.git@main#egg=flowgentic"
-
-# 3) cloning this repo (runtime or development environment)
-uv sync --frozen
-uv sync --frozen --extra dev
-
+git clone https://github.com/stride-research/flowgentic.git
+cd flowgentic
+uv sync --locked
 ```
-If you are in MacOS you may need to install graphviz pluggins:
-```bash
-# For MacOS
-brew install graphviz
-sudo dot -c
 
-```
-### 2) Environmental variables
-- **OPEN_ROUTER_API_KEY**: required if you use the OpenRouter-backed LLM provider.
-- `.env` files are supported via `python-dotenv` if you call `load_dotenv()`.
+Or build the wheel and install it into a new environment. The v0.3.0 GitHub
+release attaches the same wheel.
 
 ```bash
-export OPEN_ROUTER_API_KEY=sk-or-...
+uv build
+uv venv --python 3.10 flowgentic-env
+uv pip install --python flowgentic-env/bin/python dist/flowgentic-0.3.0-py3-none-any.whl
 ```
 
-### 3) `config.yml`
-- You can modify the `config.yml` at the top level of this repo in order to adjust different settings affecting the package (e.g., folders names for artifacts, logger level)
-
-
-
-## Architecture overview
-
-```mermaid
-flowchart LR
-  User --> AgentLayer
-  subgraph Flowgentic
-    AgentLayer[Agents]
-    Memory[Memory]
-    Fault[Fault Tolerance]
-    Utils[Utils]
-  end
-  AgentLayer -->|LangGraph| LG[LangGraph Runtime]
-  AgentLayer -->|AsyncFlow| AF[Radical AsyncFlow]
-```
-
-Explore the sections on the left for patterns, features, API reference, and examples.
-
+[Getting started](getting-started.md) runs the two offline demos.

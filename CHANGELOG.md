@@ -35,6 +35,8 @@ on `main`.
   handoff driven by a scripted chat model.
 - An `examples` extra (`python-dotenv`), included in `dev`.
 - CI: a strict MkDocs build job, and Python 3.12 in the test matrix.
+- Tests that run the offline mutable-graph and service-task examples
+  (`tests/integration/test_feature_examples.py`).
 - This changelog.
 
 ### Changed
@@ -70,6 +72,11 @@ on `main`.
 - Development uses `uv` and the checked-in `uv.lock`. CI checks formatting with
   the locked Ruff, and builds the documentation strictly from the locked
   environment.
+- The documentation site describes 0.3.0: its status, a getting-started page,
+  guides for `bind_agent`, for `LangraphIntegration` and for LangGraph on
+  AsyncFlow without Flowgentic, a project status page and this changelog. Its
+  code blocks include tested files, and the strict build also fails on broken
+  links and anchors. The README matches the site's home page.
 
 ### Removed
 
@@ -79,6 +86,10 @@ on `main`.
   exist.
 - The committed results folder `examples/ai-hpc-coupling/agentic_demo_results/`.
 - Two unused `create_react_agent` imports from `flowgentic.langGraph`.
+- Documentation pages for code that is not on `main`: MCP tools
+  (`AGENT_TOOL_AS_MCP`, archived as `archive/feature/mcp`), the framework ×
+  backend roadmap, and the chatbot and hierarchical design patterns, which have
+  no runnable example.
 
 ### Fixed
 
@@ -96,6 +107,9 @@ on `main`.
   `LocalExecutionBackend`.
 - Seven `mkdocs build --strict` warnings: three missing annotations and four
   broken links.
+- The mutable-graph example's conditional graph always took the standard
+  route: its routing flag was missing from the state schema that the graph and
+  the router read.
 - CI:
   - `astral-sh/setup-uv` is pinned to an existing release (it publishes no
     `v9` tag).

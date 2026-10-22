@@ -7,6 +7,9 @@ once on AsyncFlow directly, and records what the adapter demonstrably
 supplies. A capability counts for the adapter only when the adapter supplies
 it and the direct version does not.
 
+Outcome (October 2026): following this report, the execution adapter is frozen
+in maintenance mode. See [Project status](../status.md).
+
 ## Setup
 
 | | Flowgentic version | Direct version |
@@ -25,7 +28,8 @@ backends once; `open_campaign` in `agentic_campaign.py` gives both versions the
 same engine and service lifetime; and `run_agentic_with_application_control`
 applies the same stopping rules.
 
-Versions: Flowgentic 0.3.0 (`release/v0.3.0`), radical-asyncflow 0.6.0,
+Versions: Flowgentic 0.3.0 (`release/v0.3.0`, merged into `main` as
+`9949f5e7`), radical-asyncflow 0.6.0,
 LangGraph 1.2.16, langchain-core 1.6.13, langchain 1.4.7, Python 3.10. R5 first
 ran on AsyncFlow 0.5.0 and LangGraph 0.6.11. R8 moved the lock to the versions
 above, and every test and number in this report was rerun on them with the same
@@ -98,8 +102,8 @@ LangGraph 1.2.16. D10 then moved the port into PR B as R8. The port took:
   application passes `handle_tool_errors=True`.
 
 AsyncFlow 0.6.0 still has no per-task retry or timeout, and its spans still
-label every task with the default backend. The docs snippets that still show
-`create_react_agent` belong to W5's design-pattern audit.
+label every task with the default backend. The design-pattern pages now
+include the examples' code, so they show `create_agent`.
 
 ## Not tested (amendment A3)
 
