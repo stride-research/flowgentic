@@ -58,10 +58,10 @@ Rules for every requirement below:
 
 Both arms of R5 share this policy code, so it is corrected before the experiment runs. Found by the PR 101 review and confirmed at `dd27bd8`.
 
-- [ ] In `examples/ai-hpc-coupling/agent_contracts.py`, make the candidate policy hold its hard bounds:
+- [x] In `examples/ai-hpc-coupling/agent_contracts.py`, make the candidate policy hold its hard bounds:
     - `enforce_candidate_policy` rounds candidates to 6 decimals, then `_candidate_batch_is_valid` compares them with the exact bounds, so a proposal at a bound can be rejected for rounding alone.
     - The last-resort batch from `evenly_spaced` is returned without validation, so a rounded endpoint can fall up to 5e-7 outside `[lower_bound, upper_bound]`.
-- [ ] Add unit tests to `tests/unit/test_agentic_demo.py`: a proposal within rounding of a bound is accepted, and every returned candidate, fallback or last resort, lies within `[lower_bound, upper_bound]`.
+- [x] Add unit tests to `tests/unit/test_agentic_demo.py`: a proposal within rounding of a bound is accepted, and every returned candidate, fallback or last resort, lies within `[lower_bound, upper_bound]`.
 
     Done-check: the new tests fail on the unfixed code and pass after the fix, and the full suite stays green.
 
