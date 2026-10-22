@@ -55,6 +55,10 @@ on `main`.
   - `python-json-logger>=3.1.0`.
   - `pyyaml` is declared.
 - `python-dotenv` moved from the core dependencies to the `examples` extra.
+- LangGraph 1.x's `ToolNode` re-raises tool errors by default, where 0.6
+  returned them to the model as messages. A Flowgentic tool that still fails
+  after its retries now aborts the graph run; pass `handle_tool_errors=True` to
+  `ToolNode` to keep the 0.6 behaviour.
 - The LangGraph examples build their agents with `langchain.agents.create_agent`,
   which replaces LangGraph's deprecated `create_react_agent`.
 - The AI-HPC demo launchers use the installed AsyncFlow, and import a local
@@ -85,7 +89,8 @@ on `main`.
   for rounding alone, and never returns a candidate outside its bounds.
 - `create_task_description_handoff_tool`: every handoff failed with
   `AttributeError`, because the tool called a `GraphIntrospector` method removed
-  in October 2025. The call is gone, and handoffs work.
+  in October 2025. The call is gone, and handoffs work, with Pydantic and
+  TypedDict graph states (such as `create_agent`'s).
 - The LangGraph examples import again: they used `ConcurrentExecutionBackend`,
   which no AsyncFlow release exports, and now use `LocalExecutionBackend`.
 - Seven `mkdocs build --strict` warnings: three missing annotations and four

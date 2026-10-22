@@ -25,7 +25,7 @@ import pytest
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import BaseTool, tool
-from langgraph.graph import END, START, StateGraph
+from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import InjectedState, ToolNode, tools_condition
 from langgraph.types import Command, Send
@@ -422,8 +422,9 @@ async def test_asyncflow_telemetry_spans(integration: str) -> None:
 
 # --- R5b: LLM tool selection and handoff, driven by a scripted chat model ----
 # The model's tool calls run through LangGraph's ToolNode, as they would for a
-# live LLM. Both versions share the graph and the state schema (Flowgentic's
-# BaseLLMAgentState, a plain Pydantic model with a messages channel).
+# live LLM. Both versions share the graph and its state schema: Flowgentic's
+# BaseLLMAgentState (a plain Pydantic model with a messages channel) or
+# LangGraph's MessagesState (a TypedDict, the shape create_agent uses).
 
 
 @asynccontextmanager
@@ -447,14 +448,17 @@ async def open_engine(integration: str) -> AsyncIterator[tuple[Any, Any]]:
 
 
 def agent_graph(
-    model: GenericFakeChatModel, tools: list[BaseTool]
+    model: GenericFakeChatModel,
+    tools: list[BaseTool],
+    state_schema: Any = BaseLLMAgentState,
 ) -> CompiledStateGraph:
     """A model node that calls tools through ToolNode until it answers."""
 
-    async def call_model(state: BaseLLMAgentState) -> dict[str, Any]:
-        return {"messages": [await model.ainvoke(state.messages)]}
+    async def call_model(state: Any) -> dict[str, Any]:
+        messages = state["messages"] if isinstance(state, dict) else state.messages
+        return {"messages": [await model.ainvoke(messages)]}
 
-    graph = StateGraph(BaseLLMAgentState)
+    graph = StateGraph(state_schema)
     graph.add_node("model", call_model)
     graph.add_node("tools", ToolNode(tools))
     graph.add_edge(START, "model")
@@ -497,8 +501,9 @@ def handoff_tool(
     # Direct: the same Command as Flowgentic's tool, built in an AsyncFlow task.
     @flow.function_task
     async def hand_off(task_description: str, state: Any) -> Command:
+        base_state = state if isinstance(state, dict) else state.model_dump()
         agent_input = {
-            **state.model_dump(),
+            **base_state,
             "messages": [HumanMessage(content=task_description)],
         }
         return Command(goto=[Send(agent_name, agent_input)], graph=Command.PARENT)
@@ -563,8 +568,16 @@ async def test_llm_selected_tool_runs_as_an_asyncflow_task() -> None:
 
 
 # Criterion 9: a supervisor hands off to a worker through a handoff tool.
+@pytest.mark.parametrize(
+    "state_schema",
+    (BaseLLMAgentState, MessagesState),
+    ids=("pydantic-state", "typeddict-state"),
+)
 @pytest.mark.parametrize("integration", INTEGRATIONS)
-async def test_supervisor_hands_off_to_a_worker(integration: str) -> None:
+async def test_supervisor_hands_off_to_a_worker(
+    integration: str,
+    state_schema: Any,
+) -> None:
     model = GenericFakeChatModel(
         messages=iter(
             [
@@ -590,9 +603,11 @@ async def test_supervisor_hands_off_to_a_worker(integration: str) -> None:
 
     async with open_engine(integration) as (flow, adapter):
         supervisor = agent_graph(
-            model, [handoff_tool(integration, flow, adapter, "researcher")]
+            model,
+            [handoff_tool(integration, flow, adapter, "researcher")],
+            state_schema,
         )
-        parent = StateGraph(BaseLLMAgentState)
+        parent = StateGraph(state_schema)
         parent.add_node("supervisor", supervisor, destinations=("researcher",))
         parent.add_node("researcher", researcher)
         parent.add_edge(START, "supervisor")

@@ -258,9 +258,11 @@ class ExecutionWrappersLangraph:
 			task_description: str,
 			state: BaseLLMAgentState,
 		) -> Command:
-			# Build a plain-mapping payload for Send. Pydantic models are not mappings.
+			# Build a plain-mapping payload for Send from a Pydantic or TypedDict state.
 			task_description_message = HumanMessage(content=task_description)
-			base_state = state.model_dump()
+			base_state = (
+				state.model_dump() if isinstance(state, BaseModel) else dict(state)
+			)
 			agent_input = {**base_state, "messages": [task_description_message]}
 
 			return Command(
