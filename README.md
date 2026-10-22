@@ -5,7 +5,7 @@
     <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT">
   </a>
   <a href="https://www.python.org/downloads/">
-    <img src="https://img.shields.io/badge/python-3.9+-blue.svg" alt="Python 3.9+">
+    <img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python 3.10+">
   </a>
   <a href="https://github.com/radical-cybertools/radical.asyncflow/actions/workflows/tests.yml">
     <img src="https://github.com/radical-cybertools/radical.asyncflow/actions/workflows/tests.yml/badge.svg?branch=main" alt="Tests">
@@ -55,15 +55,22 @@ Current and planned integrations. ✅ available, 🚧 planned, 🟡 pre-release.
 
 Requirements: Python >= 3.10 (LangGraph recently discontinued support for python 3.9. See more [here](https://docs.langchain.com/oss/python/migrate/langgraph-v1#dropped-python-3-9-support:~:text=All%20LangChain%20packages%20now%20require%20Python%203.10%20or%20higher.%20Python%203.9%20reached%20end%20of%20life%20in%20October%202025.))
 
+The repository uses `uv` and the checked-in lockfile so contributors, CI, and
+coding agents resolve the same environment. The default interpreter is Python
+3.10, and CI also verifies Python 3.11.
+
 ```bash
-pip install '.'
+uv sync --frozen
 ```
 
 Dev extras (linting, docs, tests):
 
 ```bash
-pip install '.[dev]'
+uv sync --frozen --extra dev
 ```
+
+If you use direnv, allow the checked-in `.envrc`; it activates the same `.venv`
+and refreshes it whenever `pyproject.toml` or `uv.lock` changes.
 
 Environment variables for LLM providers:
 
@@ -104,8 +111,7 @@ Browse the docs in `docs/`:
 If you use MkDocs locally:
 
 ```bash
-pip install '.[dev]'
-mkdocs serve
+uv run --extra dev mkdocs serve
 ```
 
 ---

@@ -11,16 +11,15 @@ authors = [
 requires-python = ">=3.10"
 dependencies = [
     "langgraph>=0.6.6",
-    "radical.asyncflow @ git+https://github.com/radical-cybertools/radical.asyncflow.git@main",
+    "radical-asyncflow @ git+https://github.com/radical-cybertools/radical.asyncflow.git@main",
     "langchain-openai",
     "langchain",
     "langchain-ollama",
     "langchain-core",
     "langchain-community",
     "langchain-mcp-adapters",
-    "radical-asyncflow",
     "python-dotenv",
-    "academy-py",
+    "academy-py @ git+https://github.com/proxystore/academy.git",
     "pydantic>=2.0.0",
     "python-json-logger>=2.0.0",
 
@@ -36,10 +35,8 @@ dev = [
     "mkdocs_gen_files",
     "mkdocs-literate-nav",
     "mkdocs-section-index",
-    "pytest>=7.0.0",
-    "pytest-asyncio>=0.21.0",
-    "uv>=0.1.0",
-    "pytest-asyncio>=0.21.0",
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
     "pytest-cov",
 ]
 
@@ -52,10 +49,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.uv.sources]
-academy-py = { git = "https://github.com/proxystore/academy" }
-radical-asyncflow = { git = "https://github.com/radical-cybertools/radical.asyncflow.git" }
 
 [tool.ruff]
 line-length = 88
@@ -89,12 +82,6 @@ select = [
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
-
-[dependency-groups]
-dev = [
-    "pytest>=8.4.2",
-    "pytest-asyncio>=1.2.0",
-]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

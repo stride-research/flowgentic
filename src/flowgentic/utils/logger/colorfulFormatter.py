@@ -1,6 +1,6 @@
 import json
 
-from pythonjsonlogger import jsonlogger
+from pythonjsonlogger import json as jsonlogger
 
 
 # ANSI color codes

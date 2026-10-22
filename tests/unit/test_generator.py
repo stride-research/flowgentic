@@ -27,11 +27,12 @@ class FakeState(BaseModel):
 	messages: Annotated[List[BaseMessage], add_messages]
 
 
-async def test_cicylic_node_extraction():
+async def test_cicylic_node_extraction(tmp_path):
 	start_1 = datetime.now()
 	end_1 = start_1 + timedelta(seconds=0.5)
 	record_1 = NodeExecutionRecord(
 		node_name="nodeA_1",
+		node_name_detailed="nodeA_1",
 		description="Cleans and normalizes the input data.",
 		start_time=start_1,
 		end_time=end_1,
@@ -55,6 +56,7 @@ async def test_cicylic_node_extraction():
 	end_2 = start_2 + timedelta(seconds=15.3)
 	record_2 = NodeExecutionRecord(
 		node_name="nodeB_123123",
+		node_name_detailed="nodeB_123123",
 		description="Generates a plan and executes a search tool.",
 		start_time=start_2,
 		end_time=end_2,
@@ -92,6 +94,7 @@ async def test_cicylic_node_extraction():
 	end_3 = start_3 + timedelta(milliseconds=50)
 	record_3 = NodeExecutionRecord(
 		node_name="nodeA_123453",
+		node_name_detailed="nodeA_123453",
 		description="Updates the loop counter and checks for completion.",
 		start_time=start_3,
 		end_time=end_3,
@@ -111,9 +114,15 @@ async def test_cicylic_node_extraction():
 
 	current_time = datetime.now()
 	state = FakeState(messages=[])
-	state.messages = ["A final message"]
+	state.messages = [AIMessage(content="A final message")]
 	report_generator = ReportGenerator(
 		final_state=state, records=records, start_time=current_time
 	)
 
-	report_generator.generate_report(all_nodes=["nodeA", "nodeB"])
+	results_dir = tmp_path / "agent_execution_results"
+	results_dir.mkdir()
+	report_generator.generate_report(
+		all_nodes=["nodeA", "nodeB"],
+		dir_to_write=str(tmp_path),
+	)
+	assert (results_dir / "execution_summary.md").is_file()
