@@ -49,10 +49,11 @@ invokes it:
 
 `expand_graph`, `reduce_graph` and `update_graph` rebuild the graph and return
 `True`. They change nothing and return `False` when a node is not registered
-or, for `reduce_graph` and `update_graph`, not active. `expand_graph` and
-`update_graph` also return `False` when the new node is already active. (In
-0.3.0, `update_graph` accepted it, listed it twice, and the rebuild raised
-LangGraph's `ValueError`.) `register_node` returns `False` when the name is taken. A
+or, for `reduce_graph` and `update_graph`, not active. `expand_graph` also
+returns `False` for a node that is already active, and `update_graph` for a
+replacement that is already active, unless it is the node being replaced. (In
+0.3.0, `update_graph` accepted an active replacement, listed it twice, and the
+rebuild raised LangGraph's `ValueError`.) `register_node` returns `False` when the name is taken. A
 function registered at runtime is added like any other node:
 
 ```python

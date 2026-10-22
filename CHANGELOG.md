@@ -20,8 +20,9 @@ A patch release: fixes for the defects that 0.3.0's documentation lists.
   another message's importance. The scores now follow the trimmed history, which
   also corrects the importance weighting in `get_relevant_context`.
 - Memory, `summarize`: the summary could take the history one message over the
-  limit. It now fits within the limit, and with one free place the strategy
-  trims as `trim_last` does.
+  limit. It now fits within the limit. With one free place, or when no summary
+  is made, the strategy trims as `trim_last` does; a failed summary used to
+  leave its place empty, or keep the oldest messages.
 - `MutableGraph.update_graph` returns `False` for a replacement node that is
   already active. It used to list the node twice, and the rebuild raised
   LangGraph's `ValueError`.

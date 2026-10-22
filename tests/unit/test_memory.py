@@ -394,6 +394,24 @@ def test_summarize_one_free_place():
 	]
 
 
+@pytest.mark.parametrize("failure", ["model-call", "summary"])
+def test_summarize_without_a_summary_trims_as_trim_last(failure):
+	"""When no summary is made, summarize keeps every recent message the limit allows."""
+	manager = _summarizing_manager(limit=3)
+	if failure == "model-call":
+		manager.llm.invoke.side_effect = RuntimeError("model unavailable")
+	else:
+		manager._create_conversation_summary = Mock(side_effect=RuntimeError("bad"))
+
+	manager.add_messages(_system_and_two_exchanges())
+
+	assert [m.content for m in manager.message_history] == [
+		"System prompt",
+		"Second message",
+		"Second response",
+	]
+
+
 async def run_async_tests():
 	"""Run async tests."""
 	await test_memory_manager()

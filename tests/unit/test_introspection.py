@@ -174,3 +174,23 @@ async def test_final_response_without_additional_kwargs(content):
 
 	record = list(introspector._records.values())[-1]
 	assert record.final_response == "Done"
+
+
+@pytest.mark.asyncio
+async def test_final_response_skips_text_blocks_without_text():
+	"""A text block whose text is not a string is skipped, not joined."""
+	introspector = GraphIntrospector()
+
+	async def answering_node(state: SampleState) -> SampleState:
+		state.messages.append(
+			AIMessage(
+				content=[{"type": "text", "text": None}, {"type": "text", "text": "Done"}]
+			)
+		)
+		return state
+
+	wrapped = introspector.introspect_node(answering_node, node_name="answering_node")
+	await wrapped(SampleState())
+
+	record = list(introspector._records.values())[-1]
+	assert record.final_response == "Done"

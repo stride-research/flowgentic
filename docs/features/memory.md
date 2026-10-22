@@ -59,7 +59,7 @@ summarize the older messages:
 ```
 
 The summary is a synchronous model call, made while the messages are added.
-If the call fails, the older messages are dropped without a summary. The
+If the call fails, the strategy trims as `"trim_last"` does. The
 summary takes one free place. The recent messages take half of the free
 places, or two if that is more, but always leave the summary's place: with a
 limit of 3 and one system message, the system message, the summary and the

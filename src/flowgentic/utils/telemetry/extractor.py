@@ -93,9 +93,10 @@ class Extractor:
 		if isinstance(message.content, str):
 			return message.content
 		return "".join(
-			block if isinstance(block, str) else block.get("text", "")
+			block if isinstance(block, str) else block["text"]
 			for block in message.content
-			if isinstance(block, str) or block.get("type") == "text"
+			if isinstance(block, str)
+			or (block.get("type") == "text" and isinstance(block.get("text"), str))
 		)
 
 	def _extract_token_usage(self, message: AIMessage) -> Optional[TokenUsage]:

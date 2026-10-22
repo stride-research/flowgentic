@@ -271,12 +271,15 @@ class ShortTermMemoryManager:
 		# Create summary of old messages
 		try:
 			summary_message = self._create_conversation_summary(messages_to_summarize)
-			summarized_msgs = [summary_message] if summary_message else []
 		except Exception:
-			# If summarization fails, fall back to trimming
-			summarized_msgs = messages_to_summarize[: keep_total - len(recent_msgs)]
+			summary_message = None
 
-		return system_msgs + summarized_msgs + recent_msgs
+		# If summarization fails, fall back to trimming, so the summary's
+		# place goes to a recent message
+		if summary_message is None:
+			return self._trim_from_end()
+
+		return system_msgs + [summary_message] + recent_msgs
 
 	def _create_conversation_summary(
 		self, messages: List[BaseMessage]
