@@ -1,5 +1,4 @@
 import inspect
-import json
 from datetime import datetime
 from typing import List, Dict, Optional
 from langchain_core.messages import (
@@ -86,6 +85,18 @@ class Extractor:
 			tool_call_id=getattr(message, "tool_call_id", None),
 			has_tool_calls=hasattr(message, "tool_calls") and bool(message.tool_calls),
 			timestamp=datetime.now().isoformat(),
+		)
+
+	@staticmethod
+	def _message_text(message: AIMessage) -> str:
+		"""Return a message's text, joining the text blocks of list content."""
+		if isinstance(message.content, str):
+			return message.content
+		return "".join(
+			block if isinstance(block, str) else block["text"]
+			for block in message.content
+			if isinstance(block, str)
+			or (block.get("type") == "text" and isinstance(block.get("text"), str))
 		)
 
 	def _extract_token_usage(self, message: AIMessage) -> Optional[TokenUsage]:
@@ -178,42 +189,43 @@ class Extractor:
 
 				# Extract tool calls from AIMessage
 				if isinstance(msg, AIMessage):
-					# Extract tool invokation info
-					if hasattr(msg, "additional_kwargs") and msg.additional_kwargs:
-						if msg.content:
-							if i == len(new_messages) - 1:
-								final_response = msg.content
-							else:
-								interleaved_thinking.append(msg.content)
-						tool_calls = msg.additional_kwargs.get("tool_calls")
-						if tool_calls:
-							for tc in tool_calls:
-								tool_function = tc.get("function")
-								tool_name = tool_function.get("name")
-								tool_call_id = tc.get("id")
+					text = self._message_text(msg)
+					if text:
+						if i == len(new_messages) - 1:
+							final_response = text
+						else:
+							interleaved_thinking.append(text)
 
-								# Handle malformed JSON from LLM
-								try:
-									tool_args = json.loads(
-										tool_function.get("arguments")
-									)
-								except json.JSONDecodeError as e:
-									logger.warning(
-										f"Failed to parse tool arguments for '{tool_name}' (call_id: {tool_call_id}): {e}"
-									)
-									tool_args = {
-										"error": "malformed_json",
-										"raw_arguments": tool_function.get("arguments")[
-											:200
-										],
-									}
+					# Extract tool invokation info. LangChain parses the
+					# OpenAI-format additional_kwargs["tool_calls"] into these
+					# two lists as well, so every provider is covered
+					for tc in msg.tool_calls:
+						tool_calls_info.append(
+							ToolCallInfo(
+								tool_name=tc["name"],
+								tool_args=tc["args"],
+								tool_call_id=tc.get("id"),
+							)
+						)
 
-								tool_call_info = ToolCallInfo(
-									tool_name=tool_name,
-									tool_args=tool_args,
-									tool_call_id=tool_call_id,
-								)
-								tool_calls_info.append(tool_call_info)
+					# Handle malformed JSON from LLM
+					for tc in msg.invalid_tool_calls:
+						tool_name = tc.get("name") or ""
+						tool_call_id = tc.get("id")
+						raw_arguments = tc.get("args") or ""
+						logger.warning(
+							f"Failed to parse tool arguments for '{tool_name}' (call_id: {tool_call_id}): {tc.get('error')}"
+						)
+						tool_calls_info.append(
+							ToolCallInfo(
+								tool_name=tool_name,
+								tool_args={
+									"error": "malformed_json",
+									"raw_arguments": raw_arguments[:200],
+								},
+								tool_call_id=tool_call_id,
+							)
+						)
 
 					current_token_usage = self._extract_token_usage(msg)
 					if current_token_usage:

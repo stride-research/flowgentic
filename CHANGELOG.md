@@ -7,6 +7,35 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
+## [0.3.1] - Unreleased
+
+A patch release: fixes for the defects that 0.3.0's documentation lists.
+
+### Fixed
+
+- Memory, `trim_middle`: with one free place beside the system messages, every
+  message was kept. The strategy now fills every free place, and the most recent
+  messages take the odd place of an odd count.
+- Memory, `importance_based`: after the first trim, each message was scored by
+  another message's importance. The scores now follow the trimmed history, which
+  also corrects the importance weighting in `get_relevant_context`.
+- Memory, `summarize`: the summary could take the history one message over the
+  limit. It now fits within the limit. With one free place, or when no summary
+  is made, the strategy trims as `trim_last` does; a failed summary used to
+  leave its place empty, or keep the oldest messages.
+- `MutableGraph.update_graph` returns `False` for a replacement node that is
+  already active. It used to list the node twice, and the rebuild raised
+  LangGraph's `ValueError`.
+- `generate_execution_artifacts(generate_report=...)` was inverted: `True`
+  skipped the report. `True` now writes it and `False` skips it, and the default
+  becomes `True`, so a call without the flag still writes the report.
+- Telemetry: tool calls are read from `AIMessage.tool_calls`, and malformed ones
+  from `invalid_tool_calls`. Only OpenAI-format `additional_kwargs` were read,
+  so other models' tool calls were missing from the report.
+- Telemetry: an AI message's text is recorded as the node's final response even
+  when the message has no `additional_kwargs`, and list content is joined into
+  text.
+
 ## [0.3.0] - 2026-10-22
 
 A consolidation release. It preserves the work since 0.2.0 as a supported,
@@ -119,4 +148,5 @@ on `main`.
   - Each test matrix job runs its own Python with the dev extra.
   - The bandit job runs again.
 
+[0.3.1]: https://github.com/stride-research/flowgentic/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/stride-research/flowgentic/compare/0.2.0...v0.3.0

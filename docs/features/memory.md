@@ -29,19 +29,9 @@ the limit:
 | Strategy | Keeps |
 | --- | --- |
 | `"trim_last"` | The most recent messages |
-| `"trim_middle"` | The oldest and the most recent messages, half of the free places each (rounded down), dropping the middle |
+| `"trim_middle"` | The oldest and the most recent messages, half of the free places each, dropping the middle. With an odd count, the most recent messages take the extra place |
 | `"importance_based"` | The highest-scoring messages, ordered by score. A message scores 2.0 if it is a system message, 1.5 if it is an AI message with tool calls, 1.2 if it is a human message and 1.0 otherwise, plus up to 1.0 for length (one point per 1,000 characters) |
-| `"summarize"` | The most recent messages, plus one AI message that summarizes the older ones. It needs a chat model and `enable_summarization=True`, and otherwise trims as `"trim_last"` does |
-
-Two strategies misbehave in 0.3.0:
-
-- `"trim_middle"` trims nothing when one place is free beside the system
-  messages: with a limit of 2, one system message and five others, all six
-  remain.
-- `"importance_based"` scores the first trim correctly. Later trims look up
-  each message's score by its position among all the messages ever added, not
-  in the trimmed history, so they can keep a lower-scoring message and drop a
-  higher-scoring one.
+| `"summarize"` | The most recent messages, plus one AI message that summarizes the older ones. It needs a chat model and `enable_summarization=True`, and otherwise trims as `"trim_last"` does; see below |
 
 With `"trim_last"` and a limit of 2, the system message and the latest message
 remain:
@@ -49,6 +39,17 @@ remain:
 ```python
 --8<-- "tests/unit/test_memory.py:trim-last"
 ```
+
+With `"trim_middle"` and a limit of 4, the system message, the oldest message
+and the two most recent remain:
+
+```python
+--8<-- "tests/unit/test_memory.py:trim-middle"
+```
+
+In 0.3.0, `"trim_middle"` kept every message when one place was free beside
+the system messages, and `"importance_based"` scored the messages of later
+trims by other messages' scores. 0.3.1 fixes both.
 
 With `"summarize"`, the manager calls the chat model's `invoke` once to
 summarize the older messages:
@@ -58,10 +59,14 @@ summarize the older messages:
 ```
 
 The summary is a synchronous model call, made while the messages are added.
-If the call fails, the older messages are dropped without a summary. Besides
-the summary, the strategy keeps up to two recent messages, so it holds one
-message more than the limit when 2 or fewer places are free beside the system
-messages: with a limit of 3 and one system message, 4 messages remain.
+If the call fails, the strategy trims as `"trim_last"` does. The
+summary takes one free place. The recent messages take half of the free
+places, or two if that is more, but always leave the summary's place: with a
+limit of 3 and one system message, the system message, the summary and the
+latest message remain.
+With one free place there is no room for a summary, and the strategy trims as
+`"trim_last"` does. In 0.3.0, the summary could take the history one message
+over the limit.
 
 ## Add and retrieve interactions
 

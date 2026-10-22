@@ -4,6 +4,9 @@
 
 Flowgentic 0.3.0 is a consolidation release. It preserves the July 2026 work
 as a documented, tested snapshot: fixes and evidence, and no new features.
+0.3.1, a patch release, fixes defects that 0.3.0 documented in its memory
+strategies, `MutableGraph.update_graph`, `generate_execution_artifacts` and
+telemetry; see the [changelog](changelog.md).
 
 The LangGraph execution adapter (`LangraphIntegration` and its `asyncflow`
 decorators) is frozen in maintenance mode and gets no new features. The
@@ -51,10 +54,6 @@ test suite on Python 3.10, 3.11 and 3.12. The package requires
   `tests/integration/test_integration.py` runs two of them when
   `FLOWGENTIC_RUN_LLM_INTEGRATION=1` is set (`make tests-integration-llm`);
   CI never sets it.
-- Memory: the `trim_middle` and `importance_based` strategies can keep the
-  wrong messages, and `summarize` can keep one message more than the limit.
-  See
-  [Memory](features/memory.md#trimming-strategies).
 - The Academy integration (`flowgentic.academy`) has no tests, and its two
   examples in `examples/academy-integration/` fail at import.
 

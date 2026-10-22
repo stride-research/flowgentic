@@ -273,6 +273,145 @@ def test_memory_summarization():
 	assert len(manager_no_llm.message_history) == 2
 
 
+def _system_and_five_messages() -> List[BaseMessage]:
+	return cast(
+		List[BaseMessage],
+		[SystemMessage(content="System prompt")]
+		+ [HumanMessage(content=f"Message {i}") for i in range(1, 6)],
+	)
+
+
+def test_trim_middle_fills_odd_free_places():
+	"""trim_middle gives the extra place of an odd count to the newest messages."""
+	# --8<-- [start:trim-middle]
+	config = MemoryConfig(max_short_term_messages=4, short_term_strategy="trim_middle")
+	manager = ShortTermMemoryManager(config)
+
+	manager.add_messages(_system_and_five_messages())
+
+	# Three free places: the oldest message and the two most recent
+	assert [m.content for m in manager.message_history] == [
+		"System prompt",
+		"Message 1",
+		"Message 4",
+		"Message 5",
+	]
+	# --8<-- [end:trim-middle]
+
+
+def test_trim_middle_one_free_place():
+	"""trim_middle keeps the most recent message when one place is free."""
+	config = MemoryConfig(max_short_term_messages=2, short_term_strategy="trim_middle")
+	manager = ShortTermMemoryManager(config)
+
+	manager.add_messages(_system_and_five_messages())
+
+	assert [m.content for m in manager.message_history] == [
+		"System prompt",
+		"Message 5",
+	]
+
+
+def test_importance_based_scores_follow_trimmed_history():
+	"""Later trims score each message by its own importance."""
+	config = MemoryConfig(
+		max_short_term_messages=3, short_term_strategy="importance_based"
+	)
+	manager = ShortTermMemoryManager(config)
+
+	# AI messages score 1.0 and human messages 1.2, plus a small length bonus
+	manager.add_messages(
+		cast(
+			List[BaseMessage],
+			[
+				AIMessage(content="a0"),
+				AIMessage(content="a1"),
+				AIMessage(content="a2"),
+				HumanMessage(content="h3"),
+			],
+		)
+	)
+	manager.add_messages(
+		cast(List[BaseMessage], [AIMessage(content="a4"), HumanMessage(content="h5")])
+	)
+
+	# Both human messages outrank every AI message
+	contents = [m.content for m in manager.message_history]
+	assert set(contents) == {"h3", "h5", "a0"}
+	assert [item.content for item in manager.memory_items] == contents
+
+
+def _summarizing_manager(limit: int) -> ShortTermMemoryManager:
+	mock_llm = Mock(spec=BaseChatModel)
+	mock_response = Mock()
+	mock_response.content = "This is a summary of the conversation."
+	mock_llm.invoke.return_value = mock_response
+
+	config = MemoryConfig(
+		max_short_term_messages=limit,
+		short_term_strategy="summarize",
+		enable_summarization=True,
+	)
+	return ShortTermMemoryManager(config, mock_llm)
+
+
+def _system_and_two_exchanges() -> List[BaseMessage]:
+	return cast(
+		List[BaseMessage],
+		[
+			SystemMessage(content="System prompt"),
+			HumanMessage(content="First message"),
+			AIMessage(content="First response"),
+			HumanMessage(content="Second message"),
+			AIMessage(content="Second response"),
+		],
+	)
+
+
+def test_summarize_two_free_places():
+	"""summarize counts the summary against the limit."""
+	manager = _summarizing_manager(limit=3)
+
+	manager.add_messages(_system_and_two_exchanges())
+
+	# The summary and the most recent message
+	history = manager.message_history
+	assert len(history) == 3
+	assert history[0].content == "System prompt"
+	assert history[1].content.startswith("Previous conversation summary:")
+	assert history[2].content == "Second response"
+
+
+def test_summarize_one_free_place():
+	"""With no room for a summary beside a message, summarize trims as trim_last."""
+	manager = _summarizing_manager(limit=2)
+
+	manager.add_messages(_system_and_two_exchanges())
+
+	assert [m.content for m in manager.message_history] == [
+		"System prompt",
+		"Second response",
+	]
+
+
+@pytest.mark.parametrize("failure", ["model-call", "summary"])
+def test_summarize_without_a_summary_trims_as_trim_last(failure):
+	"""When no summary is made, summarize keeps every recent message the limit allows."""
+	manager = _summarizing_manager(limit=3)
+	if failure == "model-call":
+		manager.llm.invoke.side_effect = RuntimeError("model unavailable")
+	else:
+		manager._create_conversation_summary = Mock(side_effect=RuntimeError("bad"))
+
+	manager.add_messages(_system_and_two_exchanges())
+
+	assert [m.content for m in manager.message_history] == [
+		"System prompt",
+		"Second message",
+		"Second response",
+	]
+
+
 async def run_async_tests():
 	"""Run async tests."""
 	await test_memory_manager()
@@ -284,6 +423,11 @@ if __name__ == "__main__":
 	test_short_term_memory_item()
 	test_short_term_memory_manager()
 	test_memory_summarization()
+	test_trim_middle_fills_odd_free_places()
+	test_trim_middle_one_free_place()
+	test_importance_based_scores_follow_trimmed_history()
+	test_summarize_two_free_places()
+	test_summarize_one_free_place()
 
 	# Run asynchronous tests
 	asyncio.run(run_async_tests())
