@@ -1,6 +1,6 @@
 """Discord notifications: frequent plain-text pings, plus two richer run-lifecycle events.
 
-Three things a driver can call:
+Four things a driver can call:
   notify(text)       -- one plain-text line, for frequent/low-stakes pings (stage
                          boundaries).
   run_started(...)    -- one or more embeds carrying run identity and every config
@@ -11,8 +11,12 @@ Three things a driver can call:
                          with run size; this embed must not, so a run that takes days
                          produces exactly the same shape of message as one that takes
                          minutes, just bigger numbers inside it.
+  run_failed(...)     -- one embed when the pipeline raises partway through. Call it
+                         from a try/except in the driver, right before re-raising --
+                         without this, a crash was previously invisible: run_finished()
+                         only fires on a successful return, so nothing ever posted.
 
-All three are no-ops when DISCORD_WEBHOOK_URL is unset, and none of them can raise: a
+All four are no-ops when DISCORD_WEBHOOK_URL is unset, and none of them can raise: a
 notification failure must never be able to kill a run.
 
 Deliberately not called from anywhere in metrics.py or from inside a task body: a driver
@@ -39,6 +43,7 @@ _USER_AGENT = "Mozilla/5.0 (compatible; flowgentic-notifier/1.0)"
 
 _COLOR_START = 0x5865F2  # Discord blurple
 _COLOR_DONE = 0x57F287  # Discord green
+_COLOR_FAILED = 0xED4245  # Discord red
 _MAX_FIELDS_PER_EMBED = 25  # Discord's own hard limit; exceeding it is a 400, not a truncation.
 
 
@@ -110,6 +115,31 @@ def run_finished(*, job_id: str, wall_s: float, funnel: dict[str, int], out_dir:
             {"name": "Wall time", "value": f"`{mins:02d}:{secs:02d}`", "inline": True},
             {"name": "Job", "value": f"`{job_id}`", "inline": True},
             {"name": "Full metrics", "value": f"`{out_dir}`", "inline": False},
+        ],
+    }
+    _post({"embeds": [embed]})
+
+
+def run_failed(*, job_id: str, error: str, out_dir: str | Path) -> None:
+    """Post the run-failure embed: what broke and where the logs are.
+
+    Call this from a try/except around the pipeline call, right before re-raising --
+    it notifies, it does not replace the crash. Slurm still sees the real nonzero
+    exit, sbatch.err still gets the full traceback; this is the thing that makes a
+    crash page someone instead of silently disappearing from squeue.
+
+    Args:
+        job_id: Same identifier run_started() was given.
+        error: Short description of what failed, e.g. f"{type(exc).__name__}: {exc}".
+        out_dir: Where the partial results and cageflow.log live, for debugging.
+    """
+    embed = {
+        "title": "❌ CageFlow run failed",
+        "color": _COLOR_FAILED,
+        "fields": [
+            {"name": "Job", "value": f"`{job_id}`", "inline": True},
+            {"name": "Error", "value": f"```{error[:1000]}```", "inline": False},
+            {"name": "Logs", "value": f"`{out_dir}`", "inline": False},
         ],
     }
     _post({"embeds": [embed]})
