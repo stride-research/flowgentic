@@ -15,11 +15,12 @@ it and the direct version does not.
 | Integration | `LangraphIntegration` context; `asyncflow` decorators (`SERVICE_TASK`, `AGENT_TOOL_AS_FUNCTION`, `FUNCTION_TASK`, `EXECUTION_BLOCK`); introspected nodes | `WorkflowEngine.create` and `shutdown`; `flow.function_task` (`service=True` for the surrogate); `flow.block`; `langchain_core.tools.tool` |
 | Runner | `agentic_campaign.py --integration flowgentic` | `agentic_campaign.py --integration direct` |
 
-The LangGraph graph, node bodies, tools, state, policy guards and control loop
-are the same in both versions; `diff` between the two application modules
-shows only the integration layer. Both use the same decision model, budget,
-backends (local `ai` and `compute`), simulation retry policy, service lifetime
-and stopping rules, all from `open_campaign` in `agentic_campaign.py`.
+The LangGraph graph, node bodies, tools, state and policy guards are the same
+in both versions. A `diff` of the two application modules shows only the
+integration layer, plus the control loop: it stays in `agentic_application.py`,
+and the runner uses it for both versions. Both use the same decision model,
+budget, backends (local `ai` and `compute`), simulation retry policy, service
+lifetime and stopping rules, all from `open_campaign` in `agentic_campaign.py`.
 
 Versions: Flowgentic 0.3.0 (`release/v0.3.0`), radical-asyncflow 0.5.0,
 LangGraph 0.6.11, langchain-core 0.3.79, Python 3.10. Decisions come from the
@@ -28,7 +29,8 @@ the first simulation of cycle 1 fails once and is retried.
 
 Evidence is the test module `tests/integration/test_substitution.py`, run in CI
 with `uv run --extra dev pytest -q tests/integration/test_substitution.py`.
-Its telemetry test is opt-in (see row 7).
+Its telemetry tests are opt-in (see row 7). Anything not backed by a test is
+marked as code reading or as an observation from a demo run.
 
 Retry policies (amendment A1). AsyncFlow 0.5.0 has no per-task retry or
 timeout. The direct version reproduces only the demo's explicit simulation
@@ -45,12 +47,12 @@ implicit defaults do.
 | # | Criterion | Flowgentic version | Direct version | Verdict | Evidence |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Results and scientific state transitions | 5 cycles, 20 simulations, 1 retry, stop on the uncertainty goal (0.2013), best x 2.76961 | Identical | Both supply it | `test_flowgentic_and_direct_versions_match`: the two `campaign_summary.json` files are equal once timing fields are dropped. That covers results, the 45-event sequence, the 15 agent decisions with their policy statuses, and the service counters. |
-| 2 | Task and invocation identity | AsyncFlow assigns each task and block a uid and records its function name and target backend. The adapter adds node records keyed by node name and timestamp, not linked to AsyncFlow uids. | AsyncFlow uids, names and target backends | Both supply it | `test_both_versions_submit_the_same_asyncflow_components`: the same 14 components per cycle in both (4 blocks; 10 tasks: `load_surrogate`, `query_surrogate`, `reason_about_plan`, 4 × `run_simulation`, `update_surrogate`, `reason_about_evidence`, `coordinate_agents`). |
-| 3 | Failure, retry and cancellation | Explicit simulation retry via `RetryConfig`. Implicit 3 × 30 s retry and timeout on every call and graph node. | Explicit simulation retry via `retry_transient_simulation`; no implicit retry | Both supply it | The explicit retry works in both: 1 retry each in `test_flowgentic_and_direct_versions_match`. Cancelling a cycle cancels its in-flight simulations in both: `test_cancelling_a_cycle_cancels_inflight_simulations`. The implicit defaults are the adapter's only addition, and they re-run scientific work. With a simulation that keeps failing, Flowgentic makes 24 attempts where the direct version makes 8, because the node retry re-runs the whole batch (`test_persistent_simulation_failure`). A node that outlasts the per-attempt timeout is cancelled and re-run with its simulations: 12 simulation starts against 4 (`test_node_exceeding_the_default_timeout_is_rerun`, with the 30 s default scaled down to 0.3 s). Per-task retry and timeout belong in AsyncFlow, which has neither in 0.5.0. |
-| 4 | Service reuse and cleanup | AsyncFlow `service=True` task; the integration context shuts the engine down | AsyncFlow `service=True` task; `try`/`finally` shuts the engine down | Both supply it | `test_flowgentic_and_direct_versions_match`: one service load and identical request and update counts (5 and 5) in both, and no "never retrieved" or "destroyed but it is pending" warning on either run's stderr. Cancelling the resident service is application code in both (`open_campaign`). |
-| 5 | Resource and token accounting | Tasks run on the named backends; observed compute parallelism 4. The report sums tokens from message metadata. | Same placement and parallelism; no token accounting | Resources: both supply it. Tokens: not tested. | `test_both_versions_place_tasks_on_the_named_backends`: each backend's own task registry shows 4 × `run_simulation` on `compute` and the six AI tasks on `ai`, in both versions. Parallelism comes from `test_flowgentic_and_direct_versions_match`. Token accounting needs a live LLM run, and none was possible without credentials; rehearsal decisions carry no token usage. |
-| 6 | Application code and maintenance | Application module: 383 lines (335 code lines). Uses adapter code totalling 601 lines (`main.py`, `execution_wrappers.py`, `fault_tolerance.py`) plus 1,004 lines of telemetry. | Application module: 378 lines (323 code lines), including 32 lines of local helpers (`asyncflow_tool`, `asyncflow_block`) | Both supply it | Line counts are from `wc -l`, plus a count of non-blank, non-comment, non-docstring lines. The runner gained 84 lines and lost 20 to offer both versions. The direct version needs no more application code than the Flowgentic version, and imports nothing from Flowgentic. In this repository it still loads Flowgentic indirectly: the shared `agentic_support.py` imports `demo_support.py`, which imports Flowgentic for helpers the direct version does not use. Dependency difference: a fresh resolve of Flowgentic is 76 packages; the direct version's requirements (`radical-asyncflow==0.5.0`, `langgraph>=0.6.6,<1.0`, `langchain-core<1.0`) are 41. The 35 extra packages are Flowgentic, `langchain`, `langchain-openai`, `langchain-ollama`, `academy-py`, `python-json-logger` and their dependencies. Live mode needs a provider package (for example `langchain-openai`) in either version. See also LangGraph 1.x below. |
-| 7 | Observability and reporting | `agent_execution_results/execution_summary.md`: per-node duration, state keys, messages and model names. It reports 0 tool calls and 0 tool executions here, because the demo calls its tools from node code. | No node-level report | Adapter supplies it: the node-level report. Task-level spans: both supply them (opt-in). | `test_flowgentic_and_direct_versions_match`: the report exists only for the Flowgentic run. AsyncFlow 0.5.0 emits OpenTelemetry spans once `flow.start_telemetry()` runs with RHAPSODY's `TelemetryManager` installed (`rhapsody-py[telemetry]`, a dependency of neither AsyncFlow nor Flowgentic). `test_asyncflow_telemetry_spans`, skipped unless RHAPSODY is installed, was run locally with `rhapsody-py[telemetry]==0.6.0`: 14 spans per cycle in each version (1 workflow, 4 blocks, 9 tasks), each task span carrying its uid, function name, status and duration. The spans label every task with the default backend (`compute`), including the AI tasks, which row 5 shows ran on `ai`. That labelling is an AsyncFlow defect. |
+| 2 | Task and invocation identity | AsyncFlow assigns each task and block a uid and records its function name and target backend. The Flowgentic report adds node records keyed by node name and timestamp, not linked to AsyncFlow uids. | AsyncFlow uids, names and target backends | Both supply it | `test_both_versions_submit_the_same_asyncflow_components`: a one-cycle run registers the same 14 components in both versions, each under its own uid: 13 per cycle (4 node blocks and 9 tasks: `query_surrogate`, `reason_about_plan`, 4 × `run_simulation`, `update_surrogate`, `reason_about_evidence`, `coordinate_agents`) plus the one-off `load_surrogate` service. |
+| 3 | Failure, retry and cancellation | Explicit simulation retry via `RetryConfig`. Implicit retry and timeout (3 attempts × 30 s) on every call and graph node. | Explicit simulation retry via `retry_transient_simulation`; no implicit retry or timeout | Explicit retry and cancellation: both supply it. Implicit call and node retry and timeout: the adapter supplies it, and here it is harmful. | The explicit retry works in both: 1 retry each in `test_flowgentic_and_direct_versions_match`. Cancelling a cycle cancels its in-flight simulations in both: `test_cancelling_a_cycle_cancels_inflight_simulations`. The implicit defaults re-run scientific work. With a simulation that keeps failing, Flowgentic makes 24 attempts where the direct version makes 8, because the node retry re-runs the whole batch (`test_persistent_simulation_failure`). In `test_node_exceeding_the_default_timeout_is_rerun`, the 30 s default is scaled down to 0.3 s: a node that outlasts it is cancelled and re-run with its simulations (12 starts against 4), and after three attempts the Flowgentic cycle fails with `TimeoutError`, while the direct version completes. With the real default, the same code path fails any graph node whose work takes longer than 30 s. Both versions write their own per-task retry because AsyncFlow 0.5.0 has none. |
+| 4 | Service reuse and cleanup | AsyncFlow `service=True` task. The integration context, entered on the runner's `AsyncExitStack`, shuts the engine down. | AsyncFlow `service=True` task. An `AsyncExitStack` callback shuts the engine down. | Both supply it | `test_flowgentic_and_direct_versions_match`: one service load and identical request and update counts (5 and 5) in both, both runs exit 0, and neither stderr has a "never retrieved" or "destroyed but it is pending" warning. No test asserts the shutdown itself. Cancelling the resident service is application code in both (`open_campaign`). |
+| 5 | Resource and token accounting | Tasks run on the named backends; observed compute parallelism 4. The node report sums tokens from message metadata. | Same placement and parallelism | Resources: both supply it. Tokens: not tested. | `test_both_versions_place_tasks_on_the_named_backends`: each backend's own task registry shows 4 × `run_simulation` on `compute` and the six AI tasks on `ai`, in both versions. Parallelism comes from `test_flowgentic_and_direct_versions_match`. Tokens need a live LLM run, and none was possible without credentials. Code reading says a live run would record 0 tokens in both versions anyway: `decision_message` in `agentic_support.py` sets usage to zero, and `LangChainDecisionModel._decide` calls `with_structured_output`, which returns the parsed decision rather than the message that carries usage. Recording tokens is a job for the application's decision-model layer; Flowgentic's report can only sum what the messages carry. |
+| 6 | Application code and maintenance | Application module without the shared control loop: 362 lines (319 code lines). The adapter is 601 lines (`main.py`, `execution_wrappers.py`, `fault_tolerance.py`). `LangraphIntegration` also creates a memory manager (`memory.py`, 723 lines) that this demo never uses. | Application module: 378 lines (323 code lines), including 32 lines (22 code) of local helpers (`asyncflow_tool`, `asyncflow_block`) | Both supply it, in about the same code: the direct version has 4 more code lines. The adapter adds code and dependencies to maintain. | Line counts are from `wc -l`, plus a count of non-blank, non-comment, non-docstring lines. The Flowgentic module's control loop (`run_agentic_with_application_control`, 16 code lines) is left out because both versions use it. To offer both versions, the runner gained 76 lines and lost 20. `direct_agentic_application.py` imports nothing from Flowgentic. A direct run in this repository still loads Flowgentic through shared code: the runner imports `LangraphIntegration` and `agentic_application.py`, and `agentic_support.py` imports `demo_support.py`, which imports Flowgentic. A standalone direct application would need none of it. Dependencies (fresh resolve, Python 3.10): Flowgentic's come to 76 third-party packages, the direct version's (`radical-asyncflow==0.5.0`, `langgraph>=0.6.6,<1.0`, `langchain-core<1.0`) to 41. That is 35 more, plus Flowgentic itself, among them `langchain`, `langchain-openai`, `langchain-ollama`, `academy-py` and `python-json-logger`. Live mode needs a provider package (for example `langchain-openai`) in either version. See also LangGraph 1.x below. |
+| 7 | Observability and reporting | `agent_execution_results/execution_summary.md`: per-node duration, state keys, messages and model names | No report unless the application wires in Flowgentic's telemetry module | Node-level report: Flowgentic's telemetry module supplies it, without needing the execution adapter. Task-level spans: both supply them (opt-in). | `test_flowgentic_and_direct_versions_match`: only the Flowgentic run writes the report. `test_flowgentic_report_works_without_the_adapter`: Flowgentic's `GraphIntrospector` (`flowgentic.utils.telemetry`), wrapped around the direct version's nodes, produces the node-level report with no `LangraphIntegration`. The application has to wrap the nodes and set the introspector's private `_all_nodes` and `_final_state`; the Flowgentic version does the same through `add_instrumented_nodes` and the runner. Observed in a demo run's report: it shows 0 tool calls and 0 tool executions, because node code calls the tools directly. AsyncFlow 0.5.0 emits OpenTelemetry spans once `flow.start_telemetry()` runs with RHAPSODY's `TelemetryManager` installed (`rhapsody-py[telemetry]`, a dependency of neither AsyncFlow nor Flowgentic). `test_asyncflow_telemetry_spans` is skipped unless RHAPSODY is installed; it was run locally with `rhapsody-py[telemetry]==0.6.0`. In both versions it asserts 1 workflow span, 4 block spans and 9 task spans per cycle, with each task span carrying `task_id`, `executable` and `status`. It also asserts that every task span is labelled with the default backend (`compute`), including the AI tasks, which row 5 shows ran on `ai`. That mislabelling is an AsyncFlow defect. |
 
 ## LangGraph 1.x (amendment A4)
 
@@ -60,8 +62,9 @@ environment on LangGraph 1.2.16, LangChain 1.4.7, langchain-core 1.6.13,
 langchain-openai 1.7.2 and langchain-ollama 1.1.0, with the same AsyncFlow and
 Academy releases.
 
-- Every Flowgentic module imports, and the full test suite passes unchanged:
-  34 passed, 4 skipped, including the agentic demo and this experiment.
+- Every Flowgentic module imports, and the full test suite of the revision that
+  contains this report passes unchanged: 40 passed, 4 skipped, including the
+  agentic demo and this experiment.
 - The only API Flowgentic touches that LangGraph 1.0 deprecates is
   `langgraph.prebuilt.create_react_agent`, replaced by
   `langchain.agents.create_agent`, per the LangGraph v1 migration guide.
@@ -78,15 +81,16 @@ untested adapter paths (below) would need tests before the caps are lifted.
 
 ## Not tested (amendment A3)
 
-The demo calls its four tools from node code with `.ainvoke`, so these adapter
-features were not exercised and are unevaluated, not failed:
+The demo calls its three tools (`query_surrogate`, `run_simulation`,
+`update_surrogate`) from node code with `.ainvoke`, and its three reasoning
+functions as plain AsyncFlow tasks. These adapter features were therefore not
+exercised; they are unevaluated, not failed:
 
 - LLM tool selection (`AGENT_TOOL_AS_FUNCTION` tools chosen by a model).
-- Memory (`LangraphMemoryManager` is instantiated by the integration but
-  unused).
+- Memory: the integration creates a `LangraphMemoryManager`, which this demo
+  never uses.
 - Agent handoffs (`create_task_description_handoff_tool`, `Command`, `Send`).
 - The mutable graph (`langGraph/mutable_graph.py`).
-- React agents (`create_react_agent`).
 - Live LLM decisions, and with them token accounting (row 5).
 - ADR control (`--controller adr`): unsupported in 0.3.0 (D6). It ran locally
   in both versions against an ADR checkout, but no test covers it.
@@ -94,16 +98,19 @@ features were not exercised and are unevaluated, not failed:
 
 ## Summary for D1
 
-In this application the adapter supplies two things the direct version does
-not:
+In this application, the execution adapter's only distinct contribution is its
+implicit retry and timeout on every call and graph node. The tests show it
+re-running scientific work, and failing any node that outlasts the per-attempt
+timeout (30 s by default).
 
-- The node-level Markdown report. It misses tool executions that node code
-  makes.
-- Implicit retries and timeouts on every call and graph node. They re-run
-  scientific work after a persistent failure or a slow node.
+The node-level report comes from Flowgentic's telemetry module, which also
+works on the direct version without the adapter. Everything else is supplied
+equally, in about the same application code (the direct version has 4 more
+code lines) and with 35 fewer third-party packages: results, task identity,
+the explicit retry, cancellation, service reuse, cleanup and backend
+placement. Neither version records tokens, and by code reading the gap is in
+the application's decision-model layer.
 
-Everything else was supplied equally by both versions, with no more application
-code in the direct version: results, task identity, the explicit retry,
-cancellation, service reuse, cleanup and backend placement. Either way,
-per-task retry and timeout are an unmet requirement for AsyncFlow 0.5.0. Moving
-the adapter to LangGraph 1.x looks small for the paths the tests cover.
+Design recommendation: per-task retry and timeout belong in AsyncFlow, which
+has neither in 0.5.0, so today each application writes its own. Moving
+Flowgentic to LangGraph 1.x looks small for the paths the tests cover.

@@ -138,7 +138,7 @@ def test_flowgentic_and_direct_versions_match(tmp_path: Path) -> None:
     assert flowgentic["service"]["loads"] == 1
     assert without_timing(direct) == without_timing(flowgentic)
 
-    # Only the adapter writes the node-level Markdown report.
+    # Only the Flowgentic run writes the node-level Markdown report.
     assert (tmp_path / "flowgentic" / REPORT).is_file()
     assert not (tmp_path / "direct" / REPORT).exists()
 
@@ -163,6 +163,9 @@ async def test_both_versions_submit_the_same_asyncflow_components() -> None:
             )
 
     assert census["direct"] == census["flowgentic"]
+    # flow.components is keyed by uid: 14 distinct uids, 13 per cycle plus the
+    # resident service.
+    assert sum(census["direct"].values()) == 14
     assert census["direct"][("task", "run_simulation", "compute")] == 4
 
 
@@ -317,6 +320,50 @@ async def test_cancelling_a_cycle_cancels_inflight_simulations(
         assert all(sim["future"].cancelled() for sim in simulations)
 
 
+# Criterion 7: the node-level report comes from Flowgentic's telemetry module
+# (GraphIntrospector), not from the execution adapter; it works on the direct
+# version's nodes too.
+async def test_flowgentic_report_works_without_the_adapter(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from langgraph.graph import StateGraph
+
+    from flowgentic.utils.telemetry.introspection import GraphIntrospector
+
+    introspector = GraphIntrospector()
+
+    class IntrospectedStateGraph(StateGraph):
+        def add_node(self, name: str, node: Any, **kwargs: Any) -> Any:
+            wrapped = introspector.introspect_node(node, name)
+            return super().add_node(name, wrapped, **kwargs)
+
+    monkeypatch.setattr(
+        demo("direct_agentic_application"), "StateGraph", IntrospectedStateGraph
+    )
+    async with await open_campaign("direct", one_cycle_settings()) as (
+        application,
+        _,
+        adapter,
+    ):
+        assert adapter is None
+        state = await application.graph.ainvoke(application.state)
+
+    nodes = [
+        "planner_agent",
+        "simulation_executor",
+        "analyst_agent",
+        "supervisor_agent",
+    ]
+    introspector._all_nodes = nodes
+    introspector._final_state = state
+    (tmp_path / REPORT).parent.mkdir(parents=True)
+    introspector.generate_report(str(tmp_path))
+
+    report = (tmp_path / REPORT).read_text()
+    assert all(f"Total:{node}" in report for node in nodes)
+
+
 # Criterion 7 (amendment A2): AsyncFlow's own OpenTelemetry spans. Opt-in:
 # AsyncFlow 0.5.0 needs RHAPSODY's TelemetryManager, which neither AsyncFlow
 # nor Flowgentic depends on. Run with
@@ -345,5 +392,18 @@ async def test_asyncflow_telemetry_spans(integration: str) -> None:
 
     spans = exporter.get_finished_spans()
     names = Counter(span.name for span in spans)
-    print(f"\n{integration}: {len(spans)} spans: {dict(sorted(names.items()))}")
-    assert spans
+    tasks = [span for span in spans if span.name == "task"]
+    labels = {
+        span.attributes["executable"]: span.attributes["backend"] for span in tasks
+    }
+    print(f"\n{integration}: {dict(sorted(names.items()))}; task backends: {labels}")
+
+    # One cycle: the workflow scope, 4 node blocks and 9 tasks (the resident
+    # service started before telemetry).
+    assert names == Counter({"workflow": 1, "block": 4, "task": 9})
+    for span in tasks:
+        assert {"task_id", "executable", "status"} <= set(span.attributes)
+        assert span.attributes["status"] == "completed"
+    # AsyncFlow 0.5.0 labels every task with the default backend, including
+    # those that ran on "ai" (test_both_versions_place_tasks_on_the_named_backends).
+    assert set(labels.values()) == {"compute"}
