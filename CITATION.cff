@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+message: "If you use Flowgentic in your work, please cite it as below."
+type: software
+title: Flowgentic
+version: 0.3.0
+abstract: >-
+  Flowgentic runs agent components and LangGraph workflows as tasks on
+  RADICAL AsyncFlow.
+authors:
+  - given-names: Aymen
+    family-names: Alsaadi
+  - given-names: Yousef
+    family-names: Amirghofran
+  - given-names: Caterina
+    family-names: Barbero
+  - given-names: Diana
+    family-names: Cordovez
+  - given-names: Javier
+    family-names: Dominguez
+  - given-names: Diego
+    family-names: Oliveros
+  - given-names: Matteo
+    family-names: Turilli
+repository-code: "https://github.com/stride-research/flowgentic"
+url: "https://stride-research.github.io/flowgentic/"
+license: MIT
+keywords:
+  - agents
+  - LangGraph
+  - RADICAL AsyncFlow
+  - workflows
+  - HPC
