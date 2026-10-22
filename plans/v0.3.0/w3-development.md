@@ -110,12 +110,12 @@ Found by reading `demo/radical` at `dd27bd8` and AsyncFlow at `897faac`; nothing
 
 Added by D10. R5's probe found that the suite passes unchanged on LangGraph 1.x, and the parent session found the same on AsyncFlow 0.6.0. AsyncFlow 0.6.0 still has no per-task retry or timeout, and its spans still label every task with the default backend.
 
-- [ ] In `pyproject.toml`, pin `radical-asyncflow==0.6.0`. Replace the `<1.0` caps with `langgraph>=1.0,<2.0` and `langchain-core>=1.0,<2.0`, and add `langchain>=1.0,<2.0`, which `create_agent` needs. Raising the floors to 1.0 means no CI job is needed on a 0.6 lower bound; PR B's body says so. Relock with `uv lock --upgrade-package` for these packages only, and list every locked version change in PR B's body.
-- [ ] Remove the 2 unused `create_react_agent` imports in `src/flowgentic` (`langGraph/execution_wrappers.py`, `langGraph/utils/supervisor.py`). Move the 9 example calls to `langchain.agents.create_agent` (`prompt` becomes `system_prompt`). The docs snippets that show `create_react_agent` belong to W5's design-pattern audit.
-- [ ] Rename `ConcurrentExecutionBackend` to `LocalExecutionBackend` in the 9 example files that import it. AsyncFlow 0.1.0 exported it, but 0.3.0 and later do not; the examples, the 4 migrated ones among them, have failed at import since `172deb8f` (2026-08-18) moved the lock from 0.1.0 to 0.5.0. Matteo, 2026-10-22: "Fix examples in R8"; the docs pages that show it go to W5. The 2 Academy examples still fail on a separate import, `from flowcademy.academy import AcademyIntegrationAcademyIntegration` (there since `4d7b12e1`; the class is `flowgentic.academy.AcademyIntegration`). That is a follow-up, outside D10.
-- [ ] CI: the locked test matrix becomes the 1.x job.
-- [ ] Update `w4-release.md` "Tested environment" to the new locked versions.
-- [ ] Rerun R5 on the new versions: the substitution tests, the opt-in telemetry test, and the report's Versions line and numbers. Row 6 gets the dependency counts; the LangGraph 1.x section records the port instead of estimating it.
+- [x] In `pyproject.toml`, pin `radical-asyncflow==0.6.0`. Replace the `<1.0` caps with `langgraph>=1.0,<2.0` and `langchain-core>=1.0,<2.0`, and add `langchain>=1.0,<2.0`, which `create_agent` needs. Raising the floors to 1.0 means no CI job is needed on a 0.6 lower bound; PR B's body says so. Relock with `uv lock --upgrade-package` for these packages only, and list every locked version change in PR B's body.
+- [x] Remove the 2 unused `create_react_agent` imports in `src/flowgentic` (`langGraph/execution_wrappers.py`, `langGraph/utils/supervisor.py`). Move the 9 example calls to `langchain.agents.create_agent` (`prompt` becomes `system_prompt`). The docs snippets that show `create_react_agent` belong to W5's design-pattern audit.
+- [x] Rename `ConcurrentExecutionBackend` to `LocalExecutionBackend` in the 9 example files that import it. AsyncFlow 0.1.0 exported it, but 0.3.0 and later do not; the examples, the 4 migrated ones among them, have failed at import since `172deb8f` (2026-08-18) moved the lock from 0.1.0 to 0.5.0. Matteo, 2026-10-22: "Fix examples in R8"; the docs pages that show it go to W5. The 2 Academy examples still fail on a separate import, `from flowcademy.academy import AcademyIntegrationAcademyIntegration` (there since `4d7b12e1`; the class is `flowgentic.academy.AcademyIntegration`). That is a follow-up, outside D10.
+- [x] CI: the locked test matrix becomes the 1.x job.
+- [x] Update `w4-release.md` "Tested environment" to the new locked versions.
+- [x] Rerun R5 on the new versions: the substitution tests, the opt-in telemetry test, and the report's Versions line and numbers. Row 6 gets the dependency counts; the LangGraph 1.x section records the port instead of estimating it.
 
     Done-check: `uv run --extra dev pytest -q` is green, and CI on PR B is green with the new lock. R2's package check passes with the new pins. The 7 LangGraph example modules import (the 4 with `create_agent` calls among them), and the `create_agent` call shape (`model`, `tools`) runs against a scripted chat model. The report's Versions line names AsyncFlow 0.6.0 and the locked LangGraph.
 
@@ -123,11 +123,11 @@ Added by D10. R5's probe found that the suite passes unchanged on LangGraph 1.x,
 
 Added by D10. Amendment A3 listed both paths as not tested, because the demo calls its tools from node code.
 
-- [ ] In `tests/integration/test_substitution.py`, add an offline test with a scripted chat model (no credentials). The model's tool calls run through LangGraph's `ToolNode`, in both versions with identical arguments:
+- [x] In `tests/integration/test_substitution.py`, add an offline test with a scripted chat model (no credentials). The model's tool calls run through LangGraph's `ToolNode`, in both versions with identical arguments:
     - Tool selection: the model calls a bounded science tool that runs as an AsyncFlow task. In the Flowgentic version that is an `AGENT_TOOL_AS_FUNCTION` tool; in the direct version, an AsyncFlow task wrapped with `langchain_core.tools.tool`.
     - Handoff: a supervisor agent hands off to a worker through Flowgentic's `create_task_description_handoff_tool`, and in the direct version through an equivalent tool that returns `Command(goto=Send(...), graph=Command.PARENT)`.
-- [ ] The handoff tool calls `GraphIntrospector.record_supervisor_event`, which commit `09b66146` (2025-10-16) deleted. Record the as-is failure as D1 evidence, then fix it by dropping the call, and test the handoff in both versions. Matteo, 2026-10-22: "Record, then fix".
-- [ ] Add the results to `docs/evaluation/substitution.md` as verdict rows, and take tool selection and handoffs out of "Not tested".
+- [x] The handoff tool calls `GraphIntrospector.record_supervisor_event`, which commit `09b66146` (2025-10-16) deleted. Record the as-is failure as D1 evidence, then fix it by dropping the call, and test the handoff in both versions. Matteo, 2026-10-22: "Record, then fix".
+- [x] Add the results to `docs/evaluation/substitution.md` as verdict rows, and take tool selection and handoffs out of "Not tested".
 
     Done-check: the test passes, asserting each version's observed behaviour, and the report's rows cite it.
 
