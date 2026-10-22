@@ -45,7 +45,7 @@ It implements steps 1, 2, 3 and 6 of the [roadmap](https://claude.ai/artifact/Cc
 ## Out of scope
 
 - `feat/cnio-naive-pipeline` stays active, unmerged and unrewritten. Its tree removes `src/flowgentic/langGraph/`, so merging it would delete the adapter, and CageController and `cnio_usecase` cite its commits.
-- Adapter improvements (supplied engine, cancellation, retry ownership, accounting, LangGraph 1.x) wait for D1. If the adapter is kept, they get their own spec and target v0.4.0.
+- Adapter improvements (supplied engine, cancellation, retry ownership, accounting) wait for D1. If the adapter is kept, they get their own spec and target v0.4.0. LangGraph 1.x moved into PR B by D10 (W3 R8).
 - Import-time behaviour (DEBUG logging by default, `config.yml` lookup in the working directory) stays as it is and is documented under Known limitations.
 - Execution beyond local backends, and any change to ADR or AuCaM.
 - Issue #100 (DAG visualization) stays open.
@@ -65,6 +65,7 @@ Matteo takes each decision. Bring the evidence and the recommendation, and recor
 | D7 | Python versions | 3.10–3.11; or 3.10–3.12 | Add 3.12 if the lock resolves and CI is green | PR B | 3.10–3.12 (Matteo, 2026-10-22, relayed from the parent session). The locked suite passed locally on all three before CI. |
 | D8 | R5 amendments A1–A4 (in w3-development.md) | Accept each, reject each | Accept all four | R5 | Accept all A1–A4 (Matteo, 2026-10-22, relayed from the parent session). |
 | D9 | Where the 7 strict-build warning fixes land | PR B (R3); or PR C (W5) as the spec places them | PR B: R3's docs job must pass on PR B, and it fails while the warnings remain | R3 | PR B, in R3 (Matteo, 2026-10-22, relayed from the parent session). |
+| D10 | Extend PR B before merge with R8 (AsyncFlow 0.6.0 and LangGraph 1.x) and R5b (offline LLM tool-selection and handoff test) | Add both to PR B; or leave both for v0.4.0 | Add both: R5 found the 1.x port small and the tool-selection and handoff paths untested | PR B merge | Yes (Matteo, 2026-10-22, relayed from the parent session): "have W3 add R8 to PR B (AsyncFlow 0.6.0 and LangGraph 1.x: relock, lift the <1.0 caps, move the 9 example calls to create_agent, drop the 2 unused imports, add a 1.x CI job, rerun R5 and update its versions) and R5b (an offline LLM tool-selection and handoff test with a scripted chat model, both versions)". |
 
 ## PR checks
 
@@ -89,5 +90,5 @@ Single list for the W4 release notes and the W5 status page.
 
 - DEBUG logging is on by default, and `config.yml` is looked up in the working directory at import.
 - ADR mode needs an ADR source checkout (per D6).
-- Not validated: cancellation reaching in-flight AsyncFlow tasks, use of a caller-supplied engine, any remote or HPC backend.
-- Token accounting, unless a live run happened in R5.
+- Not validated: use of a caller-supplied engine, any remote or HPC backend. Cancellation reaching in-flight AsyncFlow tasks is validated on local backends only (R5).
+- Token accounting: the agentic demo records none, even in live mode (R5 report, row 5).
