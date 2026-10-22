@@ -102,6 +102,6 @@ Found by reading `demo/radical` at `dd27bd8` and AsyncFlow at `897faac`; nothing
 
 ## R7 Changelog
 
-- [ ] Add `CHANGELOG.md` in Keep a Changelog format, with a 0.3.0 entry (Added, Changed, Removed, Fixed). Note that tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025) predate the changelog.
+- [x] Add `CHANGELOG.md` in Keep a Changelog format, with a 0.3.0 entry (Added, Changed, Removed, Fixed). Note that tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025) predate the changelog.
 
     Done-check: every user-visible change in PR B appears in the entry.
