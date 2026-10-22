@@ -96,7 +96,7 @@ Found by reading `demo/radical` at `dd27bd8` and AsyncFlow at `897faac`; nothing
 
 ## R6 Decision binding
 
-- [ ] `tests/unit/test_agent_adapter.py` covers `bind_agent` (`src/flowgentic/agent.py`): structured output, identity and timing. Add any missing case.
+- [x] `tests/unit/test_agent_adapter.py` covers `bind_agent` (`src/flowgentic/agent.py`): structured output, identity and timing. Add any missing case.
 
     Done-check: PR B's body names the covering tests, and they pass.
 
