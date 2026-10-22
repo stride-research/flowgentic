@@ -36,7 +36,7 @@ A patch release: fixes for the defects that 0.3.0's documentation lists.
   when the message has no `additional_kwargs`, and list content is joined into
   text.
 
-## [0.3.0] - Unreleased
+## [0.3.0] - 2026-10-22
 
 A consolidation release. It preserves the work since 0.2.0 as a supported,
 documented snapshot: fixes and evidence, no new features beyond those already
