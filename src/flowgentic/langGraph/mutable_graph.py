@@ -289,6 +289,10 @@ class MutableGraph(ABC):
 			logger.error(f"❌ Node '{new_node}' not available")
 			return False
 
+		if new_node != old_node and new_node in self.active_node_names:
+			logger.warning(f"⚠️  Node '{new_node}' already in graph")
+			return False
+
 		idx = self.active_node_names.index(old_node)
 		self.active_node_names[idx] = new_node
 		logger.debug(f"  Replaced '{old_node}' with '{new_node}' at index {idx}")
