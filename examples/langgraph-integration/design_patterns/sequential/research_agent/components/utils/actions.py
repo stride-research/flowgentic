@@ -15,6 +15,7 @@ class ResearchTools:
 	def register_tools(self):
 		"""Register research agent tools."""
 
+		# --8<-- [start:web-search-tool]
 		@self.agents_manager.execution_wrappers.asyncflow(
 			flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION
 		)
@@ -22,6 +23,7 @@ class ResearchTools:
 			"""Search the web for information."""
 			await asyncio.sleep(1)  # Simulate network delay
 			return f"Search results for '{query}': Found relevant information about renewable energy storage, including battery technologies, grid integration, and market trends."
+		# --8<-- [end:web-search-tool]
 
 		@self.agents_manager.execution_wrappers.asyncflow(
 			flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION

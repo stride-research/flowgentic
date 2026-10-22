@@ -146,6 +146,7 @@ async def test_bind_agent_times_the_component_call() -> None:
     assert event["duration"] >= 0.04
 
 
+# --8<-- [start:bind-agent-on-backend]
 async def test_bind_agent_runs_on_the_named_asyncflow_backend() -> None:
     compute = await LocalExecutionBackend(
         ThreadPoolExecutor(max_workers=1), name="compute"
@@ -168,3 +169,4 @@ async def test_bind_agent_runs_on_the_named_asyncflow_backend() -> None:
         assert not compute.tasks
     finally:
         await flow.shutdown()
+# --8<-- [end:bind-agent-on-backend]

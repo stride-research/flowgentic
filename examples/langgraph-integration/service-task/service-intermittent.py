@@ -33,6 +33,7 @@ async def main():
 		print("🎯 SERVICE_TASK: Persistent Service Behavior Demo")
 		print("=" * 70)
 
+		# --8<-- [start:service-task]
 		# SERVICE_TASK that starts a persistent background server
 		@agents_manager.execution_wrappers.asyncflow(
 			flow_type=AsyncFlowType.SERVICE_TASK
@@ -47,6 +48,7 @@ async def main():
 			await server.start()
 			print(f"✅ Server {server.instance_id} is now running")
 			return server
+		# --8<-- [end:service-task]
 
 		# =================================================================
 		# PART 1: First service instance - Multiple awaits on same future
@@ -55,6 +57,7 @@ async def main():
 		print("PART 1: Single Service Instance - Persistence Proof")
 		print("=" * 70)
 
+		# --8<-- [start:service-handle]
 		print("\n🔷 Step 1: Start first service (await returns the service handle)")
 		service_future_1 = await start_api_server(8080)
 		print(f"   → Got service future handle: {type(service_future_1)}")
@@ -68,6 +71,7 @@ async def main():
 		# Make first request
 		print("\n🔷 Step 3: Make first request")
 		result_1 = await server_1.handle_request("/api/data", "GET")
+		# --8<-- [end:service-handle]
 		print(f"   📡 Request #{result_1['request_number']}")
 		print(f"   Server: {result_1['instance_id']}")
 		print(f"   Uptime: {result_1['uptime_seconds']:.2f}s")
@@ -112,9 +116,11 @@ async def main():
 		print("PART 2: New Service Call - Cold Start Proof")
 		print("=" * 70)
 
+		# --8<-- [start:service-new]
 		print("\n🔷 Step 6: Start SECOND service (different port)")
 		service_future_2 = await start_api_server(8081)
 		server_2 = await service_future_2
+		# --8<-- [end:service-new]
 
 		print(f"\n🔷 Step 7: Make request to second server")
 		result_4 = await server_2.handle_request("/api/metrics", "GET")
@@ -170,6 +176,7 @@ async def main():
 		print("🛑 CLEANUP: Shutting down services")
 		print("=" * 70)
 
+		# --8<-- [start:service-cleanup]
 		print("\n🔷 Step 10: Cancel first service")
 		service_future_1.cancel()
 		await server_1.shutdown()
@@ -179,6 +186,7 @@ async def main():
 		service_future_2.cancel()
 		await server_2.shutdown()
 		print(f"   ✓ Server 2 ({server_2.instance_id}) shut down")
+		# --8<-- [end:service-cleanup]
 
 		# =================================================================
 		# SUMMARY

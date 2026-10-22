@@ -22,7 +22,7 @@ The notes file states:
     - PR B and PR C are merged, W2 is done, and CI is green on that commit.
     - `uv sync --locked --all-extras` and `uv run --extra dev pytest -q` pass locally.
     - `uv build` produces the 0.3.0 wheel and sdist, and the wheel passes R2's clean-venv import check.
-    - The `CHANGELOG.md` 0.3.0 entry carries the release date.
+    - The `CHANGELOG.md` 0.3.0 entry carries the release date, and `CITATION.cff` gets it as `date-released` (W5 added the file without one; `uvx cffconvert --validate` passes either way).
     - The docs site deployed from that commit shows v0.3.0 and the D1 status.
 
     Done-check: each item's command output or observation is recorded with the release notes draft.

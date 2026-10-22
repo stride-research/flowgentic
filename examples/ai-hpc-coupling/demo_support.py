@@ -31,6 +31,7 @@ from langgraph.graph import StateGraph
 from flowgentic.langGraph.fault_tolerance import RetryConfig
 from flowgentic.langGraph.main import LangraphIntegration
 
+# --8<-- [start:simulation-retry]
 SIMULATION_RETRY = RetryConfig(
     max_attempts=2,
     base_backoff_sec=0.05,
@@ -39,6 +40,7 @@ SIMULATION_RETRY = RetryConfig(
     timeout_sec=5.0,
     retryable_exceptions=(TransientSimulationError,),
 )
+# --8<-- [end:simulation-retry]
 
 
 def agent_message(content: str) -> AIMessage:
@@ -130,6 +132,7 @@ def record_analysis(
     }
 
 
+# --8<-- [start:instrumented-nodes]
 def add_instrumented_nodes(
     integration: LangraphIntegration,
     graph: StateGraph,
@@ -140,6 +143,7 @@ def add_instrumented_nodes(
     introspector._all_nodes = list(nodes)
     for name, node in nodes.items():
         graph.add_node(name, introspector.introspect_node(node, name))
+# --8<-- [end:instrumented-nodes]
 
 
 __all__ = [

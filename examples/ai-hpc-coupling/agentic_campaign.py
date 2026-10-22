@@ -80,6 +80,7 @@ async def open_campaign(
     """
     async with AsyncExitStack() as stack:
         if integration == "flowgentic":
+            # --8<-- [start:open-flowgentic]
             adapter = await stack.enter_async_context(
                 LangraphIntegration(backend=backends)
             )
@@ -89,8 +90,10 @@ async def open_campaign(
                 settings,
                 decision_model,
             )
+            # --8<-- [end:open-flowgentic]
         else:
             adapter = None
+            # --8<-- [start:open-direct]
             flow = await WorkflowEngine.create(backend=backends)
             stack.push_async_callback(flow.shutdown)
             application = await build_direct_agentic_campaign(
@@ -98,6 +101,7 @@ async def open_campaign(
                 settings,
                 decision_model,
             )
+            # --8<-- [end:open-direct]
         stack.callback(application.service_future.cancel)
         yield application, flow, adapter
 
@@ -157,6 +161,7 @@ async def run(args: argparse.Namespace) -> int:
                 settings,
             )
 
+        # --8<-- [start:write-report]
         output_dir = Path(args.output_dir).resolve()
         report_path = output_dir / "agent_execution_results" / "execution_summary.md"
         if integration is not None:
@@ -164,6 +169,7 @@ async def run(args: argparse.Namespace) -> int:
             report_path.parent.mkdir(parents=True, exist_ok=True)
             integration.agent_introspector._final_state = state
             integration.agent_introspector.generate_report(str(output_dir))
+        # --8<-- [end:write-report]
         summary_path = write_summary(
             output_dir,
             state,

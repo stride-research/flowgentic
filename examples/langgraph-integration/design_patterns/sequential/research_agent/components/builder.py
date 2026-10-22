@@ -26,6 +26,7 @@ class WorkflowBuilder:
 		all_nodes = list(self.nodes.get_all_nodes().keys())
 		self.agents_manager.agent_introspector._all_nodes = all_nodes
 
+	# --8<-- [start:build-workflow]
 	def build_workflow(self) -> StateGraph:
 		"""Build and return the complete workflow graph."""
 		# Register all tools first
@@ -79,3 +80,4 @@ class WorkflowBuilder:
 		workflow.set_entry_point("preprocess")
 
 		return workflow
+	# --8<-- [end:build-workflow]

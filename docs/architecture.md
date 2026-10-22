@@ -1,99 +1,75 @@
 # Architecture
 
-Flowgentic provides a thin, opinionated layer that standardizes agent components and lets you run the same logic on multi-agent orchestration frameworks (e.g. LangGraph) on HPC workflow engines (e.g. Radical AsyncFlow).
+Flowgentic sits between an application's agent code and RADICAL AsyncFlow. It
+has two independent parts: `bind_agent`, which runs an agent component as an
+AsyncFlow task, and `LangraphIntegration`, which runs a LangGraph graph's
+tools, services, tasks and nodes as AsyncFlow tasks. AsyncFlow schedules every
+task on a named backend.
 
-## Architecture: Execution Bridge Pattern
+```mermaid
+flowchart LR
+  subgraph Application
+    APP[AsyncFlow application]
+    GRAPH[LangGraph graph]
+  end
+  subgraph Flowgentic
+    BIND[bind_agent]
+    LGI[LangraphIntegration<br/>asyncflow decorator and retry]
+    INTRO[GraphIntrospector<br/>node report]
+  end
+  APP -- agent component --> BIND
+  GRAPH -- tools, services, tasks, nodes --> LGI
+  GRAPH -. wrapped nodes .-> INTRO
+  BIND --> ENGINE[AsyncFlow WorkflowEngine]
+  LGI --> ENGINE
+  ENGINE --> BACKENDS[Named backends<br/>ai, compute]
+```
+
+## Modules
+
+| Module | Contents |
+| --- | --- |
+| `flowgentic.agent` | `bind_agent` and `AgentTask`: an agent component as an AsyncFlow task |
+| `flowgentic.langGraph.main` | `LangraphIntegration`: creates and shuts down the `WorkflowEngine` |
+| `flowgentic.langGraph.execution_wrappers` | `AsyncFlowType`, the `asyncflow` decorator, the handoff tool, `BaseLLMAgentState` |
+| `flowgentic.langGraph.fault_tolerance` | `RetryConfig` and the retry loop around every decorated call |
+| `flowgentic.langGraph.memory` | `MemoryConfig`, `MemoryManager` and the integration's `LangraphMemoryManager` |
+| `flowgentic.langGraph.mutable_graph` | `MutableGraph`: a graph whose nodes change at runtime |
+| `flowgentic.langGraph.utils` | An LLM router and fan-out for supervisor graphs, and graph rendering |
+| `flowgentic.langGraph.base_components` | `BaseToolRegistry`: a base class that registers an application's tools and tasks by name |
+| `flowgentic.utils.telemetry` | `GraphIntrospector` and the Markdown node report |
+| `flowgentic.utils.llm_providers` | `ChatLLMProvider`: OpenRouter, OpenAI and Ollama chat models |
+| `flowgentic.utils.logger` | `Logger`: at import, Flowgentic adds a handler to the root logger that prints colored records to stdout (JSON with `colorful_output=False`) |
+| `flowgentic.settings` | Loads `config.yml` at import; see [Telemetry](features/telemetry.md#write-the-report) |
+| `flowgentic.academy` | `AcademyIntegration`: Academy agents as AsyncFlow tasks; not tested |
+
+The [API reference](api/flowgentic/index.md) documents each module.
+
+## How a decorated call runs
+
+Each `asyncflow` decorator registers the function with AsyncFlow and wraps the
+call in the retry loop of `flowgentic.langGraph.fault_tolerance`:
+
+```mermaid
+flowchart LR
+  CALL[Graph or node code calls<br/>the decorated function] --> RETRY[Retry loop<br/>attempts, backoff, timeout per attempt]
+  RETRY --> SUBMIT[AsyncFlow task or block<br/>on its backend]
+  SUBMIT --> RESULT[Result, or the service's future]
+  RESULT --> CALL
+```
+
+A node is usually an `EXECUTION_BLOCK`, and the tools, tasks and services it
+calls are AsyncFlow tasks inside that block. AsyncFlow's documentation
+describes [blocks](https://radical-cybertools.github.io/radical.asyncflow/composite_workflow/?h=block#example-blocks-with-dependency).
 
 ```mermaid
 flowchart TD
-    subgraph HighLevel["High-Level: Agent Framework"]
-        A[Agent Graph Definition]
-        B[Agent Nodes & Tools]
-        C[Conditional Routing]
-    end
-    
-    subgraph MiddleLayer["Middle Layer: FlowGentic Abstraction"]
-        D[Graph Compiler]
-        E[Node to Task Translation]
-        F[State Serialization]
-        G[Dependency Resolution]
-    end
-    
-    subgraph LowLevel["Low-Level: HPC Execution Backend"]
-        H[HPC Task Scheduler]
-        I[Parallel Execution Units]
-        J[Distributed Memory/State]
-        K[Resource Manager]
-    end
-    
-    A --> D
-    B --> E
-    C --> G
-    
-    D --> E
-    E --> F
-    F --> G
-    
-    G --> H
-    H --> I
-    I --> J
-    J --> K
-    
-    K -.->|Results| G
-    G -.->|State Updates| F
-    F -.->|Checkpoints| A
+  BLOCK[EXECUTION_BLOCK<br/>a graph node as an AsyncFlow block]
+  BLOCK --> SERVICE[SERVICE_TASK<br/>resident service]
+  BLOCK --> TOOL[AGENT_TOOL_AS_FUNCTION<br/>LangChain tool]
+  BLOCK --> TASK[FUNCTION_TASK<br/>task]
 ```
 
-## Wrappers
-If you have multiple wrappers inside a node we recommend to adhere to the following pattern in order to stick dependency resolution best practices:
-```mermaid
-flowchart TD
-    subgraph "ASYNCFLOW WRAPPERS"
-        A[EXECUTION_BLOCK]
-        subgraph SERVICES["SERVICE PATTERNS"]
-            direction LR
-            B[SERVICE_TASK<br/>Persistent Internal Services]
-            C[TOOL_AS_SERVICE<br/>LLM-Callable Services]
-        end
-        
-        subgraph TOOLS["AGENT TOOLS"]
-            direction LR
-            D[AGENT_TOOL_AS_FUNCTION<br/>Simple Tools]
-            E[AGENT_TOOL_AS_MCP<br/>MCP Integration]
-        end
-        
-        subgraph TASKS["FUNCTION TASKS"]
-            direction LR
-            F[FUNCTION_TASK<br/>Deterministic Operations]
-        end
-        
-        A -- ORCHESTRATES --> SERVICES
-        A -- ORCHESTRATES --> TOOLS
-        A -- ORCHESTRATES --> TASKS
-    end
-    
-    SERVICES -.->|Caching| B
-    SERVICES -.->|LLM Calls| C
-    TOOLS -.->|Direct Call| D
-    TOOLS -.->|External Server| E
-    TASKS -.->|Pure Functions| F
-    
-
-```
-However, if you don't have multiple dependencies in a given node, you can define the node with the `function_task` execution wrapper. More information [here](https://radical-cybertools.github.io/radical.asyncflow/composite_workflow/?h=block#example-blocks-with-dependency)
-
-### Flow Type Categories
-
-**Service Patterns** (Persistent, Stateful)
-- `SERVICE_TASK`: Internal services with continual uptime (database pools, Redis clients)
-- `TOOL_AS_SERVICE`: LLM-callable services with continual uptime (Weather APIs, search tools)
-
-**Agent Tools** (LLM-Callable)
-- `AGENT_TOOL_AS_FUNCTION`: Simple synchronous tools for LLMs
-- `AGENT_TOOL_AS_MCP`: External MCP server integration
-
-**Function Tasks** 
-- `FUNCTION_TASK`: Non-LLM operations (validation, formatting)
-
-**Execution Block**
-- `EXECUTION_BLOCK`: LangGraph nodes (orchestration layer, optional)
+[LangGraph on AsyncFlow with Flowgentic](guides/langgraph-on-asyncflow.md)
+describes each flow type, and [Fault tolerance](features/fault_tolerance.md)
+the retry loop.

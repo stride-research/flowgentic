@@ -24,6 +24,7 @@ class ComponentState(TypedDict, total=False):
     decision: dict[str, Any]
 
 
+# --8<-- [start:agent-component]
 @dataclass(frozen=True)
 class LangGraphAgentComponent:
     """A role-specific LangGraph hidden behind Flowgentic's agent interface."""
@@ -35,6 +36,7 @@ class LangGraphAgentComponent:
         """Run the component's private graph and return its structured decision."""
         result = await self.graph.ainvoke({"context": dict(context)})
         return result["decision"]
+# --8<-- [end:agent-component]
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,7 @@ def build_langgraph_agent_components(
     )
 
 
+# --8<-- [start:build-component]
 def _build_component(
     identity: str,
     decide: Callable[[dict[str, Any]], Awaitable[BaseModel]],
@@ -74,3 +77,4 @@ def _build_component(
     graph.add_edge(START, "reason")
     graph.add_edge("reason", END)
     return LangGraphAgentComponent(identity, graph.compile())
+# --8<-- [end:build-component]

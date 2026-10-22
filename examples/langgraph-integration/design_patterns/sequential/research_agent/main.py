@@ -8,6 +8,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from flowgentic.utils.telemetry import GraphIntrospector
 
 
+# --8<-- [start:start-app]
 async def start_app():
 	backend = await LocalExecutionBackend(ThreadPoolExecutor())
 
@@ -19,6 +20,7 @@ async def start_app():
 		# Compile the app
 		memory = InMemorySaver()
 		app = workflow.compile(checkpointer=memory)
+# --8<-- [end:start-app]
 
 		# Initial state
 		initial_state = WorkflowState(

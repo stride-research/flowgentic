@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 # Define state schema
+# --8<-- [start:state-schemas]
 class GraphState(TypedDict):
 	"""State schema for the dynamic graph"""
 
@@ -39,6 +40,19 @@ class GraphState(TypedDict):
 	operation_count: int
 
 
+class ConditionalState(GraphState):
+	"""GraphState plus the routing flag that the decision node sets.
+
+	LangGraph keeps only the keys its state schema declares, and it reads a
+	routing function's input through that function's annotation. Both the graph
+	and the routing function use this schema, so the router sees the flag.
+	"""
+
+	should_optimize: bool
+# --8<-- [end:state-schemas]
+
+
+# --8<-- [start:subclass]
 class DynamicFlowgenticGraph(MutableGraph):
 	"""
 	Example implementation of MutableGraph with sequential data processing nodes.
@@ -83,6 +97,7 @@ class DynamicFlowgenticGraph(MutableGraph):
 				"execution_path": state.get("execution_path", []) + ["node_a"],
 				"operation_count": state.get("operation_count", 0) + 1,
 			}
+# --8<-- [end:subclass]
 
 		@self.agents_manager.execution_wrappers.asyncflow(
 			flow_type=AsyncFlowType.FUNCTION_TASK
@@ -136,6 +151,7 @@ class DynamicFlowgenticGraph(MutableGraph):
 				"operation_count": state.get("operation_count", 0) + 1,
 			}
 
+		# --8<-- [start:register-nodes]
 		# Store all available nodes
 		self.available_nodes = {
 			"node_a": node_a,
@@ -152,6 +168,7 @@ class DynamicFlowgenticGraph(MutableGraph):
 	def _get_state_schema(self) -> type:
 		"""Return the state schema for this graph."""
 		return GraphState
+		# --8<-- [end:register-nodes]
 
 	async def run(self, initial_state: Optional[GraphState] = None) -> GraphState:
 		"""
@@ -260,8 +277,9 @@ class ConditionalFlowGraph(MutableGraph):
 
 	def _get_state_schema(self) -> type:
 		"""Return state schema (extends GraphState with should_optimize flag)"""
-		return GraphState
+		return ConditionalState
 
+	# --8<-- [start:conditional-edges]
 	def _add_edges(self, workflow):
 		"""
 		Custom edge logic with conditional routing.
@@ -271,7 +289,7 @@ class ConditionalFlowGraph(MutableGraph):
 		from langgraph.graph import END
 
 		# Helper function for routing
-		def route_after_decision(state: GraphState) -> str:
+		def route_after_decision(state: ConditionalState) -> str:
 			"""Route based on state evaluation"""
 			if state.get("should_optimize", False):
 				return "optimize"
@@ -290,6 +308,7 @@ class ConditionalFlowGraph(MutableGraph):
 		if "optimize" in self.active_node_names:
 			workflow.add_edge("optimize", END)
 			logger.debug(f"  🏁 optimize -> END")
+	# --8<-- [end:conditional-edges]
 
 
 async def demonstrate_runtime_graph_creation():
@@ -310,6 +329,7 @@ async def demonstrate_runtime_graph_creation():
 		logger.info("=" * 80)
 		logger.info("Creating graph with only nodes A and B active initially")
 
+		# --8<-- [start:operations]
 		dg = DynamicFlowgenticGraph(
 			agents_manager, initial_active_nodes=["node_a", "node_b"]
 		)
@@ -334,10 +354,12 @@ async def demonstrate_runtime_graph_creation():
 		await dg.update_graph("node_c", "node_d")
 		result = await dg.run()
 		_print_result(result, "After: A -> D")
+		# --8<-- [end:operations]
 
 		# REGISTER + EXPAND: Add completely new node at runtime
 		logger.info("\n--- REGISTER NEW NODE: Add node_f (not pre-registered) ---")
 
+		# --8<-- [start:register-runtime]
 		@agents_manager.execution_wrappers.asyncflow(
 			flow_type=AsyncFlowType.FUNCTION_TASK
 		)
@@ -358,6 +380,7 @@ async def demonstrate_runtime_graph_creation():
 		await dg.expand_graph("node_f", position=1)
 		result = await dg.run()
 		_print_result(result, "After: A -> F (new) -> D")
+		# --8<-- [end:register-runtime]
 
 		logger.info("\n" + "=" * 80)
 		logger.info("✅ PART 1 COMPLETE")

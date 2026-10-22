@@ -5,164 +5,108 @@
     <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT">
   </a>
   <a href="https://www.python.org/downloads/">
-    <img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python 3.10+">
+    <img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg" alt="Python 3.10, 3.11, 3.12">
   </a>
-  <a href="https://github.com/radical-cybertools/radical.asyncflow/actions/workflows/tests.yml">
-    <img src="https://github.com/radical-cybertools/radical.asyncflow/actions/workflows/tests.yml/badge.svg?branch=main" alt="Tests">
+  <a href="https://github.com/stride-research/flowgentic/actions/workflows/continuous_integration.yml">
+    <img src="https://github.com/stride-research/flowgentic/actions/workflows/continuous_integration.yml/badge.svg?branch=main" alt="CI">
   </a>
-  <a href="https://github.com/radical-cybertools/radical.asyncflow/actions/workflows/docs.yml">
-    <img src="https://github.com/radical-cybertools/radical.asyncflow/actions/workflows/docs.yml/badge.svg" alt="Documentation">
-  </a>
-  <a href="https://pypi.org/project/flowgentic/">
-    <img src="https://img.shields.io/badge/PyPI-not%20available-red.svg" alt="PyPI: Not Available">
+  <a href="https://github.com/stride-research/flowgentic/actions/workflows/docs-deployment.yml">
+    <img src="https://github.com/stride-research/flowgentic/actions/workflows/docs-deployment.yml/badge.svg?branch=main" alt="Documentation">
   </a>
 </p>
 
-### flowgentic
+# Flowgentic
 
-Enable agentic frameworks on HPC. This package provides building blocks to run agent workflows on High-Performance Computing (HPC) schedulers and workflow engines. It focuses on developer ergonomics and composability with modern agent frameworks.
+Flowgentic runs agent components and LangGraph workflows as tasks on
+[RADICAL AsyncFlow](https://github.com/radical-cybertools/radical.asyncflow).
+Documentation: [stride-research.github.io/flowgentic](https://stride-research.github.io/flowgentic/).
 
-### Get started
+## Status
 
-Read the documentation: [stride-research.github.io/flowgentic](https://stride-research.github.io/flowgentic/)
+Flowgentic 0.3.0 is in maintenance mode. It preserves the July 2026 work as a
+documented, tested snapshot. The LangGraph execution adapter
+(`LangraphIntegration`) is frozen and gets no new features: the
+[substitution experiment](https://stride-research.github.io/flowgentic/evaluation/substitution/) found that, in the
+agentic demo, its only distinct contribution beyond AsyncFlow and LangGraph is
+an implicit retry and timeout on every call and graph node, which re-runs
+scientific work. New applications can bind agents with `bind_agent`, or run
+LangGraph on AsyncFlow directly.
 
----
+| Agent framework | Workflow engine | Backends | Python |
+| --- | --- | --- | --- |
+| LangGraph 1.x | RADICAL AsyncFlow 0.6.0 | Local | 3.10, 3.11, 3.12 |
 
-### What is it?
+[Project status](https://stride-research.github.io/flowgentic/status/) lists the tested versions, the known limitations
+and the archived branches.
 
-- **Purpose**: Run agentic frameworks on HPC workflow engines with minimal code changes.
-- **Today**: Supports **LangGraph** integrated with **RADICAL AsyncFlow** (experimental) for concurrent execution and orchestration.
-- **Roadmap**: CrewAI, AG2, OpenAI Agents SDK; and HPC workflow engines such as Pegasus and Parsl.
+## What it provides
 
----
+- **`bind_agent`** (`flowgentic.agent`) binds an agent component, any object
+  with an `ainvoke(context)` method, to an AsyncFlow task on a named backend.
+  Each call to the bound agent runs the component as that task and returns its
+  structured decision with the agent's identity and timing.
+- **`LangraphIntegration`** (`flowgentic.langGraph`) runs a LangGraph graph's
+  tools, services, tasks and nodes as AsyncFlow tasks, with retries, a
+  node-level execution report, conversation memory and a graph that changes at
+  runtime.
 
-### Support Matrix
+## Install
 
-Current and planned integrations. ✅ available, 🚧 planned, 🟡 pre-release.
-
-| Agent Framework \ HPC Engine | RADICAL AsyncFlow | Pegasus | Parsl | Academy |
-| ---------------------------- | ----------------: | ------: | ----: | ------: |
-| LangGraph                    |                ✅ |      🚧 |    🚧 |      🟡 |
-| CrewAI                       |                🚧 |      🚧 |    🚧 |      🚧 |
-| AG2                          |                🚧 |      🚧 |    🚧 |      🚧 |
-| OpenAI Agents SDK            |                🚧 |      🚧 |    🚧 |      🚧 |
-
-- **Note**: As of now, the only supported path is LangGraph → RADICAL AsyncFlow.
-
----
-
-### Installation
-
-Requirements: Python >= 3.10 (LangGraph recently discontinued support for python 3.9. See more [here](https://docs.langchain.com/oss/python/migrate/langgraph-v1#dropped-python-3-9-support:~:text=All%20LangChain%20packages%20now%20require%20Python%203.10%20or%20higher.%20Python%203.9%20reached%20end%20of%20life%20in%20October%202025.))
-
-The repository uses `uv` and the checked-in lockfile so contributors, CI, and
-coding agents resolve the same environment. The default interpreter is Python
-3.10, and CI also verifies Python 3.11 and 3.12.
+From a clone, with the locked environment:
 
 ```bash
-uv sync --frozen
+git clone https://github.com/stride-research/flowgentic.git
+cd flowgentic
+uv sync --locked
 ```
 
-Dev extras (linting, docs, tests):
+Or build the wheel and install it into a new environment. Once published, the
+v0.3.0 GitHub release carries the same wheel.
 
 ```bash
-uv sync --frozen --extra dev
+uv build
+uv venv --python 3.10 flowgentic-env
+uv pip install --python flowgentic-env/bin/python dist/flowgentic-0.3.0-py3-none-any.whl
 ```
 
-If you use direnv, allow the checked-in `.envrc`; it activates the same `.venv`
-and refreshes it whenever `pyproject.toml` or `uv.lock` changes.
+## Run the demos
 
-Environment variables for LLM providers:
-
-- **OPEN_ROUTER_API_KEY**: required if you use the OpenRouter-backed LLM provider.
-- `.env` files are supported via `python-dotenv` if you call `load_dotenv()`;
-  install it with the `examples` extra (`uv sync --frozen --extra examples`).
+Two demos in `examples/ai-hpc-coupling/` run offline, with no model
+credentials: a deterministic LangGraph graph, and an agentic one whose agents
+take scripted decisions.
 
 ```bash
-export OPEN_ROUTER_API_KEY=sk-or-...
+make examples-ai-hpc-deterministic
+make examples-ai-hpc-agentic
 ```
 
----
+[Getting started](https://stride-research.github.io/flowgentic/getting-started/)
+explains their output, and `examples/ai-hpc-coupling/README.md` the other
+demos.
 
-### What can I use this for?
-
-- **HPC execution of agent workflows**: Run LangGraph graphs on HPC via RADICAL AsyncFlow.
-- **Concurrent tool and agent blocks**: Offload parallelizable work to HPC backends.
-- **Resilience and memory**: Combine LangGraph checkpointing with HPC retries and blocks.
-- **Production-oriented patterns**: Start from examples that implement sequential patterns with typed state, tool registries, and error handling.
-
----
-
-### Examples
-
-- `examples/langgraph-integration/01-parallel-tools.py`: parallel tool usage
-- `examples/langgraph-integration/04-memory-summarization.py`: memory + summarization
-- `examples/langgraph-integration/design_patterns/sequential/`: sequential pattern end-to-end
-
----
-
-### Documentation
-
-Browse the docs in `docs/`:
-
-- Architecture: `docs/architecture.md`
-- Features: `docs/features/`
-- LangGraph how-tos: `ai-docs/langgraph/`
-
-If you use MkDocs locally:
+## Development
 
 ```bash
-uv run --extra dev mkdocs serve
+uv sync --locked --extra dev
+uv run --extra dev pytest -q
+uv run --extra dev mkdocs build --strict
 ```
 
----
+[CONTRIBUTING.md](CONTRIBUTING.md) covers the environment, coding style,
+tests and pull requests. Report bugs and requests as
+[GitHub issues](https://github.com/stride-research/flowgentic/issues/new).
+[CHANGELOG.md](CHANGELOG.md) lists the changes in each release.
 
-### Roadmap (high-level)
+## How to cite
 
-- Add CrewAI, AG2, OpenAI Agents SDK adapters.
-- Add Pegasus and Parsl execution backends.
-- Expand memory/persistence options and checkpoint stores.
-- Provide production templates and more design patterns.
+If you use Flowgentic in your work, please cite it. [CITATION.cff](CITATION.cff)
+holds the metadata, and GitHub's "Cite this repository" menu turns it into APA
+or BibTeX:
 
----
+> Alsaadi, A., Amirghofran, Y., Barbero, C., Cordovez, D., Dominguez, J.,
+> Oliveros, D., & Turilli, M. (2026). *Flowgentic* (Version 0.3.0) [Computer
+> software]. https://github.com/stride-research/flowgentic
 
-### Contributing
+## License
 
-We welcome contributions! If you find a bug or have a feature request, please [create a GitHub issue](https://github.com/stride-research/flowgentic/issues/new).
-
-Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines (environment setup, coding style, testing, and PR process).
-
-#### Reporting Bugs
-
-When reporting a bug, please include:
-
-- A clear description of the problem
-- Steps to reproduce
-- Expected vs. actual behavior
-- Your environment (OS, version, etc.)
-
----
-
-### How to cite
-
-If you use `flowgentic` in your work, please cite it. A suggested reference and a BibTeX entry are provided below.
-
-- Dominguez, J., Amirghofran, Y., & Turilli, M. (2025). flowgentic (Version 0.1.0). MIT License. Available at https://github.com/stride-research/flowgentic
-
-```bibtex
-@software{flowgentic_2025,
-  title        = {flowgentic},
-  author       = {Dominguez, Javier and Amirghofran, Yousef and Turilli, Matteo},
-  year         = {2025},
-  version      = {0.1.0},
-  url          = {https://github.com/stride-research/flowgentic},
-  license      = {MIT},
-  note         = {A library to enable running agentic frameworks on HPC environments.}
-}
-```
-
----
-
-### License
-
-MIT (see `LICENSE`).
+MIT; see [LICENSE](LICENSE).

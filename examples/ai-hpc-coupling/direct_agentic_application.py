@@ -46,6 +46,7 @@ async def build_direct_agentic_campaign(
 ) -> CampaignApplication:
     """Build the same LLM-agent implementation directly on AsyncFlow."""
 
+    # --8<-- [start:direct-service]
     # 1. The same resident surrogate service as the deterministic demo --------
     @flow.function_task(service=True, backend="ai")
     async def load_surrogate() -> SurrogateService:
@@ -53,7 +54,9 @@ async def build_direct_agentic_campaign(
 
     service_future = load_surrogate()
     service = await service_future
+    # --8<-- [end:direct-service]
 
+    # --8<-- [start:direct-tools]
     # 2. Bounded scientific capabilities exposed as agent tools ---------------
     @asyncflow_tool("Query the resident surrogate for a bounded candidate proposal.")
     @flow.function_task(backend="ai")
@@ -88,6 +91,7 @@ async def build_direct_agentic_campaign(
     ) -> dict[str, Any]:
         """Update the surrogate with an approved simulation batch."""
         return await service.assimilate(results, radius, cycle)
+    # --8<-- [end:direct-tools]
 
     # Agent reasoning is independently placeable on the named AI backend.
     @flow.function_task(backend="ai")
@@ -319,6 +323,7 @@ async def build_direct_agentic_campaign(
             ],
         }
 
+    # --8<-- [start:direct-blocks]
     # 7. The scientific loop is unchanged; only node implementation differs ---
     graph = StateGraph(AgenticCampaignState)
     nodes = {
@@ -334,6 +339,7 @@ async def build_direct_agentic_campaign(
     graph.add_edge("simulation_executor", "analyst_agent")
     graph.add_edge("analyst_agent", "supervisor_agent")
     graph.add_edge("supervisor_agent", END)
+    # --8<-- [end:direct-blocks]
 
     state = initial_agentic_state(service, settings.budget, decision_model.name)
     return CampaignApplication(
@@ -344,6 +350,7 @@ async def build_direct_agentic_campaign(
     )
 
 
+# --8<-- [start:direct-helpers]
 # 8. What the Flowgentic decorators did, written directly against AsyncFlow ---
 def asyncflow_tool(
     description: str,
@@ -376,3 +383,4 @@ def asyncflow_block(
         return await block(state)
 
     return run_block
+# --8<-- [end:direct-helpers]
