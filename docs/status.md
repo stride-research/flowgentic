@@ -48,6 +48,9 @@ test suite on Python 3.10, 3.11 and 3.12. The package requires
   (substitution report, row 5).
 - The design-pattern examples need a model provider and credentials. CI runs
   two of them only when `FLOWGENTIC_RUN_LLM_INTEGRATION=1` is set.
+- Memory: the `trim_middle` and `importance_based` strategies can keep the
+  wrong messages, and `summarize` can exceed a limit of 2. See
+  [Memory](features/memory.md#trimming-strategies).
 - The Academy integration (`flowgentic.academy`) has no tests, and its two
   examples in `examples/academy-integration/` fail at import.
 

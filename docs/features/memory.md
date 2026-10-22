@@ -28,9 +28,19 @@ Every strategy keeps all system messages, then fills the rest of the limit:
 | Strategy | Keeps |
 | --- | --- |
 | `"trim_last"` | The most recent messages |
-| `"trim_middle"` | The oldest and the most recent messages, half each, dropping the middle |
+| `"trim_middle"` | The oldest and the most recent messages, half of the free places each (rounded down), dropping the middle |
 | `"importance_based"` | The highest-scoring messages, ordered by score. A message scores 2.0 if it is a system message, 1.5 if it is an AI message with tool calls, 1.2 if it is a human message and 1.0 otherwise, plus up to 1.0 for length (one point per 1,000 characters) |
 | `"summarize"` | The most recent messages, plus one AI message that summarizes the older ones. It needs a chat model and `enable_summarization=True`, and otherwise trims as `"trim_last"` does |
+
+Two strategies misbehave in 0.3.0:
+
+- `"trim_middle"` trims nothing when one place is free beside the system
+  messages: with a limit of 2, one system message and five others, all six
+  remain.
+- `"importance_based"` scores the first trim correctly. Later trims look up
+  each message's score by its position among all the messages ever added, not
+  in the trimmed history, so they can keep a lower-scoring message and drop a
+  higher-scoring one.
 
 With `"trim_last"` and a limit of 2, the system message and the latest message
 remain:
@@ -47,7 +57,9 @@ summarize the older messages:
 ```
 
 The summary is a synchronous model call, made while the messages are added.
-If the call fails, the older messages are dropped without a summary.
+If the call fails, the older messages are dropped without a summary. The
+strategy keeps at least two recent messages besides the summary, so with a
+limit of 2 the history holds 3 messages.
 
 ## Add and retrieve interactions
 

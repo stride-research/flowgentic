@@ -60,7 +60,9 @@ Proof points
 ```
 
 The run also prints a warning for the injected failure: the first simulation of
-cycle 1 fails once and is retried, which the next line counts as `retries=1`.
+the second cycle fails once and is retried. The warning names it `cycle=1`,
+because cycles count from 0, and each line is printed after its cycle, so the
+retry shows on the `cycle= 2` line as `retries=1`.
 
 ## Run the agentic demo
 

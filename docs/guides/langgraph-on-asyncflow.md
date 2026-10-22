@@ -154,8 +154,8 @@ or a TypedDict:
 ```
 
 `test_supervisor_hands_off_to_a_worker` runs the handoff from a supervisor
-subgraph to a `researcher` node, for both kinds of state. Before 0.3.0, this
-tool failed on every call.
+subgraph to a `researcher` node, for both kinds of state. From October 2025
+until 0.3.0, this tool failed on every call on `main`.
 
 ## Chat models
 

@@ -24,9 +24,9 @@ def run_example(module: str) -> str:
         env={**os.environ, "PYTHONIOENCODING": "utf-8"},
         capture_output=True,
         encoding="utf-8",
-        check=True,
         timeout=120,
     )
+    assert completed.returncode == 0, completed.stderr
     return completed.stdout
 
 

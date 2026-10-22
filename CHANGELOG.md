@@ -88,8 +88,8 @@ on `main`.
 - Two unused `create_react_agent` imports from `flowgentic.langGraph`.
 - Documentation pages for code that is not on `main`: MCP tools
   (`AGENT_TOOL_AS_MCP`, archived as `archive/feature/mcp`), the framework ×
-  backend roadmap, and the chatbot and hierarchical design patterns, which have
-  no runnable example.
+  backend roadmap, the hierarchical design pattern, which has no example, and
+  the chatbot pattern, whose interactive example no test runs.
 
 ### Fixed
 

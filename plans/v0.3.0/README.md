@@ -95,3 +95,4 @@ Single list for the W4 release notes and the W5 status page.
 - The adapter's default retry (3 attempts of at most 30 s each) also wraps graph nodes: a node that runs longer than 30 s fails, and a node that fails re-runs its tasks (R5 report, row 3). Added by W5.
 - The design-pattern examples need a model provider and credentials; CI runs two of them only with `FLOWGENTIC_RUN_LLM_INTEGRATION=1`. Added by W5.
 - `flowgentic.academy` has no tests, and its two examples fail at import (`flowcademy`, noted in R8). Added by W5.
+- Memory: `trim_middle` trims nothing when one place is free, `importance_based` misattributes scores after its first trim, and `summarize` keeps 3 messages under a limit of 2. Found by PR C's code review; documented on the Memory page. Added by W5.

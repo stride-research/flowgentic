@@ -15,15 +15,15 @@ it opens no network port:
 --8<-- "examples/langgraph-integration/service-task/service-intermittent.py:service-task"
 ```
 
-Calling the decorated function submits the service task and returns its
-future. Awaiting that future gives the service, and later requests go to the
-same running instance:
+The decorated function is async: awaiting a call submits the service task and
+returns its future. Awaiting that future gives the service, and later requests
+go to the same running instance:
 
 ```python
 --8<-- "examples/langgraph-integration/service-task/service-intermittent.py:service-handle"
 ```
 
-Each call to the decorated function starts a new instance, with its own state:
+Each awaited call starts a new service instance, with its own state:
 
 ```python
 --8<-- "examples/langgraph-integration/service-task/service-intermittent.py:service-new"
@@ -75,8 +75,8 @@ ends.
 | | `FUNCTION_TASK` | `SERVICE_TASK` |
 | --- | --- | --- |
 | AsyncFlow call | `function_task` | `function_task(..., service=True)` |
-| Calling the decorated function returns | The task's result | The task's future; awaiting it gives the service |
-| Each call | Runs the function | Starts a new service instance |
+| Awaiting a call returns | The task's result | The task's future; awaiting it gives the service |
+| Each awaited call | Runs the function | Starts a new service instance |
 | Stop it | It ends when the function returns | Cancel the future |
 
 Both go through the retry loop of [Fault tolerance](fault_tolerance.md). For a

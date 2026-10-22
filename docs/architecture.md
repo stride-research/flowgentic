@@ -36,8 +36,11 @@ flowchart LR
 | `flowgentic.langGraph.memory` | `MemoryConfig`, `MemoryManager` and the integration's `LangraphMemoryManager` |
 | `flowgentic.langGraph.mutable_graph` | `MutableGraph`: a graph whose nodes change at runtime |
 | `flowgentic.langGraph.utils` | An LLM router and fan-out for supervisor graphs, and graph rendering |
+| `flowgentic.langGraph.base_components` | `BaseToolRegistry`: a base class that registers an application's tools and tasks by name |
 | `flowgentic.utils.telemetry` | `GraphIntrospector` and the Markdown node report |
 | `flowgentic.utils.llm_providers` | `ChatLLMProvider`: OpenRouter, OpenAI and Ollama chat models |
+| `flowgentic.utils.logger` | `Logger`: at import, Flowgentic adds a handler to the root logger that prints colored records to stdout (JSON with `colorful_output=False`) |
+| `flowgentic.settings` | Loads `config.yml` at import; see [Telemetry](features/telemetry.md#write-the-report) |
 | `flowgentic.academy` | `AcademyIntegration`: Academy agents as AsyncFlow tasks; not tested |
 
 The [API reference](api/flowgentic/index.md) documents each module.

@@ -52,8 +52,8 @@ and passes it to the decorator:
 --8<-- "examples/ai-hpc-coupling/agentic_application.py:agent-tools"
 ```
 
-In the demo, the first simulation of cycle 1 fails once and is retried; the run
-reports `retries=1` for that cycle.
+In the demo, the first simulation of the second cycle fails once and is
+retried; the run prints `retries=1` on the `cycle= 2` line.
 
 A node that runs long tasks needs its own policy too, for example a
 `RetryConfig` with `max_attempts=1` and `timeout_sec=None`, so that it runs

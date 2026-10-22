@@ -31,8 +31,11 @@ writes `<directory>/agent_execution_results/execution_summary.md`, and the
 --8<-- "examples/ai-hpc-coupling/agentic_campaign.py:write-report"
 ```
 
-The report names come from `config.yml` (`agent_execution`), which Flowgentic
-reads from the working directory at import.
+The report paths come from the `agent_execution` section of `config.yml`.
+Flowgentic reads it at import from the first place that has one: the working
+directory, `~/.flowgentic/config.yml`, the file named by `FLOWGENTIC_CONFIG`,
+or the root of a source checkout. Without one, it uses the same paths as
+defaults.
 
 `integration.generate_execution_artifacts(app, __file__, final_state=state)`
 does the same for a script: it creates `agent_execution_results/` next to the
