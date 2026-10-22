@@ -18,7 +18,7 @@ Rules for every requirement below:
 
 ## R1 Formatting
 
-- [ ] Run `uv run --extra dev ruff format` on the 5 flagged files: `src/flowgentic/agent.py`, `src/flowgentic/langGraph/execution_wrappers.py`, `src/flowgentic/langGraph/main.py`, `src/flowgentic/settings/extract_settings.py`, `src/flowgentic/utils/telemetry/report_generator.py`. Add Ruff `extend-exclude` entries for `.uv-cache`, `*.egg-info`, `build` and `site`.
+- [x] Run `uv run --extra dev ruff format` on the 5 flagged files: `src/flowgentic/agent.py`, `src/flowgentic/langGraph/execution_wrappers.py`, `src/flowgentic/langGraph/main.py`, `src/flowgentic/settings/extract_settings.py`, `src/flowgentic/utils/telemetry/report_generator.py`. Add Ruff `extend-exclude` entries for `.uv-cache`, `*.egg-info`, `build` and `site`.
 
     Done-check: `uv run --extra dev ruff format --check .` reports nothing to reformat.
 

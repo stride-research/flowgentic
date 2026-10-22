@@ -53,6 +53,7 @@ where = ["src"]
 [tool.ruff]
 line-length = 88
 include = ["./src/*", ]
+extend-exclude = [".uv-cache", "*.egg-info", "build", "site"]
 
 [tool.ruff.format]
 indent-style = "tab"
