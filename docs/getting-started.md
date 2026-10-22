@@ -22,7 +22,8 @@ uv sync --locked
 out of date. Add `--extra dev` for the test and documentation tools.
 
 To use Flowgentic as a package instead, build the wheel and install it into a
-new environment. The v0.3.0 GitHub release attaches the same wheel.
+new environment. Once published, the v0.3.0 GitHub release carries the same
+wheel.
 
 ```bash
 uv build
@@ -141,7 +142,8 @@ execution, with duration, tokens, tool calls and new messages. See
   application and adds three agent decisions through `bind_agent`; see
   [Augment an AsyncFlow application](guides/augment-asyncflow-app.md).
 - `examples/ai-hpc-coupling/run_agentic_demo.sh application --integration direct`
-  runs the agentic demo's graph on AsyncFlow without Flowgentic; see
+  runs the agentic demo's graph on AsyncFlow without the Flowgentic execution
+  adapter (the repository's runner still imports Flowgentic); see
   [LangGraph on AsyncFlow directly](guides/langgraph-direct.md).
 
 Run the scripts through `uv run --frozen --extra examples`, as the `make`
