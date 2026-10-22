@@ -103,7 +103,9 @@ compiled agent graph without changing its implementation.
 
 ## Run the RADICAL baseline
 
-From the Flowgentic repository root:
+From the Flowgentic repository root, create the environment once with
+`uv sync --frozen --extra examples` (or `--extra dev`, which includes it, if
+you also develop Flowgentic; `uv sync` removes extras you do not name), then:
 
 ```bash
 examples/ai-hpc-coupling/run_radical_demo.sh application
@@ -145,6 +147,16 @@ examples/ai-hpc-coupling/run_agentic_demo.sh application \
 model name and credentials. Live decisions use Pydantic structured output and
 still pass the same deterministic candidate and stop-policy guards.
 
+`--integration direct` runs the same agent graph on AsyncFlow without
+Flowgentic (`direct_agentic_application.py`), with the same decisions,
+resources, retry policy, and stopping rules. It writes no Flowgentic execution
+report. The substitution experiment, `docs/evaluation/substitution.md`, compares
+the two:
+
+```bash
+examples/ai-hpc-coupling/run_agentic_demo.sh application --integration direct
+```
+
 ## Run the agent-augmented RADICAL implementation
 
 This version keeps the scientific cycle in AsyncFlow and uses Flowgentic only
@@ -164,9 +176,15 @@ examples/ai-hpc-coupling/run_augmented_demo.sh application \
     --model google/gemini-2.5-flash
 ```
 
-The launchers discover the linked repositories from the current workspace
-layout. For a different layout, set `ASYNCFLOW_SRC`, `ADR_SRC`, or
-`FLOWGENTIC_PYTHON` explicitly.
+The launchers use the AsyncFlow release installed in the Flowgentic environment
+(`.venv`). Set `ASYNCFLOW_SRC` to `radical.asyncflow/src` to run against a local
+AsyncFlow checkout instead, and `FLOWGENTIC_PYTHON` to use another interpreter.
+`make examples-ai-hpc-deterministic` and `make examples-ai-hpc-agentic` create
+the environment and run the `application` controller.
+
+ADR mode (`adr`) is unsupported in Flowgentic 0.3.0. ADR has no release, so the
+`adr` controller needs an ADR source checkout: `../../radical/radical.adr/src`
+relative to the repository, or the path in `ADR_SRC`.
 
 The default run injects one transient simulation failure. The RADICAL baseline
 applies the same deterministic retry policy that Flowgentic applies on the

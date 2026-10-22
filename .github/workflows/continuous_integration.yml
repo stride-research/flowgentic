@@ -2,70 +2,98 @@ name: Lints, formats, and checks vulnerabilities in the code
 on: [push, pull_request]
 
 jobs:
-      lint_and_format:
-            runs-on: ubuntu-latest 
-            steps:
-                  - name: Fetch code
-                    uses: actions/checkout@v7
-                  # - name: Check linting 
-                  #   uses: astral-sh/ruff-action@v1
-                  #   with:
-                  #       args: "check"
-                  - uses: astral-sh/ruff-action@v4.1.0
-                    with:
-                        args: "format --check"
-      vulnerability_analysis:
-          runs-on: ubuntu-latest
-          needs: lint_and_format
-          steps:
-                - name: Fetch code
-                  uses: actions/checkout@v7
-                - name: "Install dependencies"
-                  run: pip install bandit
-                - name: "Check with bandit"
-                  run: bandit -r src/
-      tests:
-        runs-on: ubuntu-latest 
-        needs: lint_and_format
-        strategy:
-          matrix:
-            python-version: ['3.10', '3.11']
-        steps:
-          - name: Fetch code
-            uses: actions/checkout@v7
-          
-          - name: Set up python ${{ matrix.python-version }}
-            uses: actions/setup-python@v7
-            with:
-              python-version: ${{ matrix.python-version }}
+  lint_and_format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch code
+        uses: actions/checkout@v7
 
-          - name: Set up uv
-            uses: astral-sh/setup-uv@v9
-            with:
-              enable-cache: true
-          
-          - name: "Install dependencies"
-            run: uv sync --frozen --extra dev --python ${{ matrix.python-version }}
-          
-          - name: Run python tests with coverage
-            run: |
-              uv run pytest -vv \
-                --cov=flowgentic \
-                --cov-report=html:coverage_report \
-                --cov-report=term-missing \
-                --cov-report=term:skip-covered \
-                tests/
-            shell: bash
-          
-          - name: "Show coverage summary"
-            if: always()
-            run: |
-                echo "=== Coverage Summary ==="
-                coverage report || echo "Coverage report not available"
-          
-          - name: Upload results of test coverage
-            uses: actions/upload-artifact@v7
-            if: always()
-            with:
-              path: ./coverage_report/
-              name: codecoverage-py${{ matrix.python-version }}
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.3.1
+        with:
+          enable-cache: true
+
+      # Use the Ruff version pinned in uv.lock, so CI and local checks agree.
+      - name: Check formatting
+        run: uv run --frozen --extra dev ruff format --check .
+
+  vulnerability_analysis:
+    runs-on: ubuntu-latest
+    needs: lint_and_format
+    steps:
+      - name: Fetch code
+        uses: actions/checkout@v7
+      - name: "Install dependencies"
+        run: pip install bandit
+      - name: "Check with bandit"
+        run: bandit -r src/
+
+  docs:
+    runs-on: ubuntu-latest
+    needs: lint_and_format
+    steps:
+      - name: Fetch code
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.3.1
+        with:
+          enable-cache: true
+
+      - name: "Install dependencies"
+        run: uv sync --frozen --extra dev
+
+      - name: Build documentation
+        run: uv run --frozen --extra dev mkdocs build --strict
+
+  tests:
+    runs-on: ubuntu-latest
+    needs: lint_and_format
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+    steps:
+      - name: Fetch code
+        uses: actions/checkout@v7
+
+      - name: Set up python ${{ matrix.python-version }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.3.1
+        with:
+          enable-cache: true
+
+      - name: "Install dependencies"
+        run: uv sync --frozen --extra dev --python ${{ matrix.python-version }}
+
+      # The lock pins LangGraph 1.x and AsyncFlow 0.6.0; record what was tested.
+      - name: "Show tested versions"
+        run: >-
+          uv run --frozen --python ${{ matrix.python-version }} --extra dev python -c
+          "import importlib.metadata as m; print({p: m.version(p) for p in ('langgraph', 'langchain-core', 'langchain', 'radical-asyncflow')})"
+
+      - name: Run python tests with coverage
+        run: |
+          uv run --frozen --python ${{ matrix.python-version }} --extra dev pytest -vv \
+            --cov=flowgentic \
+            --cov-report=html:coverage_report \
+            --cov-report=term-missing \
+            --cov-report=term:skip-covered \
+            tests/
+        shell: bash
+
+      - name: "Show coverage summary"
+        if: always()
+        run: |
+          echo "=== Coverage Summary ==="
+          uv run --frozen --python ${{ matrix.python-version }} --extra dev coverage report || echo "Coverage report not available"
+
+      - name: Upload results of test coverage
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          path: ./coverage_report/
+          name: codecoverage-py${{ matrix.python-version }}

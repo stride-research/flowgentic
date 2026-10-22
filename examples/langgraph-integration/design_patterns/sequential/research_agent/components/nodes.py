@@ -8,7 +8,7 @@ from .utils.actions_registry import ActionsRegistry
 import asyncio
 from flowgentic.langGraph.execution_wrappers import AsyncFlowType
 from flowgentic.utils.llm_providers import ChatLLMProvider
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage, SystemMessage
 
 import logging
@@ -88,7 +88,7 @@ class WorkflowNodes:
 					self.tools_registry.get_tool_by_name("data_analysis"),
 				]
 
-				research_agent = create_react_agent(
+				research_agent = create_agent(
 					model=ChatLLMProvider(
 						provider="OpenRouter", model="google/gemini-2.5-flash"
 					),
@@ -186,7 +186,7 @@ class WorkflowNodes:
 
 				tools = [self.tools_registry.get_tool_by_name("document_generator")]
 
-				synthesis_agent = create_react_agent(
+				synthesis_agent = create_agent(
 					model=ChatLLMProvider(
 						provider="OpenRouter", model="google/gemini-2.5-flash"
 					),

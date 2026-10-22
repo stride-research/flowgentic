@@ -18,7 +18,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from flowgentic.langGraph.main import LangraphIntegration
 from flowgentic.langGraph.execution_wrappers import AsyncFlowType
-from radical.asyncflow import ConcurrentExecutionBackend
+from radical.asyncflow import LocalExecutionBackend
 from dotenv import load_dotenv
 from .utils.simple_server import SimpleAsyncServer
 
@@ -26,7 +26,7 @@ load_dotenv()
 
 
 async def main():
-	backend = await ConcurrentExecutionBackend(ThreadPoolExecutor())
+	backend = await LocalExecutionBackend(ThreadPoolExecutor())
 
 	async with LangraphIntegration(backend=backend) as agents_manager:
 		print("\n" + "=" * 70)

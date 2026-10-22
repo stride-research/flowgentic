@@ -83,6 +83,59 @@ def test_invalid_surrogate_fallback_is_rebounded() -> None:
     assert status == "agent proposal rejected; surrogate fallback enforced"
 
 
+# Bounds whose seventh decimal makes six-decimal rounding step outside them.
+EDGE_LOWER = -1.2345677
+EDGE_UPPER = 2.3456787
+
+
+def test_agent_proposal_within_rounding_of_a_bound_is_accepted() -> None:
+    decision = PlannerDecision(
+        candidates=[EDGE_LOWER, 0.5, EDGE_UPPER],
+        rationale="Sample both ends of the trust region.",
+    )
+
+    accepted, status = enforce_candidate_policy(
+        decision,
+        fallback_candidates=[-1.0, 0.0, 1.0],
+        expected_count=3,
+        lower_bound=EDGE_LOWER,
+        upper_bound=EDGE_UPPER,
+    )
+
+    assert status == "agent proposal accepted"
+    assert accepted == pytest.approx([EDGE_LOWER, 0.5, EDGE_UPPER], abs=1e-6)
+
+
+@pytest.mark.parametrize(
+    ("proposal", "fallback"),
+    (
+        pytest.param(
+            [-9.0, 0.0, 9.0], [EDGE_LOWER, 0.5, EDGE_UPPER], id="surrogate fallback"
+        ),
+        pytest.param([-9.0, 0.0, 9.0], [-9.0, 0.0, 9.0], id="last resort"),
+    ),
+)
+def test_every_returned_candidate_lies_within_the_bounds(
+    proposal: list[float],
+    fallback: list[float],
+) -> None:
+    decision = PlannerDecision(
+        candidates=proposal,
+        rationale="A proposal used to exercise the bound guard.",
+    )
+
+    accepted, _ = enforce_candidate_policy(
+        decision,
+        fallback_candidates=fallback,
+        expected_count=3,
+        lower_bound=EDGE_LOWER,
+        upper_bound=EDGE_UPPER,
+    )
+
+    assert len(accepted) == 3
+    assert all(EDGE_LOWER <= value <= EDGE_UPPER for value in accepted), accepted
+
+
 def test_agent_cannot_stop_before_a_hard_condition() -> None:
     decision = SupervisorDecision(
         recommendation="stop",

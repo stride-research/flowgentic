@@ -12,6 +12,7 @@ RESET = \033[0m
 UV ?= uv
 UV_RUN = $(UV) run
 UV_RUN_DEV = $(UV) run --extra dev
+UV_RUN_EXAMPLES = $(UV) run --extra examples
 
 help: 
 	@echo "$(BLUE)Available commands:$(RESET)"
@@ -62,25 +63,25 @@ tests-integration-llm: ## Run opt-in examples that require model credentials
 # ============
 
 examples-ai-hpc-deterministic: ## Run the deterministic AI-HPC coupling demo
-	examples/ai-hpc-coupling/run_demo.sh application
+	$(UV_RUN) --frozen --extra examples examples/ai-hpc-coupling/run_demo.sh application
 
 examples-ai-hpc-agentic: ## Run the offline agentic AI-HPC coupling demo
-	examples/ai-hpc-coupling/run_agentic_demo.sh application
+	$(UV_RUN) --frozen --extra examples examples/ai-hpc-coupling/run_agentic_demo.sh application
 
 ## LangGraph
 ### Design Patterns 
 examples-chatbot-toy: 
-	$(UV_RUN) python -m examples.langgraph-integration.design_patterns.chatbot.toy
+	$(UV_RUN_EXAMPLES) python -m examples.langgraph-integration.design_patterns.chatbot.toy
 examples-sequential-research:
-	$(UV_RUN) python -m examples.langgraph-integration.design_patterns.sequential.research_agent.main
+	$(UV_RUN_EXAMPLES) python -m examples.langgraph-integration.design_patterns.sequential.research_agent.main
 examples-supervisor-toy: 
-	$(UV_RUN) python -m examples.langgraph-integration.design_patterns.supervisor.toy.main
+	$(UV_RUN_EXAMPLES) python -m examples.langgraph-integration.design_patterns.supervisor.toy.main
 #### Memory
 examples-sequential-research-memory:
-	$(UV_RUN) python -m examples.langgraph-integration.design_patterns.sequential.research_agent_memory.main
+	$(UV_RUN_EXAMPLES) python -m examples.langgraph-integration.design_patterns.sequential.research_agent_memory.main
 ### Services
 examples-services-intermittent-task: 
-	$(UV_RUN) python -m examples.langgraph-integration.service-task.service-intermittent
+	$(UV_RUN_EXAMPLES) python -m examples.langgraph-integration.service-task.service-intermittent
 ### Miscellaneous
 examples-runtime-graph:
-	$(UV_RUN) python -m examples.langgraph-integration.miscellaneous.runtime-graph-creation
+	$(UV_RUN_EXAMPLES) python -m examples.langgraph-integration.miscellaneous.mutable-graph-creation

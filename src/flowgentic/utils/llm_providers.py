@@ -1,7 +1,7 @@
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
-from typing import Optional
+from typing import Any, Optional
 import os
 
 
@@ -16,7 +16,7 @@ class ChatOpenRouter(ChatOpenAI):
 		llm = ChatOpenRouter(model="google/gemini-2.5-flash")
 	"""
 
-	def __init__(self, model: str, api_key: Optional[str] = None, **kwargs):
+	def __init__(self, model: str, api_key: Optional[str] = None, **kwargs: Any):
 		"""Initialize ChatOpenRouter with OpenRouter configuration.
 
 		Args:

@@ -61,7 +61,9 @@ def enforce_candidate_policy(
     upper_bound: float,
 ) -> tuple[list[float], str]:
     """Validate an agent proposal and fall back to the surrogate if necessary."""
-    candidates = [round(float(value), 6) for value in decision.candidates]
+    candidates = [
+        _round_within(value, lower_bound, upper_bound) for value in decision.candidates
+    ]
     if _candidate_batch_is_valid(
         candidates,
         expected_count=expected_count,
@@ -70,8 +72,10 @@ def enforce_candidate_policy(
     ):
         return candidates, "agent proposal accepted"
 
-    fallback = [round(float(value), 6) for value in fallback_candidates]
-    fallback = fallback[:expected_count]
+    fallback = [
+        _round_within(value, lower_bound, upper_bound)
+        for value in fallback_candidates[:expected_count]
+    ]
     if not _candidate_batch_is_valid(
         fallback,
         expected_count=expected_count,
@@ -141,11 +145,20 @@ def agent_trace_entry(
 def evenly_spaced(lower: float, upper: float, count: int) -> list[float]:
     """Return a deterministic bounded fallback batch."""
     if count <= 1:
-        return [round((lower + upper) / 2, 6)]
-    return [
-        round(lower + (upper - lower) * index / (count - 1), 6)
-        for index in range(count)
-    ]
+        points = [(lower + upper) / 2]
+    else:
+        points = [
+            lower + (upper - lower) * index / (count - 1) for index in range(count)
+        ]
+    return [min(max(round(point, 6), lower), upper) for point in points]
+
+
+def _round_within(value: float, lower_bound: float, upper_bound: float) -> float:
+    """Round to 6 decimals without moving an in-bounds value out of bounds."""
+    rounded = round(float(value), 6)
+    if not lower_bound <= value <= upper_bound:
+        return rounded
+    return min(max(rounded, lower_bound), upper_bound)
 
 
 def _candidate_batch_is_valid(

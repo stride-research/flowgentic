@@ -319,9 +319,9 @@ graph = create_memory_enabled_graph(
 
 ## Examples
 
-### Example 1: Basic Memory with Trimming Strategies
+The runnable memory example is [`research_agent_memory`](https://github.com/stride-research/flowgentic/tree/main/examples/langgraph-integration/design_patterns/sequential/research_agent_memory). The snippets below illustrate individual strategies.
 
-See the complete example: [03-memory-basic.py](../../examples/langgraph-integration/03-memory-basic.py)
+### Example 1: Basic Memory with Trimming Strategies
 
 ```python
 from flowgentic.langGraph.memory import MemoryManager, MemoryConfig
@@ -351,8 +351,6 @@ print(f"Kept {len(final_messages)} messages")
 ```
 
 ### Example 2: LLM-Powered Summarization
-
-See the complete example: [04-memory-summarization.py](../../examples/langgraph-integration/04-memory-summarization.py)
 
 ```python
 from langchain_openai import ChatOpenAI
@@ -385,8 +383,6 @@ print(f"Total messages: {len(messages)}")  # Will be <= 10
 ```
 
 ### Example 3: Memory with Tool Integration
-
-See the complete example: [05-memory-with-tools.py](../../examples/langgraph-integration/05-memory-with-tools.py)
 
 ```python
 from flowgentic.langGraph import MemoryEnabledLangGraphIntegration

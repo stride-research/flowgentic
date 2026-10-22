@@ -267,6 +267,7 @@ def write_summary(
     *,
     controller: str,
     stop_reason: str,
+    integration: str | None = None,
 ) -> Path:
     """Write machine-readable evidence used after the live run."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -303,6 +304,9 @@ def write_summary(
             "model": state.get("agent_model", "unknown"),
             "decisions": state["agent_trace"],
         }
+
+    if integration is not None:
+        summary["integration"] = integration
 
     path = output_dir / "campaign_summary.json"
     path.write_text(json.dumps(summary, indent=2), encoding="utf-8")

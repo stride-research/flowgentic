@@ -24,6 +24,8 @@ nav:
       - Hierarchical design pattern: design_patterns/hierachical.md
   - Phased rollout:
       - Phased rollout: phased_rollout.md
+  - Evaluation:
+      - Substitution experiment: evaluation/substitution.md
   - API Reference: api/
 
 

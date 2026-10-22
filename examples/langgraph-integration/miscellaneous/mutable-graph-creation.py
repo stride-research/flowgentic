@@ -15,7 +15,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated, List, Optional, TypedDict
 from dotenv import load_dotenv
-from radical.asyncflow import ConcurrentExecutionBackend
+from radical.asyncflow import LocalExecutionBackend
 from langgraph.graph.message import add_messages
 
 from flowgentic.langGraph.execution_wrappers import AsyncFlowType
@@ -301,7 +301,7 @@ async def demonstrate_runtime_graph_creation():
 	logger.info("=" * 80)
 
 	# Initialize flowgentic backend
-	backend = await ConcurrentExecutionBackend(ThreadPoolExecutor(max_workers=4))
+	backend = await LocalExecutionBackend(ThreadPoolExecutor(max_workers=4))
 
 	async with LangraphIntegration(backend=backend) as agents_manager:
 		# PART 1: Sequential graph with custom initial nodes
