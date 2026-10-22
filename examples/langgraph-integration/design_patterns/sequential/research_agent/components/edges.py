@@ -12,6 +12,7 @@ class WorkflowEdges:
 		else:
 			return "error_handler"
 
+	# --8<-- [start:edge-after-research]
 	@staticmethod
 	def should_continue_after_research(state: WorkflowState) -> str:
 		"""Determine next step after research agent."""
@@ -19,6 +20,7 @@ class WorkflowEdges:
 			return "context_preparation"
 		else:
 			return "error_handler"
+	# --8<-- [end:edge-after-research]
 
 	@staticmethod
 	def should_continue_after_context(state: WorkflowState) -> str:

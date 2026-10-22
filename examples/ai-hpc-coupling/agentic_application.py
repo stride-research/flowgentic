@@ -46,8 +46,11 @@ async def build_agentic_campaign(
     decision_model: AgentDecisionModel,
 ) -> CampaignApplication:
     """Build the LLM-agent implementation on the same Flowgentic resources."""
+    # --8<-- [start:decorator-alias]
     flowgentic = integration.execution_wrappers.asyncflow
+    # --8<-- [end:decorator-alias]
 
+    # --8<-- [start:service-task]
     # 1. The same resident surrogate service as the deterministic demo --------
     @flowgentic(flow_type=AsyncFlowType.SERVICE_TASK, backend="ai")
     async def load_surrogate() -> SurrogateService:
@@ -55,7 +58,9 @@ async def build_agentic_campaign(
 
     service_future = await load_surrogate()
     service = await service_future
+    # --8<-- [end:service-task]
 
+    # --8<-- [start:agent-tools]
     # 2. Bounded scientific capabilities exposed as agent tools ---------------
     @flowgentic(
         flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION,
@@ -99,7 +104,9 @@ async def build_agentic_campaign(
     ) -> dict[str, Any]:
         """Update the surrogate with an approved simulation batch."""
         return await service.assimilate(results, radius, cycle)
+    # --8<-- [end:agent-tools]
 
+    # --8<-- [start:function-task]
     # Agent reasoning is independently placeable on the named AI backend.
     @flowgentic(flow_type=AsyncFlowType.FUNCTION_TASK, backend="ai")
     async def reason_about_plan(context: dict[str, Any]) -> dict[str, Any]:
@@ -114,6 +121,7 @@ async def build_agentic_campaign(
                 started=started,
             ),
         }
+    # --8<-- [end:function-task]
 
     @flowgentic(flow_type=AsyncFlowType.FUNCTION_TASK, backend="ai")
     async def reason_about_evidence(context: dict[str, Any]) -> dict[str, Any]:
@@ -204,6 +212,7 @@ async def build_agentic_campaign(
             ],
         }
 
+    # --8<-- [start:tool-ainvoke]
     # 4. Deterministic executor: invoke approved simulation tools concurrently -
     async def simulation_executor(
         state: AgenticCampaignState,
@@ -231,6 +240,7 @@ async def build_agentic_campaign(
             "trace": [*state["trace"], *(item["event"] for item in results)],
             "messages": [deterministic_executor_message(len(results))],
         }
+    # --8<-- [end:tool-ainvoke]
 
     # 5. Analyst agent: update the model tool, then interpret its evidence -----
     async def analyst_agent(state: AgenticCampaignState) -> dict[str, Any]:
@@ -330,6 +340,7 @@ async def build_agentic_campaign(
             ],
         }
 
+    # --8<-- [start:block-nodes]
     # 7. The scientific loop is unchanged; only node implementation differs ---
     graph = StateGraph(AgenticCampaignState)
     nodes = {
@@ -352,6 +363,7 @@ async def build_agentic_campaign(
     graph.add_edge("simulation_executor", "analyst_agent")
     graph.add_edge("analyst_agent", "supervisor_agent")
     graph.add_edge("supervisor_agent", END)
+    # --8<-- [end:block-nodes]
 
     state = initial_agentic_state(service, settings.budget, decision_model.name)
     return CampaignApplication(

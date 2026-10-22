@@ -342,6 +342,7 @@ async def test_flowgentic_report_works_without_the_adapter(
 
     from flowgentic.utils.telemetry.introspection import GraphIntrospector
 
+    # --8<-- [start:report-without-adapter]
     introspector = GraphIntrospector()
 
     class IntrospectedStateGraph(StateGraph):
@@ -373,6 +374,7 @@ async def test_flowgentic_report_works_without_the_adapter(
 
     report = (tmp_path / REPORT).read_text()
     assert all(f"Total:{node}" in report for node in nodes)
+    # --8<-- [end:report-without-adapter]
 
 
 # Criterion 7 (amendment A2): AsyncFlow's own OpenTelemetry spans. Opt-in:
@@ -447,6 +449,7 @@ async def open_engine(integration: str) -> AsyncIterator[tuple[Any, Any]]:
         await flow.shutdown()
 
 
+# --8<-- [start:agent-graph]
 def agent_graph(
     model: GenericFakeChatModel,
     tools: list[BaseTool],
@@ -465,8 +468,10 @@ def agent_graph(
     graph.add_conditional_edges("model", tools_condition)
     graph.add_edge("tools", "model")
     return graph.compile()
+# --8<-- [end:agent-graph]
 
 
+# --8<-- [start:science-tool]
 def science_tool(integration: str, flow: Any, adapter: Any) -> BaseTool:
     """The demo's simulation, exposed as an agent tool on the compute backend."""
 
@@ -486,8 +491,10 @@ def science_tool(integration: str, flow: Any, adapter: Any) -> BaseTool:
     return direct.asyncflow_tool(description)(
         flow.function_task(run_simulation, backend="compute")
     )
+# --8<-- [end:science-tool]
 
 
+# --8<-- [start:handoff-tool]
 def handoff_tool(
     integration: str, flow: Any, adapter: Any, agent_name: str
 ) -> BaseTool:
@@ -516,6 +523,7 @@ def handoff_tool(
         return await hand_off(task_description, state)
 
     return transfer
+# --8<-- [end:handoff-tool]
 
 
 # Criterion 8: the model selects a tool, and the tool runs as an AsyncFlow task.

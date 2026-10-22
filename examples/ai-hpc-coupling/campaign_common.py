@@ -153,6 +153,7 @@ async def evaluate_candidate(
     }
 
 
+# --8<-- [start:retry-transient]
 async def retry_transient_simulation(
     operation: Callable[[], Awaitable[ResultType]],
 ) -> ResultType:
@@ -162,6 +163,7 @@ async def retry_transient_simulation(
     except TransientSimulationError:
         await asyncio.sleep(0.05)
         return await asyncio.wait_for(operation(), timeout=5.0)
+# --8<-- [end:retry-transient]
 
 
 def timed_event(
@@ -208,6 +210,7 @@ def initial_scientific_state(
     }
 
 
+# --8<-- [start:local-backends]
 async def create_local_backends(compute_workers: int) -> list[LocalExecutionBackend]:
     """Create laptop-safe stand-ins for RHAPSODY AI and compute backends."""
     compute = await LocalExecutionBackend(
@@ -215,6 +218,7 @@ async def create_local_backends(compute_workers: int) -> list[LocalExecutionBack
     )
     ai = await LocalExecutionBackend(ThreadPoolExecutor(max_workers=2), name="ai")
     return [compute, ai]
+# --8<-- [end:local-backends]
 
 
 def reset_demo_state() -> None:

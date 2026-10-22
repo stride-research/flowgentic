@@ -71,6 +71,7 @@ class WorkflowNodes:
 
 		return _preprocess_node
 
+	# --8<-- [start:research-agent-node]
 	@property
 	def research_agent_node(self):
 		@self.agents_manager.execution_wrappers.asyncflow(
@@ -141,6 +142,7 @@ class WorkflowNodes:
 			return state
 
 		return _research_agent_node
+	# --8<-- [end:research-agent-node]
 
 	@property
 	def context_preparation_node(self):

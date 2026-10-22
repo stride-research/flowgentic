@@ -62,6 +62,7 @@ async def build_augmented_campaign(
 ) -> AugmentedApplication:
     """Insert agent decisions into an otherwise direct AsyncFlow campaign."""
 
+    # --8<-- [start:direct-tasks]
     # 1. Existing RADICAL services and tasks remain direct AsyncFlow code.
     @flow.function_task(service=True, backend="ai")
     async def load_surrogate() -> SurrogateService:
@@ -94,7 +95,9 @@ async def build_augmented_campaign(
         cycle: int,
     ) -> dict[str, Any]:
         return await service.assimilate(results, radius, cycle)
+    # --8<-- [end:direct-tasks]
 
+    # --8<-- [start:bind-agents]
     # 2. Only agent components cross the Flowgentic/framework boundary.
     planner = bind_agent(
         flow,
@@ -117,6 +120,7 @@ async def build_augmented_campaign(
         framework=components.framework,
         backend="ai",
     )
+    # --8<-- [end:bind-agents]
 
     # 3. The application still owns the complete scientific cycle.
     async def run_cycle(state: CampaignState) -> CampaignState:
@@ -125,6 +129,7 @@ async def build_augmented_campaign(
         lower_bound = state["center"] - state["radius"]
         upper_bound = state["center"] + state["radius"]
 
+        # --8<-- [start:decision-point]
         proposal = await propose_candidates(
             state["center"], state["radius"], state["cycle"]
         )
@@ -152,6 +157,7 @@ async def build_augmented_campaign(
             lower_bound=lower_bound,
             upper_bound=upper_bound,
         )
+        # --8<-- [end:decision-point]
 
         results = await asyncio.gather(
             *(

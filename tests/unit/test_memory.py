@@ -105,6 +105,7 @@ def test_short_term_memory_manager():
 	assert len(manager.memory_items) == 3
 	assert manager.interaction_count == 1
 
+	# --8<-- [start:trim-last]
 	# Test trimming from end strategy
 	config = MemoryConfig(max_short_term_messages=2, short_term_strategy="trim_last")
 	manager = ShortTermMemoryManager(config)
@@ -125,6 +126,7 @@ def test_short_term_memory_manager():
 	assert len(manager.message_history) == 2
 	assert isinstance(manager.message_history[0], SystemMessage)
 	assert manager.message_history[1].content == "Message 3"
+	# --8<-- [end:trim-last]
 
 	# Test getting memory statistics
 	config = MemoryConfig(max_short_term_messages=10)
@@ -160,6 +162,7 @@ def test_short_term_memory_manager():
 @pytest.mark.asyncio
 async def test_memory_manager():
 	"""Test MemoryManager class."""
+	# --8<-- [start:memory-manager]
 	# Test manager initialization
 	config = MemoryConfig()
 	manager = MemoryManager(config)
@@ -191,6 +194,7 @@ async def test_memory_manager():
 	assert "memory_stats" in context
 	assert "relevant_messages" in context
 	assert len(context["short_term"]) == 3  # From previous interaction + new ones
+	# --8<-- [end:memory-manager]
 
 	# Test getting memory health statistics
 	config = MemoryConfig(max_short_term_messages=10)
@@ -209,6 +213,7 @@ async def test_memory_manager():
 
 def test_memory_summarization():
 	"""Test memory summarization functionality."""
+	# --8<-- [start:summarize]
 	# Create a mock LLM
 	mock_llm = Mock(spec=BaseChatModel)
 	mock_response = Mock()
@@ -244,6 +249,7 @@ def test_memory_summarization():
 
 	# Check that LLM was called for summarization
 	assert mock_llm.invoke.called
+	# --8<-- [end:summarize]
 
 	# Test fallback when no LLM
 	config_no_llm = MemoryConfig(

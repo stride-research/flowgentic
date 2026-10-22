@@ -22,6 +22,7 @@ from flowgentic.utils.llm_providers import ChatLLMProvider
 load_dotenv()
 
 
+# --8<-- [start:graph-state]
 class GraphState(BaseModel):
 	query: str = Field(..., description="User query to route")
 	routing_decision: Optional[List[str]] = Field(
@@ -37,6 +38,7 @@ class GraphState(BaseModel):
 		default=None, description="Combined summary from gather node"
 	)
 	messages: Annotated[List[BaseMessage], add_messages] = []
+# --8<-- [end:graph-state]
 
 
 async def main():
@@ -50,6 +52,7 @@ async def main():
 	backend = await LocalExecutionBackend(ThreadPoolExecutor())
 
 	async with LangraphIntegration(backend=backend) as agents_manager:
+		# --8<-- [start:router]
 		# Define the routing prompt template
 		routing_prompt_agents_responsibility = """
 
@@ -69,7 +72,9 @@ async def main():
 			create_llm_router(routing_prompt_agents_responsibility, router_model),
 			flow_type=AsyncFlowType.EXECUTION_BLOCK,
 		)
+		# --8<-- [end:router]
 
+		# --8<-- [start:workers]
 		@agents_manager.execution_wrappers.asyncflow(
 			flow_type=AsyncFlowType.FUNCTION_TASK
 		)
@@ -95,6 +100,7 @@ async def main():
 					"agent_b": f"Answer: {state.query} - Parallelism is executing multiple tasks simultaneously!"
 				}
 			}
+		# --8<-- [end:workers]
 
 		@agents_manager.execution_wrappers.asyncflow(
 			flow_type=AsyncFlowType.EXECUTION_BLOCK
@@ -175,6 +181,7 @@ Create a brief, unified response that integrates both perspectives. Keep it conc
 			"gather",
 		]
 
+		# --8<-- [start:graph-wiring]
 		graph.add_node("llm_router", llm_router_introspection)
 		graph.add_node("agent_A", agent_a_introspection)
 		graph.add_node("agent_B", agent_b_introspection)
@@ -190,6 +197,7 @@ Create a brief, unified response that integrates both perspectives. Keep it conc
 		graph.add_edge("gather", END)
 
 		app = graph.compile()
+		# --8<-- [end:graph-wiring]
 
 		# Test different routing scenarios
 		test_queries = [
