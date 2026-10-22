@@ -124,7 +124,17 @@ class ShortTermMemoryManager:
 
 		# Apply trimming strategy if needed
 		if len(self.message_history) > self.config.max_short_term_messages:
+			items_by_message = {
+				id(msg): item
+				for msg, item in zip(self.message_history, self.memory_items)
+			}
 			self.message_history = self._apply_trimming_strategy()
+			# Keep memory_items aligned with the trimmed history; a summary
+			# message is new and gets its own item
+			self.memory_items = [
+				items_by_message.get(id(msg)) or ShortTermMemoryItem.from_message(msg)
+				for msg in self.message_history
+			]
 
 		return self.message_history.copy()
 
@@ -176,10 +186,11 @@ class ShortTermMemoryManager:
 		if keep_count <= 0:
 			return cast(List[BaseMessage], system_msgs)
 
-		# Keep messages from beginning and end
-		half_keep = keep_count // 2
-		beginning = other_msgs[:half_keep]
-		end = other_msgs[-half_keep:]
+		# Keep messages from beginning and end; the end gets the odd place
+		begin_count = keep_count // 2
+		end_count = keep_count - begin_count
+		beginning = other_msgs[:begin_count]
+		end = other_msgs[-end_count:]
 
 		return system_msgs + beginning + end
 
@@ -190,9 +201,10 @@ class ShortTermMemoryManager:
 
 		# Always keep system messages
 		system_msgs = [m for m in self.message_history if isinstance(m, SystemMessage)]
+		# memory_items is aligned with message_history (see add_messages)
 		other_messages_with_importance = [
-			(msg, self.memory_items[i].importance)
-			for i, msg in enumerate(self.message_history)
+			(msg, item.importance)
+			for msg, item in zip(self.message_history, self.memory_items)
 			if not isinstance(msg, SystemMessage)
 		]
 
@@ -227,12 +239,17 @@ class ShortTermMemoryManager:
 
 		# Calculate how many messages to keep unsummarized (most recent)
 		keep_total = self.config.max_short_term_messages - len(system_msgs)
-		keep_unsummarized = min(
-			max(2, keep_total // 2), keep_total
-		)  # Keep at least half for recent context, but not more than total allowed
 
 		if keep_total <= 0:
 			return cast(List[BaseMessage], system_msgs)
+
+		# No room for a summary beside a recent message
+		if keep_total == 1:
+			return self._trim_from_end()
+
+		keep_unsummarized = min(
+			max(2, keep_total // 2), keep_total - 1
+		)  # Keep at least half for recent context, leaving one place for the summary
 
 		# Keep most recent messages unsummarized
 		recent_msgs = (
