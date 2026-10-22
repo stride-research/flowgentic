@@ -39,6 +39,17 @@ class GraphState(TypedDict):
 	operation_count: int
 
 
+class ConditionalState(GraphState):
+	"""GraphState plus the routing flag that the decision node sets.
+
+	LangGraph keeps only the keys its state schema declares, and it reads a
+	routing function's input through that function's annotation. Both the graph
+	and the routing function use this schema, so the router sees the flag.
+	"""
+
+	should_optimize: bool
+
+
 class DynamicFlowgenticGraph(MutableGraph):
 	"""
 	Example implementation of MutableGraph with sequential data processing nodes.
@@ -260,7 +271,7 @@ class ConditionalFlowGraph(MutableGraph):
 
 	def _get_state_schema(self) -> type:
 		"""Return state schema (extends GraphState with should_optimize flag)"""
-		return GraphState
+		return ConditionalState
 
 	def _add_edges(self, workflow):
 		"""
@@ -271,7 +282,7 @@ class ConditionalFlowGraph(MutableGraph):
 		from langgraph.graph import END
 
 		# Helper function for routing
-		def route_after_decision(state: GraphState) -> str:
+		def route_after_decision(state: ConditionalState) -> str:
 			"""Route based on state evaluation"""
 			if state.get("should_optimize", False):
 				return "optimize"
