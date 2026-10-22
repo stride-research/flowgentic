@@ -153,3 +153,24 @@ async def test_tool_calls_read_from_ai_message_tool_calls():
 			"tool_call_id": "call_2",
 		},
 	]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+	"content",
+	["Done", [{"type": "text", "text": "Done"}]],
+	ids=["string", "content-blocks"],
+)
+async def test_final_response_without_additional_kwargs(content):
+	"""A plain AIMessage's text is recorded as the node's final response."""
+	introspector = GraphIntrospector()
+
+	async def answering_node(state: SampleState) -> SampleState:
+		state.messages.append(AIMessage(content=content))
+		return state
+
+	wrapped = introspector.introspect_node(answering_node, node_name="answering_node")
+	await wrapped(SampleState())
+
+	record = list(introspector._records.values())[-1]
+	assert record.final_response == "Done"

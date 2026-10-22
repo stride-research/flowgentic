@@ -87,6 +87,17 @@ class Extractor:
 			timestamp=datetime.now().isoformat(),
 		)
 
+	@staticmethod
+	def _message_text(message: AIMessage) -> str:
+		"""Return a message's text, joining the text blocks of list content."""
+		if isinstance(message.content, str):
+			return message.content
+		return "".join(
+			block if isinstance(block, str) else block.get("text", "")
+			for block in message.content
+			if isinstance(block, str) or block.get("type") == "text"
+		)
+
 	def _extract_token_usage(self, message: AIMessage) -> Optional[TokenUsage]:
 		"""Extract token usage information from message metadata."""
 		if not isinstance(message, AIMessage):
@@ -177,12 +188,12 @@ class Extractor:
 
 				# Extract tool calls from AIMessage
 				if isinstance(msg, AIMessage):
-					if hasattr(msg, "additional_kwargs") and msg.additional_kwargs:
-						if msg.content:
-							if i == len(new_messages) - 1:
-								final_response = msg.content
-							else:
-								interleaved_thinking.append(msg.content)
+					text = self._message_text(msg)
+					if text:
+						if i == len(new_messages) - 1:
+							final_response = text
+						else:
+							interleaved_thinking.append(text)
 
 					# Extract tool invokation info. LangChain parses the
 					# OpenAI-format additional_kwargs["tool_calls"] into these
