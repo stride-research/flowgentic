@@ -92,7 +92,8 @@ on `main`.
   in October 2025. The call is gone, and handoffs work, with Pydantic and
   TypedDict graph states (such as `create_agent`'s).
 - The LangGraph examples import again: they used `ConcurrentExecutionBackend`,
-  which no AsyncFlow release exports, and now use `LocalExecutionBackend`.
+  which AsyncFlow 0.3.0 and later do not export, and now use
+  `LocalExecutionBackend`.
 - Seven `mkdocs build --strict` warnings: three missing annotations and four
   broken links.
 - CI:

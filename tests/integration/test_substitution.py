@@ -376,7 +376,7 @@ async def test_flowgentic_report_works_without_the_adapter(
 
 
 # Criterion 7 (amendment A2): AsyncFlow's own OpenTelemetry spans. Opt-in:
-# AsyncFlow 0.5.0 needs RHAPSODY's TelemetryManager, which neither AsyncFlow
+# AsyncFlow (0.5.0, 0.6.0) needs RHAPSODY's TelemetryManager, which neither AsyncFlow
 # nor Flowgentic depends on. Run with
 #   uv run --extra dev --with 'rhapsody-py[telemetry]==0.6.0' \
 #       pytest -s tests/integration/test_substitution.py -k telemetry
@@ -415,7 +415,7 @@ async def test_asyncflow_telemetry_spans(integration: str) -> None:
     for span in tasks:
         assert {"task_id", "executable", "status"} <= set(span.attributes)
         assert span.attributes["status"] == "completed"
-    # AsyncFlow 0.5.0 labels every task with the default backend, including
+    # AsyncFlow 0.5.0 and 0.6.0 label every task with the default backend, including
     # those that ran on "ai" (test_both_versions_place_tasks_on_the_named_backends).
     assert set(labels.values()) == {"compute"}
 
@@ -615,6 +615,13 @@ async def test_supervisor_hands_off_to_a_worker(
         final = await parent.compile().ainvoke(
             {"messages": [HumanMessage(content="Plan the study.")]}
         )
+        # The handoff itself runs as one AsyncFlow task in both versions.
+        handoff_tasks = [
+            component
+            for component in flow.components.values()
+            if component["type"] == "task"
+        ]
 
+    assert len(handoff_tasks) == 1
     assert received == [["Evaluate x=2.75."]]
     assert final["messages"][-1].content == "researcher done"
