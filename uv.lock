@@ -752,7 +752,6 @@ dependencies = [
     { name = "langchain-openai" },
     { name = "langgraph" },
     { name = "pydantic" },
-    { name = "pyyaml" },
     { name = "radical-asyncflow" },
 ]
 
@@ -798,7 +797,6 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=1.2.0" },
     { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "python-dotenv", marker = "extra == 'examples'" },
-    { name = "pyyaml", specifier = ">=6.0" },
     { name = "radical-asyncflow", specifier = "==0.6.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12.11" },
 ]

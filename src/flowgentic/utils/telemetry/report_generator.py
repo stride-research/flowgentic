@@ -6,11 +6,13 @@ from typing import Any, Dict, List
 
 from pydantic import BaseModel
 
-from flowgentic.settings.extract_settings import APP_SETTINGS
 
 from .schemas import GraphExecutionReport, NodeExecutionRecord
 
 logger = logging.getLogger(__name__)
+
+REPORT_FILE = "execution_summary.md"
+GRAPH_IMAGE = "agent_graph.png"
 
 
 class ReportGenerator:
@@ -216,11 +218,7 @@ class ReportGenerator:
 			total_messages=total_messages,
 			models_used=models_used,
 		)
-		output_path = (
-			dir_to_write
-			+ "/"
-			+ APP_SETTINGS["agent_execution"]["execution_summary_path"]
-		)
+		output_path = os.path.join(dir_to_write, REPORT_FILE)
 		with open(output_path, "w", encoding="utf-8") as f:
 			f.write(f"# LangGraph Execution Report\n\n")
 			f.write(

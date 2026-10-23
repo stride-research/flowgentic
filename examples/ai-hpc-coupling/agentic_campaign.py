@@ -163,12 +163,12 @@ async def run(args: argparse.Namespace) -> int:
 
         # --8<-- [start:write-report]
         output_dir = Path(args.output_dir).resolve()
-        report_path = output_dir / "agent_execution_results" / "execution_summary.md"
+        results_dir = output_dir / "agent_execution_results"
         if integration is not None:
             # Flowgentic's node-level report; the direct version has none.
-            report_path.parent.mkdir(parents=True, exist_ok=True)
+            results_dir.mkdir(parents=True, exist_ok=True)
             integration.agent_introspector._final_state = state
-            integration.agent_introspector.generate_report(str(output_dir))
+            integration.agent_introspector.generate_report(str(results_dir))
         # --8<-- [end:write-report]
         summary_path = write_summary(
             output_dir,
@@ -198,7 +198,7 @@ async def run(args: argparse.Namespace) -> int:
         print(f"  stopped because: {stop_reason}")
         print(f"  machine-readable summary: {summary_path}")
         if integration is not None:
-            print(f"  agent execution report: {report_path}")
+            print(f"  agent execution report: {results_dir / 'execution_summary.md'}")
 
     return 0
 

@@ -123,6 +123,6 @@ async def test_cicylic_node_extraction(tmp_path):
 	results_dir.mkdir()
 	report_generator.generate_report(
 		all_nodes=["nodeA", "nodeB"],
-		dir_to_write=str(tmp_path),
+		dir_to_write=str(results_dir),
 	)
 	assert (results_dir / "execution_summary.md").is_file()

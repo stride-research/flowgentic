@@ -370,7 +370,7 @@ async def test_flowgentic_report_works_without_the_adapter(
     introspector._all_nodes = nodes
     introspector._final_state = state
     (tmp_path / REPORT).parent.mkdir(parents=True)
-    introspector.generate_report(str(tmp_path))
+    introspector.generate_report(str((tmp_path / REPORT).parent))
 
     report = (tmp_path / REPORT).read_text()
     assert all(f"Total:{node}" in report for node in nodes)
