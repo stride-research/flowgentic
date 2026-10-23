@@ -85,7 +85,7 @@ Notes:
 		if not routing_decision:
 			raise ValueError("Empty routing decision from LLM")
 
-		logger.debug("Router chose %s", routing_decision)
+		logger.debug("Router chose %d agents", len(routing_decision))
 
 		# Update state
 		state.routing_decision = routing_decision

@@ -55,6 +55,9 @@ no code for any of these.
 ## What the records leave out
 
 No record carries prompts, model outputs, message lists or graph states, at any
-level. Logs are diagnostics for whoever debugs Flowgentic or the application;
-what a run did, such as its decisions, retries and token usage, belongs to its
-[telemetry](telemetry.md).
+level; a router's choice of agents is logged as a count. A record of a failure
+carries the exception's type and message as the code raised them, as
+OpenTelemetry's GenAI conventions recommend for exceptions, while they make
+message content opt-in. Logs are diagnostics for whoever debugs Flowgentic or
+the application; what a run did, such as its decisions, retries and token usage,
+belongs to its [telemetry](telemetry.md).
