@@ -47,3 +47,13 @@ def test_agent_loop_example() -> None:
 
     assert "Final count: " in output
     assert "All examples completed successfully!" in output
+
+
+def test_direct_example() -> None:
+    output = run_example("direct")
+
+    assert "Initial count: 0" in output
+    assert "Final count: 3" in output
+    for counter in range(1, 11):
+        assert f"Counter {counter}: {counter * 2}" in output
+    assert "All examples completed successfully!" in output
