@@ -20,15 +20,38 @@ predate this changelog, so their changes are not listed here.
   manager does by default, instead of a thread pool. On the pool, each agent
   held a worker for its whole life, and agents beyond the pool's size, at most
   32, never started.
-- `AcademyIntegration` launches wait for the agent to answer a ping instead of
-  a fixed sleep: `startup_delay` defaults to 0, and the new `startup_timeout`
-  (60 s) bounds the wait, after which the agent is shut down.
+- **Breaking:** `AcademyIntegration()` takes no arguments: the workflow engine
+  it took served only `create_workflow_from_academy_chain`, removed below.
+  `create_agent_task(agent_class, action_name, *, agent_id, args, kwargs,
+  startup_timeout)` takes the agent's constructor arguments as `args` and
+  `kwargs`, the names `Manager.launch` uses, in place of `agent_args` and
+  `agent_kwargs`. A launch waits for the agent to answer a ping instead of a
+  fixed sleep; the new `startup_timeout` (60 s) bounds the wait, after which
+  the agent is shut down. Functions for one `agent_id` that name another class
+  or other constructor arguments raise `ValueError`; the first call's
+  arguments used to win silently.
+
+### Removed
+
+Nobody uses Flowgentic yet, so these go without a deprecation period.
+
+- `AcademyIntegration.create_workflow_from_academy_chain`: a loop of blocks,
+  one agent each, configured by `(agent_class, action_name, args, kwargs)`
+  tuples. Awaiting the functions from `create_agent_task` in turn does the
+  same, in plain code.
+- `create_agent_task`'s `startup_delay`, and `ensure_agent_loops_running` and
+  `wait_for_all_agent_loops`: they only slept. A launch now waits until the
+  agent has started, after which its loops are scheduled; an application that
+  needs a loop to have run waits for what it needs.
+- `AcademyIntegration.academy_manager` and `launched_agents`: their handles
+  fail or hang when awaited in a function task's worker thread (see the
+  [Academy substitution check](https://stride-research.github.io/flowgentic/evaluation/academy/)).
+  Calls go through `create_agent_task`.
 
 ### Fixed
 
-- `flowgentic.academy`: an action called from an AsyncFlow task, whether a
-  function task, a block or a chain from `create_workflow_from_academy_chain`,
-  failed with `ExchangeClientNotFoundError`. Launches and actions now run on
+- `flowgentic.academy`: an action called from an AsyncFlow task, function task
+  or block, failed with `ExchangeClientNotFoundError`. Launches and actions now run on
   the manager's event loop, through handles bound to its exchange client.
 - `flowgentic.academy`: the action's result was awaited a second time, so a
   call failed even when the action succeeded.

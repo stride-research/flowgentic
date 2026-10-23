@@ -42,14 +42,10 @@ async def main() -> int:
     flow = await WorkflowEngine.create(backend=backend)
 
     # Create integration layer
-    async with AcademyIntegration(flow) as integration:
+    async with AcademyIntegration() as integration:
 
         # Create workflow tasks from Academy Counter agent
-        # Use a longer startup delay to ensure loops are running
-        counter_get_count_task = integration.create_agent_task(
-            Counter, 'get_count',
-            startup_delay=0.5  # Give loops time to start
-        )
+        counter_get_count_task = integration.create_agent_task(Counter, 'get_count')
 
         # Create workflow blocks that wrap the Academy agent actions
         @flow.function_task
@@ -86,13 +82,10 @@ async def main_with_monitoring() -> int:
     backend = await LocalExecutionBackend(ThreadPoolExecutor())
     flow = await WorkflowEngine.create(backend=backend)
 
-    async with AcademyIntegration(flow) as integration:
+    async with AcademyIntegration() as integration:
 
         # Create workflow tasks from Academy Counter agent
-        counter_get_count_task = integration.create_agent_task(
-            Counter, 'get_count',
-            startup_delay=0.5  # Give loops time to start
-        )
+        counter_get_count_task = integration.create_agent_task(Counter, 'get_count')
 
         # Create workflow blocks
         @flow.function_task
@@ -152,7 +145,7 @@ async def main_parallel_monitoring() -> int:
     backend = await LocalExecutionBackend(ThreadPoolExecutor())
     flow = await WorkflowEngine.create(backend=backend)
 
-    async with AcademyIntegration(flow) as integration:
+    async with AcademyIntegration() as integration:
 
         async def monitor_counter(counter_id: int, monitor_duration: int):
             """Monitor a single counter for a specified duration."""
@@ -161,7 +154,6 @@ async def main_parallel_monitoring() -> int:
             counter_get_count_task = integration.create_agent_task(
                 Counter, 'get_count',
                 agent_id=f"counter_{counter_id}",
-                startup_delay=0.5  # Give loops time to start
             )
 
             @flow.function_task

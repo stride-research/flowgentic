@@ -41,7 +41,7 @@ async def main() -> int:
     flow = await WorkflowEngine.create(backend=backend)
 
     # Create integration layer
-    async with AcademyIntegration(flow) as integration:
+    async with AcademyIntegration() as integration:
 
         # Create workflow tasks from Academy Counter agent
         counter_increment_task = integration.create_agent_task(Counter, 'increment')
@@ -90,7 +90,7 @@ async def main_with_dependencies() -> int:
     backend = await LocalExecutionBackend(ThreadPoolExecutor())
     flow = await WorkflowEngine.create(backend=backend)
 
-    async with AcademyIntegration(flow) as integration:
+    async with AcademyIntegration() as integration:
 
         # Create workflow tasks from Academy Counter agent
         counter_increment_task = integration.create_agent_task(Counter, 'increment')
@@ -162,7 +162,7 @@ async def main_concurrent_counters() -> int:
     backend = await LocalExecutionBackend(ThreadPoolExecutor())
     flow = await WorkflowEngine.create(backend=backend)
 
-    async with AcademyIntegration(flow) as integration:
+    async with AcademyIntegration() as integration:
 
         async def create_counter_workflow(counter_id: int, increment_value: int):
             """Create a workflow for a single counter."""

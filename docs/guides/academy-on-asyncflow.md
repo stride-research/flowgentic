@@ -2,8 +2,8 @@
 
 `flowgentic.academy` runs the actions of [Academy](https://academy-agents.org)
 agents as AsyncFlow tasks. An agent keeps its state between calls, and a
-workflow calls its actions as it calls any other task: as a function task, a
-block, or a chain of blocks.
+workflow calls its actions from its tasks: from a function task or from a
+block.
 
 The code on this page comes from `examples/academy-integration/01-actor-client/run.py`,
 which `tests/integration/test_academy_examples.py` runs in CI.
@@ -33,20 +33,23 @@ counter keeps its count between calls:
 
 ## 3. Call its actions from AsyncFlow tasks
 
-`AcademyIntegration` takes the workflow engine. Entering it starts an Academy
-manager with a local exchange; leaving it shuts down every agent it launched.
-`create_agent_task` returns a coroutine function that calls one action, and a
-workflow wraps it, or a function that awaits it, in an AsyncFlow task:
+Entering `AcademyIntegration()` starts an Academy manager with a local
+exchange; leaving it shuts down every agent it launched. `create_agent_task`
+returns a coroutine function that calls one action, and a workflow wraps it, or
+a function that awaits it, in an AsyncFlow task:
 
 ```python
 --8<-- "examples/academy-integration/01-actor-client/run.py:tasks"
 ```
 
-Both tasks name the same agent: `agent_id` defaults to the class name. The
-first call for an `agent_id` launches the agent and waits until it answers a
-ping, which it does once its `agent_on_startup` has returned. Concurrent first
-calls launch it once. `startup_timeout` bounds that wait (60 s by default);
-after it, the agent is shut down and the call raises `asyncio.TimeoutError`.
+Both tasks name the same agent: `agent_id` defaults to the class name, and
+`args` and `kwargs` go to the agent's constructor. Functions created for one
+`agent_id` must name the same class and constructor arguments, or
+`create_agent_task` raises `ValueError`. The first call for an `agent_id`
+launches the agent and waits until it answers a ping, which it does once its
+`agent_on_startup` has returned. Concurrent first calls launch it once.
+`startup_timeout` bounds that wait (60 s by default); after it, the agent is
+shut down and the call raises `asyncio.TimeoutError`.
 
 To run the example:
 
@@ -82,18 +85,9 @@ default. An action that blocks, such as a long computation, belongs in
 ## Agents with loops
 
 An agent's `@loop` methods start after `agent_on_startup` returns, so they are
-scheduled by the time the first call returns. `startup_delay` adds a wait after
-the launch for loops that need a head start;
-`examples/academy-integration/02-agent-loop/run.py` uses it.
-`ensure_agent_loops_running` and `wait_for_all_agent_loops` only wait the time
-they are given: they do not check the loops.
-
-## Chains
-
-`create_workflow_from_academy_chain` takes a list of
-`(agent_class, action_name, args, kwargs)` tuples and returns a coroutine
-function. Each action runs as a block on its own agent, and each result is the
-next action's argument.
+scheduled by the time the first call returns.
+`examples/academy-integration/02-agent-loop/run.py` reads a counter that a loop
+increments.
 
 ## Limitations
 
