@@ -65,7 +65,7 @@ class Counter(Agent):
 
 async def flowgentic_counters(flow: WorkflowEngine) -> list[str]:
     """Example 1's concurrent counters through AcademyIntegration."""
-    async with AcademyIntegration(flow) as integration:
+    async with AcademyIntegration() as integration:
 
         async def counter_workflow(counter_id: int, increment_value: int) -> str:
             agent_id = f"counter_{counter_id}"
