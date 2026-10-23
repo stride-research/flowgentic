@@ -21,12 +21,12 @@ from langgraph.graph.message import add_messages
 from flowgentic.langGraph.execution_wrappers import AsyncFlowType
 from flowgentic.langGraph.main import LangraphIntegration
 from flowgentic.langGraph.mutable_graph import MutableGraph
-from flowgentic.utils.logger.logger import Logger
 
 load_dotenv()
 
-# Initialize flowgentic logger
-Logger(colorful_output=True, logger_level="INFO")
+logging.basicConfig(
+	level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 
