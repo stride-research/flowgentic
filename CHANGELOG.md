@@ -7,7 +7,7 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
-## [0.3.1] - Unreleased
+## [0.3.1] - 2026-10-23
 
 A patch release: fixes for the defects that 0.3.0's documentation lists.
 

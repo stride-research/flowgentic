@@ -6,11 +6,11 @@ title: Flowgentic
 
 Flowgentic runs agent components and LangGraph workflows as tasks on
 [RADICAL AsyncFlow](https://github.com/radical-cybertools/radical.asyncflow).
-This documentation describes Flowgentic 0.3.0.
+This documentation describes Flowgentic 0.3.1.
 
 ## Status
 
-Flowgentic 0.3.0 is in maintenance mode. It preserves the July 2026 work as a
+Flowgentic 0.3.1 is in maintenance mode. It preserves the July 2026 work as a
 documented, tested snapshot. The LangGraph execution adapter
 (`LangraphIntegration`) is frozen and gets no new features: the
 [substitution experiment](evaluation/substitution.md) found that, in the
@@ -52,7 +52,7 @@ in two of them.
 | An ADR action or AuCaM workflow launches an agent workflow whose tools run through AsyncFlow | AuCaM, AsyncFlow | `LangraphIntegration` (frozen) |
 | An external harness (Claude Code, Codex, OpenClaw) steers a run or submits a campaign | ADR, AuCaM | None |
 
-ADR and AuCaM are not released, and Flowgentic 0.3.0 does not support ADR
+ADR and AuCaM are not released, and Flowgentic 0.3.1 does not support ADR
 mode; see [Project status](status.md).
 
 ## Install
@@ -66,12 +66,12 @@ uv sync --locked
 ```
 
 Or build the wheel and install it into a new environment. The
-[v0.3.0 GitHub release](https://github.com/stride-research/flowgentic/releases/tag/v0.3.0) carries the same wheel.
+[v0.3.1 GitHub release](https://github.com/stride-research/flowgentic/releases/tag/v0.3.1) carries the same wheel.
 
 ```bash
 uv build
 uv venv --python 3.10 flowgentic-env
-uv pip install --python flowgentic-env/bin/python dist/flowgentic-0.3.0-py3-none-any.whl
+uv pip install --python flowgentic-env/bin/python dist/flowgentic-0.3.1-py3-none-any.whl
 ```
 
 [Getting started](getting-started.md) runs the two offline demos.
