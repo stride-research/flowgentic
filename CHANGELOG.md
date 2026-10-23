@@ -14,11 +14,12 @@ predate this changelog, so their changes are not listed here.
 - **Breaking:** `import flowgentic` configures nothing. It used to set the root
   logger to DEBUG, add a handler that printed every record to stdout, start a
   thread and register an `atexit` hook; in test runs, that handler wrote to
-  streams the runner had closed. The `flowgentic` logger now has only a
-  `NullHandler`: warnings and errors still reach stderr through Python's
-  fallback, and the rest is the application's. To get Flowgentic's records
-  back, call `flowgentic.configure_logging()`, which prints them in plain text
-  to stderr; see [Logging](https://stride-research.github.io/flowgentic/features/logging/).
+  streams the runner had closed. The `flowgentic` logger now has no handler:
+  without configuration, warnings and errors reach stderr through Python's
+  last-resort handler, and the rest is the application's. To get Flowgentic's
+  records back, call `flowgentic.configure_logging()`, which prints them in
+  plain text to stderr; see
+  [Logging](https://stride-research.github.io/flowgentic/features/logging/).
 - Log records follow a level contract: DEBUG for per-call detail, INFO for
   lifecycle events, WARNING for retries, degraded results and refused requests,
   ERROR for failures. Per-call records that were INFO are DEBUG, such as the

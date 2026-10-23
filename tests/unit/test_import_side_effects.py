@@ -41,7 +41,24 @@ def test_import_configures_nothing() -> None:
 	assert result.returncode == 0, result.stderr
 	state = json.loads(result.stdout)
 	assert state["after"] == state["before"]
-	assert state["handlers"] == ["NullHandler"]
+	assert state["handlers"] == []
+
+
+def test_warnings_reach_stderr_without_configuration() -> None:
+	"""With no logging configured, Python's last-resort handler prints WARNING+."""
+	result = run_python(
+		"""
+		import logging
+		import flowgentic
+
+		log = logging.getLogger("flowgentic.example")
+		log.info("hidden at the default level")
+		log.warning("retrying %s", "node-a")
+		log.error("failed %s", "node-b")
+		"""
+	)
+	assert result.returncode == 0, result.stderr
+	assert result.stderr.splitlines() == ["retrying node-a", "failed node-b"]
 
 
 def test_import_ignores_a_foreign_config_file(tmp_path: Path) -> None:

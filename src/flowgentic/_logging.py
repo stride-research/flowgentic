@@ -1,8 +1,9 @@
 """Opt-in console output for Flowgentic's log records.
 
 Flowgentic follows the standard library's advice for libraries: its modules log
-through ``logging.getLogger(__name__)`` and the ``flowgentic`` logger has only a
-``NullHandler``. Handlers and levels are the application's to configure.
+through ``logging.getLogger(__name__)`` and the ``flowgentic`` logger has no
+handler, so without configuration Python's last-resort handler prints warnings
+and errors to stderr. Handlers and levels are the application's to configure.
 """
 
 import logging

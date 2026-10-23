@@ -4,8 +4,9 @@ Flowgentic logs through Python's standard `logging` module, as the
 [logging HOWTO](https://docs.python.org/3/howto/logging.html#configuring-logging-for-a-library)
 asks of a library. Each module logs to `logging.getLogger(__name__)`, under the
 `flowgentic` logger, and importing Flowgentic configures nothing: no level, no
-handler on the root logger, no thread. Without any configuration, Python prints
-warnings and errors to stderr; everything else is the application's choice.
+handler, no thread. Without any configuration, Python's last-resort handler
+prints warnings and errors to stderr, as bare messages, which the HOWTO calls
+the best default; everything else is the application's choice.
 
 ## See Flowgentic's records
 
