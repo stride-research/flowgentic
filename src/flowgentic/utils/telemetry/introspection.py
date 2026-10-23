@@ -87,7 +87,6 @@ class GraphIntrospector:
 
 			# Execute the original node function
 			state_after = await node_func(state)
-			logger.debug(f"Reasoning after: {state_after}")
 
 			end_time = datetime.now()
 			self.record_node_event(
@@ -114,7 +113,9 @@ class GraphIntrospector:
 				"You need to provide the the nodes for the graph to the inspector"
 			)
 		else:
-			logger.debug(f"Records are: {self._records}")
+			logger.debug(
+				"Writing the report for %d node executions", len(self._records)
+			)
 			report_generator = ReportGenerator(
 				final_state=self._final_state,
 				records=self._records,

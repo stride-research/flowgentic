@@ -47,4 +47,6 @@ class LangraphUtils:
 					f.write(new_content + existing_content)
 
 			except Exception as e:
-				print(f"Error rendering graph or writing to file: {e}")
+				logger.warning(
+					"Could not render the graph into %s: %s", dir_to_write, e
+				)

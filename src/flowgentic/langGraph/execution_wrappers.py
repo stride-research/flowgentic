@@ -61,11 +61,6 @@ logger = logging.getLogger(__name__)
 
 StateType = TypeVar("StateType", bound=BaseModel)
 
-import logging
-
-# Configure logging for this module
-logger = logging.getLogger(__name__)
-
 
 # TYPES SECTION
 class BaseLLMAgentState(BaseModel):
@@ -121,8 +116,8 @@ class ExecutionWrappersLangraph:
 		"""
 
 		def decorate(f: Callable) -> Callable:
-			logger.info(
-				f"Registering function '{f.__name__}' as AsyncFlow {flow_type.value}"
+			logger.debug(
+				"Registering function '%s' as AsyncFlow %s", f.__name__, flow_type.value
 			)
 
 			if not self.flow:
@@ -147,9 +142,7 @@ class ExecutionWrappersLangraph:
 				)
 
 			retry_cfg = retry or self.fault_tolerance_mechanism.default_cfg
-			logger.debug(
-				f"Using retry config for '{f.__name__}': {retry_cfg.model_dump()}"
-			)
+			logger.debug("Using retry config for '%s': %s", f.__name__, retry_cfg)
 
 			if flow_type in [
 				AsyncFlowType.AGENT_TOOL_AS_FUNCTION,
@@ -158,16 +151,17 @@ class ExecutionWrappersLangraph:
 				@wraps(f)
 				async def tool_wrapper(*args, **kwargs):
 					logger.debug(
-						f"Tool '{f.__name__}' called with args: {len(args)} positional, {list(kwargs.keys())} keyword"
+						"Tool '%s' called with %d positional and keyword arguments %s",
+						f.__name__,
+						len(args),
+						list(kwargs),
 					)
 
 					async def _call():
-						logger.debug(f"Executing AsyncFlow task for '{f.__name__}'")
+						logger.debug("Executing AsyncFlow task for '%s'", f.__name__)
 						future = asyncflow_func(*args, **kwargs)
 						result = await future
-						logger.debug(
-							f"AsyncFlow task '{f.__name__}' completed successfully"
-						)
+						logger.debug("AsyncFlow task '%s' completed", f.__name__)
 						return result
 
 					return await self.fault_tolerance_mechanism.retry_async(
@@ -182,7 +176,7 @@ class ExecutionWrappersLangraph:
 				langraph_tool = tool(
 					tool_wrapper, description=kwargs.get("tool_description")
 				)
-				logger.info(f"Successfully created LangChain tool for '{f.__name__}'")
+				logger.debug("Created LangChain tool for '%s'", f.__name__)
 				return langraph_tool
 
 			elif flow_type in [AsyncFlowType.FUNCTION_TASK, AsyncFlowType.SERVICE_TASK]:
@@ -190,18 +184,19 @@ class ExecutionWrappersLangraph:
 				@wraps(f)
 				async def future_wrapper(*args, **kwargs):
 					logger.debug(
-						f"Task '{f.__name__}' called with args: {len(args)} positional, {list(kwargs.keys())} keyword"
+						"Task '%s' called with %d positional and keyword arguments %s",
+						f.__name__,
+						len(args),
+						list(kwargs),
 					)
 
 					async def _call():
-						logger.debug(f"Executing AsyncFlow task for '{f.__name__}'")
+						logger.debug("Executing AsyncFlow task for '%s'", f.__name__)
 						future = asyncflow_func(*args, **kwargs)
 						if flow_type == AsyncFlowType.FUNCTION_TASK:
 							# FUNCTION_TASK: await the future and return the result
 							result = await future
-							logger.debug(
-								f"AsyncFlow task '{f.__name__}' completed successfully"
-							)
+							logger.debug("AsyncFlow task '%s' completed", f.__name__)
 							return result
 						else:
 							# SERVICE_TASK: return the future handle itself
@@ -215,7 +210,7 @@ class ExecutionWrappersLangraph:
 						_call, retry_cfg, name=f.__name__
 					)
 
-				logger.info(f"Successfully created AsyncFlow task for '{f.__name__}'")
+				logger.debug("Created AsyncFlow task for '%s'", f.__name__)
 				return future_wrapper
 
 			elif flow_type == AsyncFlowType.EXECUTION_BLOCK:
@@ -223,24 +218,20 @@ class ExecutionWrappersLangraph:
 				@wraps(f)
 				async def block_wrapper(state):
 					"""LangGraph node: receives state, executes block, returns updated state"""
-					logger.debug(f"Block '{f.__name__}' called with state")
+					logger.debug("Block '%s' called with state", f.__name__)
 
 					async def _call():
-						logger.debug(f"Executing AsyncFlow block for '{f.__name__}'")
+						logger.debug("Executing AsyncFlow block for '%s'", f.__name__)
 						future = asyncflow_func(state)
 						result = await future
-						logger.debug(
-							f"AsyncFlow block '{f.__name__}' completed successfully"
-						)
+						logger.debug("AsyncFlow block '%s' completed", f.__name__)
 						return result
 
 					return await self.fault_tolerance_mechanism.retry_async(
 						_call, retry_cfg, name=f.__name__
 					)
 
-				logger.info(
-					f"Successfully created LangGraph block node for '{f.__name__}'"
-				)
+				logger.debug("Created LangGraph block node for '%s'", f.__name__)
 				return block_wrapper
 			else:
 				raise ValueError(f"Unsupported AsyncFlow flow_type: {flow_type}")

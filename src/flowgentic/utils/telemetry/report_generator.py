@@ -65,7 +65,9 @@ class ReportGenerator:
 				self.categorized_records[matched_node].append(cleaned_record_value)
 			else:
 				logger.warning(
-					f"Could not match record key '{record_key}' to any node in {all_nodes}"
+					"Could not match record key '%s' to any node in %s",
+					record_key,
+					all_nodes,
 				)
 
 		return self.categorized_records
@@ -200,9 +202,9 @@ class ReportGenerator:
 				final_state_dict = self._final_state
 			else:
 				logger.warning(
-					f"Final state: {self._final_state} with type: {type(self._final_state)} cant be accesed for attribute extraction"
+					"Cannot read attributes from a final state of type %s",
+					type(self._final_state).__name__,
 				)
-		logger.debug(f"Final state 123123 is: {final_state_dict}")
 
 		report_data = GraphExecutionReport(
 			graph_start_time=self._start_time,
@@ -256,7 +258,7 @@ class ReportGenerator:
 				node_category_tools = 0
 				node_category_messages = 0
 				logger.debug(
-					f"Node name is: {node_name}, list to search in is: {list(self._records.keys())}"
+					"Looking up node %s in records %s", node_name, list(self._records)
 				)
 				if self._node_was_visited(node_name):
 					records: List[NodeExecutionRecord] = self.categorized_records[
@@ -478,4 +480,4 @@ class ReportGenerator:
 
 				# Show summary of final state
 
-		logger.info("Introspection report saved to '%s'", dir_to_write)
+		logger.info("Wrote the execution report to %s", output_path)

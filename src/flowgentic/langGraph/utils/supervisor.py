@@ -8,6 +8,8 @@ from langgraph.types import Command, Send
 from langchain_core.messages import SystemMessage, HumanMessage
 import ast
 
+logger = logging.getLogger(__name__)
+
 
 # STATES
 
@@ -54,8 +56,6 @@ Notes:
 	async def llm_router(state: BaseModel) -> dict:
 		"""LLM decides which agent(s) to route to based on user query."""
 
-		logging.info(f"🧠 LLM Router: Analyzing query '{state.query}'")
-
 		# Format the routing prompt with the actual query
 		formatted_prompt = routing_prompt_template.format(
 			query=state.query, agents_responsibilities=agents_responsibilities
@@ -85,9 +85,7 @@ Notes:
 		if not routing_decision:
 			raise ValueError("Empty routing decision from LLM")
 
-		logging.info(
-			f"✅ Router decided: {routing_decision} - Rationale: {routing_rationale}"
-		)
+		logger.debug("Router chose %s", routing_decision)
 
 		# Update state
 		state.routing_decision = routing_decision
