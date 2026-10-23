@@ -24,6 +24,7 @@ nav:
       - Supervisor: design_patterns/supervisor.md
   - Evaluation:
       - Substitution experiment: evaluation/substitution.md
+      - Academy substitution check: evaluation/academy.md
   - Project status: status.md
   - Changelog: changelog.md
   - API reference: api/

@@ -101,3 +101,8 @@ The integration is tested with Academy's local exchange and AsyncFlow's local
 backend only. It creates its own manager and exchange, so agents on Redis,
 HTTP or Globus exchanges, or launched on other executors, are out of its
 reach.
+
+The [Academy substitution check](../evaluation/academy.md) runs the concurrent
+counters of the first example with and without the integration. The direct
+version, with Academy calls inside AsyncFlow tasks, is in
+`tests/integration/test_academy_substitution.py`.
