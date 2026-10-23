@@ -7,15 +7,11 @@ from concurrent.futures import ThreadPoolExecutor
 from academy.agent import action
 from academy.agent import Agent
 from academy.agent import loop
-from academy.exchange.local import LocalExchangeFactory
-from academy.logging import init_logging
-from academy.manager import Manager
 
 from radical.asyncflow import WorkflowEngine
 from radical.asyncflow import LocalExecutionBackend
 
-# Import our integration layer (assuming it's in the same directory)
-from flowcademy.academy import AcademyIntegrationAcademyIntegration
+from flowgentic.academy import AcademyIntegration
 
 logger = logging.getLogger(__name__)
 
@@ -41,21 +37,15 @@ async def main() -> int:
     """
     Fixed Academy loop example that properly handles loops.
     """
-    init_logging(logging.INFO)
-
     # Create workflow engine
     backend = await LocalExecutionBackend(ThreadPoolExecutor())
     flow = await WorkflowEngine.create(backend=backend)
 
     # Create integration layer
-    async with AcademyIntegration(flow) as integration:
+    async with AcademyIntegration() as integration:
 
         # Create workflow tasks from Academy Counter agent
-        # Use a longer startup delay to ensure loops are running
-        counter_get_count_task = integration.create_agent_task(
-            Counter, 'get_count',
-            startup_delay=0.5  # Give loops time to start
-        )
+        counter_get_count_task = integration.create_agent_task(Counter, 'get_count')
 
         # Create workflow blocks that wrap the Academy agent actions
         @flow.function_task
@@ -88,19 +78,14 @@ async def main_with_monitoring() -> int:
     """
     Enhanced version that monitors the counter over time.
     """
-    init_logging(logging.INFO)
-
     # Create workflow engine
     backend = await LocalExecutionBackend(ThreadPoolExecutor())
     flow = await WorkflowEngine.create(backend=backend)
 
-    async with AcademyIntegration(flow) as integration:
+    async with AcademyIntegration() as integration:
 
         # Create workflow tasks from Academy Counter agent
-        counter_get_count_task = integration.create_agent_task(
-            Counter, 'get_count',
-            startup_delay=0.5  # Give loops time to start
-        )
+        counter_get_count_task = integration.create_agent_task(Counter, 'get_count')
 
         # Create workflow blocks
         @flow.function_task
@@ -156,13 +141,11 @@ async def main_parallel_monitoring() -> int:
     """
     Advanced example showing parallel monitoring of multiple counter agents.
     """
-    init_logging(logging.INFO)
-
     # Create workflow engine
     backend = await LocalExecutionBackend(ThreadPoolExecutor())
     flow = await WorkflowEngine.create(backend=backend)
 
-    async with AcademyIntegration(flow) as integration:
+    async with AcademyIntegration() as integration:
 
         async def monitor_counter(counter_id: int, monitor_duration: int):
             """Monitor a single counter for a specified duration."""
@@ -171,7 +154,6 @@ async def main_parallel_monitoring() -> int:
             counter_get_count_task = integration.create_agent_task(
                 Counter, 'get_count',
                 agent_id=f"counter_{counter_id}",
-                startup_delay=0.5  # Give loops time to start
             )
 
             @flow.function_task
@@ -218,6 +200,7 @@ async def main_parallel_monitoring() -> int:
 
 
 if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
 
     print("=== Basic Loop Counter Example ===")
     result1 = asyncio.run(main())

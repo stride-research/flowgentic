@@ -41,7 +41,7 @@ flowchart LR
 | `flowgentic.utils.llm_providers` | `ChatLLMProvider`: OpenRouter, OpenAI and Ollama chat models |
 | `flowgentic.utils.logger` | `Logger`: at import, Flowgentic adds a handler to the root logger that prints colored records to stdout (JSON with `colorful_output=False`) |
 | `flowgentic.settings` | Loads `config.yml` at import; see [Telemetry](features/telemetry.md#write-the-report) |
-| `flowgentic.academy` | `AcademyIntegration`: Academy agents as AsyncFlow tasks; not tested |
+| `flowgentic.academy` | `AcademyIntegration`: Academy agents' actions as AsyncFlow tasks; needs the `academy` extra. See [Academy actions as AsyncFlow tasks](guides/academy-on-asyncflow.md) |
 
 The [API reference](api/flowgentic/index.md) documents each module.
 

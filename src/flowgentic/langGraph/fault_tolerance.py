@@ -68,8 +68,8 @@ class LangraphToolFaultTolerance:
 					httpx.RemoteProtocolError,
 				]
 			)
-		except Exception:
-			raise
+		except ModuleNotFoundError:
+			pass
 		# Try to include aiohttp timeouts if present
 		try:
 			import aiohttp  # type: ignore
@@ -80,8 +80,8 @@ class LangraphToolFaultTolerance:
 					aiohttp.ServerTimeoutError,
 				]
 			)
-		except Exception:
-			raise
+		except ModuleNotFoundError:
+			pass
 		return tuple(set(ex))
 
 	async def retry_async(
