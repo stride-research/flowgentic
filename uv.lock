@@ -10,23 +10,27 @@ resolution-markers = [
 
 [[package]]
 name = "academy-py"
-version = "0.3.0"
+version = "1.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
+    { name = "aiohttp-sse", version = "2.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "aiohttp-sse", version = "3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "aiologic" },
+    { name = "cachetools" },
     { name = "click" },
     { name = "culsans" },
     { name = "globus-sdk" },
-    { name = "proxystore" },
+    { name = "packaging" },
     { name = "pydantic" },
     { name = "redis" },
     { name = "tomli", marker = "python_full_version < '3.11'" },
+    { name = "tomli-w" },
     { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/84/c1/8bddf5fa5cb477a97c7867a957c2d88705b6bbbcd872c09b0f4536798481/academy_py-0.3.0.tar.gz", hash = "sha256:332d66d448301147778038beeabbaee7f95de1ce1c2951b24f23779b5dd71169", size = 436475, upload-time = "2025-07-19T03:28:59.441Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7d/eb/37b162d048b522135b7062763e7c7778a2ffd733b5fd4b3bf9b5cb785b10/academy_py-1.0.0.tar.gz", hash = "sha256:5e25e684a2bfb9783cfc8759ef078958e001ff14b94084c7530a3a6e41ffebf5", size = 543572, upload-time = "2026-09-08T15:14:45.333Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/79/9c/419669ea9961e0eaf28d0e381c3e41ae89caf600856422f849d053162e9f/academy_py-0.3.0-py3-none-any.whl", hash = "sha256:cf264eceef777798bcb39c0812b8f0b8b3eb28df01cf32b6246a53c08e98fcda", size = 78345, upload-time = "2025-07-19T03:28:57.53Z" },
+    { url = "https://files.pythonhosted.org/packages/b1/29/1a14ba39805b79228d1c1639d77c484cb6fdd7aa438034d6f16037164139/academy_py-1.0.0-py3-none-any.whl", hash = "sha256:e1e6819c7b962408a562521aa5e694e3200c547dd2b296ea0370a7dfc2a7bf5e", size = 129220, upload-time = "2026-09-08T15:14:43.82Z" },
 ]
 
 [[package]]
@@ -159,6 +163,38 @@ wheels = [
 ]
 
 [[package]]
+name = "aiohttp-sse"
+version = "2.2.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11'",
+]
+dependencies = [
+    { name = "aiohttp" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/80/df/4ddb30e689695fd91cf41c072e154061120ed166e8baf6c9a0020f27dffc/aiohttp-sse-2.2.0.tar.gz", hash = "sha256:a48dd5774031d3f41a29e159ebdbb93e89c8f37c1e9e83e196296be51885a5c2", size = 9432, upload-time = "2024-02-29T18:43:48.118Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5a/b8/bf448b1d2dbe6cf16c3be0b92230a8f032f2f0ed159a2299284c709819c8/aiohttp_sse-2.2.0-py3-none-any.whl", hash = "sha256:339f9803bcf4682a2060e75548760d86abe4424a0d92ba66ff4985de3bd743dc", size = 6740, upload-time = "2024-02-29T18:43:46.423Z" },
+]
+
+[[package]]
+name = "aiohttp-sse"
+version = "3.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.13'",
+    "python_full_version == '3.12.*' and sys_platform == 'emscripten'",
+    "(python_full_version >= '3.11' and python_full_version < '3.13' and sys_platform != 'emscripten') or (python_full_version == '3.11.*' and sys_platform == 'emscripten')",
+]
+dependencies = [
+    { name = "aiohttp" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/af/6d/01d7f71e38ac91a912dd8c4ed1a1481316dc83cb6c42043bbfa1b647c0e4/aiohttp_sse-3.0.tar.gz", hash = "sha256:4c2158dc7221fbcad225699c2b7c368c15ae45ef195447ddd0ba3dea5af24c70", size = 16196, upload-time = "2026-10-11T23:16:14.404Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/eb/3f/06f9f0a6c587d0a1106ea408b308ce09f2935d7365d1bada80c54b4bcc9c/aiohttp_sse-3.0-py3-none-any.whl", hash = "sha256:0bd3bdb35a4beebe25a35e8240242636d45e952c80376166f7bc062511e299e5", size = 10527, upload-time = "2026-10-11T23:16:13.537Z" },
+]
+
+[[package]]
 name = "aiologic"
 version = "0.14.0"
 source = { registry = "https://pypi.org/simple" }
@@ -255,6 +291,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/10/bf/fa31834dc27a7f05e5290eae47c82690edc3a7b37d58f7fb35a1bdbf355b/backrefs-5.9-py313-none-any.whl", hash = "sha256:cc37b19fa219e93ff825ed1fed8879e47b4d89aa7a1884860e2db64ccd7c676b", size = 399843, upload-time = "2025-06-22T19:34:09.68Z" },
     { url = "https://files.pythonhosted.org/packages/fc/24/b29af34b2c9c41645a9f4ff117bae860291780d73880f449e0b5d948c070/backrefs-5.9-py314-none-any.whl", hash = "sha256:df5e169836cc8acb5e440ebae9aad4bf9d15e226d3bad049cf3f6a5c20cc8dc9", size = 411762, upload-time = "2025-06-22T19:34:11.037Z" },
     { url = "https://files.pythonhosted.org/packages/41/ff/392bff89415399a979be4a65357a41d92729ae8580a66073d8ec8d810f98/backrefs-5.9-py39-none-any.whl", hash = "sha256:f48ee18f6252b8f5777a22a00a09a85de0ca931658f1dd96d4406a34f3748c60", size = 380265, upload-time = "2025-06-22T19:34:12.405Z" },
+]
+
+[[package]]
+name = "cachetools"
+version = "7.2.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3a/5d/15ea0494ebcb9062c7ca79bf026cbba380a50538ae73753fb40bdffa79e2/cachetools-7.2.4.tar.gz", hash = "sha256:e0203b04b75fe13e62098eeb5b2018c4eb1a14c04e2b5b450e70db3ee7e92ec5", size = 44251, upload-time = "2026-10-19T19:09:44.931Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5a/4c/694f7d44f2399b3901232d6ded1c88442a02fc8141936396d9289d951848/cachetools-7.2.4-py3-none-any.whl", hash = "sha256:4cfbebf3eec4040d2073b19c460511ad47eef7b852dbf9a0d385099b4dafa31e", size = 18571, upload-time = "2026-10-19T19:09:43.296Z" },
 ]
 
 [[package]]
@@ -701,7 +746,6 @@ name = "flowgentic"
 version = "0.3.1"
 source = { editable = "." }
 dependencies = [
-    { name = "academy-py" },
     { name = "langchain" },
     { name = "langchain-core" },
     { name = "langchain-ollama" },
@@ -714,7 +758,11 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+academy = [
+    { name = "academy-py" },
+]
 dev = [
+    { name = "academy-py" },
     { name = "mkdocs-gen-files" },
     { name = "mkdocs-literate-nav" },
     { name = "mkdocs-material" },
@@ -734,8 +782,8 @@ examples = [
 
 [package.metadata]
 requires-dist = [
-    { name = "academy-py", specifier = "==0.3.0" },
-    { name = "flowgentic", extras = ["examples"], marker = "extra == 'dev'" },
+    { name = "academy-py", marker = "extra == 'academy'", specifier = ">=1.0,<2" },
+    { name = "flowgentic", extras = ["examples", "academy"], marker = "extra == 'dev'" },
     { name = "langchain", specifier = ">=1.0,<2.0" },
     { name = "langchain-core", specifier = ">=1.0,<2.0" },
     { name = "langchain-ollama" },
@@ -758,7 +806,7 @@ requires-dist = [
     { name = "radical-asyncflow", specifier = "==0.6.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12.11" },
 ]
-provides-extras = ["examples", "dev"]
+provides-extras = ["examples", "academy", "dev"]
 
 [[package]]
 name = "frozenlist"
@@ -895,7 +943,7 @@ wheels = [
 
 [[package]]
 name = "globus-sdk"
-version = "3.65.0"
+version = "4.9.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
@@ -903,9 +951,9 @@ dependencies = [
     { name = "requests" },
     { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/49/93/a6f6686bb2beb038047abe203b48c7f995f6a96884679eedf7e9aa34300b/globus_sdk-3.65.0.tar.gz", hash = "sha256:a4b350b980809e86d768c8e327de9ddee4405b60cfb83429cdf831ac0c63d763", size = 275365, upload-time = "2025-10-03T01:56:45.402Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/13/6e/b519c4b64e4f16dfbcfd95b6b1c962f71d4135cf08bcac02b752650e8cc8/globus_sdk-4.9.1.tar.gz", hash = "sha256:7cb477f863e607ef94687b83fadfea4e89f6e655d70dc5489c39e5dd963fb43e", size = 290286, upload-time = "2026-09-25T16:37:16.805Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e0/cd/f89c1d66a678d456887d305669ad929cb3ea742be1f563899a9949bcb41f/globus_sdk-3.65.0-py3-none-any.whl", hash = "sha256:d14154c3a40bb6c4d6a77e7200234d43358bd1daca9224841d4297f0edea80e6", size = 418025, upload-time = "2025-10-03T01:56:43.495Z" },
+    { url = "https://files.pythonhosted.org/packages/9a/01/0ad0b4a109d16962e0fc063518e44c6b92f4e70a01c9a7998ef138b560c5/globus_sdk-4.9.1-py3-none-any.whl", hash = "sha256:179183b7b9b73849d22c6231fbd509e4f3e695e00e2180c310fb7388625b26f3", size = 450839, upload-time = "2026-09-25T16:37:15.104Z" },
 ]
 
 [[package]]
@@ -2183,25 +2231,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/cb/ef/3c6ecf8b317aa982f309835e8f96987466123c6e596646d4e6a1dfcd080f/propcache-0.4.1-cp314-cp314t-win_amd64.whl", hash = "sha256:990f6b3e2a27d683cb7602ed6c86f15ee6b43b1194736f9baaeb93d0016633b1", size = 46259, upload-time = "2025-10-08T19:48:34.226Z" },
     { url = "https://files.pythonhosted.org/packages/c4/2d/346e946d4951f37eca1e4f55be0f0174c52cd70720f84029b02f296f4a38/propcache-0.4.1-cp314-cp314t-win_arm64.whl", hash = "sha256:ecef2343af4cc68e05131e45024ba34f6095821988a9d0a02aa7c73fcc448aa9", size = 40428, upload-time = "2025-10-08T19:48:35.441Z" },
     { url = "https://files.pythonhosted.org/packages/5b/5a/bc7b4a4ef808fa59a816c17b20c4bef6884daebbdf627ff2a161da67da19/propcache-0.4.1-py3-none-any.whl", hash = "sha256:af2a6052aeb6cf17d3e46ee169099044fd8224cbaf75c76a2ef596e8163e2237", size = 13305, upload-time = "2025-10-08T19:49:00.792Z" },
-]
-
-[[package]]
-name = "proxystore"
-version = "0.8.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "click" },
-    { name = "cloudpickle" },
-    { name = "cryptography" },
-    { name = "globus-sdk" },
-    { name = "pydantic" },
-    { name = "tomli", marker = "python_full_version < '3.11'" },
-    { name = "tomli-w" },
-    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/4e/6f/1c1e2b74f6f4bb3ab5fc911bf573ebde5f7fddfbe0cb3941796b7c6057dc/proxystore-0.8.3.tar.gz", hash = "sha256:7a71de1abaefd04425f9614a32a6527de48f2c65bba999996c7c1db582ec7b48", size = 372037, upload-time = "2025-09-04T01:02:31.08Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/60/2d/a6bd3ce0533b60de29a9bd0321d33b17ad016f95435eab2dafee5a0a64f9/proxystore-0.8.3-py3-none-any.whl", hash = "sha256:7c7bf44501c0e1813e44c86f0880253f4c4185497409a7da3ca7cd0443420b14", size = 165836, upload-time = "2025-09-04T01:02:29.75Z" },
 ]
 
 [[package]]

@@ -8,12 +8,19 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Type, Union
 
-from academy.agent import Agent
-from academy.exchange.local import LocalExchangeFactory
-from academy.handle import Handle
-from academy.logging import init_logging
-from academy.manager import Manager
 from radical.asyncflow import WorkflowEngine
+
+try:
+	from academy.agent import Agent
+	from academy.exchange.local import LocalExchangeFactory
+	from academy.handle import Handle
+	from academy.logging import init_logging
+	from academy.manager import Manager
+except ModuleNotFoundError as exc:
+	raise ImportError(
+		"flowgentic.academy requires academy-py: install Flowgentic with the "
+		"'academy' extra, flowgentic[academy]"
+	) from exc
 
 
 class AcademyIntegration:
