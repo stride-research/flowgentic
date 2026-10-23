@@ -7,15 +7,11 @@ from concurrent.futures import ThreadPoolExecutor
 from academy.agent import action
 from academy.agent import Agent
 from academy.agent import loop
-from academy.exchange.local import LocalExchangeFactory
-from academy.logging import init_logging
-from academy.manager import Manager
 
 from radical.asyncflow import WorkflowEngine
 from radical.asyncflow import LocalExecutionBackend
 
-# Import our integration layer (assuming it's in the same directory)
-from flowcademy.academy import AcademyIntegrationAcademyIntegration
+from flowgentic.academy import AcademyIntegration
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +37,6 @@ async def main() -> int:
     """
     Fixed Academy loop example that properly handles loops.
     """
-    init_logging(logging.INFO)
-
     # Create workflow engine
     backend = await LocalExecutionBackend(ThreadPoolExecutor())
     flow = await WorkflowEngine.create(backend=backend)
@@ -88,8 +82,6 @@ async def main_with_monitoring() -> int:
     """
     Enhanced version that monitors the counter over time.
     """
-    init_logging(logging.INFO)
-
     # Create workflow engine
     backend = await LocalExecutionBackend(ThreadPoolExecutor())
     flow = await WorkflowEngine.create(backend=backend)
@@ -156,8 +148,6 @@ async def main_parallel_monitoring() -> int:
     """
     Advanced example showing parallel monitoring of multiple counter agents.
     """
-    init_logging(logging.INFO)
-
     # Create workflow engine
     backend = await LocalExecutionBackend(ThreadPoolExecutor())
     flow = await WorkflowEngine.create(backend=backend)
@@ -218,6 +208,7 @@ async def main_parallel_monitoring() -> int:
 
 
 if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
 
     print("=== Basic Loop Counter Example ===")
     result1 = asyncio.run(main())

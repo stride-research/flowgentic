@@ -1,20 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from concurrent.futures import ThreadPoolExecutor
 
 from academy.agent import action
 from academy.agent import Agent
-from academy.exchange.local import LocalExchangeFactory
-from academy.logging import init_logging
-from academy.manager import Manager
 
 from radical.asyncflow import WorkflowEngine
 from radical.asyncflow import LocalExecutionBackend
 
-from flowcademy.academy import AcademyIntegrationAcademyIntegration
+from flowgentic.academy import AcademyIntegration
 
+
+# --8<-- [start:agent]
 class Counter(Agent):
     count: int
 
@@ -28,6 +26,7 @@ class Counter(Agent):
     @action
     async def get_count(self) -> int:
         return self.count
+# --8<-- [end:agent]
 
 
 async def main() -> int:
@@ -36,6 +35,7 @@ async def main() -> int:
     This demonstrates how Academy agents can be used as workflow tasks.
     """
 
+    # --8<-- [start:tasks]
     # Create workflow engine
     backend = await LocalExecutionBackend(ThreadPoolExecutor())
     flow = await WorkflowEngine.create(backend=backend)
@@ -55,6 +55,7 @@ async def main() -> int:
         @flow.function_task
         async def get_count_block() -> int:
             return await counter_get_count_task()
+        # --8<-- [end:tasks]
 
         # Execute the workflow - same logic as original but using workflow blocks
 

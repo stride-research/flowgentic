@@ -1,0 +1,49 @@
+"""Run the Academy examples that the Academy guide includes.
+
+Each example runs Academy agents' actions as AsyncFlow tasks, offline, with
+Academy's local exchange and AsyncFlow's local backend.
+"""
+
+# ruff: noqa: S101
+
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+REPOSITORY = Path(__file__).resolve().parents[2]
+EXAMPLES = REPOSITORY / "examples" / "academy-integration"
+
+
+def run_example(name: str) -> str:
+    """Run an example's run.py from the repository root and return its stdout."""
+    completed = subprocess.run(
+        [sys.executable, str(EXAMPLES / name / "run.py")],
+        cwd=REPOSITORY,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        capture_output=True,
+        encoding="utf-8",
+        timeout=120,
+    )
+    assert completed.returncode == 0, completed.stderr
+    return completed.stdout
+
+
+def test_actor_client_example() -> None:
+    output = run_example("01-actor-client")
+
+    assert "Final count: 1" in output
+    assert "Final count: 8" in output
+    assert "Count verification: True" in output
+    for counter in range(1, 11):
+        assert f"Counter {counter}: {counter * 2}" in output
+    assert "All examples completed successfully!" in output
+
+
+def test_agent_loop_example() -> None:
+    output = run_example("02-agent-loop")
+
+    assert "Final count: " in output
+    assert "All examples completed successfully!" in output
