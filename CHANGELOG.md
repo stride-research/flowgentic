@@ -72,7 +72,10 @@ Nobody uses Flowgentic yet, so these go without a deprecation period.
   output directory had no `execution_summary.md`, wrote no graph section and
   left an empty `execution_summary.md`: `render_graph` failed on the missing
   report and logged only a warning (in 0.3.0, a print). It now starts the
-  report with the graph section.
+  report with the graph section. With `generate_report=False`, an earlier
+  run's report in the same directory is removed rather than kept under a new
+  graph section. Only drawing the graph, which needs `pygraphviz`, ends in a
+  warning; an error after it, such as an unreadable report, raises.
 - The retry loop re-raised `ModuleNotFoundError` when `httpx` or `aiohttp` was
   missing from the environment; it now leaves their exceptions out of the
   default retryable ones. aiohttp reached an install only through academy-py,

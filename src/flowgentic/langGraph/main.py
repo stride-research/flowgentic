@@ -1,6 +1,7 @@
 from typing import Any, Dict, Optional
 
 from flowgentic.utils.telemetry.introspection import GraphIntrospector
+from flowgentic.utils.telemetry.report_generator import REPORT_FILE
 
 """
 LangGraph/AsyncFlow Integration: bridge AsyncFlow tasks and LangChain tools
@@ -127,5 +128,8 @@ class LangraphIntegration:
 
 		if generate_report:
 			self.agent_introspector.generate_report(dir_to_write=str(output_dir))
+		else:
+			# An earlier run's report must not stay under this run's graph
+			(output_dir / REPORT_FILE).unlink(missing_ok=True)
 
 		await self.utils.render_graph(app, dir_to_write=str(output_dir))
