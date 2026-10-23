@@ -41,8 +41,9 @@ it, writing the report raises `ValueError`): it creates `output_dir`, by
 default `agent_execution_results/` next to the calling file, writes the report
 there, and renders the graph to `agent_graph.png` at the top of the report.
 Rendering needs `pygraphviz`, which is not a Flowgentic dependency; without it,
-the call logs a warning and keeps the report. Passing `generate_report=False` skips the report. (In 0.3.0 the
-flag was inverted: `True` skipped it.)
+the call logs a warning and keeps the report. Passing `generate_report=False`
+skips the report, so `execution_summary.md` holds only the graph. (In 0.3.0
+the flag was inverted: `True` skipped it.)
 
 ## Read the report
 

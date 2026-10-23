@@ -100,9 +100,10 @@ async def start_app():
 
 		current_dir = str(pathlib.Path(__file__).parent.resolve())
 
-		await agents_manager.utils.render_graph(
-			app, dir_to_write=current_dir, generate_graph_only=True
-		)
+		try:
+			app.get_graph().draw_png(os.path.join(current_dir, "agent_graph.png"))
+		except ImportError:
+			print("Drawing the graph needs pygraphviz; skipping agent_graph.png")
 
 		while True:
 			user_input = input("User: ").lower()

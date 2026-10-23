@@ -62,9 +62,17 @@ Nobody uses Flowgentic yet, so these go without a deprecation period.
   configuration; OpenTelemetry's logging instrumentation adds trace and span
   ids to every record.
 - The `pyyaml` and `python-json-logger` dependencies.
+- `render_graph`'s `generate_graph_only` argument. With it, the call did
+  nothing. To draw only the graph, call LangGraph's
+  `app.get_graph().draw_png(path)`.
 
 ### Fixed
 
+- `generate_execution_artifacts(..., generate_report=False)`, or any call whose
+  output directory had no `execution_summary.md`, wrote no graph section and
+  left an empty `execution_summary.md`: `render_graph` failed on the missing
+  report and logged only a warning (in 0.3.0, a print). It now starts the
+  report with the graph section.
 - The retry loop re-raised `ModuleNotFoundError` when `httpx` or `aiohttp` was
   missing from the environment; it now leaves their exceptions out of the
   default retryable ones. aiohttp reached an install only through academy-py,
