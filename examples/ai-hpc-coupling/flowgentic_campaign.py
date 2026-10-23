@@ -24,9 +24,6 @@ from demo_support import (
 
 from flowgentic.langGraph.main import LangraphIntegration
 
-# Apply this before ``asyncio.run`` so selector startup stays out of the demo.
-configure_logging()
-
 
 async def run(args: argparse.Namespace) -> int:
     configure_logging(logging.DEBUG if args.verbose else logging.WARNING)

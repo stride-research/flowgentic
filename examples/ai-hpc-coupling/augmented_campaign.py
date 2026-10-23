@@ -32,8 +32,6 @@ from radical.asyncflow import WorkflowEngine
 
 from flowgentic.utils.llm_providers import ChatLLMProvider
 
-configure_logging()
-
 
 def build_decision_model(args: argparse.Namespace) -> AgentDecisionModel:
     """Create reliable rehearsal agents or live LLM-backed components."""

@@ -19,8 +19,6 @@ from campaign_common import (
 from radical.asyncflow import WorkflowEngine
 from radical_application import build_radical_campaign, run_with_application_control
 
-configure_logging()
-
 
 async def run(args: argparse.Namespace) -> int:
     """Execute one baseline campaign and emit presentation evidence."""

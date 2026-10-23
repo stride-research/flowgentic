@@ -43,9 +43,6 @@ from radical.asyncflow import WorkflowEngine
 from flowgentic.langGraph.main import LangraphIntegration
 from flowgentic.utils.llm_providers import ChatLLMProvider
 
-# Apply this before ``asyncio.run`` so selector startup stays out of the demo.
-configure_logging()
-
 
 def build_decision_model(args: argparse.Namespace) -> AgentDecisionModel:
     """Create either reliable rehearsal agents or genuinely LLM-backed agents."""
