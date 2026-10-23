@@ -57,7 +57,10 @@ nothing wakes it, never. A block already runs on the manager's loop, so
 
 The application launches the agent before its tasks call it. Academy queues
 requests until the agent's `agent_on_startup` returns, so the first call needs
-no wait. Leaving the manager's context shuts down every agent it launched.
+no wait. Leaving the manager's context shuts down every agent it launched, so
+await every task that calls an agent before the context exits. If `on_loop`
+cannot schedule a call, for example because the manager's loop has closed, it
+closes the call before raising, so no coroutine is left unawaited.
 
 To run the example:
 

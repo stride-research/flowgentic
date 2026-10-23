@@ -51,7 +51,12 @@ async def on_loop(loop: asyncio.AbstractEventLoop, call: Coroutine[Any, Any, Any
     """Await an action on the manager's loop, from that loop or a worker thread."""
     if asyncio.get_running_loop() is loop:
         return await call
-    return await asyncio.wrap_future(asyncio.run_coroutine_threadsafe(call, loop))
+    try:
+        future = asyncio.run_coroutine_threadsafe(call, loop)
+    except BaseException:
+        call.close()  # Never scheduled, for example on a closed loop.
+        raise
+    return await asyncio.wrap_future(future)
 # --8<-- [end:helpers]
 
 
