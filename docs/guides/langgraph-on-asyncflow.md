@@ -179,7 +179,7 @@ model class. `tests/unit/test_llm_providers.py` builds each one offline.
   longer than 30 s is cancelled and re-run with all its tasks, and fails after
   the third attempt; a node that fails with a retryable error re-runs its
   tasks. Give such nodes their own `retry` policy.
-- Flowgentic logs at DEBUG level by default, and reads `config.yml` from the
-  working directory at import.
+- Importing Flowgentic configures no logging. `flowgentic.configure_logging()`
+  prints its records; see [Logging](../features/logging.md).
 - [Project status](../status.md) lists what is not validated, such as remote
   and HPC backends.

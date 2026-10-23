@@ -28,26 +28,20 @@ and tells the introspector which nodes the report lists:
 ## Write the report
 
 After the run, set the final state and call `generate_report(directory)`. It
-writes `<directory>/agent_execution_results/execution_summary.md`, and the
-`agent_execution_results` directory must exist. The demo's runner:
+writes `<directory>/execution_summary.md`, and the directory must exist. The
+demo's runner:
 
 ```python
 --8<-- "examples/ai-hpc-coupling/agentic_campaign.py:write-report"
 ```
 
-The report paths come from the `agent_execution` section of `config.yml`.
-Flowgentic reads it at import from the first place that has one: the working
-directory, `~/.flowgentic/config.yml`, the file named by `FLOWGENTIC_CONFIG`,
-or the root of a source checkout. Without one, it uses the same paths as
-defaults.
-
 `await integration.generate_execution_artifacts(app, __file__, final_state=state)`
 does the same for a script, once `agent_introspector._all_nodes` is set (without
-it, writing the report raises `ValueError`): it creates `agent_execution_results/` next to the
-calling file, writes the report, and renders the graph to
-`agent_graph.png` at the top of the report. Rendering needs `pygraphviz`, which
-is not a Flowgentic dependency; without it, the call prints an error and keeps
-the report. Passing `generate_report=False` skips the report. (In 0.3.0 the
+it, writing the report raises `ValueError`): it creates `output_dir`, by
+default `agent_execution_results/` next to the calling file, writes the report
+there, and renders the graph to `agent_graph.png` at the top of the report.
+Rendering needs `pygraphviz`, which is not a Flowgentic dependency; without it,
+the call logs a warning and keeps the report. Passing `generate_report=False` skips the report. (In 0.3.0 the
 flag was inverted: `True` skipped it.)
 
 ## Read the report
