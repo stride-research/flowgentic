@@ -1,7 +1,15 @@
 name: Deploy MkDocs
+# The site describes the latest release, not main: it deploys when a release
+# is published, or by hand for a given tag. Pull requests still build the
+# documentation strictly in the CI workflow.
 on:
-  push:
-    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Release tag to deploy, for example v0.3.1"
+        required: true
 
 permissions:
   contents: read
@@ -13,6 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.ref }}
       - uses: astral-sh/setup-uv@v10.3.1
         with:
           enable-cache: true
