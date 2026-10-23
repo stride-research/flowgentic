@@ -1,7 +1,7 @@
 # Academy substitution check
 
-This check is the evidence for option D of decision E1, for 0.5.0: keep
-`flowgentic.academy`, or replace it with a recipe. As the
+This check is the evidence for the decision to keep `flowgentic.academy` or
+replace it with a recipe. As the
 [substitution experiment](substitution.md) did for the LangGraph adapter, it
 runs one workflow twice, once through `AcademyIntegration` and once with direct
 Academy calls inside AsyncFlow tasks, and records what the module demonstrably
@@ -34,7 +34,7 @@ loop, Academy's default.
 | 4 | Where the agent's work runs | On the manager's event loop, in the main thread. The function task only waits for the result. | The same | Both lack it. Neither version runs an agent's work on an AsyncFlow backend, and a process-pool or remote backend cannot reach the manager. | `test_actions_run_on_the_managers_loop_not_in_the_task`: in both versions every action runs in the main thread, not in the backend's worker threads. `test_actions_need_no_asyncflow_task`: the same workflow, with the actions awaited directly in the manager's context, gives the same results with no AsyncFlow task, no bound handle and no helper. |
 | 5 | Application code | 21 code lines (27 lines) | 27 code lines (39 lines), including the helper and the handle binding | Both supply it: the direct version has 6 more code lines. The module adds 186 lines to maintain, and an optional dependency. | `test_application_code_lines` counts each function's lines that hold code: no blank lines, comments or docstrings. The direct version also needs to know about Academy's `exchange_context` and the cross-loop rule above; the module's guide and these tests document both. |
 
-## Summary for E1
+## Summary
 
 In this workflow `flowgentic.academy` adds no capability over direct Academy
 calls: results, AsyncFlow tasks and the agents' lifecycle are the same, with 6
@@ -49,9 +49,8 @@ manager's event loop, and the same actions give the same results without any
 task. Wrapping the action in a task gains AsyncFlow's task records and its
 dependency handling between task futures, not placement.
 
-The verdict supports option D in 0.5.0: a recipe page that carries the direct
-version's helper and handle binding, with a tested example, gives the same
-results. The module stays in 0.4.0, repaired, under E1 = A.
+The verdict supports a recipe: a page that carries the direct version's loop
+hop and handle binding, with a tested example, gives the same results.
 
 ## Not tested
 
