@@ -205,3 +205,38 @@ async def test_leaving_context_shuts_down_every_agent(flow: WorkflowEngine) -> N
         assert EVENTS == ["start"] * 3
 
     assert EVENTS.count("stop") == 3
+
+
+async def test_agent_that_does_not_answer_in_time_is_shut_down(
+    flow: WorkflowEngine,
+) -> None:
+    async with AcademyIntegration(flow) as integration:
+        get_count = flow.function_task(
+            integration.create_agent_task(
+                SlowStartCounter, "get_count", startup_timeout=0.05
+            )
+        )
+
+        # The built-in TimeoutError from Python 3.11.
+        with pytest.raises(asyncio.TimeoutError):
+            await get_count()
+        assert integration.launched_agents == {}
+
+    assert EVENTS == ["start", "stop"]
+
+
+async def test_agents_outnumbering_a_thread_pool_all_answer(
+    flow: WorkflowEngine,
+) -> None:
+    """Defect 9: each agent held a worker of a default thread pool for its life."""
+    # A default ThreadPoolExecutor has at most 32 workers.
+    agents = 33
+    async with AcademyIntegration(flow) as integration:
+        get_counts = [
+            integration.create_agent_task(
+                Counter, "get_count", agent_id=f"counter_{i}", startup_timeout=5
+            )
+            for i in range(agents)
+        ]
+
+        assert await asyncio.gather(*(task() for task in get_counts)) == [0] * agents
