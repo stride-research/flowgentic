@@ -5,6 +5,9 @@ The mock app's draw_png writes a file, so pygraphviz is not needed.
 """
 
 import logging
+import subprocess
+import sys
+import textwrap
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -44,6 +47,42 @@ async def test_render_graph_prepends_to_the_report(tmp_path):
 	assert (tmp_path / GRAPH_IMAGE).read_bytes() == b"PNG"
 	assert (tmp_path / REPORT_FILE).read_text() == (
 		GRAPH_SECTION + "# EXECUTION REPORT\n"
+	)
+
+
+def test_render_graph_reads_and_writes_the_report_as_utf8(tmp_path):
+	"""The report is UTF-8, as generate_report writes it, whatever the locale."""
+	(tmp_path / REPORT_FILE).write_text("# Résumé ✓\n", encoding="utf-8")
+	code = f"""
+		import asyncio
+		from pathlib import Path
+		from unittest.mock import Mock
+		from flowgentic.langGraph.utils import LangraphUtils
+		app = Mock()
+		app.get_graph.return_value.draw_png.side_effect = (
+			lambda path: Path(path).write_bytes(b"PNG")
+		)
+		asyncio.run(LangraphUtils.render_graph(app, dir_to_write={str(tmp_path)!r}))
+	"""
+	# Without an encoding, open() uses the locale's; this flag makes it an error
+	result = subprocess.run(
+		[
+			sys.executable,
+			"-X",
+			"warn_default_encoding",
+			"-W",
+			"error::EncodingWarning:flowgentic.langGraph.utils.general",
+			"-c",
+			textwrap.dedent(code),
+		],
+		capture_output=True,
+		text=True,
+		check=False,
+	)
+
+	assert result.returncode == 0, result.stderr
+	assert (tmp_path / REPORT_FILE).read_text(encoding="utf-8") == (
+		GRAPH_SECTION + "# Résumé ✓\n"
 	)
 
 
