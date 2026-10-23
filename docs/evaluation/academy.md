@@ -8,6 +8,11 @@ Academy calls inside AsyncFlow tasks, and records what the module demonstrably
 supplies. A capability counts for the module only when the module supplies it
 and the direct version does not.
 
+Outcome (October 2026): following this check, 0.4.0 removed the module. The
+direct version became `examples/academy-integration/direct/run.py`, which the
+guide [Academy actions as AsyncFlow tasks](../guides/academy-on-asyncflow.md)
+explains.
+
 ## Setup
 
 | | Flowgentic version | Direct version |
@@ -16,10 +21,10 @@ and the direct version does not.
 | Integration | `AcademyIntegration()`; `create_agent_task` per action, awaited inside the function tasks | `Manager.from_exchange_factory(LocalExchangeFactory())`; `manager.launch` for each agent; a `Handle` bound to the manager's exchange client; a helper that submits each call to the manager's event loop |
 | Code | `flowgentic_counters` | `direct_counters` |
 
-Both functions are in `tests/integration/test_academy_substitution.py`, which
-CI runs with the rest of `tests/`; locally,
-`uv run --extra dev pytest -q tests/integration/test_academy_substitution.py`.
-Versions: academy-py 1.0.0, radical-asyncflow 0.6.0, Python 3.10, 3.11 and
+Both functions were in `tests/integration/test_academy_substitution.py`, and
+every test this page cites passed at commit `aa702b87`, in CI and locally. The
+file went with the module. The tests that need no module, behind rows 3 and 4,
+moved to `tests/integration/test_academy_on_asyncflow.py`. Versions: academy-py 1.0.0, radical-asyncflow 0.6.0, Python 3.10, 3.11 and
 3.12, on Academy's local exchange and AsyncFlow's `LocalExecutionBackend` over
 a `ThreadPoolExecutor`. Both versions run their agents on the manager's event
 loop, Academy's default.
@@ -49,8 +54,9 @@ manager's event loop, and the same actions give the same results without any
 task. Wrapping the action in a task gains AsyncFlow's task records and its
 dependency handling between task futures, not placement.
 
-The verdict supports a recipe: a page that carries the direct version's loop
-hop and handle binding, with a tested example, gives the same results.
+The verdict supported a recipe: a page that carries the direct version's loop
+hop and handle binding, with a tested example, gives the same results. 0.4.0
+removed the module and added that page.
 
 ## Not tested
 
