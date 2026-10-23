@@ -95,48 +95,48 @@ class LangraphToolFaultTolerance:
 		name: Identifier for logging/telemetry context.
 		"""
 		logger.debug(
-			f"Starting retry mechanism for '{name}' with config: max_attempts={config.max_attempts}, timeout={config.timeout_sec}"
+			"Calling '%s' with max_attempts=%d, timeout=%s",
+			name,
+			config.max_attempts,
+			config.timeout_sec,
 		)
 
 		retryable_types: Tuple[type, ...] = (
 			config.retryable_exceptions or self._default_retryable_exceptions()
 		)
 		logger.debug(
-			f"Retryable exception types for '{name}': {[t.__name__ for t in retryable_types]}"
+			"Retryable exception types for '%s': %s",
+			name,
+			[t.__name__ for t in retryable_types],
 		)
 
 		last_exc: Optional[BaseException] = None
 		for attempt in range(1, max(1, config.max_attempts) + 1):
-			logger.debug(f"Attempt {attempt}/{config.max_attempts} for '{name}'")
+			logger.debug("Attempt %d/%d for '%s'", attempt, config.max_attempts, name)
 			try:
 				if config.timeout_sec is not None and config.timeout_sec > 0:
-					logger.debug(
-						f"Executing '{name}' with timeout {config.timeout_sec}s"
-					)
 					result = await asyncio.wait_for(call(), config.timeout_sec)
 				else:
-					logger.debug(f"Executing '{name}' without timeout")
 					result = await call()
 
-				logger.info(f"Successfully completed '{name}' on attempt {attempt}")
+				logger.debug("Completed '%s' on attempt %d", name, attempt)
 				return result
 			except Exception as e:  # pylint: disable=broad-except
 				last_exc = e
 				is_retryable = isinstance(e, retryable_types)
 				is_last = attempt >= max(1, config.max_attempts)
 
-				logger.warning(
-					f"Attempt {attempt} failed for '{name}': {type(e).__name__}: {str(e)}"
-				)
-				logger.debug(
-					f"Exception retryable: {is_retryable}, is_last_attempt: {is_last}"
-				)
-
 				if not is_retryable or is_last:
+					logger.error(
+						"'%s' failed on attempt %d/%d (%s): %s: %s",
+						name,
+						attempt,
+						config.max_attempts,
+						"retryable" if is_retryable else "not retryable",
+						type(e).__name__,
+						e,
+					)
 					if config.raise_on_failure:
-						logger.error(
-							f"Final failure for '{name}' after {attempt} attempts: {type(e).__name__}: {str(e)}"
-						)
 						raise
 					# Structured error payload for callers that prefer to continue
 					error_payload = {
@@ -147,9 +147,7 @@ class LangraphToolFaultTolerance:
 						"error_type": type(e).__name__,
 						"error": str(e),
 					}
-					logger.error(
-						f"Returning error payload for '{name}': {error_payload}"
-					)
+					logger.debug("Returning an error payload for '%s'", name)
 					return error_payload
 
 				# Compute backoff with jitter
@@ -164,15 +162,23 @@ class LangraphToolFaultTolerance:
 						0.0, backoff + secrets.SystemRandom().uniform(-delta, delta)
 					)
 
-				logger.info(
-					f"Retrying '{name}' in {backoff:.2f}s (attempt {attempt + 1}/{config.max_attempts})"
+				logger.warning(
+					"Attempt %d/%d for '%s' failed (%s: %s); retrying in %.2fs",
+					attempt,
+					config.max_attempts,
+					name,
+					type(e).__name__,
+					e,
+					backoff,
 				)
 				await asyncio.sleep(backoff)
 
 		# Defensive: if the loop ends unexpectedly, raise last_exc if present
 		if last_exc:
 			logger.error(
-				f"Unexpected loop termination for '{name}', raising last exception: {type(last_exc).__name__}"
+				"Retry loop for '%s' ended unexpectedly; raising %s",
+				name,
+				type(last_exc).__name__,
 			)
 			raise last_exc
 		return None

@@ -20,11 +20,13 @@ predate this changelog, so their changes are not listed here.
   back, call `flowgentic.configure_logging()`, which prints them in plain text
   to stderr; see [Logging](https://stride-research.github.io/flowgentic/features/logging/).
 - Log records follow a level contract: DEBUG for per-call detail, INFO for
-  lifecycle events, WARNING for retries, degraded results and refused
-  requests, ERROR for failures. Per-call records that were INFO are DEBUG, and
-  `MutableGraph`'s refusals, which return `False`, are WARNING. No record
-  carries prompts, model outputs, message lists or graph states, at any level.
-  Records use lazy `%`-style arguments, and CI checks it.
+  lifecycle events, WARNING for retries, degraded results and refused requests,
+  ERROR for failures. Per-call records that were INFO are DEBUG, such as the
+  retry loop's "Successfully completed … on attempt 1"; the loop logs one
+  WARNING for each attempt it retries and one ERROR for the attempt that ends
+  the call. `MutableGraph`'s refusals, which return `False`, are WARNING. No
+  record carries prompts, model outputs, message lists or graph states, at any
+  level. Records use lazy `%`-style arguments, and CI checks it.
 - **Breaking:** `generate_execution_artifacts` takes `output_dir`, the
   directory for the report and the graph image, by default
   `agent_execution_results/` beside the calling file, as before.

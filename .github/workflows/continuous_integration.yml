@@ -17,6 +17,10 @@ jobs:
       - name: Check formatting
         run: uv run --frozen --extra dev ruff format --check .
 
+      # Log calls take lazy %-style arguments, so disabled levels format nothing.
+      - name: Check logging calls
+        run: uv run --frozen --extra dev ruff check --select G src/
+
   vulnerability_analysis:
     runs-on: ubuntu-latest
     needs: lint_and_format
