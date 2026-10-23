@@ -1,7 +1,8 @@
-"""Run the Academy examples that the Academy guide includes.
+"""Run the Academy example that the Academy guide includes.
 
-Each example runs Academy agents' actions as AsyncFlow tasks, offline, with
-Academy's local exchange and AsyncFlow's local backend.
+The example calls Academy agents' actions from AsyncFlow tasks without
+Flowgentic, offline, with Academy's local exchange and AsyncFlow's local
+backend.
 """
 
 # ruff: noqa: S101
@@ -31,19 +32,11 @@ def run_example(name: str) -> str:
     return completed.stdout
 
 
-def test_actor_client_example() -> None:
-    output = run_example("01-actor-client")
+def test_direct_example() -> None:
+    output = run_example("direct")
 
-    assert "Final count: 1" in output
-    assert "Final count: 8" in output
-    assert "Count verification: True" in output
+    assert "Initial count: 0" in output
+    assert "Final count: 3" in output
     for counter in range(1, 11):
         assert f"Counter {counter}: {counter * 2}" in output
-    assert "All examples completed successfully!" in output
-
-
-def test_agent_loop_example() -> None:
-    output = run_example("02-agent-loop")
-
-    assert "Final count: " in output
     assert "All examples completed successfully!" in output

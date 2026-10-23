@@ -9,64 +9,28 @@ predate this changelog, so their changes are not listed here.
 
 ## [Unreleased]
 
-### Changed
-
-- **Breaking:** Academy is an optional dependency, the `academy` extra, at
-  `academy-py>=1.0,<2`; the lock moves from academy-py 0.3.0 to 1.0.0. A plain
-  install no longer brings Academy and its redis, globus-sdk and aiohttp.
-  Importing `flowgentic.academy` without the extra raises an `ImportError`
-  that names it: install `flowgentic[academy]`.
-- `AcademyIntegration` runs agents on the manager's event loop, as Academy's
-  manager does by default, instead of a thread pool. On the pool, each agent
-  held a worker for its whole life, and agents beyond the pool's size, at most
-  32, never started.
-- **Breaking:** `AcademyIntegration()` takes no arguments: the workflow engine
-  it took served only `create_workflow_from_academy_chain`, removed below.
-  `create_agent_task(agent_class, action_name, *, agent_id, args, kwargs,
-  startup_timeout)` takes the agent's constructor arguments as `args` and
-  `kwargs`, the names `Manager.launch` uses, in place of `agent_args` and
-  `agent_kwargs`. A launch waits for the agent to answer a ping instead of a
-  fixed sleep; the new `startup_timeout` (60 s) bounds the wait, after which
-  the agent is shut down. Functions for one `agent_id` that name another class
-  or other constructor arguments raise `ValueError`; the first call's
-  arguments used to win silently.
-
 ### Removed
 
-Nobody uses Flowgentic yet, so these go without a deprecation period.
-
-- `AcademyIntegration.create_workflow_from_academy_chain`: a loop of blocks,
-  one agent each, configured by `(agent_class, action_name, args, kwargs)`
-  tuples. Awaiting the functions from `create_agent_task` in turn does the
-  same, in plain code.
-- `create_agent_task`'s `startup_delay`, and `ensure_agent_loops_running` and
-  `wait_for_all_agent_loops`: they only slept. A launch now waits until the
-  agent has started, after which its loops are scheduled; an application that
-  needs a loop to have run waits for what it needs.
-- `AcademyIntegration.academy_manager` and `launched_agents`: their handles
-  fail or hang when awaited in a function task's worker thread (see the
-  [Academy substitution check](https://stride-research.github.io/flowgentic/evaluation/academy/)).
-  Calls go through `create_agent_task`.
+- **Breaking:** `flowgentic.academy` (`AcademyIntegration`) and its two
+  examples. In 0.3 it could not run an Academy action through AsyncFlow: every
+  call failed with `ExchangeClientNotFoundError`, and the examples failed at
+  import. Repaired and then compared with direct Academy calls in AsyncFlow
+  tasks, it added no capability: the same results, tasks and agent lifecycle,
+  for 6 fewer lines of application code
+  ([Academy substitution check](https://stride-research.github.io/flowgentic/evaluation/academy/)).
+  The guide [Academy actions as AsyncFlow tasks](https://stride-research.github.io/flowgentic/guides/academy-on-asyncflow/)
+  now shows the direct calls, with a tested example. Placing Academy agents
+  on HPC resources belongs to RADICAL's execution layer, and an agent that
+  drives the workflow to ADR. Flowgentic no longer depends on academy-py; the
+  `examples` extra brings `academy-py>=1.0,<2` for the example.
 
 ### Fixed
 
-- `flowgentic.academy`: an action called from an AsyncFlow task, function task
-  or block, failed with `ExchangeClientNotFoundError`. Launches and actions now run on
-  the manager's event loop, through handles bound to its exchange client.
-- `flowgentic.academy`: the action's result was awaited a second time, so a
-  call failed even when the action succeeded.
-- `flowgentic.academy`: concurrent first calls for one `agent_id` could each
-  launch an agent.
-- `flowgentic.academy`: entering `AcademyIntegration` reconfigured the
-  application's logging through Academy's `init_logging`, which academy-py 1.0
-  removed.
-- The Academy examples imported a module that does not exist. They run, and
-  CI runs them.
 - The retry loop re-raised `ModuleNotFoundError` when `httpx` or `aiohttp` was
   missing from the environment; it now leaves their exceptions out of the
-  default retryable ones. Without the fix, every decorated call on the default
-  retry config would fail in an install without the `academy` extra, the only
-  source of `aiohttp`.
+  default retryable ones. aiohttp reached an install only through academy-py,
+  so without the fix every decorated call on the default retry config would
+  fail once Flowgentic stopped depending on it.
 
 ## [0.3.1] - 2026-10-23
 

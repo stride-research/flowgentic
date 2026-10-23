@@ -21,7 +21,10 @@ scientific work.
 `bind_agent`, which binds an agent component to an AsyncFlow task, remains a
 documented recipe: [Augment an AsyncFlow application](guides/augment-asyncflow-app.md).
 A LangGraph application can also run on AsyncFlow without Flowgentic:
-[LangGraph on AsyncFlow directly](guides/langgraph-direct.md).
+[LangGraph on AsyncFlow directly](guides/langgraph-direct.md). So can an
+application that calls Academy agents from its tasks:
+[Academy actions as AsyncFlow tasks](guides/academy-on-asyncflow.md), which
+replaces the `flowgentic.academy` module that 0.4.0 removed.
 
 ## Supported configuration
 
@@ -33,7 +36,8 @@ Tested environment, from `uv.lock`: LangGraph 1.2.16, langchain-core 1.6.13,
 langchain 1.4.7, radical-asyncflow 0.6.0 and academy-py 1.0.0. CI runs the
 test suite on Python 3.10, 3.11 and 3.12. The package requires
 `langgraph`, `langchain-core` and `langchain` at `>=1.0,<2.0`, and
-`radical-asyncflow==0.6.0`. Its `academy` extra requires `academy-py>=1.0,<2`.
+`radical-asyncflow==0.6.0`. Its `examples` extra adds `academy-py>=1.0,<2`
+for the Academy example.
 
 ## Known limitations
 
@@ -54,10 +58,6 @@ test suite on Python 3.10, 3.11 and 3.12. The package requires
   `tests/integration/test_integration.py` runs two of them when
   `FLOWGENTIC_RUN_LLM_INTEGRATION=1` is set (`make tests-integration-llm`);
   CI never sets it.
-- The Academy integration (`flowgentic.academy`) is tested with Academy's local
-  exchange and AsyncFlow's local backend only. Its tasks run as blocks or on
-  thread-pool backends; see
-  [Academy actions as AsyncFlow tasks](guides/academy-on-asyncflow.md#how-a-call-runs).
 
 ## Retired
 
