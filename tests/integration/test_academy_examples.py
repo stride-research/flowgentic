@@ -14,6 +14,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+pytest.importorskip("academy", reason="needs academy-py, from the examples extra")
+
 REPOSITORY = Path(__file__).resolve().parents[2]
 EXAMPLES = REPOSITORY / "examples" / "academy-integration"
 

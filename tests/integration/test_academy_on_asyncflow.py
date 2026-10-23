@@ -18,12 +18,15 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import AsyncIterator
 
 import pytest
-from academy.agent import Agent, action
-from academy.exception import ExchangeClientNotFoundError
-from academy.exchange.local import LocalExchangeFactory
-from academy.handle import Handle
-from academy.manager import Manager
-from radical.asyncflow import LocalExecutionBackend, WorkflowEngine
+
+pytest.importorskip("academy", reason="needs academy-py, from the examples extra")
+
+from academy.agent import Agent, action  # noqa: E402
+from academy.exception import ExchangeClientNotFoundError  # noqa: E402
+from academy.exchange.local import LocalExchangeFactory  # noqa: E402
+from academy.handle import Handle  # noqa: E402
+from academy.manager import Manager  # noqa: E402
+from radical.asyncflow import LocalExecutionBackend, WorkflowEngine  # noqa: E402
 
 COUNTERS = 10
 EXPECTED = [f"Counter {i}: {i * 2}" for i in range(1, COUNTERS + 1)]
@@ -87,9 +90,10 @@ async def test_bound_handle_on_the_worker_loop_waits_for_that_loop_to_wake(
 ) -> None:
     """Why the guide awaits each action on the manager's loop.
 
-    The agent answers at once, but the worker thread's loop learns of it only
-    when something else wakes it: here, the timer of ``wait_for``. With no
-    timer, the call never returns.
+    With academy-py 1.0, the agent answers at once, but the reply reaches the
+    worker thread's loop without waking it: the call returns only when
+    something else wakes that loop, here a timer, and with nothing to wake it,
+    never. The ``wait_for`` bound is only a backstop against a hang.
     """
     wake_after = 1.0
     async with await manager() as academy:
@@ -100,12 +104,20 @@ async def test_bound_handle_on_the_worker_loop_waits_for_that_loop_to_wake(
         await handle.ping()
 
         @flow.function_task
-        async def timed_get_count() -> float:
+        async def timed_get_count() -> tuple[int, float]:
+            asyncio.get_running_loop().call_later(wake_after, lambda: None)
             start = time.perf_counter()
-            assert await asyncio.wait_for(handle.get_count(), wake_after) == 0
-            return time.perf_counter() - start
+            count = await asyncio.wait_for(handle.get_count(), 10 * wake_after)
+            return count, time.perf_counter() - start
 
-        assert await timed_get_count() >= wake_after * 0.9
+        count, elapsed = await timed_get_count()
+
+    assert count == 0
+    assert elapsed >= wake_after * 0.9, (
+        "The worker's loop no longer waits to be woken: Academy may now deliver "
+        "replies thread-safely. Revisit on_loop in "
+        "docs/guides/academy-on-asyncflow.md."
+    )
 
 
 async def test_actions_run_on_the_managers_loop_not_in_the_task(
