@@ -40,10 +40,10 @@ class LangraphUtils:
 		# Read the existing content, if there is a report yet
 		existing_content = ""
 		if os.path.exists(report_output_path):
-			with open(report_output_path, "r") as f:
+			with open(report_output_path, "r", encoding="utf-8") as f:
 				existing_content = f.read()
 		new_content = f"# MULTI-AGENT GRAPH\n\n![Graph]({GRAPH_IMAGE})\n\n"
 
 		# Write the combined content back to the report file
-		with open(report_output_path, "w") as f:
+		with open(report_output_path, "w", encoding="utf-8") as f:
 			f.write(new_content + existing_content)

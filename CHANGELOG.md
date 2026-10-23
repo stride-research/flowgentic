@@ -75,7 +75,9 @@ Nobody uses Flowgentic yet, so these go without a deprecation period.
   report with the graph section. With `generate_report=False`, an earlier
   run's report in the same directory is removed rather than kept under a new
   graph section. Only drawing the graph, which needs `pygraphviz`, ends in a
-  warning; an error after it, such as an unreadable report, raises.
+  warning; an error after it, such as an unreadable report, raises. The
+  report is read and rewritten as UTF-8, as it is written, rather than in the
+  locale's encoding.
 - The retry loop re-raised `ModuleNotFoundError` when `httpx` or `aiohttp` was
   missing from the environment; it now leaves their exceptions out of the
   default retryable ones. aiohttp reached an install only through academy-py,

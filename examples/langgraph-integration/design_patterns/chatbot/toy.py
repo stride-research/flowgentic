@@ -105,6 +105,8 @@ async def start_app():
 			app.get_graph().draw_png(str(results_dir / "agent_graph.png"))
 		except ImportError:
 			print("Drawing the graph needs pygraphviz; skipping agent_graph.png")
+		except Exception as e:
+			print(f"Could not draw agent_graph.png: {e}")
 
 		while True:
 			user_input = input("User: ").lower()
