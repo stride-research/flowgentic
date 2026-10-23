@@ -24,12 +24,10 @@ dependencies = [
 [project.optional-dependencies]
 examples = [
     "python-dotenv",
-]
-academy = [
     "academy-py>=1.0,<2",
 ]
 dev = [
-    "flowgentic[examples,academy]",
+    "flowgentic[examples]",
     "ruff>=0.12.11",
     "pre-commit",
     "mkdocs-material",

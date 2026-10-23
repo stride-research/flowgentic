@@ -758,9 +758,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-academy = [
-    { name = "academy-py" },
-]
 dev = [
     { name = "academy-py" },
     { name = "mkdocs-gen-files" },
@@ -777,13 +774,14 @@ dev = [
     { name = "ruff" },
 ]
 examples = [
+    { name = "academy-py" },
     { name = "python-dotenv" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "academy-py", marker = "extra == 'academy'", specifier = ">=1.0,<2" },
-    { name = "flowgentic", extras = ["examples", "academy"], marker = "extra == 'dev'" },
+    { name = "academy-py", marker = "extra == 'examples'", specifier = ">=1.0,<2" },
+    { name = "flowgentic", extras = ["examples"], marker = "extra == 'dev'" },
     { name = "langchain", specifier = ">=1.0,<2.0" },
     { name = "langchain-core", specifier = ">=1.0,<2.0" },
     { name = "langchain-ollama" },
@@ -806,7 +804,7 @@ requires-dist = [
     { name = "radical-asyncflow", specifier = "==0.6.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12.11" },
 ]
-provides-extras = ["examples", "academy", "dev"]
+provides-extras = ["examples", "dev"]
 
 [[package]]
 name = "frozenlist"
