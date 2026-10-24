@@ -38,6 +38,14 @@ predate this changelog, so their changes are not listed here.
   repository's latest GitHub release is published (not a pre-release, nor a
   patch to an older line), or by hand for a given release tag, no longer on
   every push to `main`. It stops describing changes that no release contains.
+- Dependencies are ranges, not pins: `radical-asyncflow>=0.6,<0.7`, where 0.3
+  required `==0.6.0`, because before 1.0 an AsyncFlow minor release may break;
+  `langchain-openai` and `langchain-ollama` at `>=1.0,<2.0`, like the other
+  LangChain packages. The `examples` and `dev` extras have floors. CI runs the
+  suite on the lowest versions the ranges allow, and a weekly workflow runs it
+  on the newest releases within them, and on the newest AsyncFlow and Academy
+  releases beyond them. Dependabot updates `uv.lock` and the workflows'
+  actions.
 
 ### Removed
 
@@ -73,6 +81,10 @@ Nobody uses Flowgentic yet, so these go without a deprecation period.
 
 ### Fixed
 
+- `langgraph` 1.1.5 or later is required; 0.3 allowed 1.0. langgraph 1.0 to
+  1.1.4 install with the newest `langgraph-prebuilt` 1.0.x, which imports
+  names that langgraph 1.1.5 added, so importing Flowgentic's LangGraph
+  integration failed with `ImportError`.
 - `generate_execution_artifacts(..., generate_report=False)`, or any call whose
   output directory had no `execution_summary.md`, wrote no graph section and
   left an empty `execution_summary.md`: `render_graph` failed on the missing
