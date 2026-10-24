@@ -9,7 +9,7 @@
     <img src="https://github.com/stride-research/flowgentic/actions/workflows/continuous_integration.yml/badge.svg?branch=main" alt="CI">
   </a>
   <a href="https://github.com/stride-research/flowgentic/actions/workflows/docs-deployment.yml">
-    <img src="https://github.com/stride-research/flowgentic/actions/workflows/docs-deployment.yml/badge.svg?branch=main" alt="Documentation">
+    <img src="https://github.com/stride-research/flowgentic/actions/workflows/docs-deployment.yml/badge.svg" alt="Documentation">
   </a>
 </p>
 

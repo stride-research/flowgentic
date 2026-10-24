@@ -1,18 +1,59 @@
 name: Deploy MkDocs
+# The site describes the latest release, not main: it deploys when the
+# repository's latest release is published, or by hand for a given release
+# tag. Pull requests still build the documentation strictly in the CI workflow.
 on:
-  push:
-    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Release tag to deploy, for example v0.3.1"
+        required: true
 
 permissions:
   contents: read
   pages: write
   id-token: write
 
+# One deploy at a time, in the order they were started.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
+  select:
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.pick.outputs.ref }}
+    steps:
+      # A published release deploys only if it is the latest one, which also
+      # excludes pre-releases; a manual run must name an existing release.
+      - id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_REF: ${{ inputs.ref }}
+        run: |
+          if [ "$EVENT" = release ]; then tag="$RELEASE_TAG"; else tag="$INPUT_REF"; fi
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName > /dev/null
+          latest=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          if [ "$EVENT" = release ] && [ "$tag" != "$latest" ]; then
+            echo "::notice::$tag is not the latest release ($latest), so the site stays as it is."
+            exit 0
+          fi
+          echo "ref=$tag" >> "$GITHUB_OUTPUT"
+
   deploy:
+    needs: select
+    if: needs.select.outputs.ref != ''
     runs-on: ubuntu-latest
     steps:
+      # refs/tags/: actions/checkout prefers a branch of the same name.
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ needs.select.outputs.ref }}
       - uses: astral-sh/setup-uv@v10.3.1
         with:
           enable-cache: true

@@ -9,10 +9,17 @@ backend.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
+
+# Skip only when academy-py is absent: a broken install must fail, not skip.
+if importlib.util.find_spec("academy") is None:
+    pytest.skip("needs academy-py, from the examples extra", allow_module_level=True)
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 EXAMPLES = REPOSITORY / "examples" / "academy-integration"

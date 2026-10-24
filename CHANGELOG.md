@@ -34,6 +34,10 @@ predate this changelog, so their changes are not listed here.
   `GraphIntrospector.generate_report(directory)` and `render_graph` write into
   the directory they are given, no longer into its `agent_execution_results/`
   subdirectory.
+- The documentation site follows the latest release: it deploys when the
+  repository's latest GitHub release is published (not a pre-release, nor a
+  patch to an older line), or by hand for a given release tag, no longer on
+  every push to `main`. It stops describing changes that no release contains.
 
 ### Removed
 
@@ -83,7 +87,9 @@ Nobody uses Flowgentic yet, so these go without a deprecation period.
   missing from the environment; it now leaves their exceptions out of the
   default retryable ones. aiohttp reached an install only through academy-py,
   so without the fix every decorated call on the default retry config would
-  fail once Flowgentic stopped depending on it.
+  fail once Flowgentic stopped depending on it. An `httpx` or `aiohttp` that is
+  installed but fails to import is skipped the same way, and the default
+  retryable exceptions are worked out once, not on every call.
 
 ## [0.3.1] - 2026-10-23
 
