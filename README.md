@@ -40,9 +40,8 @@ and the archived branches.
   Each call to the bound agent runs the component as that task and returns its
   structured decision with the agent's identity and timing.
 - **`LangraphIntegration`** (`flowgentic.langGraph`) runs a LangGraph graph's
-  tools, services, tasks and nodes as AsyncFlow tasks, with retries, a
-  node-level execution report, conversation memory and a graph that changes at
-  runtime.
+  tools, services, tasks and nodes as AsyncFlow tasks, with a node-level
+  execution report, conversation memory and a graph that changes at runtime.
 
 ## Install
 

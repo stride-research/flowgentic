@@ -4,13 +4,11 @@ from flowgentic.utils.telemetry.introspection import GraphIntrospector
 from flowgentic.utils.telemetry.report_generator import REPORT_FILE
 
 """
-LangGraph/AsyncFlow Integration: bridge AsyncFlow tasks and LangChain tools
-with built-in retries, backoff, and timeouts.
+LangGraph/AsyncFlow Integration: bridge AsyncFlow tasks and LangChain tools.
 
 Key features:
 - Define AsyncFlow tasks with `@flow.function_task`
 - Expose as LangChain tools via `@integration.asyncflow_tool(...)`
-- Sensible defaults for fault tolerance (no config required)
 """
 
 import asyncio

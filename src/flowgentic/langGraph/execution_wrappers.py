@@ -1,11 +1,12 @@
 """
-LangGraph/AsyncFlow Integration: bridge AsyncFlow tasks and LangChain tools
-with built-in retries, backoff, and timeouts.
+LangGraph/AsyncFlow Integration: bridge AsyncFlow tasks and LangChain tools.
 
 Key features:
 - Define AsyncFlow tasks with `@flow.function_task`
 - Expose as LangChain tools via `@integration.asyncflow_tool(...)`
-- Sensible defaults for fault tolerance (no config required)
+
+Each call runs once. Retries and timeouts belong to the model client, to
+LangGraph's node policies and to the application.
 
 
 TBD:
@@ -40,8 +41,6 @@ from pydantic import BaseModel, Field
 from flowgentic import _asyncflow
 from flowgentic.utils.llm_providers import ChatLLMProvider
 from flowgentic.utils.telemetry.introspection import GraphIntrospector
-
-from .fault_tolerance import LangraphToolFaultTolerance, RetryConfig
 
 if TYPE_CHECKING:
 	from radical.asyncflow import WorkflowEngine
@@ -100,7 +99,6 @@ class ExecutionWrappersLangraph:
 		self, flow: "WorkflowEngine", instrospector: GraphIntrospector
 	) -> None:
 		self.flow = flow
-		self.fault_tolerance_mechanism = LangraphToolFaultTolerance()
 		self.react_agents: Dict[str, Any] = {}
 		self.introspector = instrospector
 		self.service_registry: Dict[str, Any] = {}
@@ -110,10 +108,9 @@ class ExecutionWrappersLangraph:
 		func: Optional[Callable] = None,
 		*,
 		flow_type: AsyncFlowType = None,
-		retry: Optional[RetryConfig] = None,
 		backend: Optional[str] = None,
 		capture_stdio: bool = False,
-		**kwargs,
+		tool_description: Optional[str] = None,
 	) -> Callable:
 		"""
 		Unified decorator to register async functions as AsyncFlow tasks with different behaviors.
@@ -125,9 +122,10 @@ class ExecutionWrappersLangraph:
 		        - FUNCTION_TASK: Creates a simple asyncflow task (with *args, **kwargs)
 		        - SERVICE_TASK: Creates a persistent service task
 		        - EXECUTION_BLOCK: Creates a block node
-		    retry: Optional retry configuration
 		    backend: Optional named AsyncFlow backend for this task.
 		    capture_stdio: Capture task output when supported by AsyncFlow.
+		    tool_description: Description of an AGENT_TOOL_AS_FUNCTION tool; the
+		        function's docstring when omitted.
 		"""
 
 		def decorate(f: Callable) -> Callable:
@@ -151,9 +149,6 @@ class ExecutionWrappersLangraph:
 					self.flow, f, backend=backend, capture_stdio=capture_stdio
 				)
 
-			retry_cfg = retry or self.fault_tolerance_mechanism.default_cfg
-			logger.debug("Using retry config for '%s': %s", f.__name__, retry_cfg)
-
 			if flow_type in [
 				AsyncFlowType.AGENT_TOOL_AS_FUNCTION,
 			]:
@@ -166,26 +161,16 @@ class ExecutionWrappersLangraph:
 						len(args),
 						list(kwargs),
 					)
-
-					async def _call():
-						logger.debug("Executing AsyncFlow task for '%s'", f.__name__)
-						future = asyncflow_func(*args, **kwargs)
-						result = await future
-						logger.debug("AsyncFlow task '%s' completed", f.__name__)
-						return result
-
-					return await self.fault_tolerance_mechanism.retry_async(
-						_call, retry_cfg, name=f.__name__
-					)
+					result = await asyncflow_func(*args, **kwargs)
+					logger.debug("AsyncFlow task '%s' completed", f.__name__)
+					return result
 
 				logger.debug(
 					"Creating tool '%s' with description '%s'",
 					f.__name__,
-					kwargs.get("tool_description"),
+					tool_description,
 				)
-				langraph_tool = tool(
-					tool_wrapper, description=kwargs.get("tool_description")
-				)
+				langraph_tool = tool(tool_wrapper, description=tool_description)
 				logger.debug("Created LangChain tool for '%s'", f.__name__)
 				return langraph_tool
 
@@ -200,25 +185,18 @@ class ExecutionWrappersLangraph:
 						list(kwargs),
 					)
 
-					async def _call():
-						logger.debug("Executing AsyncFlow task for '%s'", f.__name__)
-						future = asyncflow_func(*args, **kwargs)
-						if flow_type == AsyncFlowType.FUNCTION_TASK:
-							# FUNCTION_TASK: await the future and return the result
-							result = await future
-							logger.debug("AsyncFlow task '%s' completed", f.__name__)
-							return result
-						else:
-							# SERVICE_TASK: return the future handle itself
-							# The service starts in the background and persists
-							# Multiple awaits on the same future = same service instance
-							# Usage: service_future = await service_task()
-							#        result = await service_future (can await multiple times)
-							return future
-
-					return await self.fault_tolerance_mechanism.retry_async(
-						_call, retry_cfg, name=f.__name__
-					)
+					future = asyncflow_func(*args, **kwargs)
+					if flow_type == AsyncFlowType.FUNCTION_TASK:
+						# FUNCTION_TASK: await the future and return the result
+						result = await future
+						logger.debug("AsyncFlow task '%s' completed", f.__name__)
+						return result
+					# SERVICE_TASK: return the future handle itself
+					# The service starts in the background and persists
+					# Multiple awaits on the same future = same service instance
+					# Usage: service_future = await service_task()
+					#        result = await service_future (can await multiple times)
+					return future
 
 				logger.debug("Created AsyncFlow task for '%s'", f.__name__)
 				return future_wrapper
@@ -229,17 +207,9 @@ class ExecutionWrappersLangraph:
 				async def block_wrapper(state):
 					"""LangGraph node: receives state, executes block, returns updated state"""
 					logger.debug("Block '%s' called with state", f.__name__)
-
-					async def _call():
-						logger.debug("Executing AsyncFlow block for '%s'", f.__name__)
-						future = asyncflow_func(state)
-						result = await future
-						logger.debug("AsyncFlow block '%s' completed", f.__name__)
-						return result
-
-					return await self.fault_tolerance_mechanism.retry_async(
-						_call, retry_cfg, name=f.__name__
-					)
+					result = await asyncflow_func(state)
+					logger.debug("AsyncFlow block '%s' completed", f.__name__)
+					return result
 
 				logger.debug("Created LangGraph block node for '%s'", f.__name__)
 				return block_wrapper
