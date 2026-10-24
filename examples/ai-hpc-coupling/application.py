@@ -12,7 +12,6 @@ from typing import Any, cast
 
 from campaign_types import CampaignApplication, CampaignSettings, CampaignState
 from demo_support import (
-    SIMULATION_RETRY,
     SurrogateService,
     add_instrumented_nodes,
     evaluate_candidate,
@@ -21,6 +20,7 @@ from demo_support import (
     record_analysis,
     record_plan,
     record_simulations,
+    retry_transient_simulation,
 )
 from langgraph.graph import END, START, StateGraph
 
@@ -54,11 +54,7 @@ async def build_campaign(
     ) -> dict[str, Any]:
         return await service.propose(center, radius, settings.batch_size, cycle)
 
-    @flowgentic(
-        flow_type=AsyncFlowType.FUNCTION_TASK,
-        backend="compute",
-        retry=SIMULATION_RETRY,
-    )
+    @flowgentic(flow_type=AsyncFlowType.FUNCTION_TASK, backend="compute")
     async def simulate(
         x: float,
         cycle: int,
@@ -89,13 +85,17 @@ async def build_campaign(
         candidates = state["candidates"][: max(0, remaining)]
         results = await asyncio.gather(
             *(
-                simulate(
-                    x,
-                    state["cycle"],
-                    index,
-                    fail_once=(
-                        settings.inject_failure and state["cycle"] == 1 and index == 0
-                    ),
+                retry_transient_simulation(
+                    lambda x=x, index=index: simulate(
+                        x,
+                        state["cycle"],
+                        index,
+                        fail_once=(
+                            settings.inject_failure
+                            and state["cycle"] == 1
+                            and index == 0
+                        ),
+                    )
                 )
                 for index, x in enumerate(candidates)
             )

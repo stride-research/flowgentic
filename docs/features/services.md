@@ -79,8 +79,8 @@ ends.
 | Each awaited call | Runs the function | Starts a new service instance |
 | Stop it | It ends when the function returns | Cancel the future |
 
-Both go through the retry loop of [Fault tolerance](fault_tolerance.md). For a
-service, the loop covers submitting the task, not the service's own start-up.
+Each call runs once. Flowgentic does not restart a service that fails; see
+[Retries and timeouts](../guides/retries-and-timeouts.md).
 
 Without Flowgentic, the same service is `@flow.function_task(service=True)`; see
 [LangGraph on AsyncFlow directly](../guides/langgraph-direct.md#2-services-and-tasks).

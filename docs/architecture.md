@@ -14,7 +14,7 @@ flowchart LR
   end
   subgraph Flowgentic
     BIND[bind_agent]
-    LGI[LangraphIntegration<br/>asyncflow decorator and retry]
+    LGI[LangraphIntegration<br/>asyncflow decorator]
     INTRO[GraphIntrospector<br/>node report]
   end
   APP -- agent component --> BIND
@@ -32,7 +32,6 @@ flowchart LR
 | `flowgentic.agent` | `bind_agent` and `AgentTask`: an agent component as an AsyncFlow task |
 | `flowgentic.langGraph.main` | `LangraphIntegration`: creates and shuts down the `WorkflowEngine` |
 | `flowgentic.langGraph.execution_wrappers` | `AsyncFlowType`, the `asyncflow` decorator, the handoff tool, `BaseLLMAgentState` |
-| `flowgentic.langGraph.fault_tolerance` | `RetryConfig` and the retry loop around every decorated call |
 | `flowgentic.langGraph.memory` | `MemoryConfig`, `MemoryManager` and the integration's `LangraphMemoryManager` |
 | `flowgentic.langGraph.mutable_graph` | `MutableGraph`: a graph whose nodes change at runtime |
 | `flowgentic.langGraph.utils` | An LLM router and fan-out for supervisor graphs, and graph rendering |
@@ -49,13 +48,12 @@ The [API reference](api/flowgentic/index.md) documents each module.
 
 ## How a decorated call runs
 
-Each `asyncflow` decorator registers the function with AsyncFlow and wraps the
-call in the retry loop of `flowgentic.langGraph.fault_tolerance`:
+Each `asyncflow` decorator registers the function with AsyncFlow. A call
+submits one task or block and awaits it, with no retry and no timeout:
 
 ```mermaid
 flowchart LR
-  CALL[Graph or node code calls<br/>the decorated function] --> RETRY[Retry loop<br/>attempts, backoff, timeout per attempt]
-  RETRY --> SUBMIT[AsyncFlow task or block<br/>on its backend]
+  CALL[Graph or node code calls<br/>the decorated function] --> SUBMIT[AsyncFlow task or block<br/>on its backend]
   SUBMIT --> RESULT[Result, or the service's future]
   RESULT --> CALL
 ```
@@ -73,5 +71,5 @@ flowchart TD
 ```
 
 [LangGraph on AsyncFlow with Flowgentic](guides/langgraph-on-asyncflow.md)
-describes each flow type, and [Fault tolerance](features/fault_tolerance.md)
-the retry loop.
+describes each flow type, and [Retries and timeouts](guides/retries-and-timeouts.md)
+where retries and deadlines belong.

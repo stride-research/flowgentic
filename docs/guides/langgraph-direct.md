@@ -75,8 +75,9 @@ failure, with 5 s per attempt, and passes the policy to `asyncflow_tool` as
 --8<-- "examples/ai-hpc-coupling/campaign_common.py:retry-transient"
 ```
 
-Unlike Flowgentic's default, nothing else is retried: graph nodes run once,
-with no timeout.
+Nothing else is retried: graph nodes run once, with no timeout. The
+Flowgentic version uses the same helper; see
+[Retries and timeouts](retries-and-timeouts.md).
 
 ## 5. Handoffs
 
@@ -120,7 +121,7 @@ runner and demo support code; a standalone direct application needs only
 | --- | --- | --- |
 | Engine | Created and shut down by `LangraphIntegration` | Created and shut down by the application |
 | Tools, tasks, services, nodes | `asyncflow` decorator | `flow.function_task`, `flow.block`, `langchain_core.tools.tool` |
-| Retry and timeout | Default policy on every call and node, or a `RetryConfig` | Only what the application writes |
+| Retry and timeout | Only what the application writes | Only what the application writes |
 | Handoff tool | `create_task_description_handoff_tool` | About 17 lines |
 | Node report | The integration's `agent_introspector` | A `GraphIntrospector` (`flowgentic.utils.telemetry`) that the application creates |
 | Third-party packages (fresh resolve, Python 3.10) | 74 | 42 |

@@ -21,13 +21,12 @@ predate this changelog, so their changes are not listed here.
   plain text to stderr; see
   [Logging](https://stride-research.github.io/flowgentic/features/logging/).
 - Log records follow a level contract: DEBUG for per-call detail, INFO for
-  lifecycle events, WARNING for retries, degraded results and refused requests,
-  ERROR for failures. Per-call records that were INFO are DEBUG, such as the
-  retry loop's "Successfully completed … on attempt 1"; the loop logs one
-  WARNING for each attempt it retries and one ERROR for the attempt that ends
-  the call. `MutableGraph`'s refusals, which return `False`, are WARNING. No
-  record carries prompts, model outputs, message lists or graph states, at any
-  level. Records use lazy `%`-style arguments, and CI checks it.
+  lifecycle events, WARNING for degraded results and refused requests, ERROR
+  for failures. Per-call records that were INFO are DEBUG, such as the
+  decorator's "Registering function … as AsyncFlow …". `MutableGraph`'s
+  refusals, which return `False`, are WARNING. No record carries prompts,
+  model outputs, message lists or graph states, at any level. Records use lazy
+  `%`-style arguments, and CI checks it.
 - **Breaking:** `generate_execution_artifacts` takes `output_dir`, the
   directory for the report and the graph image, by default
   `agent_execution_results/` beside the calling file, as before.
@@ -43,6 +42,23 @@ predate this changelog, so their changes are not listed here.
 
 Nobody uses Flowgentic yet, so these go without a deprecation period.
 
+- **Breaking:** the retry loop around every decorated call, with
+  `flowgentic.langGraph.fault_tolerance` (`RetryConfig`,
+  `LangraphToolFaultTolerance`) and the `asyncflow` decorator's `retry=`
+  argument. Every tool, task, service and graph node ran in it, by default
+  with 3 attempts of at most 30 s each, retrying `OSError` among other errors.
+  On graph nodes it re-ran finished scientific work: with a simulation that
+  kept failing, it made 24 attempts where the application's own policy made 8,
+  and it cancelled and re-ran a node whose work took longer than 30 s until
+  the cycle failed
+  ([substitution experiment](https://stride-research.github.io/flowgentic/evaluation/substitution/),
+  row 3). Each call now runs once. A model call's retries and deadline belong
+  to the chat model (`max_retries`, `timeout`), a graph node's to LangGraph
+  (`add_node(..., retry_policy=..., timeout=...)`), and a task's to the
+  application until AsyncFlow has per-task retry, as in the AI-HPC demos. See
+  [Retries and timeouts](https://stride-research.github.io/flowgentic/guides/retries-and-timeouts/).
+  The decorator's keyword arguments are now explicit, so an unknown one, such
+  as `retry=`, raises `TypeError`; `tool_description` was the only other.
 - **Breaking:** `flowgentic.academy` (`AcademyIntegration`) and its two
   examples. In 0.3 it could not run an Academy action through AsyncFlow: every
   call failed with `ExchangeClientNotFoundError`, and the examples failed at
@@ -83,13 +99,6 @@ Nobody uses Flowgentic yet, so these go without a deprecation period.
   warning; an error after it, such as an unreadable report, raises. The
   report is read and rewritten as UTF-8, as it is written, rather than in the
   locale's encoding.
-- The retry loop re-raised `ModuleNotFoundError` when `httpx` or `aiohttp` was
-  missing from the environment; it now leaves their exceptions out of the
-  default retryable ones. aiohttp reached an install only through academy-py,
-  so without the fix every decorated call on the default retry config would
-  fail once Flowgentic stopped depending on it. An `httpx` or `aiohttp` that is
-  installed but fails to import is skipped the same way, and the default
-  retryable exceptions are worked out once, not on every call.
 
 ## [0.3.1] - 2026-10-23
 
