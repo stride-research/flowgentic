@@ -52,10 +52,13 @@ for the Academy example.
   [Fault tolerance](features/fault_tolerance.md).
 - Token accounting: the agentic demo records no tokens, even in live mode
   (substitution report, row 5).
-- The design-pattern examples need a model provider and credentials.
-  `tests/integration/test_integration.py` runs two of them when
-  `FLOWGENTIC_RUN_LLM_INTEGRATION=1` is set (`make tests-integration-llm`);
-  CI never sets it.
+- Live runs of the design-pattern examples need a model provider and
+  credentials. CI runs four of them with a scripted chat model in place of the
+  provider (`tests/integration/test_design_patterns_offline.py`), which shows
+  that they complete, not what a live model makes of them.
+  `make tests-integration-llm` runs two of them live, given
+  `OPEN_ROUTER_API_KEY`, and the LLM examples workflow does the same on
+  GitHub when a maintainer starts it. The interactive chatbot runs in neither.
 
 ## Retired
 

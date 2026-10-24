@@ -1,0 +1,45 @@
+name: LLM examples
+
+# Runs the design-pattern examples against a live model on OpenRouter. CI runs
+# them offline with a scripted chat model; this run needs the repository
+# secret OPEN_ROUTER_API_KEY and spends credits, so a maintainer starts it.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  llm_examples:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # make's uv commands use uv.lock as it is
+      UV_FROZEN: "1"
+    steps:
+      - name: Fetch code
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.3.1
+        with:
+          enable-cache: true
+
+      # Without the key, some examples route their failures to an error node
+      # and exit 0, so a run without it would pass without calling a model.
+      - name: Check the secret
+        env:
+          OPEN_ROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY }}
+        run: |
+          if [ -z "$OPEN_ROUTER_API_KEY" ]; then
+            echo "::error::Add the repository secret OPEN_ROUTER_API_KEY first."
+            exit 1
+          fi
+
+      - name: "Install dependencies"
+        run: uv sync --frozen --extra dev
+
+      - name: Run the examples live
+        env:
+          OPEN_ROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY }}
+        run: make tests-integration-llm

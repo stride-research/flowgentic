@@ -21,9 +21,11 @@ flowchart LR
 ## Run it
 
 The router and the gather node use OpenRouter: set `OPEN_ROUTER_API_KEY`, then
-run `make examples-supervisor-toy`. `tests/integration/test_integration.py`
-runs the example when `FLOWGENTIC_RUN_LLM_INTEGRATION=1` is set; CI, which has
-no credentials, skips it.
+run `make examples-supervisor-toy`. CI, which has no credentials, runs the
+example with a scripted chat model in place of OpenRouter
+(`tests/integration/test_design_patterns_offline.py`);
+`tests/integration/test_integration.py` runs it live when
+`FLOWGENTIC_RUN_LLM_INTEGRATION=1` is set.
 
 ## The state
 
