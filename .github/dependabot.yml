@@ -1,0 +1,20 @@
+# Weekly pull requests that update uv.lock and the workflows' actions, each
+# ecosystem grouped into one pull request. Dependabot's uv support has gaps,
+# so the newest-dependencies workflow is the signal to rely on.
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv:
+        patterns: ["*"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
