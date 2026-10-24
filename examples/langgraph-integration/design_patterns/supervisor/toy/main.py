@@ -210,6 +210,7 @@ Create a brief, unified response that integrates both perspectives. Keep it conc
 			print("=" * 80)
 
 			wall_start = time.perf_counter()
+			result = None
 			try:
 				state = GraphState(query=query)
 				result = await app.ainvoke(state)

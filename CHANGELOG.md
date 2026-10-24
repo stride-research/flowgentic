@@ -119,6 +119,10 @@ Nobody uses Flowgentic yet, so these go without a deprecation period.
   warning; an error after it, such as an unreadable report, raises. The
   report is read and rewritten as UTF-8, as it is written, rather than in the
   locale's encoding.
+- The `supervisor/toy` example hid the error of a failed run: when the graph
+  raised, the `finally` block that writes the report read a result that was
+  never set, and the run ended in `UnboundLocalError`. The graph's own error
+  now propagates, after the report is written.
 
 ## [0.3.1] - 2026-10-23
 
