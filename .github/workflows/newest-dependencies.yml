@@ -1,0 +1,110 @@
+name: Newest dependency releases
+# Weekly, and by hand: the suite on the newest releases the dependency ranges
+# allow, which a fresh install gets, and on the newest AsyncFlow and Academy
+# releases beyond the ranges, so a coming AsyncFlow 0.7 or Academy 2.0 shows up
+# before anyone widens a range. A scheduled failure within the ranges opens an
+# issue; the job beyond the ranges reports without failing the run.
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  within_ranges:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+    steps:
+      - name: Fetch code
+        uses: actions/checkout@v7
+
+      - name: Set up python ${{ matrix.python-version }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.3.1
+        with:
+          enable-cache: true
+          cache-suffix: newest
+
+      - name: Resolve the newest versions within the ranges
+        run: uv lock --upgrade --python ${{ matrix.python-version }}
+
+      - name: "Install dependencies"
+        run: uv sync --frozen --extra dev --python ${{ matrix.python-version }}
+
+      - name: "Show tested versions"
+        run: >-
+          uv run --frozen --python ${{ matrix.python-version }} --extra dev python -c
+          "import importlib.metadata as m; print({p: m.version(p) for p in ('langgraph', 'langgraph-prebuilt', 'langchain-core', 'langchain', 'langchain-openai', 'langchain-ollama', 'pydantic', 'radical-asyncflow', 'academy-py')})"
+
+      - name: Run python tests
+        run: uv run --frozen --python ${{ matrix.python-version }} --extra dev pytest -q tests/
+
+  report:
+    needs: within_ranges
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      # One open issue at a time: a later failure adds a comment to it.
+      - name: Open or update an issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Tests fail on the newest dependency releases"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "Failed again: $RUN_URL"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body \
+              "The weekly run on the newest releases within the dependency ranges failed: $RUN_URL. Its \"Show tested versions\" step lists what it installed. Fix Flowgentic, or narrow the range in pyproject.toml and say why."
+          fi
+
+  beyond_ranges:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Fetch code
+        uses: actions/checkout@v7
+
+      - name: Set up python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.3.1
+        with:
+          enable-cache: true
+          cache-suffix: newest
+
+      - name: "Install dependencies"
+        run: uv sync --frozen --extra dev --python 3.12
+
+      # An override replaces every requirement on a package, Flowgentic's own
+      # range included, so the newest release installs whatever its version.
+      - name: Install the newest AsyncFlow and Academy releases
+        run: |
+          printf 'radical-asyncflow\nacademy-py\n' > "$RUNNER_TEMP/override.txt"
+          uv pip install --python .venv --override "$RUNNER_TEMP/override.txt" \
+            --upgrade-package radical-asyncflow --upgrade-package academy-py \
+            radical-asyncflow academy-py
+
+      - name: "Show tested versions"
+        run: >-
+          uv run --no-sync --python 3.12 python -c
+          "import importlib.metadata as m; print({p: m.version(p) for p in ('radical-asyncflow', 'academy-py')})"
+
+      - name: Run python tests
+        run: uv run --no-sync --python 3.12 pytest -q tests/
