@@ -38,6 +38,14 @@ predate this changelog, so their changes are not listed here.
   repository's latest GitHub release is published (not a pre-release, nor a
   patch to an older line), or by hand for a given release tag, no longer on
   every push to `main`. It stops describing changes that no release contains.
+- CI runs four design-pattern examples, `sequential/research_agent`,
+  `sequential/research_agent_memory`, `supervisor/toy` and
+  `supervisor/product_research`, with a scripted chat model in place of
+  `ChatLLMProvider`, and checks that each completes and writes its report.
+  They need OpenRouter credentials, so CI had never run them. Live runs stay
+  opt-in: `make tests-integration-llm` locally, or the LLM examples workflow,
+  which a maintainer starts by hand on GitHub with the repository secret
+  `OPEN_ROUTER_API_KEY`.
 
 ### Removed
 
