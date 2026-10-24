@@ -53,3 +53,47 @@ def test_default_retryable_exceptions_skip_missing_module(
 
     assert {TimeoutError, ConnectionError, OSError} <= set(retryable)
     assert not any(t.__module__.startswith("aiohttp") for t in retryable)
+
+
+def test_default_retryable_exceptions_skip_broken_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An installed module that fails to import is skipped like a missing one."""
+    real_import = __import__
+
+    def import_with_broken_aiohttp(name: str, *args: object, **kwargs: object):
+        if name == "aiohttp":
+            raise ImportError("aiohttp is installed but cannot be imported")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", import_with_broken_aiohttp)
+
+    retryable = LangraphToolFaultTolerance()._default_retryable_exceptions()
+
+    assert {TimeoutError, ConnectionError, OSError} <= set(retryable)
+
+
+async def test_default_retryable_exceptions_are_computed_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The retry loop works out the default retryable exceptions once."""
+    fault_tolerance = LangraphToolFaultTolerance()
+    calls = 0
+    compute = fault_tolerance._default_retryable_exceptions
+
+    def counting_compute() -> tuple[type, ...]:
+        nonlocal calls
+        calls += 1
+        return compute()
+
+    monkeypatch.setattr(
+        fault_tolerance, "_default_retryable_exceptions", counting_compute
+    )
+
+    for _ in range(3):
+        assert (
+            await fault_tolerance.retry_async(_task, fault_tolerance.default_cfg, "t")
+            == "done"
+        )
+
+    assert calls == 1

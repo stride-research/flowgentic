@@ -3,6 +3,7 @@ from typing import Optional, Tuple, Callable, Any
 import logging
 import asyncio
 import secrets
+from functools import cached_property
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,11 @@ class LangraphToolFaultTolerance:
 	def __init__(self) -> None:
 		self.default_cfg = RetryConfig()
 
+	@cached_property
+	def _default_retryable(self) -> Tuple[type, ...]:
+		"""The default retryable exceptions, worked out once per instance."""
+		return self._default_retryable_exceptions()
+
 	def _default_retryable_exceptions(self) -> Tuple[type, ...]:
 		"""Build a tuple of retryable exception types available in this runtime.
 
@@ -68,7 +74,7 @@ class LangraphToolFaultTolerance:
 					httpx.RemoteProtocolError,
 				]
 			)
-		except ModuleNotFoundError:
+		except ImportError:
 			pass
 		# Try to include aiohttp timeouts if present
 		try:
@@ -80,7 +86,7 @@ class LangraphToolFaultTolerance:
 					aiohttp.ServerTimeoutError,
 				]
 			)
-		except ModuleNotFoundError:
+		except ImportError:
 			pass
 		return tuple(set(ex))
 
@@ -102,7 +108,7 @@ class LangraphToolFaultTolerance:
 		)
 
 		retryable_types: Tuple[type, ...] = (
-			config.retryable_exceptions or self._default_retryable_exceptions()
+			config.retryable_exceptions or self._default_retryable
 		)
 		logger.debug(
 			"Retryable exception types for '%s': %s",
