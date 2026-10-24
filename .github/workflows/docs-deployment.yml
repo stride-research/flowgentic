@@ -50,9 +50,10 @@ jobs:
     if: needs.select.outputs.ref != ''
     runs-on: ubuntu-latest
     steps:
+      # refs/tags/: actions/checkout prefers a branch of the same name.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.select.outputs.ref }}
+          ref: refs/tags/${{ needs.select.outputs.ref }}
       - uses: astral-sh/setup-uv@v10.3.1
         with:
           enable-cache: true
