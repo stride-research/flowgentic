@@ -12,6 +12,7 @@ show the failure each one prevents, and where an action runs.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -19,7 +20,9 @@ from typing import AsyncIterator
 
 import pytest
 
-pytest.importorskip("academy", reason="needs academy-py, from the examples extra")
+# Skip only when academy-py is absent: a broken install must fail, not skip.
+if importlib.util.find_spec("academy") is None:
+    pytest.skip("needs academy-py, from the examples extra", allow_module_level=True)
 
 from academy.agent import Agent, action  # noqa: E402
 from academy.exception import ExchangeClientNotFoundError  # noqa: E402
