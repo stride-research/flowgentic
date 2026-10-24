@@ -9,7 +9,35 @@ predate this changelog, so their changes are not listed here.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `import flowgentic` configures nothing. It used to set the root
+  logger to DEBUG, add a handler that printed every record to stdout, start a
+  thread and register an `atexit` hook; in test runs, that handler wrote to
+  streams the runner had closed. The `flowgentic` logger now has no handler:
+  without configuration, warnings and errors reach stderr through Python's
+  last-resort handler, and the rest is the application's. To get Flowgentic's
+  records back, call `flowgentic.configure_logging()`, which prints them in
+  plain text to stderr; see
+  [Logging](https://stride-research.github.io/flowgentic/features/logging/).
+- Log records follow a level contract: DEBUG for per-call detail, INFO for
+  lifecycle events, WARNING for retries, degraded results and refused requests,
+  ERROR for failures. Per-call records that were INFO are DEBUG, such as the
+  retry loop's "Successfully completed … on attempt 1"; the loop logs one
+  WARNING for each attempt it retries and one ERROR for the attempt that ends
+  the call. `MutableGraph`'s refusals, which return `False`, are WARNING. No
+  record carries prompts, model outputs, message lists or graph states, at any
+  level. Records use lazy `%`-style arguments, and CI checks it.
+- **Breaking:** `generate_execution_artifacts` takes `output_dir`, the
+  directory for the report and the graph image, by default
+  `agent_execution_results/` beside the calling file, as before.
+  `GraphIntrospector.generate_report(directory)` and `render_graph` write into
+  the directory they are given, no longer into its `agent_execution_results/`
+  subdirectory.
+
 ### Removed
+
+Nobody uses Flowgentic yet, so these go without a deprecation period.
 
 - **Breaking:** `flowgentic.academy` (`AcademyIntegration`) and its two
   examples. In 0.3 it could not run an Academy action through AsyncFlow: every
@@ -23,6 +51,18 @@ predate this changelog, so their changes are not listed here.
   on HPC resources belongs to RADICAL's execution layer, and an agent that
   drives the workflow to ADR. Flowgentic no longer depends on academy-py; the
   `examples` extra brings `academy-py>=1.0,<2` for the example.
+- The settings file: `config.yml`, looked up at import in the working
+  directory, `~/.flowgentic/`, the file named by `FLOWGENTIC_CONFIG` and the
+  source tree, and the `flowgentic.settings` module. An unrelated `config.yml`
+  in the working directory made `import flowgentic` fail with `KeyError`, and
+  the file held only the log level, now the application's, and the report's
+  paths, now `output_dir`.
+- `flowgentic.utils.Logger`, its colored and JSON formatters, the base64
+  redaction filter and `flowgentic.utils.add_context_to_log`. Use
+  `flowgentic.configure_logging()` or the application's own logging
+  configuration; OpenTelemetry's logging instrumentation adds trace and span
+  ids to every record.
+- The `pyyaml` and `python-json-logger` dependencies.
 
 ### Fixed
 

@@ -227,15 +227,10 @@ def reset_demo_state() -> None:
 
 
 def configure_logging(level: int = logging.WARNING) -> None:
-    """Keep the default live-demo output compact."""
-    logging.getLogger().setLevel(level)
-    for logger_name in (
-        "asyncio",
-        "flowgentic",
-        "radical.adr",
-        "radical.asyncflow",
-    ):
-        logging.getLogger(logger_name).setLevel(level)
+    """Print warnings, or every record with ``--verbose``, as an application does."""
+    logging.basicConfig(
+        level=level, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
 
 
 def print_cycle(state: dict[str, Any], controller: str) -> None:

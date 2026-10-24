@@ -12,7 +12,6 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
-import logging
 import subprocess
 import sys
 from collections import Counter
@@ -45,16 +44,6 @@ REPORT = Path("agent_execution_results") / "execution_summary.md"
 
 if str(DEMO_DIR) not in sys.path:
     sys.path.insert(0, str(DEMO_DIR))
-
-
-@pytest.fixture(autouse=True, scope="module")
-def restore_logging_levels() -> Any:
-    """Undo the runner's import-time ``configure_logging()`` after this module."""
-    names = ("", "asyncio", "flowgentic", "radical.adr", "radical.asyncflow")
-    levels = {name: logging.getLogger(name).level for name in names}
-    yield
-    for name, level in levels.items():
-        logging.getLogger(name).setLevel(level)
 
 
 def demo(module: str) -> ModuleType:
@@ -370,7 +359,7 @@ async def test_flowgentic_report_works_without_the_adapter(
     introspector._all_nodes = nodes
     introspector._final_state = state
     (tmp_path / REPORT).parent.mkdir(parents=True)
-    introspector.generate_report(str(tmp_path))
+    introspector.generate_report(str((tmp_path / REPORT).parent))
 
     report = (tmp_path / REPORT).read_text()
     assert all(f"Total:{node}" in report for node in nodes)

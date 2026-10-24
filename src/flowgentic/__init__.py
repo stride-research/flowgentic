@@ -1,8 +1,3 @@
-from .utils import Logger
+from ._logging import configure_logging
 
-from .settings.extract_settings import APP_SETTINGS
-
-logger_level = APP_SETTINGS["logger"]["level"]
-logger_instance = Logger(
-	colorful_output=True, logger_level=logger_level
-)  # Initiating logger
+__all__ = ["configure_logging"]

@@ -22,6 +22,7 @@ import uuid
 from abc import abstractmethod
 from fileinput import filename
 from functools import wraps
+from pathlib import Path
 from typing import (
 	Annotated,
 	Any,
@@ -69,14 +70,13 @@ class LangraphIntegration:
 		Using its public interface here also avoids coupling Flowgentic to backend
 		base classes that differ between AsyncFlow releases.
 		"""
-		logger.info(
-			f"Initializing LangGraphIntegration with backend: {type(backend).__name__}"
+		logger.debug(
+			"Creating the LangGraph integration over %s", type(backend).__name__
 		)
 		self.backend = backend
 		self.agent_introspector = GraphIntrospector()
 
 	async def __aenter__(self):
-		logger.info("Creating WorkflowEngine for LangGraphIntegration")
 		self.flow = await WorkflowEngine.create(backend=self.backend)
 		self.execution_wrappers: ExecutionWrappersLangraph = ExecutionWrappersLangraph(
 			flow=self.flow, instrospector=self.agent_introspector
@@ -84,18 +84,17 @@ class LangraphIntegration:
 		self.utils: LangraphUtils = LangraphUtils()
 		self.memory_manager: LangraphMemoryManager = LangraphMemoryManager()
 
-		logger.info("WorkflowEngine created successfully")
+		logger.info("Started the LangGraph integration's WorkflowEngine")
 		return self
 
 	async def __aexit__(self, exc_type, exc, tb):
-		logger.info("Shutting down WorkflowEngine")
 		if exc_type:
 			logger.warning(
-				f"Exception occurred during context manager: {exc_type.__name__}: {exc}"
+				"Shutting down the WorkflowEngine after %s: %s", exc_type.__name__, exc
 			)
 		if self.flow:
 			await self.flow.shutdown()
-		logger.info("WorkflowEngine shutdown complete")
+		logger.info("Shut down the LangGraph integration's WorkflowEngine")
 
 	async def generate_execution_artifacts(
 		self,
@@ -103,33 +102,30 @@ class LangraphIntegration:
 		caller_file_path: str,
 		final_state: Dict or BaseModel,
 		generate_report: bool = True,
+		output_dir: str | Path | None = None,
 	) -> None:
 		"""
 		Facade method to generate all execution artifacts (directories, reports, and graph).
 
 		Args:
 		    app: The compiled LangGraph StateGraph
-		    caller_file_path: The __file__ path from the calling script (used to determine output directory)
+		    caller_file_path: The __file__ path from the calling script
 		    final_state: The graph's final state, recorded in the report
 		    generate_report: Whether to write the execution report
+		    output_dir: The directory for the report and the graph image.
+		        Defaults to ``agent_execution_results`` beside ``caller_file_path``.
 
 		Example:
 		    await agents_manager.generate_execution_artifacts(app, __file__)
 		"""
-		import pathlib
-
 		self.agent_introspector._final_state = final_state
-		logger.debug(f"FINAL STATE IS: {self.agent_introspector._final_state}")
-		logger.debug(f"FINAL STATE IS: {final_state}")
 
-		current_directory = str(pathlib.Path(caller_file_path).parent.resolve())
+		if output_dir is None:
+			output_dir = Path(caller_file_path).parent / "agent_execution_results"
+		output_dir = Path(output_dir).resolve()
+		output_dir.mkdir(parents=True, exist_ok=True)
 
-		# Create output directories
-		self.utils.create_output_results_dirs(current_directory)
-
-		# Generate execution report
 		if generate_report:
-			self.agent_introspector.generate_report(dir_to_write=current_directory)
+			self.agent_introspector.generate_report(dir_to_write=str(output_dir))
 
-		# Render graph visualization
-		await self.utils.render_graph(app, dir_to_write=current_directory)
+		await self.utils.render_graph(app, dir_to_write=str(output_dir))

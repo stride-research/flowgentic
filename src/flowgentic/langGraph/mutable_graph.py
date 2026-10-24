@@ -43,7 +43,7 @@ class MutableGraph(ABC):
 			agents_manager: LangraphIntegration instance for AsyncFlow execution
 			initial_active_nodes: List of node names to start with (validates that nodes exist)
 		"""
-		logger.info("🚀 Initializing MutableGraph")
+		logger.debug("Creating a MutableGraph")
 		self.agents_manager = agents_manager
 		self.available_nodes: Dict[str, Callable] = {}
 		self.active_node_names: List[str] = []
@@ -62,8 +62,10 @@ class MutableGraph(ABC):
 				f"Available: {list(self.available_nodes.keys())}"
 			)
 		self.active_node_names = initial_active_nodes.copy()
-		logger.info(
-			f"✅ Activated {len(self.active_node_names)} nodes: {self.active_node_names}"
+		logger.debug(
+			"Activated %d nodes: %s",
+			len(self.active_node_names),
+			self.active_node_names,
 		)
 
 	@abstractmethod
@@ -106,10 +108,10 @@ class MutableGraph(ABC):
 		1. _add_nodes(): Add all active nodes to the workflow
 		2. _add_edges(): Connect nodes with edges (can be overridden)
 		"""
-		logger.info(f"🔄 Rebuilding graph with nodes: {self.active_node_names}")
+		logger.debug("Rebuilding the graph with nodes %s", self.active_node_names)
 
 		if not self.active_node_names:
-			logger.warning("⚠️  No active nodes to build graph")
+			logger.warning("No active nodes to build the graph from")
 			self.graph = None
 			return
 
@@ -125,9 +127,7 @@ class MutableGraph(ABC):
 
 		# Compile the graph
 		self.graph = workflow.compile()
-		logger.info(
-			f"✅ Graph rebuilt successfully with {len(self.active_node_names)} nodes"
-		)
+		logger.debug("Rebuilt the graph with %d nodes", len(self.active_node_names))
 
 	def _add_nodes(self, workflow: StateGraph) -> None:
 		"""
@@ -141,14 +141,14 @@ class MutableGraph(ABC):
 		for node_name in self.active_node_names:
 			if node_name in self.available_nodes:
 				workflow.add_node(node_name, self.available_nodes[node_name])
-				logger.debug(f"  ➕ Added node: {node_name}")
+				logger.debug("Added node %s", node_name)
 			else:
-				logger.error(f"❌ Node {node_name} not found in available nodes")
+				logger.error("Node %s is not registered; leaving it out", node_name)
 
 		# Set entry point to first node
 		if self.active_node_names:
 			workflow.set_entry_point(self.active_node_names[0])
-			logger.debug(f"  🚪 Entry point: {self.active_node_names[0]}")
+			logger.debug("Entry point: %s", self.active_node_names[0])
 
 	def _add_edges(self, workflow: StateGraph) -> None:
 		"""
@@ -174,12 +174,12 @@ class MutableGraph(ABC):
 			if i == len(self.active_node_names) - 1:
 				# Last node connects to END
 				workflow.add_edge(node_name, END)
-				logger.debug(f"  🏁 {node_name} -> END")
+				logger.debug("Edge %s -> END", node_name)
 			else:
 				# Connect to next node
 				next_node = self.active_node_names[i + 1]
 				workflow.add_edge(node_name, next_node)
-				logger.debug(f"  ➡️  {node_name} -> {next_node}")
+				logger.debug("Edge %s -> %s", node_name, next_node)
 
 	def register_node(self, node_name: str, node_function: Callable) -> bool:
 		"""
@@ -196,11 +196,11 @@ class MutableGraph(ABC):
 			True if successful, False if node already exists
 		"""
 		if node_name in self.available_nodes:
-			logger.warning(f"⚠️  Node '{node_name}' already registered, skipping")
+			logger.warning("Node '%s' is already registered; skipping it", node_name)
 			return False
 
 		self.available_nodes[node_name] = node_function
-		logger.info(f"✅ Registered new node: '{node_name}'")
+		logger.debug("Registered node '%s'", node_name)
 		return True
 
 	async def expand_graph(self, new_node: str, position: Optional[int] = None) -> bool:
@@ -217,32 +217,34 @@ class MutableGraph(ABC):
 		Returns:
 			True if successful, False otherwise
 		"""
-		logger.info(
-			f"➕ EXPAND: Adding node '{new_node}' at position "
-			f"{position if position is not None else 'end'}"
+		logger.debug(
+			"Expanding the graph with node '%s' at position %s",
+			new_node,
+			"end" if position is None else position,
 		)
 
 		if new_node not in self.available_nodes:
-			logger.error(
-				f"❌ Node '{new_node}' not available. "
-				f"Available: {list(self.available_nodes.keys())}"
+			logger.warning(
+				"Cannot add node '%s': it is not registered (registered: %s)",
+				new_node,
+				list(self.available_nodes),
 			)
 			return False
 
 		if new_node in self.active_node_names:
-			logger.warning(f"⚠️  Node '{new_node}' already in graph")
+			logger.warning("Cannot add node '%s': it is already in the graph", new_node)
 			return False
 
 		# Add node at specified position
 		if position is None:
 			self.active_node_names.append(new_node)
-			logger.debug(f"  Appended '{new_node}' to end")
+			logger.debug("Appended '%s' to the end", new_node)
 		else:
 			self.active_node_names.insert(position, new_node)
-			logger.debug(f"  Inserted '{new_node}' at position {position}")
+			logger.debug("Inserted '%s' at position %d", new_node, position)
 
 		await self.rebuild_graph()
-		logger.info(f"✅ EXPAND Complete: {self.active_node_names}")
+		logger.debug("Expanded the graph to %s", self.active_node_names)
 		return True
 
 	async def reduce_graph(self, node_to_remove: str) -> bool:
@@ -255,17 +257,19 @@ class MutableGraph(ABC):
 		Returns:
 			True if successful, False otherwise
 		"""
-		logger.info(f"➖ REDUCE: Removing node '{node_to_remove}'")
+		logger.debug("Reducing the graph by node '%s'", node_to_remove)
 
 		if node_to_remove not in self.active_node_names:
-			logger.error(f"❌ Node '{node_to_remove}' not in active graph")
+			logger.warning(
+				"Cannot remove node '%s': it is not in the graph", node_to_remove
+			)
 			return False
 
 		self.active_node_names.remove(node_to_remove)
-		logger.debug(f"  Removed '{node_to_remove}' from active nodes")
+		logger.debug("Removed '%s' from the active nodes", node_to_remove)
 
 		await self.rebuild_graph()
-		logger.info(f"✅ REDUCE Complete: {self.active_node_names}")
+		logger.debug("Reduced the graph to %s", self.active_node_names)
 		return True
 
 	async def update_graph(self, old_node: str, new_node: str) -> bool:
@@ -279,26 +283,30 @@ class MutableGraph(ABC):
 		Returns:
 			True if successful, False otherwise
 		"""
-		logger.info(f"🔄 UPDATE: Replacing '{old_node}' with '{new_node}'")
+		logger.debug("Updating the graph: replacing '%s' with '%s'", old_node, new_node)
 
 		if old_node not in self.active_node_names:
-			logger.error(f"❌ Node '{old_node}' not in active graph")
+			logger.warning("Cannot replace node '%s': it is not in the graph", old_node)
 			return False
 
 		if new_node not in self.available_nodes:
-			logger.error(f"❌ Node '{new_node}' not available")
+			logger.warning(
+				"Cannot replace with node '%s': it is not registered", new_node
+			)
 			return False
 
 		if new_node != old_node and new_node in self.active_node_names:
-			logger.warning(f"⚠️  Node '{new_node}' already in graph")
+			logger.warning(
+				"Cannot replace with node '%s': it is already in the graph", new_node
+			)
 			return False
 
 		idx = self.active_node_names.index(old_node)
 		self.active_node_names[idx] = new_node
-		logger.debug(f"  Replaced '{old_node}' with '{new_node}' at index {idx}")
+		logger.debug("Replaced '%s' with '%s' at index %d", old_node, new_node, idx)
 
 		await self.rebuild_graph()
-		logger.info(f"✅ UPDATE Complete: {self.active_node_names}")
+		logger.debug("Updated the graph to %s", self.active_node_names)
 		return True
 
 	async def run(
@@ -314,13 +322,13 @@ class MutableGraph(ABC):
 			Final state after execution
 		"""
 		if not self.graph:
-			logger.error("❌ No graph to run - call rebuild_graph() first")
+			logger.warning("No graph to run: call rebuild_graph() first")
 			return None
 
-		logger.info(f"▶️  Executing graph: {' -> '.join(self.active_node_names)}")
+		logger.debug("Running the graph %s", self.active_node_names)
 
 		# Execute graph
 		result = await self.graph.ainvoke(initial_state or {})
 
-		logger.info(f"✅ Execution complete!")
+		logger.debug("Graph run complete")
 		return result

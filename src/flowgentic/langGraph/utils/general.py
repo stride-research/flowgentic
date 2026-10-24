@@ -8,7 +8,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langgraph.graph.state import CompiledStateGraph
 from flowgentic.langGraph.execution_wrappers import BaseLLMAgentState
-from flowgentic.settings.extract_settings import APP_SETTINGS
+from flowgentic.utils.telemetry.report_generator import GRAPH_IMAGE, REPORT_FILE
 
 
 logger = logging.getLogger(__name__)
@@ -23,20 +23,12 @@ class LangraphUtils:
 		app: CompiledStateGraph, dir_to_write: str, generate_graph_only: bool = False
 	):
 		"""
-		Renders a graph visualization and prepends it to a Markdown report.
+		Renders a graph visualization into dir_to_write and prepends it to the
+		Markdown report there.
 		"""
-		# Use os.path.join to ensure correct path construction
-		report_output_path = (
-			dir_to_write
-			+ "/"
-			+ APP_SETTINGS["agent_execution"]["execution_summary_path"]
-		)
-		image_output_path = (
-			dir_to_write + "/" + APP_SETTINGS["agent_execution"]["graph_image_path"]
-		)
-
-		# Extract the relative image path for Markdown
-		image_name = os.path.basename(image_output_path)
+		report_output_path = os.path.join(dir_to_write, REPORT_FILE)
+		image_output_path = os.path.join(dir_to_write, GRAPH_IMAGE)
+		image_name = GRAPH_IMAGE
 
 		if not generate_graph_only:
 			try:
@@ -55,8 +47,6 @@ class LangraphUtils:
 					f.write(new_content + existing_content)
 
 			except Exception as e:
-				print(f"Error rendering graph or writing to file: {e}")
-
-	def create_output_results_dirs(self, current_directory):
-		results_directory = APP_SETTINGS["agent_execution"]["results_directory"]
-		os.makedirs(current_directory + "/" + results_directory, exist_ok=True)
+				logger.warning(
+					"Could not render the graph into %s: %s", dir_to_write, e
+				)

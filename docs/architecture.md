@@ -39,8 +39,7 @@ flowchart LR
 | `flowgentic.langGraph.base_components` | `BaseToolRegistry`: a base class that registers an application's tools and tasks by name |
 | `flowgentic.utils.telemetry` | `GraphIntrospector` and the Markdown node report |
 | `flowgentic.utils.llm_providers` | `ChatLLMProvider`: OpenRouter, OpenAI and Ollama chat models |
-| `flowgentic.utils.logger` | `Logger`: at import, Flowgentic adds a handler to the root logger that prints colored records to stdout (JSON with `colorful_output=False`) |
-| `flowgentic.settings` | Loads `config.yml` at import; see [Telemetry](features/telemetry.md#write-the-report) |
+| `flowgentic` | `configure_logging`: prints Flowgentic's log records, which import leaves to the application; see [Logging](features/logging.md) |
 
 Academy agents' actions run in AsyncFlow tasks without a Flowgentic module:
 see [Academy actions as AsyncFlow tasks](guides/academy-on-asyncflow.md).

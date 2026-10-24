@@ -313,8 +313,12 @@ Summary:"""
 					f"Previous conversation summary: {content_str.strip()}"
 				)
 				return AIMessage(content=summary_content)
-		except Exception:
-			logger.debug(f"LLM invokation failed")
+		except Exception as exc:
+			logger.warning(
+				"Summarizing old messages failed (%s: %s); trimming without a summary",
+				type(exc).__name__,
+				exc,
+			)
 
 		return None
 
@@ -645,8 +649,9 @@ class LangraphMemoryManager:
 		self.config = config or MemoryConfig()
 		self.llm = llm
 		self._memory_manager: Optional[MemoryManager] = None
-		logger.info(
-			f"Initialized LangraphMemoryManager with strategy: {self.config.short_term_strategy}"
+		logger.debug(
+			"Created LangraphMemoryManager with strategy %s",
+			self.config.short_term_strategy,
 		)
 
 	def _get_memory_manager(self) -> MemoryManager:
@@ -673,7 +678,7 @@ class LangraphMemoryManager:
 		    Dictionary with memory statistics and operation results
 		"""
 		logger.debug(
-			f"Adding interaction for user '{user_id}' with {len(messages)} messages"
+			"Adding interaction for user '%s' with %d messages", user_id, len(messages)
 		)
 		memory_manager = self._get_memory_manager()
 		return await memory_manager.add_interaction(user_id, messages, metadata)
@@ -690,7 +695,7 @@ class LangraphMemoryManager:
 		Returns:
 		    Dictionary containing relevant context and memory statistics
 		"""
-		logger.debug(f"Getting relevant context for user '{user_id}'")
+		logger.debug("Getting relevant context for user '%s'", user_id)
 		memory_manager = self._get_memory_manager()
 		return await memory_manager.get_relevant_context(user_id, query)
 
@@ -734,8 +739,8 @@ class LangraphMemoryManager:
 		Args:
 		    config: New memory configuration to apply
 		"""
-		logger.info(
-			f"Updating memory configuration to strategy: {config.short_term_strategy}"
+		logger.debug(
+			"Updating memory configuration to strategy %s", config.short_term_strategy
 		)
 		self.config = config
 		# Force recreation of memory manager with new config

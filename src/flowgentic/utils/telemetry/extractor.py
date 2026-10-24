@@ -38,7 +38,8 @@ class Extractor:
 			before_dict = before_state
 		else:
 			logger.warning(
-				f"State before is neither Pydantic nor dict: {type(before_state)}"
+				"State before is neither Pydantic nor dict: %s",
+				type(before_state).__name__,
 			)
 			return diff
 
@@ -48,7 +49,8 @@ class Extractor:
 			after_dict = after_state
 		else:
 			logger.warning(
-				f"State after is neither Pydantic nor dict: {type(after_state)}"
+				"State after is neither Pydantic nor dict: %s",
+				type(after_state).__name__,
 			)
 			return diff
 
@@ -102,7 +104,7 @@ class Extractor:
 	def _extract_token_usage(self, message: AIMessage) -> Optional[TokenUsage]:
 		"""Extract token usage information from message metadata."""
 		if not isinstance(message, AIMessage):
-			logger.warning("Mesage passed is not instance of AI Message")
+			logger.warning("Message is not an AIMessage: %s", type(message).__name__)
 			return
 
 		usage = message.usage_metadata
@@ -119,14 +121,13 @@ class Extractor:
 			)
 		else:
 			logger.warning(
-				f"usage metadata attribute in message should be a dict. Instead is: {type(usage)}"
+				"Message usage_metadata should be a dict, not %s", type(usage).__name__
 			)
 
 	def _extract_model_metadata(self, message: AIMessage) -> Optional[ModelMetadata]:
 		"""Extract model metadata from message."""
 
 		metadata = message.response_metadata
-		logger.debug(f"Message metadata is: {metadata}")
 		if isinstance(metadata, dict):
 			return ModelMetadata(
 				model_name=metadata.get("model_name"),
@@ -146,7 +147,7 @@ class Extractor:
 		end_time,
 		node_func: callable,
 	):
-		logger.debug(f"Extracting final state for node with name: {node_name}")
+		logger.debug("Extracting the final state of node %s", node_name)
 		# Handle both Pydantic models and dicts
 		if hasattr(state_after, "messages"):
 			messages_after = state_after.messages
@@ -157,10 +158,10 @@ class Extractor:
 				messages_after = []
 		else:
 			logger.warning(
-				f"State after doesn't have messages attribute/key: {type(state_after)}"
+				"State after has no messages attribute or key: %s",
+				type(state_after).__name__,
 			)
 			return
-		logger.debug(f"Messages is: {messages_after}")
 
 		total_messages_after = (
 			len(messages_after) if isinstance(messages_after, list) else 0
@@ -214,7 +215,9 @@ class Extractor:
 						tool_call_id = tc.get("id")
 						raw_arguments = tc.get("args") or ""
 						logger.warning(
-							f"Failed to parse tool arguments for '{tool_name}' (call_id: {tool_call_id}): {tc.get('error')}"
+							"Could not parse the arguments of tool call %s to '%s'",
+							tool_call_id,
+							tool_name,
 						)
 						tool_calls_info.append(
 							ToolCallInfo(
@@ -241,9 +244,8 @@ class Extractor:
 
 					if model_metadata is None:
 						model_metadata = self._extract_model_metadata(msg)
-						logger.debug(f"Model metadata has been extracted")
+						logger.debug("Extracted the model metadata")
 				elif isinstance(msg, ToolMessage):
-					logger.debug(f"DICT OF TOOL MESSAGE IS: {msg.__dict__}")
 					tool_name = msg.name
 					tool_status = msg.status
 					tool_call_id = msg.tool_call_id
@@ -264,7 +266,8 @@ class Extractor:
 			state_keys = list(state_after.keys())
 		else:
 			logger.warning(
-				f"State is neither Pydantic model nor dict. Type: {type(state_after)}"
+				"State is neither Pydantic model nor dict: %s",
+				type(state_after).__name__,
 			)
 			state_keys = []
 

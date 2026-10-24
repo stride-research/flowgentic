@@ -6,11 +6,13 @@ from typing import Any, Dict, List
 
 from pydantic import BaseModel
 
-from flowgentic.settings.extract_settings import APP_SETTINGS
 
 from .schemas import GraphExecutionReport, NodeExecutionRecord
 
 logger = logging.getLogger(__name__)
+
+REPORT_FILE = "execution_summary.md"
+GRAPH_IMAGE = "agent_graph.png"
 
 
 class ReportGenerator:
@@ -63,7 +65,9 @@ class ReportGenerator:
 				self.categorized_records[matched_node].append(cleaned_record_value)
 			else:
 				logger.warning(
-					f"Could not match record key '{record_key}' to any node in {all_nodes}"
+					"Could not match record key '%s' to any node in %s",
+					record_key,
+					all_nodes,
 				)
 
 		return self.categorized_records
@@ -198,9 +202,9 @@ class ReportGenerator:
 				final_state_dict = self._final_state
 			else:
 				logger.warning(
-					f"Final state: {self._final_state} with type: {type(self._final_state)} cant be accesed for attribute extraction"
+					"Cannot read attributes from a final state of type %s",
+					type(self._final_state).__name__,
 				)
-		logger.debug(f"Final state 123123 is: {final_state_dict}")
 
 		report_data = GraphExecutionReport(
 			graph_start_time=self._start_time,
@@ -216,11 +220,7 @@ class ReportGenerator:
 			total_messages=total_messages,
 			models_used=models_used,
 		)
-		output_path = (
-			dir_to_write
-			+ "/"
-			+ APP_SETTINGS["agent_execution"]["execution_summary_path"]
-		)
+		output_path = os.path.join(dir_to_write, REPORT_FILE)
 		with open(output_path, "w", encoding="utf-8") as f:
 			f.write(f"# LangGraph Execution Report\n\n")
 			f.write(
@@ -258,7 +258,7 @@ class ReportGenerator:
 				node_category_tools = 0
 				node_category_messages = 0
 				logger.debug(
-					f"Node name is: {node_name}, list to search in is: {list(self._records.keys())}"
+					"Looking up node %s in records %s", node_name, list(self._records)
 				)
 				if self._node_was_visited(node_name):
 					records: List[NodeExecutionRecord] = self.categorized_records[
@@ -480,4 +480,4 @@ class ReportGenerator:
 
 				# Show summary of final state
 
-		logger.info("Introspection report saved to '%s'", dir_to_write)
+		logger.info("Wrote the execution report to %s", output_path)

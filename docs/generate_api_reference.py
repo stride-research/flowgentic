@@ -11,8 +11,9 @@ package_dir = src / "flowgentic"
 
 
 def should_skip_file(path):
-	"""Check if we should skip this file."""
-	return path.name == "__main__.py" or "__pycache__" in str(path)
+	"""Skip __main__, caches and private modules, which their package documents."""
+	private = path.name.startswith("_") and path.name != "__init__.py"
+	return private or "__pycache__" in str(path)
 
 
 # Process regular Python files (not __init__.py)

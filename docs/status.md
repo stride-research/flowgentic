@@ -41,8 +41,6 @@ for the Academy example.
 
 ## Known limitations
 
-- DEBUG logging is on by default, and `config.yml` is looked up in the working
-  directory at import.
 - ADR mode is not supported. The demos' `--controller adr` needs an ADR source
   checkout (`ADR_SRC`), because ADR is not released.
 - Not validated: using an engine that the caller creates (the integration

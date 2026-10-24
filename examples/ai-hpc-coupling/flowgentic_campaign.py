@@ -24,9 +24,6 @@ from demo_support import (
 
 from flowgentic.langGraph.main import LangraphIntegration
 
-# Apply this before ``asyncio.run`` so selector startup stays out of the demo.
-configure_logging()
-
 
 async def run(args: argparse.Namespace) -> int:
     configure_logging(logging.DEBUG if args.verbose else logging.WARNING)
@@ -68,9 +65,10 @@ async def run(args: argparse.Namespace) -> int:
             )
 
         output_dir = Path(args.output_dir).resolve()
-        (output_dir / "agent_execution_results").mkdir(parents=True, exist_ok=True)
+        results_dir = output_dir / "agent_execution_results"
+        results_dir.mkdir(parents=True, exist_ok=True)
         integration.agent_introspector._final_state = state
-        integration.agent_introspector.generate_report(str(output_dir))
+        integration.agent_introspector.generate_report(str(results_dir))
         summary_path = write_summary(
             output_dir,
             state,
