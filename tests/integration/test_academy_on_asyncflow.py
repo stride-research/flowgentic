@@ -93,9 +93,12 @@ async def test_bound_handle_on_the_worker_loop_waits_for_that_loop_to_wake(
     With academy-py 1.0, the agent answers at once, but the reply reaches the
     worker thread's loop without waking it: the call returns only when
     something else wakes that loop, here a timer, and with nothing to wake it,
-    never. The ``wait_for`` bound is only a backstop against a hang.
+    never. The same call hopped to the manager's loop returns at once, so the
+    delay comes from the worker's loop, not from Academy. The ``wait_for``
+    bound is only a backstop against a hang.
     """
     wake_after = 1.0
+    loop = asyncio.get_running_loop()
     async with await manager() as academy:
         launched = await academy.launch(Counter)
         handle = Handle(
@@ -104,14 +107,20 @@ async def test_bound_handle_on_the_worker_loop_waits_for_that_loop_to_wake(
         await handle.ping()
 
         @flow.function_task
-        async def timed_get_count() -> tuple[int, float]:
+        async def timed_get_counts() -> tuple[float, int, float]:
+            start = time.perf_counter()
+            hop = asyncio.run_coroutine_threadsafe(handle.get_count(), loop)
+            await asyncio.wrap_future(hop)
+            hopped = time.perf_counter() - start
+
             asyncio.get_running_loop().call_later(wake_after, lambda: None)
             start = time.perf_counter()
             count = await asyncio.wait_for(handle.get_count(), 10 * wake_after)
-            return count, time.perf_counter() - start
+            return hopped, count, time.perf_counter() - start
 
-        count, elapsed = await timed_get_count()
+        hopped, count, elapsed = await timed_get_counts()
 
+    assert hopped < wake_after / 2
     assert count == 0
     assert elapsed >= wake_after * 0.9, (
         "The worker's loop no longer waits to be woken: Academy may now deliver "
