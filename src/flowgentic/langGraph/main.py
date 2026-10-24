@@ -43,8 +43,8 @@ from langgraph.graph import END, START, StateGraph, add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel, Field
-from radical.asyncflow import WorkflowEngine
 
+from flowgentic import _asyncflow
 from flowgentic.langGraph.execution_wrappers import ExecutionWrappersLangraph
 from flowgentic.langGraph.memory import (
 	LangraphMemoryManager,
@@ -78,7 +78,7 @@ class LangraphIntegration:
 		self.agent_introspector = GraphIntrospector()
 
 	async def __aenter__(self):
-		self.flow = await WorkflowEngine.create(backend=self.backend)
+		self.flow = await _asyncflow.open_engine(self.backend)
 		self.execution_wrappers: ExecutionWrappersLangraph = ExecutionWrappersLangraph(
 			flow=self.flow, instrospector=self.agent_introspector
 		)
@@ -94,7 +94,7 @@ class LangraphIntegration:
 				"Shutting down the WorkflowEngine after %s: %s", exc_type.__name__, exc
 			)
 		if self.flow:
-			await self.flow.shutdown()
+			await _asyncflow.close_engine(self.flow)
 		logger.info("Shut down the LangGraph integration's WorkflowEngine")
 
 	async def generate_execution_artifacts(

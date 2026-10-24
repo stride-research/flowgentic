@@ -11,9 +11,12 @@ from __future__ import annotations
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
-from radical.asyncflow import WorkflowEngine
+from flowgentic import _asyncflow
+
+if TYPE_CHECKING:
+	from radical.asyncflow import WorkflowEngine
 
 
 class ModelDumpable(Protocol):
@@ -87,7 +90,7 @@ def bind_agent(
 		}
 
 	invoke_agent.__name__ = f"agent_{identity.replace('-', '_')}"
-	submit = flow.function_task(invoke_agent, backend=backend)
+	submit = _asyncflow.task(flow, invoke_agent, backend=backend)
 	return AgentTask(identity, framework, backend, submit)
 
 

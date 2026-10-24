@@ -18,7 +18,17 @@ TBD:
 from abc import abstractmethod
 from fileinput import filename
 from functools import wraps
-from typing import Annotated, Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import (
+	TYPE_CHECKING,
+	Annotated,
+	Any,
+	Callable,
+	Dict,
+	List,
+	Optional,
+	Sequence,
+	Tuple,
+)
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -26,12 +36,15 @@ from langchain_core.tools import BaseTool, tool
 from langgraph.graph import add_messages
 from langgraph.types import Send
 from pydantic import BaseModel, Field
-from radical.asyncflow import WorkflowEngine
 
+from flowgentic import _asyncflow
 from flowgentic.utils.llm_providers import ChatLLMProvider
 from flowgentic.utils.telemetry.introspection import GraphIntrospector
 
 from .fault_tolerance import LangraphToolFaultTolerance, RetryConfig
+
+if TYPE_CHECKING:
+	from radical.asyncflow import WorkflowEngine
 
 """
 Enhanced LangGraph Integration supporting both traditional workflow patterns and React agents.
@@ -83,7 +96,9 @@ class ExecutionWrappersLangraph:
 	with supervisor patterns and parallel execution.
 	"""
 
-	def __init__(self, flow: WorkflowEngine, instrospector: GraphIntrospector) -> None:
+	def __init__(
+		self, flow: "WorkflowEngine", instrospector: GraphIntrospector
+	) -> None:
 		self.flow = flow
 		self.fault_tolerance_mechanism = LangraphToolFaultTolerance()
 		self.react_agents: Dict[str, Any] = {}
@@ -126,19 +141,14 @@ class ExecutionWrappersLangraph:
 				)
 
 			if flow_type == AsyncFlowType.EXECUTION_BLOCK:
-				asyncflow_func = self.flow.block(f)  # Use block decorator
+				asyncflow_func = _asyncflow.block(self.flow, f)
 			elif flow_type == AsyncFlowType.SERVICE_TASK:
-				asyncflow_func = self.flow.function_task(
-					f,
-					service=True,
-					backend=backend,
-					capture_stdio=capture_stdio,
+				asyncflow_func = _asyncflow.service(
+					self.flow, f, backend=backend, capture_stdio=capture_stdio
 				)
 			else:
-				asyncflow_func = self.flow.function_task(
-					f,
-					backend=backend,
-					capture_stdio=capture_stdio,
+				asyncflow_func = _asyncflow.task(
+					self.flow, f, backend=backend, capture_stdio=capture_stdio
 				)
 
 			retry_cfg = retry or self.fault_tolerance_mechanism.default_cfg
@@ -261,7 +271,7 @@ class ExecutionWrappersLangraph:
 				graph=Command.PARENT,
 			)
 
-		asyncflow_func = self.flow.function_task(_handoff_task)
+		asyncflow_func = _asyncflow.task(self.flow, _handoff_task)
 
 		@tool(name, description=description)
 		async def handoff_tool(
