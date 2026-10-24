@@ -256,6 +256,24 @@ async def test_supervisor_toy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert report(copy).is_file()
 
 
+async def test_supervisor_toy_raises_the_graph_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider = scripted_provider(
+        tool_args={
+            "RoutingDecision": {
+                "routing_decision": [],
+                "routing_rationale": "No agent fits the query.",
+            }
+        }
+    )
+
+    with pytest.raises(ValueError, match="Empty routing decision"):
+        await run_example(
+            "supervisor/toy", "main", ["main"], provider, tmp_path, monkeypatch
+        )
+
+
 async def test_supervisor_product_research(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
