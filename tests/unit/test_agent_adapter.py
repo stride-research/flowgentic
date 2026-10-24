@@ -28,6 +28,7 @@ class FakeFlow:
         function: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]],
         *,
         backend: str,
+        capture_stdio: bool = False,
     ) -> Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]:
         self.backend = backend
         self.function = function

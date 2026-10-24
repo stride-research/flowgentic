@@ -40,6 +40,7 @@ flowchart LR
 | `flowgentic.utils.telemetry` | `GraphIntrospector` and the Markdown node report |
 | `flowgentic.utils.llm_providers` | `ChatLLMProvider`: OpenRouter, OpenAI and Ollama chat models |
 | `flowgentic` | `configure_logging`: prints Flowgentic's log records, which import leaves to the application; see [Logging](features/logging.md) |
+| `flowgentic._asyncflow` | Private: the one module that calls AsyncFlow. `bind_agent`, `LangraphIntegration` and the `asyncflow` decorator open and close engines and register tasks, services and blocks through it |
 
 Academy agents' actions run in AsyncFlow tasks without a Flowgentic module:
 see [Academy actions as AsyncFlow tasks](guides/academy-on-asyncflow.md).
