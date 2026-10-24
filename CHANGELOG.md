@@ -34,9 +34,10 @@ predate this changelog, so their changes are not listed here.
   `GraphIntrospector.generate_report(directory)` and `render_graph` write into
   the directory they are given, no longer into its `agent_execution_results/`
   subdirectory.
-- The documentation site follows the latest release: it deploys when a GitHub
-  release is published, or by hand for a given tag, no longer on every push to
-  `main`. It stops describing changes that no release contains.
+- The documentation site follows the latest release: it deploys when the
+  repository's latest GitHub release is published (not a pre-release, nor a
+  patch to an older line), or by hand for a given release tag, no longer on
+  every push to `main`. It stops describing changes that no release contains.
 
 ### Removed
 
