@@ -98,11 +98,15 @@ async def start_app():
 		thread_id = random.randint(0, 10)
 		config = {"configurable": {"thread_id": thread_id}}
 
-		current_dir = str(pathlib.Path(__file__).parent.resolve())
+		results_dir = pathlib.Path(__file__).parent.resolve() / "agent_execution_results"
+		results_dir.mkdir(exist_ok=True)
 
-		await agents_manager.utils.render_graph(
-			app, dir_to_write=current_dir, generate_graph_only=True
-		)
+		try:
+			app.get_graph().draw_png(str(results_dir / "agent_graph.png"))
+		except ImportError:
+			print("Drawing the graph needs pygraphviz; skipping agent_graph.png")
+		except Exception as e:
+			print(f"Could not draw agent_graph.png: {e}")
 
 		while True:
 			user_input = input("User: ").lower()
