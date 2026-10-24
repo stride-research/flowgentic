@@ -52,6 +52,11 @@ async def start_app():
 				app, __file__, final_state=final_state
 			)
 
+		# The nodes route their failures to the error handler, so a failed run
+		# raises here, or it would exit 0
+		if not final_state["workflow_complete"]:
+			raise RuntimeError(f"Workflow failed: {'; '.join(final_state['errors'])}")
+
 
 if __name__ == "__main__":
 	asyncio.run(start_app(), debug=True)

@@ -25,8 +25,8 @@ jobs:
         with:
           enable-cache: true
 
-      # Without the key, some examples route their failures to an error node
-      # and exit 0, so a run without it would pass without calling a model.
+      # Without the key, the examples fail on their first model call; this
+      # step says why before anything is installed.
       - name: Check the secret
         env:
           OPEN_ROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY }}
