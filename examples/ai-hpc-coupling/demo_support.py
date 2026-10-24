@@ -22,25 +22,14 @@ from campaign_common import (
     max_compute_parallelism,
     print_cycle,
     reset_demo_state,
+    retry_transient_simulation,
     timed_event,
     write_summary,
 )
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph import StateGraph
 
-from flowgentic.langGraph.fault_tolerance import RetryConfig
 from flowgentic.langGraph.main import LangraphIntegration
-
-# --8<-- [start:simulation-retry]
-SIMULATION_RETRY = RetryConfig(
-    max_attempts=2,
-    base_backoff_sec=0.05,
-    max_backoff_sec=0.05,
-    jitter=0.0,
-    timeout_sec=5.0,
-    retryable_exceptions=(TransientSimulationError,),
-)
-# --8<-- [end:simulation-retry]
 
 
 def agent_message(content: str) -> AIMessage:
@@ -149,7 +138,6 @@ def add_instrumented_nodes(
 __all__ = [
     "INITIAL_CENTER",
     "INITIAL_RADIUS",
-    "SIMULATION_RETRY",
     "TARGET",
     "SurrogateService",
     "TransientSimulationError",
@@ -165,6 +153,7 @@ __all__ = [
     "record_plan",
     "record_simulations",
     "reset_demo_state",
+    "retry_transient_simulation",
     "timed_event",
     "write_summary",
 ]

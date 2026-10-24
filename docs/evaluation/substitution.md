@@ -67,6 +67,17 @@ implicit defaults do.
 | 8 | LLM tool selection (R5b) | A scripted model's call to `run_simulation`, an `AGENT_TOOL_AS_FUNCTION` tool, runs through LangGraph's `ToolNode` as an AsyncFlow task on `compute` | The same, with the AsyncFlow task wrapped by `langchain_core.tools.tool` through the direct version's `asyncflow_tool` helper | Both supply it | `test_llm_selected_tool_runs_as_an_asyncflow_task`: in both versions the graph produces a human message, the model's tool call, a successful tool message with identical content, and the model's answer. AsyncFlow registers exactly one `run_simulation` task on `compute` per version. The model is scripted (`GenericFakeChatModel`), so this tests the tool path, not a live model's choice. |
 | 9 | Agent handoff (R5b) | `create_task_description_handoff_tool` builds a tool that runs an AsyncFlow task returning `Command(goto=[Send(...)], graph=Command.PARENT)`. On `main` since `09b66146` (2025-10-16), it failed on every call: it called `GraphIntrospector.record_supervisor_event`, which that commit deleted. R5b removed the call. The code review of R5b then found that the tool also failed on a TypedDict state (`MessagesState`, or `create_agent`'s), because it called `model_dump()`; it now accepts both. | A 17-line tool, in the test module, that builds the same `Command` in an AsyncFlow task | Both supply it after R5b's fix; before the fix, only the direct version did. | `test_supervisor_hands_off_to_a_worker`, for both versions and for both a Pydantic and a TypedDict graph state: a supervisor subgraph's scripted tool call hands the task to the parent graph's `researcher` node, which receives exactly the task description, and the handoff runs as one AsyncFlow task. Before the fix, the Flowgentic case failed with `AttributeError: 'GraphIntrospector' object has no attribute 'record_supervisor_event'` (the failing run is recorded in PR B's body), and the direct case passed. |
 
+!!! note "Changed in 0.4.0 (2026-10-24): row 3"
+    Row 3 records 0.3.0. Flowgentic 0.4.0 removes the implicit retry and
+    timeout, and its version of the demo wraps each simulation call in
+    `retry_transient_simulation`, as the direct version does. With a simulation
+    that keeps failing, both versions now make 8 attempts
+    (`test_persistent_simulation_failure`). A node whose work outlasts the
+    scaled-down timeout of 0.3.0 runs once and completes in both versions, with
+    4 simulation starts (`test_slow_node_runs_once`, which replaces
+    `test_node_exceeding_the_default_timeout_is_rerun`). See
+    [Retries and timeouts](../guides/retries-and-timeouts.md).
+
 ## LangGraph 1.x and AsyncFlow 0.6.0 (amendment A4, R8)
 
 Row 6 counts the LangGraph 1.x port as a maintenance cost. R5 first estimated
@@ -151,3 +162,9 @@ a rename in 9 example calls, and one behaviour change that applications must
 handle: `ToolNode` now re-raises tool errors by default. The provider packages
 also moved a major version (langchain-openai 1.x, openai 3.x); offline tests
 now check that the providers still build.
+
+!!! note "Changed in 0.4.0 (2026-10-24): the summary"
+    Flowgentic 0.4.0 removes the implicit retry and timeout. Graph nodes take
+    LangGraph's own `retry_policy` and `timeout`, and task retries stay with the
+    application until AsyncFlow has them. In this application, what remains
+    distinct to the adapter is the one-call handoff tool.

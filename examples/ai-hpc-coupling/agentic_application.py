@@ -28,10 +28,10 @@ from agentic_support import (
 )
 from campaign_types import CampaignApplication, CampaignSettings, CampaignState
 from demo_support import (
-    SIMULATION_RETRY,
     SurrogateService,
     add_instrumented_nodes,
     evaluate_candidate,
+    retry_transient_simulation,
     timed_event,
 )
 from langgraph.graph import END, START, StateGraph
@@ -80,7 +80,6 @@ async def build_agentic_campaign(
     @flowgentic(
         flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION,
         backend="compute",
-        retry=SIMULATION_RETRY,
         tool_description="Run one approved scientific simulation on compute.",
     )
     async def run_simulation(
@@ -214,22 +213,25 @@ async def build_agentic_campaign(
 
     # --8<-- [start:tool-ainvoke]
     # 4. Deterministic executor: invoke approved simulation tools concurrently -
+    # The application retries a transient simulation failure once.
     async def simulation_executor(
         state: AgenticCampaignState,
     ) -> dict[str, Any]:
         results = await asyncio.gather(
             *(
-                run_simulation.ainvoke(
-                    {
-                        "x": x,
-                        "cycle": state["cycle"],
-                        "candidate_index": index,
-                        "fail_once": (
-                            settings.inject_failure
-                            and state["cycle"] == 1
-                            and index == 0
-                        ),
-                    }
+                retry_transient_simulation(
+                    lambda x=x, index=index: run_simulation.ainvoke(
+                        {
+                            "x": x,
+                            "cycle": state["cycle"],
+                            "candidate_index": index,
+                            "fail_once": (
+                                settings.inject_failure
+                                and state["cycle"] == 1
+                                and index == 0
+                            ),
+                        }
+                    )
                 )
                 for index, x in enumerate(state["candidates"])
             )
