@@ -29,6 +29,7 @@ from campaign_common import (
 )
 from dotenv import load_dotenv
 from radical.asyncflow import WorkflowEngine
+from tracing import run_trace
 
 from flowgentic.utils.llm_providers import ChatLLMProvider
 
@@ -74,52 +75,59 @@ async def run(args: argparse.Namespace) -> int:
     )
     print(f"target={TARGET}  budget={args.budget}\n")
 
-    flow = await WorkflowEngine.create(backend=backends)
-    application = None
-    try:
-        application = await build_augmented_campaign(flow, settings, agent_components)
-        print(
-            f"persistent AI service started: {application.service.instance_id} "
-            f"(model loads={application.service.loads})"
-        )
-
-        if args.controller == "adr":
-            from adr_control import run_with_adr_control
-
-            state, stop_reason = await run_with_adr_control(
-                application,
-                settings,
-                flow,
-                cycle_printer=print_agentic_cycle,
-                cycle_executor=application.run_cycle,
+    async with run_trace(args.trace, "ai-hpc-augmented-demo") as tracing:
+        flow = await WorkflowEngine.create(backend=backends)
+        if tracing is not None:
+            await tracing.attach(flow)
+        application = None
+        try:
+            application = await build_augmented_campaign(
+                flow, settings, agent_components
             )
-        else:
-            state, stop_reason = await run_augmented_with_application_control(
-                application,
-                settings,
+            print(
+                f"persistent AI service started: {application.service.instance_id} "
+                f"(model loads={application.service.loads})"
             )
 
-        output_dir = Path(args.output_dir).resolve()
-        summary_path = write_summary(
-            output_dir,
-            state,
-            controller=args.controller,
-            stop_reason=stop_reason,
-        )
+            if args.controller == "adr":
+                from adr_control import run_with_adr_control
 
-        print("\nProof points")
-        print("  application and scientific cycle remain direct AsyncFlow")
-        print("  LangGraph is confined to the three agent components")
-        print("  Flowgentic binds only agent components to the ai backend")
-        parallelism = max_compute_parallelism(state["trace"])
-        print(f"  observed compute parallelism: {parallelism}")
-        print(f"  guarded agent decisions recorded: {len(state['agent_trace'])}")
-        print(f"  stopped because: {stop_reason}")
-        print(f"  machine-readable summary: {summary_path}")
-    finally:
-        if application is not None:
-            application.service_future.cancel()
-        await flow.shutdown()
+                state, stop_reason = await run_with_adr_control(
+                    application,
+                    settings,
+                    flow,
+                    cycle_printer=print_agentic_cycle,
+                    cycle_executor=application.run_cycle,
+                )
+            else:
+                state, stop_reason = await run_augmented_with_application_control(
+                    application,
+                    settings,
+                )
+
+            output_dir = Path(args.output_dir).resolve()
+            summary_path = write_summary(
+                output_dir,
+                state,
+                controller=args.controller,
+                stop_reason=stop_reason,
+            )
+
+            print("\nProof points")
+            print("  application and scientific cycle remain direct AsyncFlow")
+            print("  LangGraph is confined to the three agent components")
+            print("  Flowgentic binds only agent components to the ai backend")
+            parallelism = max_compute_parallelism(state["trace"])
+            print(f"  observed compute parallelism: {parallelism}")
+            print(f"  guarded agent decisions recorded: {len(state['agent_trace'])}")
+            print(f"  stopped because: {stop_reason}")
+            print(f"  machine-readable summary: {summary_path}")
+            if tracing is not None:
+                print(f"  OpenTelemetry spans: {tracing.path}")
+        finally:
+            if application is not None:
+                application.service_future.cancel()
+            await flow.shutdown()
 
     return 0
 
@@ -153,6 +161,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-failure", action="store_true")
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--output-dir", default=str(default_output))
+    parser.add_argument(
+        "--trace",
+        type=Path,
+        metavar="PATH",
+        help="Write the run's OpenTelemetry spans to PATH, one JSON object per line.",
+    )
     return parser.parse_args()
 
 

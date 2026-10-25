@@ -586,51 +586,16 @@ Original query: {state.query}
 			return decision
 
 		# ================================================================
-		# STEP 6: Build the Graph with Introspection
+		# STEP 6: Build the Graph
 		# ================================================================
 
-		# Wrap nodes for introspection
-		llm_router_intro = agents_manager.agent_introspector.introspect_node(
-			llm_router, "llm_router"
-		)
-		tech_agent_intro = agents_manager.agent_introspector.introspect_node(
-			technical_specs_agent, "technical_specs_agent"
-		)
-		reviews_agent_intro = agents_manager.agent_introspector.introspect_node(
-			user_reviews_agent, "user_reviews_agent"
-		)
-		gather_intro = agents_manager.agent_introspector.introspect_node(
-			gather_results, "gather_results"
-		)
-		synthesis_router_intro = agents_manager.agent_introspector.introspect_node(
-			synthesis_router, "synthesis_router"
-		)
-		tech_synth_intro = agents_manager.agent_introspector.introspect_node(
-			technical_synthesizer, "technical_synthesizer"
-		)
-		consumer_synth_intro = agents_manager.agent_introspector.introspect_node(
-			consumer_synthesizer, "consumer_synthesizer"
-		)
-
-		# Register all nodes for report generation
-		agents_manager.agent_introspector._all_nodes = [
-			"llm_router",
-			"technical_specs_agent",
-			"user_reviews_agent",
-			"gather_results",
-			"synthesis_router",
-			"technical_synthesizer",
-			"consumer_synthesizer",
-		]
-
-		# Add nodes to graph
-		graph.add_node("llm_router", llm_router_intro)
-		graph.add_node("technical_specs_agent", tech_agent_intro)
-		graph.add_node("user_reviews_agent", reviews_agent_intro)
-		graph.add_node("gather_results", gather_intro)
-		graph.add_node("synthesis_router", synthesis_router_intro)
-		graph.add_node("technical_synthesizer", tech_synth_intro)
-		graph.add_node("consumer_synthesizer", consumer_synth_intro)
+		graph.add_node("llm_router", llm_router)
+		graph.add_node("technical_specs_agent", technical_specs_agent)
+		graph.add_node("user_reviews_agent", user_reviews_agent)
+		graph.add_node("gather_results", gather_results)
+		graph.add_node("synthesis_router", synthesis_router)
+		graph.add_node("technical_synthesizer", technical_synthesizer)
+		graph.add_node("consumer_synthesizer", consumer_synthesizer)
 
 		# Define edges
 		graph.add_edge(START, "llm_router")
@@ -690,14 +655,6 @@ Original query: {state.query}
 			except Exception as e:
 				logging.error(f"❌ Workflow execution failed: {str(e)}")
 				raise
-			finally:
-				# Generate execution artifacts (report, graph)
-				if result is not None:
-					await agents_manager.generate_execution_artifacts(
-						app, __file__, final_state=result
-					)
-				else:
-					logger.warning("Result from execution are none")
 
 			# Display results
 			print(f"\n{'=' * 100}")
@@ -715,6 +672,7 @@ Original query: {state.query}
 			print(f"\n{'─' * 100}")
 			logging.info(f"⏱️  TOTAL WALL TIME: {wall_ms:.1f}ms")
 			print(f"{'=' * 100}\n")
+		return result
 
 
 if __name__ == "__main__":

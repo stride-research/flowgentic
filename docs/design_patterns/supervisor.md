@@ -63,9 +63,7 @@ agents the router may choose:
 --8<-- "examples/langgraph-integration/design_patterns/supervisor/toy/main.py:graph-wiring"
 ```
 
-The nodes are wrapped with `agent_introspector.introspect_node` before they
-are added, so the run writes a node report; see
-[Telemetry](../features/telemetry.md). When both workers ran, the gather node
+When both workers ran, the gather node
 asks a second model, built with `langchain.agents.create_agent`, to combine
 their outputs; with one worker, it passes the result through.
 

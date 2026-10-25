@@ -4,6 +4,9 @@ This module provides the inverse of an AsyncFlow-backed agent tool: it makes an
 agent-framework component callable as an AsyncFlow task.  Applications can keep
 their orchestration and scientific state in ordinary Python and AsyncFlow while
 using LangGraph, CrewAI, Academy, or another framework only inside agents.
+
+Each call of a bound agent is an OpenTelemetry ``invoke_agent`` span in the
+caller's process, with the AsyncFlow task that ran it as a child.
 """
 
 from __future__ import annotations
@@ -13,7 +16,9 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
-from flowgentic import _asyncflow
+from opentelemetry.trace import SpanKind
+
+from flowgentic import _asyncflow, _telemetry
 
 if TYPE_CHECKING:
 	from radical.asyncflow import WorkflowEngine
@@ -52,7 +57,25 @@ class AgentTask:
 
 	async def ainvoke(self, context: Mapping[str, Any]) -> dict[str, Any]:
 		"""Invoke the agent through AsyncFlow and return decision plus metadata."""
-		return await self._submit(dict(context))
+		with _telemetry.tracer.start_as_current_span(
+			f"{_telemetry.INVOKE_AGENT} {self.identity}",
+			kind=SpanKind.INTERNAL,
+			attributes={
+				_telemetry.GEN_AI_OPERATION_NAME: _telemetry.INVOKE_AGENT,
+				_telemetry.GEN_AI_AGENT_NAME: self.identity,
+				_telemetry.TASK_BACKEND: self.backend,
+			},
+		) as span:
+			future = self._submit(dict(context))
+			try:
+				return await future
+			except Exception as exc:
+				span.set_attribute(_telemetry.ERROR_TYPE, type(exc).__qualname__)
+				raise
+			finally:
+				task_uid = _asyncflow.uid(future)
+				if task_uid is not None:
+					span.set_attribute(_telemetry.TASK_UID, task_uid)
 
 
 def bind_agent(

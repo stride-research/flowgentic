@@ -21,6 +21,7 @@ from demo_support import (
     reset_demo_state,
     write_summary,
 )
+from tracing import run_trace
 
 from flowgentic.langGraph.main import LangraphIntegration
 
@@ -42,7 +43,12 @@ async def run(args: argparse.Namespace) -> int:
     print("deterministic graph -> Flowgentic -> AsyncFlow -> AI/compute backends")
     print(f"controller={args.controller}  target={TARGET}  budget={args.budget}\n")
 
-    async with LangraphIntegration(backend=backends) as integration:
+    async with (
+        run_trace(args.trace, "ai-hpc-deterministic-demo") as tracing,
+        LangraphIntegration(backend=backends) as integration,
+    ):
+        if tracing is not None:
+            await tracing.attach(integration.flow)
         application = await build_campaign(integration, settings)
         print(
             f"persistent AI service started: {application.service.instance_id} "
@@ -65,10 +71,6 @@ async def run(args: argparse.Namespace) -> int:
             )
 
         output_dir = Path(args.output_dir).resolve()
-        results_dir = output_dir / "agent_execution_results"
-        results_dir.mkdir(parents=True, exist_ok=True)
-        integration.agent_introspector._final_state = state
-        integration.agent_introspector.generate_report(str(results_dir))
         summary_path = write_summary(
             output_dir,
             state,
@@ -91,10 +93,8 @@ async def run(args: argparse.Namespace) -> int:
         )
         print(f"  stopped because: {stop_reason}")
         print(f"  machine-readable summary: {summary_path}")
-        print(
-            "  agent execution report: "
-            f"{output_dir / 'agent_execution_results' / 'execution_summary.md'}"
-        )
+        if tracing is not None:
+            print(f"  OpenTelemetry spans: {tracing.path}")
 
         application.service_future.cancel()
 
@@ -126,6 +126,12 @@ def parse_args() -> argparse.Namespace:
         help="Show detailed Flowgentic and AsyncFlow lifecycle logs.",
     )
     parser.add_argument("--output-dir", default=str(default_output))
+    parser.add_argument(
+        "--trace",
+        type=Path,
+        metavar="PATH",
+        help="Write the run's OpenTelemetry spans to PATH, one JSON object per line.",
+    )
     return parser.parse_args()
 
 

@@ -33,8 +33,10 @@ class FakeFlow:
         self.backend = backend
         self.function = function
 
-        def submit(context: dict[str, Any]) -> asyncio.Task[dict[str, Any]]:
-            return asyncio.create_task(function(context))
+        def submit(
+            context: dict[str, Any], **kwargs: Any
+        ) -> asyncio.Task[dict[str, Any]]:
+            return asyncio.create_task(function(context, **kwargs))
 
         return submit
 

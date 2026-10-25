@@ -78,6 +78,29 @@ implicit defaults do.
     `test_node_exceeding_the_default_timeout_is_rerun`). See
     [Retries and timeouts](../guides/retries-and-timeouts.md).
 
+!!! note "Changed in 0.4.0 (2026-10-25): rows 5 and 7"
+    Rows 5 and 7 record 0.3.0. Flowgentic 0.4.0 removes the node report and
+    records a run as OpenTelemetry spans; see
+    [Telemetry](../features/telemetry.md).
+    `test_asyncflow_telemetry_spans` now runs in CI, because the `dev` extra
+    installs RHAPSODY.
+
+    Tokens:
+    - The demo no longer writes zero usage on its messages.
+    - In a live run, each model call's `chat` span carries the usage the
+      provider reported, recorded by OpenTelemetry's GenAI instrumentation for
+      LangChain. It reads usage in LangChain's callbacks, so
+      `with_structured_output` no longer hides it
+      (`test_decision_task_and_model_call_form_one_trace`).
+
+    Both versions get these spans from the same instrumentation and from
+    RHAPSODY. What is distinct to Flowgentic is the trace context it carries
+    into every task it submits. A model call inside one of the Flowgentic
+    version's tasks stays in the run's trace
+    (`test_a_task_runs_in_its_callers_trace_context`, which failed on `main`
+    with an empty context). The direct version calls AsyncFlow itself, and
+    needs the same code for the same result.
+
 ## LangGraph 1.x and AsyncFlow 0.6.0 (amendment A4, R8)
 
 Row 6 counts the LangGraph 1.x port as a maintenance cost. R5 first estimated

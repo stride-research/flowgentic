@@ -13,7 +13,6 @@ from typing import Any, cast
 from campaign_types import CampaignApplication, CampaignSettings, CampaignState
 from demo_support import (
     SurrogateService,
-    add_instrumented_nodes,
     evaluate_candidate,
     initial_campaign_state,
     print_cycle,
@@ -117,7 +116,8 @@ async def build_campaign(
         ),
         "analyze": flowgentic(flow_type=AsyncFlowType.EXECUTION_BLOCK)(analyze),
     }
-    add_instrumented_nodes(integration, graph, nodes)
+    for name, node in nodes.items():
+        graph.add_node(name, node)
 
     graph.add_edge(START, "plan")
     graph.add_edge("plan", "simulate")

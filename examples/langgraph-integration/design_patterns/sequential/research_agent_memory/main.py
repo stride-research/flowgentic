@@ -10,7 +10,6 @@ Key Features:
 - Importance-based memory trimming
 - Context retrieval for each stage
 - Memory health monitoring and statistics
-- Full telemetry and introspection
 
 Run this example:
     python -m examples.langgraph-integration.design_patterns.sequential.research_agent_with_memory.main
@@ -104,25 +103,19 @@ focusing on battery technologies, grid integration, and market opportunities.
 		except Exception as e:
 			print(f"❌ Workflow execution failed: {str(e)}")
 			raise
-		finally:
-			# Update final memory statistics in state for report generation
-			if final_state is not None:
-				final_memory_health = memory_manager.get_memory_health()
-				memory_stats_obj = MemoryStats(**final_memory_health)
-				# Handle both dict and Pydantic model
-				if isinstance(final_state, dict):
-					final_state["memory_stats"] = memory_stats_obj.model_dump()
-				else:
-					final_state.memory_stats = memory_stats_obj
 
-			# Generate all execution artifacts (directories, report, graph)
-			print("\n" + "=" * 80)
-			print("📊 Generating Execution Artifacts...")
-			await agents_manager.generate_execution_artifacts(
-				app, __file__, final_state=final_state
-			)
-			print("\n✅ Workflow completed successfully!")
-			print("=" * 80)
+		# Record the final memory statistics in the state
+		if final_state is not None:
+			memory_stats = MemoryStats(**memory_manager.get_memory_health())
+			# Handle both dict and Pydantic model
+			if isinstance(final_state, dict):
+				final_state["memory_stats"] = memory_stats.model_dump()
+			else:
+				final_state.memory_stats = memory_stats
+
+		print("\n✅ Workflow completed successfully!")
+		print("=" * 80)
+		return final_state
 
 
 if __name__ == "__main__":

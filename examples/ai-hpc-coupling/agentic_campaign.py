@@ -39,6 +39,7 @@ from demo_support import (
 from direct_agentic_application import build_direct_agentic_campaign
 from dotenv import load_dotenv
 from radical.asyncflow import WorkflowEngine
+from tracing import run_trace
 
 from flowgentic.langGraph.main import LangraphIntegration
 from flowgentic.utils.llm_providers import ChatLLMProvider
@@ -131,12 +132,17 @@ async def run(args: argparse.Namespace) -> int:
     )
     print(f"target={TARGET}  budget={args.budget}\n")
 
-    async with open_campaign(
-        args.integration,
-        backends,
-        settings,
-        decision_model,
-    ) as (application, flow, integration):
+    async with (
+        run_trace(args.trace, "ai-hpc-agentic-demo") as tracing,
+        open_campaign(
+            args.integration,
+            backends,
+            settings,
+            decision_model,
+        ) as (application, flow, integration),
+    ):
+        if tracing is not None:
+            await tracing.attach(flow)
         print(
             f"persistent AI service started: {application.service.instance_id} "
             f"(model loads={application.service.loads})"
@@ -158,15 +164,7 @@ async def run(args: argparse.Namespace) -> int:
                 settings,
             )
 
-        # --8<-- [start:write-report]
         output_dir = Path(args.output_dir).resolve()
-        results_dir = output_dir / "agent_execution_results"
-        if integration is not None:
-            # Flowgentic's node-level report; the direct version has none.
-            results_dir.mkdir(parents=True, exist_ok=True)
-            integration.agent_introspector._final_state = state
-            integration.agent_introspector.generate_report(str(results_dir))
-        # --8<-- [end:write-report]
         summary_path = write_summary(
             output_dir,
             state,
@@ -194,8 +192,8 @@ async def run(args: argparse.Namespace) -> int:
         )
         print(f"  stopped because: {stop_reason}")
         print(f"  machine-readable summary: {summary_path}")
-        if integration is not None:
-            print(f"  agent execution report: {results_dir / 'execution_summary.md'}")
+        if tracing is not None:
+            print(f"  OpenTelemetry spans: {tracing.path}")
 
     return 0
 
@@ -250,6 +248,12 @@ def parse_args() -> argparse.Namespace:
         help="Show detailed Flowgentic and AsyncFlow lifecycle logs.",
     )
     parser.add_argument("--output-dir", default=str(default_output))
+    parser.add_argument(
+        "--trace",
+        type=Path,
+        metavar="PATH",
+        help="Write the run's OpenTelemetry spans to PATH, one JSON object per line.",
+    )
     return parser.parse_args()
 
 

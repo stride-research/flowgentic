@@ -39,8 +39,11 @@ versions the dependency ranges allow; a weekly workflow runs it, and builds
 the docs, on the newest releases within the ranges. The package requires
 `langgraph>=1.1.5,<2.0`; `langchain-core`, `langchain`, `langchain-openai` and
 `langchain-ollama` at `>=1.0,<2.0`; and `radical-asyncflow>=0.6,<0.7`, because
-before 1.0 an AsyncFlow minor release may break. Its `examples` extra adds
-`academy-py>=1.0,<2` for the Academy example.
+before 1.0 an AsyncFlow minor release may break; and `opentelemetry-api>=1.43,<2`
+for its spans. Its `examples` extra adds `academy-py>=1.0,<2` for the Academy
+example, and the OpenTelemetry SDK, OpenTelemetry's GenAI instrumentation for
+LangChain and OpenAI (1.3b0, below 1.4) and `rhapsody-py[telemetry]` for the
+demos' traces.
 
 ## Known limitations
 
@@ -52,8 +55,13 @@ before 1.0 an AsyncFlow minor release may break. Its `examples` extra adds
 - AsyncFlow 0.6.0 has no per-task retry or timeout, so applications wrap the
   task calls that need them. See
   [Retries and timeouts](guides/retries-and-timeouts.md).
-- Token accounting: the agentic demo records no tokens, even in live mode
-  (substitution report, row 5).
+- Tracing (see [Telemetry](features/telemetry.md)):
+    - A model call inside an AsyncFlow task is a sibling of the task's span, not
+      its child.
+    - AsyncFlow block spans hang from the session span, not from the caller's.
+    - AsyncFlow 0.6.0 labels every task span with the default backend.
+    - No cost that a provider reports is recorded.
+    - RHAPSODY's Dragon-vLLM endpoint reports word counts as token counts.
 - Live runs of the design-pattern examples need a model provider and
   credentials. CI runs four of them with a scripted chat model in place of the
   provider (`tests/integration/test_design_patterns_offline.py`), which shows

@@ -193,7 +193,7 @@ async def build_direct_agentic_campaign(
                 ),
             ],
             "messages": [
-                decision_message("planner", decision.rationale, decision_model.name)
+                decision_message("planner", decision.rationale)
             ],
         }
 
@@ -269,9 +269,7 @@ async def build_direct_agentic_campaign(
                 ),
             ],
             "messages": [
-                decision_message(
-                    "analyst", decision.interpretation, decision_model.name
-                )
+                decision_message("analyst", decision.interpretation)
             ],
         }
 
@@ -319,7 +317,7 @@ async def build_direct_agentic_campaign(
                 ),
             ],
             "messages": [
-                decision_message("supervisor", decision.rationale, decision_model.name)
+                decision_message("supervisor", decision.rationale)
             ],
         }
 

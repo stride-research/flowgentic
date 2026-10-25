@@ -9,6 +9,30 @@ predate this changelog, so their changes are not listed here.
 
 ## [Unreleased]
 
+### Added
+
+- OpenTelemetry spans that follow OpenTelemetry's GenAI semantic conventions,
+  so an agent's decisions, the AsyncFlow tasks they run in and the model calls
+  inside them form one trace:
+  - Each call of an agent bound with `bind_agent` is an
+    `invoke_agent <identity>` span, with the AsyncFlow task's uid and backend
+    (`flowgentic.task.uid`, `flowgentic.task.backend`).
+  - Every task and service Flowgentic submits runs in its caller's trace
+    context. AsyncFlow runs a task's function in a pool thread or another
+    process, where a model call used to start a trace of its own.
+  - Model calls, tools and graphs are recorded by OpenTelemetry's GenAI
+    instrumentation, and tasks by RHAPSODY, through `flow.start_telemetry()`.
+
+  Flowgentic depends on `opentelemetry-api>=1.43,<2` only: without the SDK,
+  its spans are no-ops. The `examples` extra adds the SDK, the GenAI
+  instrumentation for LangChain and OpenAI, and `rhapsody-py[telemetry]`. See
+  [Telemetry](https://stride-research.github.io/flowgentic/features/telemetry/).
+- The AI-HPC demo's runners take `--trace PATH`, which writes the run's spans
+  to `PATH`, one JSON object per line. `examples/telemetry/cost.py` computes
+  cost from such a file in three ways: the cost a provider reported, when a
+  span carries one; usage times a price, for a remote model; and a share of a
+  deployment's GPU-hours, for a model on the allocation.
+
 ### Changed
 
 - **Breaking:** `import flowgentic` configures nothing. It used to set the root
@@ -27,12 +51,10 @@ predate this changelog, so their changes are not listed here.
   refusals, which return `False`, are WARNING. No record carries prompts,
   model outputs, message lists or graph states, at any level. Records use lazy
   `%`-style arguments, and CI checks it.
-- **Breaking:** `generate_execution_artifacts` takes `output_dir`, the
-  directory for the report and the graph image, by default
-  `agent_execution_results/` beside the calling file, as before.
-  `GraphIntrospector.generate_report(directory)` and `render_graph` write into
-  the directory they are given, no longer into its `agent_execution_results/`
-  subdirectory.
+- The AI-HPC demo's decision model keeps the model's raw message
+  (`with_structured_output(..., include_raw=True)`) and raises its parsing
+  error. Its messages no longer carry token counts set to zero, which claimed
+  a measurement nobody made.
 - The documentation site follows the latest release: it deploys when the
   repository's latest GitHub release is published (not a pre-release, nor a
   patch to an older line), or by hand for a given release tag, no longer on
@@ -40,7 +62,7 @@ predate this changelog, so their changes are not listed here.
 - CI runs four design-pattern examples, `sequential/research_agent`,
   `sequential/research_agent_memory`, `supervisor/toy` and
   `supervisor/product_research`, with a scripted chat model in place of
-  `ChatLLMProvider`, and checks that each completes and writes its report.
+  `ChatLLMProvider`, and checks that each completes.
   They need OpenRouter credentials, so CI had never run them. Live runs stay
   opt-in: `make tests-integration-llm` locally, or the LLM examples workflow,
   which a maintainer starts by hand on GitHub with the repository secret
@@ -93,16 +115,26 @@ Nobody uses Flowgentic yet, so these go without a deprecation period.
   source tree, and the `flowgentic.settings` module. An unrelated `config.yml`
   in the working directory made `import flowgentic` fail with `KeyError`, and
   the file held only the log level, now the application's, and the report's
-  paths, now `output_dir`.
+  paths, which went with the report.
 - `flowgentic.utils.Logger`, its colored and JSON formatters, the base64
   redaction filter and `flowgentic.utils.add_context_to_log`. Use
   `flowgentic.configure_logging()` or the application's own logging
   configuration; OpenTelemetry's logging instrumentation adds trace and span
   ids to every record.
 - The `pyyaml` and `python-json-logger` dependencies.
-- `render_graph`'s `generate_graph_only` argument. With it, the call did
-  nothing. To draw only the graph, call LangGraph's
-  `app.get_graph().draw_png(path)`.
+- **Breaking:** the node report:
+  - `flowgentic.utils.telemetry` (`GraphIntrospector`, its extractor, schemas
+    and report generator);
+  - `LangraphIntegration.agent_introspector` and `generate_execution_artifacts`;
+  - `LangraphUtils` and its `render_graph`.
+
+  The report rebuilt each node's record from the graph's final messages after
+  the run. So it saw no tasks, retries or rejected proposals, and it summed
+  token counts that the demo had set to zero. The spans replace it; any
+  trace backend that reads OTLP shows them, and so does a JSON-lines file. To
+  draw a graph, call LangGraph's `app.get_graph().draw_png(path)`. The
+  design-pattern examples' committed `agent_execution_results/` files are gone,
+  and the examples' entry points return the final state.
 
 ### Fixed
 
@@ -110,20 +142,10 @@ Nobody uses Flowgentic yet, so these go without a deprecation period.
   1.1.4 install with the newest `langgraph-prebuilt` 1.0.x, which imports
   names that langgraph 1.1.5 added, so importing Flowgentic's LangGraph
   integration failed with `ImportError`.
-- `generate_execution_artifacts(..., generate_report=False)`, or any call whose
-  output directory had no `execution_summary.md`, wrote no graph section and
-  left an empty `execution_summary.md`: `render_graph` failed on the missing
-  report and logged only a warning (in 0.3.0, a print). It now starts the
-  report with the graph section. With `generate_report=False`, an earlier
-  run's report in the same directory is removed rather than kept under a new
-  graph section. Only drawing the graph, which needs `pygraphviz`, ends in a
-  warning; an error after it, such as an unreadable report, raises. The
-  report is read and rewritten as UTF-8, as it is written, rather than in the
-  locale's encoding.
 - The `supervisor/toy` example hid the error of a failed run: when the graph
   raised, the `finally` block that writes the report read a result that was
   never set, and the run ended in `UnboundLocalError`. The graph's own error
-  now propagates, after the report is written.
+  now propagates.
 - The `sequential/research_agent` example exited 0 when a stage failed: its
   nodes route failures to the error handler, so a live run in which every
   model call failed, for want of a key or in an outage, passed

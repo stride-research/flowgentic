@@ -24,7 +24,6 @@ from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.utils.function_calling import convert_to_openai_tool
 
-from flowgentic.langGraph.main import LangraphIntegration
 
 DESIGN_PATTERNS = (
     Path(__file__).resolve().parents[2]
@@ -114,42 +113,21 @@ async def run_example(
     provider: Callable[..., ScriptedChatModel],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-) -> tuple[Any, Path]:
+) -> Any:
     """Run a copy of an example with ``provider`` in place of ``ChatLLMProvider``.
 
-    Returns the final state that the example hands to
-    ``generate_execution_artifacts``, and the copy's directory.
+    Returns the final state that the example's entry point returns.
     """
     package = "offline_" + example.replace("/", "_")
     copy = tmp_path / package
-    # Without the committed results, a report in the copy is this run's
     shutil.copytree(
         DESIGN_PATTERNS / example,
         copy,
-        ignore=shutil.ignore_patterns("agent_execution_results", "__pycache__"),
+        ignore=shutil.ignore_patterns("__pycache__"),
     )
     monkeypatch.syspath_prepend(str(tmp_path))
     # A module left unpatched fails for want of a key, not with a live call
     monkeypatch.delenv("OPEN_ROUTER_API_KEY", raising=False)
-
-    final_states = []
-    generate_execution_artifacts = LangraphIntegration.generate_execution_artifacts
-
-    async def record_final_state(
-        self: LangraphIntegration,
-        app: Any,
-        caller_file_path: str,
-        final_state: Any,
-        **kwargs: Any,
-    ) -> None:
-        final_states.append(final_state)
-        await generate_execution_artifacts(
-            self, app, caller_file_path, final_state, **kwargs
-        )
-
-    monkeypatch.setattr(
-        LangraphIntegration, "generate_execution_artifacts", record_final_state
-    )
 
     try:
         for module in model_modules:
@@ -159,14 +137,11 @@ async def run_example(
                 provider,
             )
         main = importlib.import_module(f"{package}.main")
-        await getattr(main, entry_point)()
+        return await getattr(main, entry_point)()
     finally:
         for name in list(sys.modules):
             if name == package or name.startswith(f"{package}."):
                 del sys.modules[name]
-
-    assert len(final_states) == 1
-    return final_states[0], copy
 
 
 def tool_results(state: Any) -> dict[str, str]:
@@ -176,10 +151,6 @@ def tool_results(state: Any) -> dict[str, str]:
         for message in state["messages"]
         if isinstance(message, ToolMessage)
     }
-
-
-def report(copy: Path) -> Path:
-    return copy / "agent_execution_results" / "execution_summary.md"
 
 
 async def test_sequential_research_agent(
@@ -193,7 +164,7 @@ async def test_sequential_research_agent(
         }
     )
 
-    state, copy = await run_example(
+    state = await run_example(
         "sequential/research_agent",
         "start_app",
         ["components.nodes"],
@@ -211,7 +182,6 @@ async def test_sequential_research_agent(
         "data_analysis_tool": "success",
         "document_generator_tool": "success",
     }
-    assert report(copy).is_file()
 
 
 async def test_sequential_research_agent_fails_when_the_model_does(
@@ -244,7 +214,7 @@ async def test_sequential_research_agent_memory(
         }
     )
 
-    state, copy = await run_example(
+    state = await run_example(
         "sequential/research_agent_memory",
         "start_app",
         ["main", "components.nodes"],
@@ -263,7 +233,6 @@ async def test_sequential_research_agent_memory(
         "document_generator": "success",
         "recommendation_engine": "success",
     }
-    assert report(copy).is_file()
 
 
 async def test_supervisor_toy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -276,14 +245,13 @@ async def test_supervisor_toy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         }
     )
 
-    state, copy = await run_example(
+    state = await run_example(
         "supervisor/toy", "main", ["main"], provider, tmp_path, monkeypatch
     )
 
     assert state["routing_decision"] == ["agent_A", "agent_B"]
     assert set(state["results"]) == {"agent_A", "agent_B"}
     assert state["final_summary"] == ANSWER
-    assert report(copy).is_file()
 
 
 async def test_supervisor_toy_raises_the_graph_error(
@@ -319,7 +287,7 @@ async def test_supervisor_product_research(
         replies={"Audience type: technical": "technical_synthesizer"},
     )
 
-    state, copy = await run_example(
+    state = await run_example(
         "supervisor/product_research", "main", ["main"], provider, tmp_path, monkeypatch
     )
 
@@ -332,4 +300,3 @@ async def test_supervisor_product_research(
         "search_product_specifications": "success",
         "search_user_reviews": "success",
     }
-    assert report(copy).is_file()

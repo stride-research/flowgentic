@@ -1,100 +1,198 @@
 # Telemetry
 
-Flowgentic records what each graph node did and writes it as a Markdown
-report. The recorder is `GraphIntrospector` (`flowgentic.utils.telemetry`). It
-works with or without `LangraphIntegration`, which creates one as
-`integration.agent_introspector`.
+Flowgentic records a run as OpenTelemetry spans that follow OpenTelemetry's
+[GenAI semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai).
+An agent's decision, the AsyncFlow task it runs in, the model call it makes and
+the simulations the run launches form one trace.
 
-For task-level traces, AsyncFlow itself emits OpenTelemetry spans; see
-[AsyncFlow spans](#asyncflow-spans).
+Flowgentic depends on `opentelemetry-api` only. Until the application
+configures the OpenTelemetry SDK, every span is a no-op.
 
-## Record the nodes
+## What records what
 
-`introspector.introspect_node(node, name)` wraps a node. Each time the node
-runs, the wrapper records its start and end time, the state before and after,
-the messages it added, the tool calls and tool results in those messages, the
-token usage and model name from the messages' metadata, and the keys that
-changed to a non-empty value. Tool calls are read from `AIMessage.tool_calls`,
-which LangChain also fills from OpenAI-format `additional_kwargs`; a call
-whose arguments are not valid JSON is recorded with its raw arguments. (In
-0.3.0, only `additional_kwargs` was read, so other models' tool calls were
-missing.) The agentic demo wraps every node as it adds it to the graph,
-and tells the introspector which nodes the report lists:
+Each layer records what it owns, and Flowgentic records only what no other
+layer knows:
+
+| Spans | Recorded by |
+| --- | --- |
+| `invoke_agent <identity>`, one per call of an agent bound with `bind_agent` | Flowgentic |
+| `chat <model>`, `execute_tool <tool>`, `invoke_workflow <graph>` | OpenTelemetry's GenAI instrumentation for LangChain, with its OpenAI instrumentation |
+| `session`, `workflow`, `block`, `task` | RHAPSODY, once the application calls `flow.start_telemetry()` |
+
+An `invoke_agent` span is recorded in the caller's process, around the
+submission of the agent's task and the wait for it. It carries:
+
+| Attribute | Value |
+| --- | --- |
+| `gen_ai.operation.name` | `invoke_agent` |
+| `gen_ai.agent.name` | The `identity` given to `bind_agent` |
+| `flowgentic.task.uid` | The AsyncFlow task's uid, which is the `task_id` of RHAPSODY's `task` span |
+| `flowgentic.task.backend` | The backend the task was placed on |
+| `error.type` | The exception's class, if the call failed; the span's status is then ERROR |
+
+Flowgentic also carries the caller's trace context into every task and service
+it submits. AsyncFlow runs a task's function in a pool thread or in another
+process, where the context does not follow by itself. Without it, a model call
+made inside a task would start a trace of its own.
+
+## Set it up
+
+The application configures OpenTelemetry. It installs the SDK, turns on the
+GenAI instrumentation, and gives RHAPSODY a span processor of its own. The
+AI-HPC demo's `tracing.py` does this, and writes every span to a file, one JSON
+object per line:
 
 ```python
---8<-- "examples/ai-hpc-coupling/demo_support.py:instrumented-nodes"
+--8<-- "examples/ai-hpc-coupling/tracing.py:run-trace"
 ```
 
-## Write the report
+The runner creates a `RunTrace` before the engine. Then:
 
-After the run, set the final state and call `generate_report(directory)`. It
-writes `<directory>/execution_summary.md`, and the directory must exist. The
-demo's runner:
+1. It calls `attach(flow)` once the engine exists, before the campaign's tasks
+   run.
+2. It calls `close()` after the engine has shut down.
 
-```python
---8<-- "examples/ai-hpc-coupling/agentic_campaign.py:write-report"
+`engine.shutdown()` does not stop RHAPSODY's telemetry, and RHAPSODY's
+`stop()` shuts down the processors it was given, so stop it last. The demo's
+runners take the same setup as an option:
+
+```bash
+uv run --extra examples python examples/ai-hpc-coupling/augmented_campaign.py --trace spans.jsonl
 ```
 
-`await integration.generate_execution_artifacts(app, __file__, final_state=state)`
-does the same for a script, once `agent_introspector._all_nodes` is set (without
-it, writing the report raises `ValueError`): it creates `output_dir`, by
-default `agent_execution_results/` next to the calling file, writes the report
-there, and renders the graph to `agent_graph.png` at the top of the report.
-Rendering needs `pygraphviz`, which is not a Flowgentic dependency; without it,
-the call logs a warning and keeps the report. Passing `generate_report=False`
-skips the report: `execution_summary.md` holds only this run's graph, and an
-earlier run's report in `output_dir` is removed. (In 0.3.0 the flag was
-inverted: `True` skipped it.)
+To send spans to a collector or a trace backend such as Jaeger instead, use a
+`BatchSpanProcessor` with an OTLP exporter in place of the file.
 
-## Read the report
+The packages are in the `examples` extra:
+- `opentelemetry-sdk`;
+- `opentelemetry-instrumentation-genai-langchain` and
+  `opentelemetry-instrumentation-genai-openai`;
+- `rhapsody-py[telemetry]`, which AsyncFlow needs for its spans.
 
-The report from `make examples-ai-hpc-agentic` starts with totals and one row
-per node execution:
+## What a trace looks like
+
+The start of the augmented demo's trace, in rehearsal mode, where the agents
+make no model calls:
 
 ```text
-# LangGraph Execution Report
-
-**Generated on:** `2026-10-22 14:34:44`
-**Total Duration:** `2.0956 seconds`
-
-## Aggregate Statistics
-
-- **Total Tokens Used:** `0`
-- **Total Tool Calls:** `0`
-- **Total Tool Executions:** `0`
-- **Total Messages:** `1`
-- **Models Used:** `rehearsal-agents, deterministic-surrogate`
-- **Number of Nodes:** `20`
+session                        backend=rhapsody
+├─ task                        executable=load_surrogate  task_id=task.000001
+├─ task                        executable=propose_candidates
+├─ invoke_agent planner        flowgentic.task.uid=task.000003  flowgentic.task.backend=ai
+│  ├─ task                     executable=agent_planner  task_id=task.000003  backend=compute
+│  └─ invoke_workflow LangGraph
+├─ task                        executable=simulate   (four, in parallel)
+├─ task                        executable=update_surrogate
+├─ invoke_agent analyst        …
+└─ invoke_agent supervisor     …
 ```
 
-Then come the Execution Summary table (duration, tokens, tools and new
-messages per node), the Node Details (description, timing, message counts,
-state keys, model and token usage, tool calls and their results, the messages
-added and the state changes) and a Final State Summary. A Memory Statistics
-section appears when the final state has a `memory_stats`,
-`memory_operations` or `memory_context` field.
+The planner's LangGraph component runs inside its task, on the `ai` backend,
+and its spans nest under the decision. The `task` span's `backend` reads
+`compute` because AsyncFlow 0.6.0 labels every task span with the default
+backend. Flowgentic's `flowgentic.task.backend` gives the backend the task
+actually ran on.
 
-The report counts only what the messages carry. The demo's nodes call their
-tools from code, not through model tool calls, so it shows 0 tool calls; and
-its rehearsal model records no tokens.
+## Token usage
 
-## Without the adapter
+Usage is recorded on each `chat` span, by the instrumentation that saw the
+response, as the provider reported it:
 
-`GraphIntrospector` does not need `LangraphIntegration`. The substitution
-tests wrap the direct version's nodes and write the same report; see
-[LangGraph on AsyncFlow directly](../guides/langgraph-direct.md#6-the-node-report-without-the-adapter).
+| Attribute | Meaning |
+| --- | --- |
+| `gen_ai.usage.input_tokens` | All input tokens, cached ones included |
+| `gen_ai.usage.output_tokens` | All output tokens, reasoning ones included |
+| `gen_ai.usage.cache_read.input_tokens`, `gen_ai.usage.cache_write.input_tokens` | Input tokens read from, or written to, the provider's cache |
+| `gen_ai.usage.reasoning.output_tokens` | Output tokens spent on reasoning |
 
-## AsyncFlow spans
+A response without usage gives a span without these attributes: a count nobody
+measured is absent, never zero. The conventions also omit a cache or reasoning
+count that is zero. So a missing breakdown means "zero or unknown", while a
+missing input or output total means "not measured".
 
-AsyncFlow 0.6.0 emits OpenTelemetry spans for workflows, blocks and tasks once
-`flow.start_telemetry()` runs with RHAPSODY's telemetry installed
-(`rhapsody-py[telemetry]`), which neither AsyncFlow nor Flowgentic depends on.
-The opt-in test `test_asyncflow_telemetry_spans` in
-`tests/integration/test_substitution.py` checks them: per cycle, 1 workflow
-span, 4 block spans and 9 task spans, each task span with `task_id`,
-`executable` and `status`. In AsyncFlow 0.5.0 and 0.6.0, every task span names
-the default backend, even for tasks that ran on another one.
+Flowgentic records no token counts itself, and adds none up on its own spans.
+A decision's total is the sum over the `chat` spans below its `invoke_agent`
+span.
+
+Two sources still invent counts, and Flowgentic cannot detect either from the
+client side:
+- langchain-openai records 0 for a response whose `usage` lacks
+  `prompt_tokens` or `completion_tokens`.
+- RHAPSODY's Dragon-vLLM endpoint reports whitespace word counts as tokens.
+
+## Message content
+
+Prompts, outputs, tool arguments and tool results are not recorded unless
+`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` is set to `SPAN_ONLY`,
+`EVENT_ONLY` or `SPAN_AND_EVENT`, as the GenAI instrumentation reads it.
+Flowgentic's own spans carry no content, and neither do its log records; see
+[Logging](logging.md).
+
+## Cost
+
+OpenTelemetry has no cost attribute yet, so Flowgentic records no cost.
+`examples/telemetry/cost.py` is a recipe that computes it from a span file. It
+prices each inference span in one of three ways:
+
+- **The cost the provider reported**, when the span carries one.
+  OpenRouter reports one, but no instrumentation records it yet.
+- **Usage times the price in force**, for a model behind a priced API. The
+  caller gives the prices. Pydantic's [genai-prices](https://github.com/pydantic/genai-prices)
+  keeps them current and historic, with
+  `calc_price(Usage(...), model_ref=..., provider_id=..., genai_request_timestamp=...)`.
+- **A share of the GPU-hours**, for a model served on the allocation, such as
+  vLLM.
+    - Each deployment's GPU-hours over the campaign, as the batch system
+      accounts them, idle time included, are split over its calls by the input
+      and output tokens the server counted.
+    - Calls are grouped by `server.address`. The OpenAI instrumentation adds
+      that attribute to the `chat` span.
+
+With `examples/telemetry` on the path:
+
+```python
+from pathlib import Path
+
+from cost import Price, allocation_shares, inference_spans, priced_cost
+
+spans = inference_spans(Path("spans.jsonl"))
+remote = [s for s in spans if s["attributes"].get("server.address") == "openrouter.ai"]
+price = Price(input=0.3, output=2.5)  # US dollars per million tokens
+costs = [priced_cost(span, price) for span in remote]
+unmeasured = costs.count(None)
+dollars = sum(cost for cost in costs if cost is not None)
+gpu_hours = allocation_shares(spans, {"gpu-node-1": 6.0})  # by span id
+```
+
+A call without measured usage gets no cost and no share, so report how many
+there were beside the total. It is not counted as zero.
+
+## Conventions version
+
+The GenAI conventions are at Development status, and their repository has no
+release yet. Flowgentic's names follow
+[`semantic-conventions-genai`](https://github.com/open-telemetry/semantic-conventions-genai)
+at commit `9ffc7e0` (2026-10-21). The `examples` and `dev` extras take the
+LangChain and OpenAI instrumentation 1.3b0, below 1.4: each beta emits the
+latest names. A change of conventions changes Flowgentic's names in a release,
+and the changelog lists each one.
+
+## Limitations
+
+- A model call inside a task is a sibling of RHAPSODY's `task` span, under the
+  caller's span, not its child: RHAPSODY creates the task span after the call,
+  so the caller cannot hand it to the task.
+- An AsyncFlow block's span hangs from RHAPSODY's `session` span, not from the
+  span that called the block.
+- AsyncFlow 0.6.0 labels every `task` span with the default backend.
+- No cost reported by a provider is recorded.
+- Without the OpenAI instrumentation, `chat` spans carry no `server.address`.
+
+In 0.3, Flowgentic wrote a Markdown node report, `execution_summary.md`, rebuilt
+from the graph's final messages. It saw no tasks, retries or rejected
+proposals, and summed token counts that the demo had set to zero. The spans
+replace it; see the [changelog](../changelog.md).
 
 ## API
 
-[`flowgentic.utils.telemetry.introspection`](../api/flowgentic/utils/telemetry/introspection.md)
+[`flowgentic.agent`](../api/flowgentic/agent.md)
