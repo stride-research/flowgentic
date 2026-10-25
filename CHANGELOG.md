@@ -48,11 +48,12 @@ predate this changelog, so their changes are not listed here.
 - Dependencies are ranges, not pins: `radical-asyncflow>=0.6,<0.7`, where 0.3
   required `==0.6.0`, because before 1.0 an AsyncFlow minor release may break;
   `langchain-openai` and `langchain-ollama` at `>=1.0,<2.0`, like the other
-  LangChain packages. The `examples` and `dev` extras have floors. CI runs the
-  suite on the lowest versions the ranges allow, and a weekly workflow runs it
-  on the newest releases within them, and on the newest AsyncFlow and Academy
-  releases beyond them. Dependabot updates `uv.lock` and the workflows'
-  actions.
+  LangChain packages. The `examples` and `dev` extras have floors, and `dev`
+  keeps `pymdown-extensions` below 12.2: 12.2 breaks mkdocstrings before 1.0.7,
+  and 1.0.7 needs Python 3.11. CI runs the suite on the lowest versions the
+  ranges allow. A weekly workflow runs the suite and the docs build on the
+  newest releases within them, and the suite on the newest AsyncFlow and Academy
+  releases beyond them. Dependabot updates `uv.lock` and the workflows' actions.
 
 ### Removed
 

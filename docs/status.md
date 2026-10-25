@@ -35,11 +35,11 @@ replaces the `flowgentic.academy` module that 0.4.0 removed.
 Tested environment, from `uv.lock`: LangGraph 1.2.16, langchain-core 1.6.13,
 langchain 1.4.7, radical-asyncflow 0.6.0 and academy-py 1.0.0. CI runs the
 test suite on Python 3.10, 3.11 and 3.12, and on Python 3.10 with the lowest
-versions the dependency ranges allow; a weekly workflow runs it on the newest
-releases within the ranges. The package requires `langgraph>=1.1.5,<2.0`;
-`langchain-core`, `langchain`, `langchain-openai` and `langchain-ollama` at
-`>=1.0,<2.0`; and `radical-asyncflow>=0.6,<0.7`, because before 1.0 an
-AsyncFlow minor release may break. Its `examples` extra adds
+versions the dependency ranges allow; a weekly workflow runs it, and builds
+the docs, on the newest releases within the ranges. The package requires
+`langgraph>=1.1.5,<2.0`; `langchain-core`, `langchain`, `langchain-openai` and
+`langchain-ollama` at `>=1.0,<2.0`; and `radical-asyncflow>=0.6,<0.7`, because
+before 1.0 an AsyncFlow minor release may break. Its `examples` extra adds
 `academy-py>=1.0,<2` for the Academy example.
 
 ## Known limitations
