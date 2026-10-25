@@ -4,7 +4,9 @@ Flowgentic sits between an application's agent code and RADICAL AsyncFlow. It
 has two independent parts: `bind_agent`, which runs an agent component as an
 AsyncFlow task, and `LangraphIntegration`, which runs a LangGraph graph's
 tools, services, tasks and nodes as AsyncFlow tasks. AsyncFlow schedules every
-task on a named backend.
+task on a named backend. A third part, `accept`, decides whether an agent's
+output may become that work; it calls no AsyncFlow API itself, though its
+producer and checks may submit tasks.
 
 ```mermaid
 flowchart LR
@@ -28,6 +30,7 @@ flowchart LR
 | Module | Contents |
 | --- | --- |
 | `flowgentic.agent` | `bind_agent` and `AgentTask`: an agent component as an AsyncFlow task, each call an `invoke_agent` span; see [Telemetry](features/telemetry.md) |
+| `flowgentic.acceptance` | `accept`, `Rejected`, `NotAccepted`, `Outcome` and `Attempt`: an agent's output checked, re-asked for and accepted or replaced by a fallback, each call an `accept` span; see [Acceptance](features/acceptance.md) |
 | `flowgentic.langGraph.main` | `LangraphIntegration`: creates and shuts down the `WorkflowEngine` |
 | `flowgentic.langGraph.execution_wrappers` | `AsyncFlowType`, the `asyncflow` decorator, the handoff tool, `BaseLLMAgentState` |
 | `flowgentic.langGraph.memory` | `MemoryConfig`, `MemoryManager` and the integration's `LangraphMemoryManager` |
@@ -37,7 +40,7 @@ flowchart LR
 | `flowgentic.utils.llm_providers` | `ChatLLMProvider`: OpenRouter, OpenAI and Ollama chat models |
 | `flowgentic` | `configure_logging`: prints Flowgentic's log records, which import leaves to the application; see [Logging](features/logging.md) |
 | `flowgentic._asyncflow` | Private: the one module that calls AsyncFlow. `bind_agent`, `LangraphIntegration`, the `asyncflow` decorator and the handoff tool open and close engines and register tasks, services and blocks through it. It carries the caller's trace context into each task and service |
-| `flowgentic._telemetry` | Private: the OpenTelemetry tracer, the span and attribute names, and the trace-context carrier |
+| `flowgentic._telemetry` | Private: the OpenTelemetry tracer and logger, the span, event and attribute names, the content switch, and the trace-context carrier |
 
 Academy agents' actions run in AsyncFlow tasks without a Flowgentic module:
 see [Academy actions as AsyncFlow tasks](guides/academy-on-asyncflow.md).

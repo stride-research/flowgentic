@@ -1,21 +1,24 @@
 # Telemetry
 
-Flowgentic records a run as OpenTelemetry spans that follow OpenTelemetry's
+Flowgentic records a run as OpenTelemetry spans and events that follow
+OpenTelemetry's
 [GenAI semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai).
-An agent's decision, the AsyncFlow task it runs in, the model call it makes and
-the simulations the run launches form one trace.
+An agent's decision, the AsyncFlow task it runs in, the model call it makes,
+the checks its output passed or failed, and the simulations the run launches
+form one trace.
 
 Flowgentic depends on `opentelemetry-api` only. Until the application
-configures the OpenTelemetry SDK, every span is a no-op.
+configures the OpenTelemetry SDK, every span and event is a no-op.
 
 ## What records what
 
 Each layer records what it owns, and Flowgentic records only what no other
 layer knows:
 
-| Spans | Recorded by |
+| Spans and events | Recorded by |
 | --- | --- |
 | `invoke_agent <identity>`, one per call of an agent bound with `bind_agent` | Flowgentic |
+| `accept <name>`, one per call of `accept`, with an `accept.attempt <name>` span per attempt and a `gen_ai.evaluation.result` event per check that ran; see [Acceptance](acceptance.md) | Flowgentic |
 | `chat <model>`, `execute_tool <tool>`, `invoke_workflow <graph>` | OpenTelemetry's GenAI instrumentation for LangChain, with its OpenAI instrumentation |
 | `session`, `workflow`, `block`, `task` | RHAPSODY, once the application calls `flow.start_telemetry()` |
 
@@ -38,9 +41,10 @@ made inside a task would start a trace of its own.
 ## Set it up
 
 The application configures OpenTelemetry. It installs the SDK, turns on the
-GenAI instrumentation, and gives RHAPSODY a span processor of its own. The
-AI-HPC demo's `tracing.py` does this, and writes every span to a file, one JSON
-object per line:
+GenAI instrumentation, gives RHAPSODY a span processor of its own, and
+configures a logger provider for the events, which are log records. The
+AI-HPC demo's `tracing.py` does this, and writes every span and event to a
+file, one JSON object per line:
 
 ```python
 --8<-- "examples/ai-hpc-coupling/tracing.py:run-trace"
@@ -61,7 +65,8 @@ uv run --extra examples python examples/ai-hpc-coupling/augmented_campaign.py --
 ```
 
 To send spans to a collector or a trace backend such as Jaeger instead, use a
-`BatchSpanProcessor` with an OTLP exporter in place of the file.
+`BatchSpanProcessor` with an OTLP exporter in place of the file, and a
+`BatchLogRecordProcessor` with an OTLP log exporter for the events.
 
 The packages are in the `examples` extra:
 - `opentelemetry-sdk`;
@@ -125,8 +130,10 @@ client side:
 Prompts, outputs, tool arguments and tool results are not recorded unless
 `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` is set to `SPAN_ONLY`,
 `EVENT_ONLY` or `SPAN_AND_EVENT`, as the GenAI instrumentation reads it.
-Flowgentic's own spans carry no content, and neither do its log records; see
-[Logging](logging.md).
+Flowgentic reads the same switch. Its only content is the value an
+acceptance check rejected, which goes on the attempt's span under `SPAN_ONLY`
+or `SPAN_AND_EVENT`; see [Acceptance](acceptance.md#telemetry). Its
+`logging` records carry no content; see [Logging](logging.md).
 
 ## Cost
 

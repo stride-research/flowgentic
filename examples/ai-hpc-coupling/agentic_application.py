@@ -13,6 +13,7 @@ import time
 from typing import Any, cast
 
 from agentic_support import (
+    PLANNER_ATTEMPTS,
     AgentDecisionModel,
     AgenticCampaignState,
     AnalysisDecision,
@@ -21,10 +22,14 @@ from agentic_support import (
     agent_trace_entry,
     decision_message,
     deterministic_executor_message,
-    enforce_candidate_policy,
     enforce_supervisor_policy,
+    fallback_plan,
     initial_agentic_state,
+    planner_checks,
+    planner_trace_entry,
     print_agentic_cycle,
+    rejected_proposal,
+    round_candidates,
 )
 from campaign_types import CampaignApplication, CampaignSettings, CampaignState
 from demo_support import (
@@ -35,6 +40,7 @@ from demo_support import (
 )
 from langgraph.graph import END, START, StateGraph
 
+from flowgentic.acceptance import Attempt, accept
 from flowgentic.langGraph.execution_wrappers import AsyncFlowType
 from flowgentic.langGraph.main import LangraphIntegration
 
@@ -149,7 +155,7 @@ async def build_agentic_campaign(
             ),
         }
 
-    # 3. Planner agent: interrogate the surrogate, reason, then pass guardrails
+    # 3. Planner agent: interrogate the surrogate, reason, then pass the checks
     async def planner_agent(state: AgenticCampaignState) -> dict[str, Any]:
         remaining = state["budget"] - state["spent"]
         expected_count = min(settings.batch_size, remaining)
@@ -163,46 +169,70 @@ async def build_agentic_campaign(
                 "cycle": state["cycle"],
             }
         )
-        reasoning = await reason_about_plan(
-            {
-                "cycle": state["cycle"],
-                "strategy": state["strategy"],
-                "center": state["center"],
-                "radius": state["radius"],
-                "best_x": state["best_x"],
-                "best_value": state["best_value"],
-                "uncertainty": state["uncertainty"],
-                "expected_count": expected_count,
-                "lower_bound": lower_bound,
-                "upper_bound": upper_bound,
-                "surrogate_candidates": proposal["candidates"],
-                "previous_results": state["results"],
-            }
+        context = {
+            "cycle": state["cycle"],
+            "strategy": state["strategy"],
+            "center": state["center"],
+            "radius": state["radius"],
+            "best_x": state["best_x"],
+            "best_value": state["best_value"],
+            "uncertainty": state["uncertainty"],
+            "expected_count": expected_count,
+            "lower_bound": lower_bound,
+            "upper_bound": upper_bound,
+            "surrogate_candidates": proposal["candidates"],
+            "previous_results": state["results"],
+        }
+        events = []
+
+        # --8<-- [start:planner-accept]
+        async def propose_batch(
+            previous: tuple[Attempt[PlannerDecision], ...],
+        ) -> PlannerDecision:
+            # A re-ask shows the planner its rejected proposals and why
+            rejected = [
+                rejected_proposal(a.value, a.rejected_by, a.reason) for a in previous
+            ]
+            reasoning = await reason_about_plan(
+                {**context, "rejected_proposals": rejected}
+            )
+            events.append(reasoning["event"])
+            decision = PlannerDecision.model_validate(reasoning["decision"])
+            candidates = round_candidates(decision.candidates, lower_bound, upper_bound)
+            return decision.model_copy(update={"candidates": candidates})
+
+        bounds = {
+            "expected_count": expected_count,
+            "lower_bound": lower_bound,
+            "upper_bound": upper_bound,
+        }
+        outcome = await accept(
+            propose_batch,
+            checks=planner_checks(**bounds),
+            attempts=PLANNER_ATTEMPTS,
+            fallback=lambda: fallback_plan(proposal["candidates"], **bounds),
+            name="planner",
         )
-        decision = PlannerDecision.model_validate(reasoning["decision"])
-        candidates, policy_status = enforce_candidate_policy(
-            decision,
-            proposal["candidates"],
-            expected_count=expected_count,
-            lower_bound=lower_bound,
-            upper_bound=upper_bound,
-        )
+        # --8<-- [end:planner-accept]
+        decision = outcome.value
+        rejected = [
+            rejected_proposal(a.value, a.rejected_by, a.reason)
+            for a in outcome.attempts
+            if a.rejected_by is not None
+        ]
 
         return {
-            "candidates": candidates,
+            "candidates": decision.candidates,
             "planner_rationale": decision.rationale,
-            "decision": f"planner selected {len(candidates)} candidates",
-            "trace": [*state["trace"], proposal["event"], reasoning["event"]],
+            "decision": f"planner selected {len(decision.candidates)} candidates",
+            "trace": [*state["trace"], proposal["event"], *events],
             "agent_trace": [
                 *state["agent_trace"],
-                agent_trace_entry(
-                    agent="planner",
+                planner_trace_entry(
                     cycle=state["cycle"],
-                    decision={
-                        **decision.model_dump(),
-                        "accepted_candidates": candidates,
-                    },
-                    policy_status=policy_status,
+                    decision=decision,
+                    disposition=outcome.disposition,
+                    rejected=rejected,
                 ),
             ],
             "messages": [

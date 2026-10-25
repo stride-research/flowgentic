@@ -76,6 +76,7 @@ async def open_campaign(
     integration: str,
     settings: Any,
     backends: list[Any] | None = None,
+    decision_model: Any = None,
 ) -> Any:
     """Open the runner's campaign context for one integration."""
     demo("campaign_common").reset_demo_state()
@@ -85,7 +86,7 @@ async def open_campaign(
         integration,
         backends,
         settings,
-        demo("agentic_support").RehearsalDecisionModel(),
+        decision_model or demo("agentic_support").RehearsalDecisionModel(),
     )
 
 
@@ -261,6 +262,81 @@ async def test_slow_node_runs_once(
 
     assert state["spent"] == 4
     assert len(starts) == 4
+
+
+class OutOfBoundsPlanner:
+    """Rehearsal agents whose planner proposes outside the bounds.
+
+    With ``corrects``, it proposes the rehearsal batch once a re-ask tells it
+    why its proposal was rejected.
+    """
+
+    name = "out-of-bounds-planner"
+
+    def __init__(self, *, corrects: bool) -> None:
+        self.corrects = corrects
+        self.rehearsal = demo("agentic_support").RehearsalDecisionModel()
+        self.feedback: list[list[dict[str, Any]]] = []
+
+    async def plan(self, context: dict[str, Any]) -> Any:
+        feedback = context.get("rejected_proposals", [])
+        self.feedback.append(feedback)
+        if self.corrects and feedback:
+            return await self.rehearsal.plan(context)
+        upper = float(context["upper_bound"])
+        return demo("agentic_support").PlannerDecision(
+            candidates=[upper + 1.0 + index for index in range(4)],
+            rationale="Search beyond the trust region.",
+        )
+
+    async def analyze(self, context: dict[str, Any]) -> Any:
+        return await self.rehearsal.analyze(context)
+
+    async def supervise(self, context: dict[str, Any]) -> Any:
+        return await self.rehearsal.supervise(context)
+
+
+# The planner's proposals pass the same checks, re-ask and fallback in both
+# versions: through accept in Flowgentic's, by hand in the direct one.
+@pytest.mark.parametrize(
+    ("corrects", "disposition", "rejections"),
+    ((True, "accepted", 1), (False, "fallback", 2)),
+    ids=("reask", "fallback"),
+)
+async def test_both_versions_accept_planner_proposals_alike(
+    corrects: bool, disposition: str, rejections: int
+) -> None:
+    runs = {}
+    for integration in INTEGRATIONS:
+        planner = OutOfBoundsPlanner(corrects=corrects)
+        async with await open_campaign(
+            integration, one_cycle_settings(), decision_model=planner
+        ) as (application, _, _):
+            center, radius = application.state["center"], application.state["radius"]
+            state = await application.graph.ainvoke(application.state)
+        (entry,) = [e for e in state["agent_trace"] if e["agent"] == "planner"]
+        runs[integration] = {
+            "entry": entry,
+            "simulated": [result["x"] for result in state["results"]],
+            "events": [event["name"] for event in state["trace"]],
+            "feedback": planner.feedback,
+        }
+
+    flowgentic, direct = runs["flowgentic"], runs["direct"]
+    decision = flowgentic["entry"]["decision"]
+    assert decision.get("disposition") == disposition
+    rejected = decision["rejected_attempts"]
+    assert len(rejected) == rejections
+    assert {attempt["rejected_by"] for attempt in rejected} == {"within_bounds"}
+    assert all("lie outside" in attempt["reason"] for attempt in rejected)
+    # Each re-ask hands the planner the proposals rejected so far, and why
+    planner_calls = 2 if disposition == "accepted" else rejections
+    assert flowgentic["feedback"] == [rejected[:n] for n in range(planner_calls)]
+    assert flowgentic["events"].count("agent.planner") == planner_calls
+    # What ran is the accepted batch or the fallback's, within the bounds
+    assert flowgentic["simulated"] == decision["candidates"]
+    assert all(center - radius <= x <= center + radius for x in decision["candidates"])
+    assert without_timing(direct) == without_timing(flowgentic)
 
 
 # Criterion 3: cancelling a cycle while its simulations are in flight.

@@ -20,6 +20,9 @@ scientific work; 0.4.0 removes them.
 
 `bind_agent`, which binds an agent component to an AsyncFlow task, remains a
 documented recipe: [Augment an AsyncFlow application](guides/augment-asyncflow-app.md).
+`accept`, new in 0.4.0, accepts or rejects an agent's output on explicit
+checks, with re-asks and a deterministic fallback:
+[Acceptance](features/acceptance.md).
 A LangGraph application can also run on AsyncFlow without Flowgentic:
 [LangGraph on AsyncFlow directly](guides/langgraph-direct.md). So can an
 application that calls Academy agents from its tasks:
@@ -61,6 +64,10 @@ demos' traces.
     - AsyncFlow block spans hang from the session span, not from the caller's.
     - AsyncFlow 0.6.0 labels every task span with the default backend.
     - No cost that a provider reports is recorded.
+    - Acceptance's evaluation events are log records, emitted through Python's
+      OpenTelemetry Logs API, which still lives in the module
+      `opentelemetry._logs`. An application sees them only once it configures
+      a logger provider.
     - RHAPSODY's Dragon-vLLM endpoint reports word counts as token counts.
 - Live runs of the design-pattern examples need a model provider and
   credentials. CI runs four of them with a scripted chat model in place of the

@@ -1,10 +1,12 @@
 """The agentic AI-HPC campaign on AsyncFlow directly, without Flowgentic.
 
 This is ``agentic_application.py`` with the Flowgentic layer removed: every
-``flowgentic`` decorator becomes a direct AsyncFlow call, and the LangGraph
-graph, node bodies, tools, state, and policy guards are unchanged. The runner
-selects it with ``agentic_campaign.py --integration direct``; the substitution
-experiment (``docs/evaluation/substitution.md``) compares the two versions.
+``flowgentic`` decorator becomes a direct AsyncFlow call, and the planner's
+``accept`` call becomes the same policy written by hand. The LangGraph graph,
+the other node bodies, tools, state, checks and policy guards are unchanged.
+The runner selects it with ``agentic_campaign.py --integration direct``; the
+substitution experiment (``docs/evaluation/substitution.md``) compares the two
+versions.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from functools import wraps
 from typing import Any, Awaitable, Callable, cast
 
 from agentic_support import (
+    PLANNER_ATTEMPTS,
     AgentDecisionModel,
     AgenticCampaignState,
     AnalysisDecision,
@@ -23,9 +26,13 @@ from agentic_support import (
     agent_trace_entry,
     decision_message,
     deterministic_executor_message,
-    enforce_candidate_policy,
     enforce_supervisor_policy,
+    fallback_plan,
     initial_agentic_state,
+    planner_checks,
+    planner_trace_entry,
+    rejected_proposal,
+    round_candidates,
 )
 from campaign_common import (
     SurrogateService,
@@ -37,6 +44,10 @@ from campaign_types import CampaignApplication, CampaignSettings, CampaignState
 from langchain_core.tools import BaseTool, tool
 from langgraph.graph import END, START, StateGraph
 from radical.asyncflow import WorkflowEngine
+
+# The shared checks and decision model reject a proposal with Flowgentic's
+# exception; this version handles the rejections itself.
+from flowgentic.acceptance import Rejected
 
 
 async def build_direct_agentic_campaign(
@@ -136,7 +147,7 @@ async def build_direct_agentic_campaign(
             ),
         }
 
-    # 3. Planner agent: interrogate the surrogate, reason, then pass guardrails
+    # 3. Planner agent: interrogate the surrogate, reason, then pass the checks
     async def planner_agent(state: AgenticCampaignState) -> dict[str, Any]:
         remaining = state["budget"] - state["spent"]
         expected_count = min(settings.batch_size, remaining)
@@ -150,46 +161,74 @@ async def build_direct_agentic_campaign(
                 "cycle": state["cycle"],
             }
         )
-        reasoning = await reason_about_plan(
-            {
-                "cycle": state["cycle"],
-                "strategy": state["strategy"],
-                "center": state["center"],
-                "radius": state["radius"],
-                "best_x": state["best_x"],
-                "best_value": state["best_value"],
-                "uncertainty": state["uncertainty"],
-                "expected_count": expected_count,
-                "lower_bound": lower_bound,
-                "upper_bound": upper_bound,
-                "surrogate_candidates": proposal["candidates"],
-                "previous_results": state["results"],
-            }
-        )
-        decision = PlannerDecision.model_validate(reasoning["decision"])
-        candidates, policy_status = enforce_candidate_policy(
-            decision,
-            proposal["candidates"],
-            expected_count=expected_count,
-            lower_bound=lower_bound,
-            upper_bound=upper_bound,
-        )
+        context = {
+            "cycle": state["cycle"],
+            "strategy": state["strategy"],
+            "center": state["center"],
+            "radius": state["radius"],
+            "best_x": state["best_x"],
+            "best_value": state["best_value"],
+            "uncertainty": state["uncertainty"],
+            "expected_count": expected_count,
+            "lower_bound": lower_bound,
+            "upper_bound": upper_bound,
+            "surrogate_candidates": proposal["candidates"],
+            "previous_results": state["results"],
+        }
+        events = []
+
+        # --8<-- [start:planner-by-hand]
+        # The Flowgentic version's acceptance policy, by hand: each re-ask shows
+        # the planner its rejected proposals and why; the checks run in order.
+        bounds = {
+            "expected_count": expected_count,
+            "lower_bound": lower_bound,
+            "upper_bound": upper_bound,
+        }
+        rejected: list[dict[str, Any]] = []
+        decision, disposition = None, "fallback"
+        for _ in range(PLANNER_ATTEMPTS):
+            try:
+                # A copy: a task on a thread backend shares what it is given
+                reasoning = await reason_about_plan(
+                    {**context, "rejected_proposals": list(rejected)}
+                )
+            except Rejected as exc:
+                rejected_by = exc.check or "planner"
+                rejected.append(rejected_proposal(None, rejected_by, exc.reason))
+                continue
+            events.append(reasoning["event"])
+            proposed = PlannerDecision.model_validate(reasoning["decision"])
+            candidates = round_candidates(proposed.candidates, lower_bound, upper_bound)
+            proposed = proposed.model_copy(update={"candidates": candidates})
+            for check in planner_checks(**bounds):
+                try:
+                    check(proposed)
+                except Rejected as exc:
+                    rejected_by = exc.check or check.__name__
+                    rejected.append(
+                        rejected_proposal(proposed, rejected_by, exc.reason)
+                    )
+                    break
+            else:
+                decision, disposition = proposed, "accepted"
+                break
+        if decision is None:
+            decision = fallback_plan(proposal["candidates"], **bounds)
+        # --8<-- [end:planner-by-hand]
 
         return {
-            "candidates": candidates,
+            "candidates": decision.candidates,
             "planner_rationale": decision.rationale,
-            "decision": f"planner selected {len(candidates)} candidates",
-            "trace": [*state["trace"], proposal["event"], reasoning["event"]],
+            "decision": f"planner selected {len(decision.candidates)} candidates",
+            "trace": [*state["trace"], proposal["event"], *events],
             "agent_trace": [
                 *state["agent_trace"],
-                agent_trace_entry(
-                    agent="planner",
+                planner_trace_entry(
                     cycle=state["cycle"],
-                    decision={
-                        **decision.model_dump(),
-                        "accepted_candidates": candidates,
-                    },
-                    policy_status=policy_status,
+                    decision=decision,
+                    disposition=disposition,
+                    rejected=rejected,
                 ),
             ],
             "messages": [

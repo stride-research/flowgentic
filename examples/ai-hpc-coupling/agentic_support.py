@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, TypeVar, cast
 
 from agent_contracts import (
+    PLANNER_ATTEMPTS,
     AgentDecisionModel,
     AnalysisDecision,
     PlannerDecision,
@@ -17,16 +18,26 @@ from agent_contracts import (
     enforce_candidate_policy,
     enforce_supervisor_policy,
     evenly_spaced,
+    fallback_plan,
+    planner_checks,
+    planner_trace_entry,
     print_agentic_cycle,
+    rejected_proposal,
+    round_candidates,
 )
 from campaign_common import SurrogateService
 from campaign_types import CampaignState
 from demo_support import agent_message, initial_campaign_state
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from pydantic import BaseModel
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from openai import LengthFinishReasonError
+from pydantic import BaseModel, ValidationError
+
+from flowgentic.acceptance import Rejected
 
 DecisionType = TypeVar("DecisionType", bound=BaseModel)
+
+TRUNCATED = "the answer was cut off at the token limit"
 
 
 @dataclass
@@ -42,16 +53,26 @@ class LangChainDecisionModel:
         system_prompt: str,
         context: dict[str, Any],
     ) -> DecisionType:
-        # The raw message keeps the finish reason and the provider's usage
+        # --8<-- [start:decision-rejections]
+        # OpenAI's structured outputs parse the answer inside the call, so their
+        # errors are raised. Other providers return them with the raw message,
+        # which also keeps the refusal and the finish reason.
         structured_model = self.model.with_structured_output(schema, include_raw=True)
-        response = await structured_model.ainvoke(
-            [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=json.dumps(context, indent=2, sort_keys=True)),
-            ]
-        )
+        try:
+            response = await structured_model.ainvoke(_messages(system_prompt, context))
+        except LengthFinishReasonError as exc:
+            raise Rejected(TRUNCATED, check="truncation") from exc
+        except ValidationError as exc:
+            raise Rejected(str(exc), check="schema") from exc
+        raw = response["raw"]
+        if refusal := raw.additional_kwargs.get("refusal"):
+            raise Rejected(refusal, check="refusal")
+        metadata = raw.response_metadata
+        if "length" in (metadata.get("finish_reason"), metadata.get("done_reason")):
+            raise Rejected(TRUNCATED, check="truncation")
         if response["parsing_error"] is not None:
-            raise response["parsing_error"]
+            raise Rejected(str(response["parsing_error"]), check="schema")
+        # --8<-- [end:decision-rejections]
         parsed = response["parsed"]
         if isinstance(parsed, schema):
             return parsed
@@ -96,6 +117,29 @@ class LangChainDecisionModel:
             ),
             context,
         )
+
+
+def _messages(system_prompt: str, context: dict[str, Any]) -> list[BaseMessage]:
+    """Ask for a decision; a re-ask adds each rejected proposal and the reason."""
+    facts = {
+        key: value for key, value in context.items() if key != "rejected_proposals"
+    }
+    messages: list[BaseMessage] = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=json.dumps(facts, indent=2, sort_keys=True)),
+    ]
+    for proposal in context.get("rejected_proposals", []):
+        if proposal["decision"] is not None:
+            messages.append(AIMessage(content=json.dumps(proposal["decision"])))
+        messages.append(
+            HumanMessage(
+                content=(
+                    f"The {proposal['rejected_by']} check rejected your decision: "
+                    f"{proposal['reason']}. Return a corrected decision."
+                )
+            )
+        )
+    return messages
 
 
 @dataclass

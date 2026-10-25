@@ -70,7 +70,7 @@ Audience-facing application code is separated from presentation scaffolding:
 | `agentic_application.py` | LangGraph-owned planner, tools, executor, analyst, supervisor, and graph loop | Only to contrast application ownership |
 | `augmented_application.py` | Direct AsyncFlow application with Flowgentic-bound agent decision points | **Yes: augmentation comparison** |
 | `augmented_agents.py` | Private LangGraph implementations of planner, analyst, and supervisor | Only to show framework isolation |
-| `agent_contracts.py` | Framework-neutral structured decisions and deterministic policy guards | Only for guardrails |
+| `agent_contracts.py` | Framework-neutral structured decisions, the planner's checks and fallback, and deterministic policy guards | Only for guardrails |
 | `src/flowgentic/agent.py` | Reusable Flowgentic adapter from an agent component to an AsyncFlow task | **Yes: the integration seam** |
 | `application.py` | Retained deterministic LangGraph/Flowgentic implementation | No: regression comparison |
 | `adr_control.py` | Optional ADR goals, observations, policy, and actions around any implementation | When discussing ADR |
@@ -196,16 +196,22 @@ disable this behavior.
 All versions print scientific progress, resource use, stopping reason, resident
 service reuse, and observed simulation concurrency. The agentic and
 agent-augmented versions also print their next strategy and record every
-structured agent decision together with the applicable policy result.
+structured agent decision together with the applicable policy result. In the
+agentic version, the planner's proposals pass Flowgentic's `accept`: three
+checks, one re-ask with the reasons, and the surrogate's batch as the
+fallback. Its record of each planner decision holds the disposition
+(`accepted` or `fallback`) and every rejected proposal, and the runner prints
+how many there were.
 
 The RADICAL baseline writes to `radical_demo_results/`, the retained LangGraph
 version to `demo_results/`, the agentic version to `agentic_demo_results/`, and
 the agent-augmented version to `augmented_demo_results/`. Each contains
 `campaign_summary.json` with scientific state, execution events, retries, and
 backends. The Flowgentic, agentic and augmented runners also take
-`--trace PATH`, which writes the run's OpenTelemetry spans to `PATH`, one JSON
-object per line (`tracing.py`): the agents' decisions, the AsyncFlow tasks and
-any model calls, as one trace.
+`--trace PATH`, which writes the run's OpenTelemetry spans and events to
+`PATH`, one JSON object per line (`tracing.py`): the agents' decisions, the
+planner's acceptance checks, the AsyncFlow tasks and any model calls, as one
+trace.
 
 The local named backends keep the demonstration laptop-safe. Replacing them
 with RHAPSODY backends changes resource setup, not the scientific loop or agent
