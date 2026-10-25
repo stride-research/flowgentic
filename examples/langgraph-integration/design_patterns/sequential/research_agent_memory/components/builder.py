@@ -26,11 +26,6 @@ class WorkflowBuilder:
 		self.nodes = WorkflowNodes(agents_manager, self.tools_registry, memory_manager)
 		self.edges = WorkflowEdges()
 
-	def _register_nodes_to_introspector(self):
-		"""Register all nodes with the introspector for telemetry."""
-		all_node_names = list(self.nodes.get_all_nodes().keys())
-		self.agents_manager.agent_introspector._all_nodes = all_node_names
-
 	def build_workflow(self) -> StateGraph:
 		"""Build and return the complete memory-enabled workflow graph."""
 
@@ -42,19 +37,12 @@ class WorkflowBuilder:
 		print("📊 Creating state graph...")
 		workflow = StateGraph(WorkflowState)
 
-		# Step 3: Add all nodes with introspection
-		print("🔗 Adding nodes with introspection...")
+		# Step 3: Add all nodes
+		print("🔗 Adding nodes...")
 		for node_name, node_function in self.nodes.get_all_nodes().items():
-			# Wrap node for telemetry tracking
-			instrumented_node = self.agents_manager.agent_introspector.introspect_node(
-				node_function, node_name=node_name
-			)
-			workflow.add_node(node_name, instrumented_node)
+			workflow.add_node(node_name, node_function)
 
-		# Step 4: Register nodes for final report generation
-		self._register_nodes_to_introspector()
-
-		# Step 5: Define conditional edges (routing logic)
+		# Step 4: Define conditional edges (routing logic)
 		print("🔀 Defining conditional edges...")
 		workflow.add_conditional_edges(
 			"preprocess",
@@ -79,11 +67,11 @@ class WorkflowBuilder:
 			{"finalize_output": "finalize_output", "error_handler": "error_handler"},
 		)
 
-		# Step 6: Add terminal edges
+		# Step 5: Add terminal edges
 		workflow.add_edge("finalize_output", END)
 		workflow.add_edge("error_handler", END)
 
-		# Step 7: Set entry point
+		# Step 6: Set entry point
 		workflow.set_entry_point("preprocess")
 
 		print("✅ Workflow graph built successfully with memory integration!")

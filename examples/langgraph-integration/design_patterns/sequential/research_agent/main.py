@@ -5,7 +5,6 @@ from .components.builder import WorkflowBuilder
 from .utils.schemas import WorkflowState
 import asyncio
 from langgraph.checkpoint.memory import InMemorySaver
-from flowgentic.utils.telemetry import GraphIntrospector
 
 
 # --8<-- [start:start-app]
@@ -47,15 +46,12 @@ async def start_app():
 		except Exception as e:
 			raise
 			print(f"❌ Workflow execution failed: {str(e)}")
-		finally:
-			await agents_manager.generate_execution_artifacts(
-				app, __file__, final_state=final_state
-			)
 
 		# The nodes route their failures to the error handler, so a failed run
 		# raises here, or it would exit 0
 		if not final_state["workflow_complete"]:
 			raise RuntimeError(f"Workflow failed: {'; '.join(final_state['errors'])}")
+		return final_state
 
 
 if __name__ == "__main__":

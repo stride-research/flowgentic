@@ -29,7 +29,6 @@ from agentic_support import (
 from campaign_types import CampaignApplication, CampaignSettings, CampaignState
 from demo_support import (
     SurrogateService,
-    add_instrumented_nodes,
     evaluate_candidate,
     retry_transient_simulation,
     timed_event,
@@ -207,7 +206,7 @@ async def build_agentic_campaign(
                 ),
             ],
             "messages": [
-                decision_message("planner", decision.rationale, decision_model.name)
+                decision_message("planner", decision.rationale)
             ],
         }
 
@@ -288,9 +287,7 @@ async def build_agentic_campaign(
                 ),
             ],
             "messages": [
-                decision_message(
-                    "analyst", decision.interpretation, decision_model.name
-                )
+                decision_message("analyst", decision.interpretation)
             ],
         }
 
@@ -338,7 +335,7 @@ async def build_agentic_campaign(
                 ),
             ],
             "messages": [
-                decision_message("supervisor", decision.rationale, decision_model.name)
+                decision_message("supervisor", decision.rationale)
             ],
         }
 
@@ -359,7 +356,8 @@ async def build_agentic_campaign(
             supervisor_agent
         ),
     }
-    add_instrumented_nodes(integration, graph, nodes)
+    for name, node in nodes.items():
+        graph.add_node(name, node)
     graph.add_edge(START, "planner_agent")
     graph.add_edge("planner_agent", "simulation_executor")
     graph.add_edge("simulation_executor", "analyst_agent")

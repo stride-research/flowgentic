@@ -42,16 +42,20 @@ class LangChainDecisionModel:
         system_prompt: str,
         context: dict[str, Any],
     ) -> DecisionType:
-        structured_model = self.model.with_structured_output(schema)
+        # The raw message keeps the finish reason and the provider's usage
+        structured_model = self.model.with_structured_output(schema, include_raw=True)
         response = await structured_model.ainvoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=json.dumps(context, indent=2, sort_keys=True)),
             ]
         )
-        if isinstance(response, schema):
-            return response
-        return schema.model_validate(response)
+        if response["parsing_error"] is not None:
+            raise response["parsing_error"]
+        parsed = response["parsed"]
+        if isinstance(parsed, schema):
+            return parsed
+        return schema.model_validate(parsed)
 
     async def plan(self, context: dict[str, Any]) -> PlannerDecision:
         return await self._decide(
@@ -204,13 +208,9 @@ def initial_agentic_state(
     return cast(AgenticCampaignState, state)
 
 
-def decision_message(agent: str, content: str, model_name: str) -> AIMessage:
-    """Create an introspectable message for one agent decision."""
-    return AIMessage(
-        content=f"{agent}: {content}",
-        response_metadata={"model_name": model_name},
-        usage_metadata={"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
-    )
+def decision_message(agent: str, content: str) -> AIMessage:
+    """Record one agent decision in the graph's messages."""
+    return AIMessage(content=f"{agent}: {content}")
 
 
 def deterministic_executor_message(count: int) -> AIMessage:

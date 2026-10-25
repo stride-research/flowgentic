@@ -43,7 +43,6 @@ Inside the context, the integration exposes:
 | --- | --- |
 | `flow` | The AsyncFlow `WorkflowEngine` |
 | `execution_wrappers` | The `asyncflow` decorator and the handoff tool |
-| `agent_introspector` | The node report; see [Telemetry](../features/telemetry.md) |
 | `memory_manager` | Conversation memory; see [Memory](../features/memory.md) |
 
 The integration always creates its own engine: it cannot run on an engine the
@@ -105,8 +104,9 @@ below retries a transient simulation failure once.
 --8<-- "examples/ai-hpc-coupling/agentic_application.py:block-nodes"
 ```
 
-`add_instrumented_nodes` adds each node to the graph wrapped for the node
-report; see [Telemetry](../features/telemetry.md).
+With OpenTelemetry configured, each node is an AsyncFlow `block` span and each
+tool call an `execute_tool` span, with the tool's task under it; see
+[Telemetry](../features/telemetry.md).
 
 ### Calling tools from node code
 

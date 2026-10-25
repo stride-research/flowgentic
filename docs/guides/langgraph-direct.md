@@ -89,19 +89,6 @@ Flowgentic's one call:
 --8<-- "tests/integration/test_substitution.py:handoff-tool"
 ```
 
-## 6. The node report, without the adapter
-
-Flowgentic's node report comes from its telemetry module, which works without
-`LangraphIntegration`. This test wraps the direct version's nodes with
-`GraphIntrospector` and writes the report:
-
-```python
---8<-- "tests/integration/test_substitution.py:report-without-adapter"
-```
-
-The application sets the introspector's `_all_nodes` and `_final_state` itself;
-see [Telemetry](../features/telemetry.md).
-
 ## Run it
 
 ```bash
@@ -123,5 +110,4 @@ runner and demo support code; a standalone direct application needs only
 | Tools, tasks, services, nodes | `asyncflow` decorator | `flow.function_task`, `flow.block`, `langchain_core.tools.tool` |
 | Retry and timeout | Only what the application writes | Only what the application writes |
 | Handoff tool | `create_task_description_handoff_tool` | About 17 lines |
-| Node report | The integration's `agent_introspector` | A `GraphIntrospector` (`flowgentic.utils.telemetry`) that the application creates |
 | Third-party packages (fresh resolve, Python 3.10) | 74 | 42 |

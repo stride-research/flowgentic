@@ -202,10 +202,10 @@ The RADICAL baseline writes to `radical_demo_results/`, the retained LangGraph
 version to `demo_results/`, the agentic version to `agentic_demo_results/`, and
 the agent-augmented version to `augmented_demo_results/`. Each contains
 `campaign_summary.json` with scientific state, execution events, retries, and
-backends. The graph-owned Flowgentic implementations also produce:
-
-- `agent_execution_results/execution_summary.md`: Flowgentic's node/state
-  introspection report.
+backends. The Flowgentic, agentic and augmented runners also take
+`--trace PATH`, which writes the run's OpenTelemetry spans to `PATH`, one JSON
+object per line (`tracing.py`): the agents' decisions, the AsyncFlow tasks and
+any model calls, as one trace.
 
 The local named backends keep the demonstration laptop-safe. Replacing them
 with RHAPSODY backends changes resource setup, not the scientific loop or agent

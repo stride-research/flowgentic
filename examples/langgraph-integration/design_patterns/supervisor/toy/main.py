@@ -159,33 +159,11 @@ Create a brief, unified response that integrates both perspectives. Keep it conc
 			state.final_summary = final_summary
 			return state
 
-		# Nodes
-		## Note: introspection for router is not a stable feature. You can
-		llm_router_introspection = agents_manager.agent_introspector.introspect_node(
-			llm_router, "llm_router"
-		)
-		agent_a_introspection = agents_manager.agent_introspector.introspect_node(
-			agent_a, "agent_A"
-		)
-		agent_b_introspection = agents_manager.agent_introspector.introspect_node(
-			agent_b, "agent_B"
-		)
-		gather_introspection = agents_manager.agent_introspector.introspect_node(
-			gather, "gather"
-		)
-
-		agents_manager.agent_introspector._all_nodes = [
-			"llm_router",
-			"agent_A",
-			"agent_B",
-			"gather",
-		]
-
 		# --8<-- [start:graph-wiring]
-		graph.add_node("llm_router", llm_router_introspection)
-		graph.add_node("agent_A", agent_a_introspection)
-		graph.add_node("agent_B", agent_b_introspection)
-		graph.add_node("gather", gather_introspection)
+		graph.add_node("llm_router", llm_router)
+		graph.add_node("agent_A", agent_a)
+		graph.add_node("agent_B", agent_b)
+		graph.add_node("gather", gather)
 
 		# Edges
 		graph.add_edge(START, "llm_router")
@@ -218,15 +196,12 @@ Create a brief, unified response that integrates both perspectives. Keep it conc
 			except Exception as e:
 				print(f"❌ Workflow execution failed: {str(e)}")
 				raise
-			finally:
-				await agents_manager.generate_execution_artifacts(
-					app, __file__, final_state=result
-				)
 
 			print(f"\n📋 Results for: '{query}'")
 			print(f"   Routing: {result['routing_decision']}")
 			print(f"   Agent Outputs: {result['results']}")
 			print(f"\n   💡 Final Summary:\n   {result.get('final_summary', 'N/A')}")
+		return result
 
 
 if __name__ == "__main__":

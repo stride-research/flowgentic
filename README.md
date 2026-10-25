@@ -38,10 +38,11 @@ and the archived branches.
 - **`bind_agent`** (`flowgentic.agent`) binds an agent component, any object
   with an `ainvoke(context)` method, to an AsyncFlow task on a named backend.
   Each call to the bound agent runs the component as that task and returns its
-  structured decision with the agent's identity and timing.
+  structured decision with the agent's identity and timing, and is an
+  OpenTelemetry `invoke_agent` span.
 - **`LangraphIntegration`** (`flowgentic.langGraph`) runs a LangGraph graph's
-  tools, services, tasks and nodes as AsyncFlow tasks, with a node-level
-  execution report, conversation memory and a graph that changes at runtime.
+  tools, services, tasks and nodes as AsyncFlow tasks, in their caller's trace,
+  with conversation memory and a graph that changes at runtime.
 
 ## Install
 

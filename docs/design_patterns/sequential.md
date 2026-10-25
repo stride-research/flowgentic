@@ -29,8 +29,7 @@ example with a scripted chat model in place of OpenRouter
 
 ## The graph
 
-Every node is an `EXECUTION_BLOCK`, wrapped for the node report, and each
-transition is a conditional edge:
+Every node is an `EXECUTION_BLOCK`, and each transition is a conditional edge:
 
 ```python
 --8<-- "examples/langgraph-integration/design_patterns/sequential/research_agent/components/builder.py:build-workflow"
@@ -72,9 +71,9 @@ compiles it with an in-memory checkpointer:
 --8<-- "examples/langgraph-integration/design_patterns/sequential/research_agent/main.py:start-app"
 ```
 
-It then streams the run and writes the node report next to `main.py`; see
-[Telemetry](../features/telemetry.md). A run that ends in the error handler
-raises `RuntimeError` with the stages' errors, so it exits non-zero.
+It then streams the run and returns the final state. A run that ends in the
+error handler raises `RuntimeError` with the stages' errors, so it exits
+non-zero.
 
 The variant `research_agent_memory/` adds a `MemoryManager`; see
 [Memory](../features/memory.md).

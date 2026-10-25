@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from langchain_openai import ChatOpenAI
+from pydantic import ValidationError
 
 DEMO_DIR = Path(__file__).resolve().parents[2] / "examples" / "ai-hpc-coupling"
 sys.path.insert(0, str(DEMO_DIR))
 
 from agentic_support import (  # noqa: E402
+    LangChainDecisionModel,
     PlannerDecision,
     RehearsalDecisionModel,
     SupervisorDecision,
@@ -189,3 +194,24 @@ async def test_rehearsal_agents_return_structured_bounded_decisions() -> None:
 
     assert decision.candidates == [-4.0, -1.333333, 1.333333, 4.0]
     assert decision.rationale
+
+
+async def test_langchain_planner_returns_the_parsed_decision(
+    scripted_chat_model: Callable[..., ChatOpenAI],
+) -> None:
+    plan = {"candidates": [-1.0, 1.0], "rationale": "Spread the batch."}
+    agents = LangChainDecisionModel(scripted_chat_model(json.dumps(plan)), "scripted")
+
+    decision = await agents.plan({"expected_count": 2})
+
+    assert decision == PlannerDecision(**plan)
+
+
+async def test_langchain_planner_raises_on_output_it_cannot_parse(
+    scripted_chat_model: Callable[..., ChatOpenAI],
+) -> None:
+    agents = LangChainDecisionModel(scripted_chat_model("not a decision"), "scripted")
+
+    # with_structured_output(include_raw=True) returns the error; _decide raises it
+    with pytest.raises(ValidationError, match="Invalid JSON"):
+        await agents.plan({"expected_count": 2})

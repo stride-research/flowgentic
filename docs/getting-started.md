@@ -109,10 +109,10 @@ through deterministic policy guards first.
 
 Each demo writes its results under `examples/ai-hpc-coupling/`:
 
-| Demo | Summary | Node report |
-| --- | --- | --- |
-| Deterministic | `demo_results/campaign_summary.json` | `demo_results/agent_execution_results/execution_summary.md` |
-| Agentic | `agentic_demo_results/campaign_summary.json` | `agentic_demo_results/agent_execution_results/execution_summary.md` |
+| Demo | Summary |
+| --- | --- |
+| Deterministic | `demo_results/campaign_summary.json` |
+| Agentic | `agentic_demo_results/campaign_summary.json` |
 
 `campaign_summary.json` holds the outcome (`implementation`, `controller`,
 `stop_reason`, `cycles`, `simulations`, `best_x`, `best_value`,
@@ -129,8 +129,9 @@ uv run python -c "import json; s = json.load(open('examples/ai-hpc-coupling/agen
 {'implementation': 'agentic', 'integration': 'flowgentic', 'cycles': 5, 'simulations': 20, 'stop_reason': 'scientific uncertainty goal reached'}
 ```
 
-`execution_summary.md` is Flowgentic's node-level report: one row per node
-execution, with duration, tokens, tool calls and new messages. See
+With `--trace PATH`, a demo's runner also writes the run's OpenTelemetry
+spans to `PATH`, one JSON object per line: the agents' decisions, the tasks
+they and the campaign launch, and any model calls, as one trace. See
 [Telemetry](features/telemetry.md).
 
 ## Other runs

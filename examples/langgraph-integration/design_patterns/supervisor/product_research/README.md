@@ -12,7 +12,6 @@ An advanced supervisor pattern example that builds a multi-agent product researc
   - Technical Synthesizer (for developers, engineers, professionals)
   - Consumer Synthesizer (for general buyers, everyday users)
 - Two-stage routing architecture (workers → synthesizers)
-- Full introspection and execution telemetry
 
 ## How to run
 
@@ -23,9 +22,6 @@ make examples-supervisor-product-research
 This will:
 - Execute the workflow with a test query
 - Show parallel agent execution in real-time
-- Generate telemetry artifacts under `agent_execution_results/`:
-  - `execution_summary.md` (detailed run report with timing)
-  - `agent_graph.png` (graph visualization)
 
 Note: The example uses mocked tools for product data search. LLM models are invoked via FlowGentic's `ChatLLMProvider` (currently using Google Gemini via OpenRouter).
 

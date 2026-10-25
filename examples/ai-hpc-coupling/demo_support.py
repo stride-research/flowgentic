@@ -1,4 +1,4 @@
-"""Flowgentic-specific support for the LangGraph AI-HPC demos.
+"""Support shared by the LangGraph AI-HPC demos.
 
 Framework-neutral science, timing, resource setup, and reporting live in
 ``campaign_common.py`` so the RADICAL baseline does not import Flowgentic or an
@@ -7,7 +7,7 @@ agent framework.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any
 
 from campaign_common import (
     INITIAL_CENTER,
@@ -27,18 +27,11 @@ from campaign_common import (
     write_summary,
 )
 from langchain_core.messages import AIMessage, HumanMessage
-from langgraph.graph import StateGraph
-
-from flowgentic.langGraph.main import LangraphIntegration
 
 
 def agent_message(content: str) -> AIMessage:
-    """Create a report-friendly deterministic agent message."""
-    return AIMessage(
-        content=content,
-        response_metadata={"model_name": "deterministic-surrogate"},
-        usage_metadata={"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
-    )
+    """Create a deterministic agent message; no model produced it."""
+    return AIMessage(content=content)
 
 
 def initial_campaign_state(
@@ -121,18 +114,6 @@ def record_analysis(
     }
 
 
-# --8<-- [start:instrumented-nodes]
-def add_instrumented_nodes(
-    integration: LangraphIntegration,
-    graph: StateGraph,
-    nodes: dict[str, Callable[..., Any]],
-) -> None:
-    """Attach Flowgentic introspection without exposing demo bookkeeping."""
-    introspector = integration.agent_introspector
-    introspector._all_nodes = list(nodes)
-    for name, node in nodes.items():
-        graph.add_node(name, introspector.introspect_node(node, name))
-# --8<-- [end:instrumented-nodes]
 
 
 __all__ = [
@@ -141,7 +122,6 @@ __all__ = [
     "TARGET",
     "SurrogateService",
     "TransientSimulationError",
-    "add_instrumented_nodes",
     "agent_message",
     "configure_logging",
     "create_local_backends",

@@ -40,7 +40,6 @@ from pydantic import BaseModel, Field
 
 from flowgentic import _asyncflow
 from flowgentic.utils.llm_providers import ChatLLMProvider
-from flowgentic.utils.telemetry.introspection import GraphIntrospector
 
 if TYPE_CHECKING:
 	from radical.asyncflow import WorkflowEngine
@@ -95,12 +94,9 @@ class ExecutionWrappersLangraph:
 	with supervisor patterns and parallel execution.
 	"""
 
-	def __init__(
-		self, flow: "WorkflowEngine", instrospector: GraphIntrospector
-	) -> None:
+	def __init__(self, flow: "WorkflowEngine") -> None:
 		self.flow = flow
 		self.react_agents: Dict[str, Any] = {}
-		self.introspector = instrospector
 		self.service_registry: Dict[str, Any] = {}
 
 	def asyncflow(

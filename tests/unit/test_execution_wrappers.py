@@ -7,7 +7,6 @@ from langgraph.types import RetryPolicy
 
 from flowgentic.langGraph.execution_wrappers import (AsyncFlowType,
                                                      ExecutionWrappersLangraph)
-from flowgentic.utils.telemetry.introspection import GraphIntrospector
 
 try:
     from langgraph.errors import NodeTimeoutError
@@ -38,7 +37,7 @@ async def _task() -> str:
 
 def test_named_backend_is_forwarded_to_asyncflow_task() -> None:
     flow = RecordingFlow()
-    wrapper = ExecutionWrappersLangraph(flow, GraphIntrospector())
+    wrapper = ExecutionWrappersLangraph(flow)
 
     wrapper.asyncflow(
         flow_type=AsyncFlowType.FUNCTION_TASK,
@@ -57,7 +56,7 @@ def test_named_backend_is_forwarded_to_asyncflow_task() -> None:
 
 def test_named_backend_is_forwarded_to_service_task() -> None:
     flow = RecordingFlow()
-    wrapper = ExecutionWrappersLangraph(flow, GraphIntrospector())
+    wrapper = ExecutionWrappersLangraph(flow)
 
     wrapper.asyncflow(
         flow_type=AsyncFlowType.SERVICE_TASK,
@@ -92,7 +91,7 @@ def _failing_node(runs: list[str]) -> Callable[[dict], object]:
 
 async def test_failing_function_task_runs_once() -> None:
     runs: list[str] = []
-    wrapper = ExecutionWrappersLangraph(RecordingFlow(), GraphIntrospector())
+    wrapper = ExecutionWrappersLangraph(RecordingFlow())
     task = wrapper.asyncflow(flow_type=AsyncFlowType.FUNCTION_TASK)(
         _failing_task(runs)
     )
@@ -105,7 +104,7 @@ async def test_failing_function_task_runs_once() -> None:
 
 async def test_failing_tool_runs_once() -> None:
     runs: list[str] = []
-    wrapper = ExecutionWrappersLangraph(RecordingFlow(), GraphIntrospector())
+    wrapper = ExecutionWrappersLangraph(RecordingFlow())
     agent_tool = wrapper.asyncflow(flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION)(
         _failing_task(runs)
     )
@@ -118,7 +117,7 @@ async def test_failing_tool_runs_once() -> None:
 
 async def test_failing_block_runs_once() -> None:
     runs: list[str] = []
-    wrapper = ExecutionWrappersLangraph(RecordingFlow(), GraphIntrospector())
+    wrapper = ExecutionWrappersLangraph(RecordingFlow())
     node = wrapper.asyncflow(flow_type=AsyncFlowType.EXECUTION_BLOCK)(
         _failing_node(runs)
     )
@@ -130,14 +129,14 @@ async def test_failing_block_runs_once() -> None:
 
 
 def test_retry_is_not_an_option() -> None:
-    wrapper = ExecutionWrappersLangraph(RecordingFlow(), GraphIntrospector())
+    wrapper = ExecutionWrappersLangraph(RecordingFlow())
 
     with pytest.raises(TypeError):
         wrapper.asyncflow(flow_type=AsyncFlowType.FUNCTION_TASK, retry=object())
 
 
 def test_tool_description_is_forwarded() -> None:
-    wrapper = ExecutionWrappersLangraph(RecordingFlow(), GraphIntrospector())
+    wrapper = ExecutionWrappersLangraph(RecordingFlow())
 
     agent_tool = wrapper.asyncflow(
         flow_type=AsyncFlowType.AGENT_TOOL_AS_FUNCTION,
@@ -153,7 +152,7 @@ class NodeState(TypedDict):
 
 async def test_langgraph_retries_a_block_node_by_its_own_policy() -> None:
     runs: list[str] = []
-    wrapper = ExecutionWrappersLangraph(RecordingFlow(), GraphIntrospector())
+    wrapper = ExecutionWrappersLangraph(RecordingFlow())
 
     # --8<-- [start:node-retry-policy]
     async def simulate_batch(state: NodeState) -> dict:
@@ -184,7 +183,7 @@ async def test_langgraph_retries_a_block_node_by_its_own_policy() -> None:
 
 @pytest.mark.skipif(NodeTimeoutError is None, reason="needs LangGraph 1.2")
 async def test_langgraph_times_out_a_block_node() -> None:
-    wrapper = ExecutionWrappersLangraph(RecordingFlow(), GraphIntrospector())
+    wrapper = ExecutionWrappersLangraph(RecordingFlow())
 
     async def slow_batch(state: NodeState) -> dict:
         await asyncio.sleep(10)

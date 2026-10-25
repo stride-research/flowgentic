@@ -9,10 +9,6 @@ import subprocess
 import sys
 import textwrap
 from pathlib import Path
-from unittest.mock import Mock
-
-from flowgentic.langGraph.main import LangraphIntegration
-from flowgentic.langGraph.utils import LangraphUtils
 
 
 def run_python(code: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
@@ -134,36 +130,3 @@ def test_configure_logging_writes_to_the_given_stream() -> None:
 	assert result.returncode == 0, result.stderr
 	assert "WARNING flowgentic.example: retrying node-a" in result.stdout
 	assert result.stderr == ""
-
-
-async def test_generate_execution_artifacts_writes_to_output_dir(
-	tmp_path: Path,
-) -> None:
-	integration = LangraphIntegration(backend=None)
-	integration.utils = LangraphUtils()
-	integration.agent_introspector._all_nodes = ["node_a"]
-	output_dir = tmp_path / "results"
-
-	await integration.generate_execution_artifacts(
-		Mock(),
-		str(tmp_path / "app" / "main.py"),
-		final_state={},
-		output_dir=output_dir,
-	)
-
-	assert (output_dir / "execution_summary.md").is_file()
-	assert not (tmp_path / "app").exists()
-
-
-async def test_generate_execution_artifacts_defaults_beside_the_caller(
-	tmp_path: Path,
-) -> None:
-	integration = LangraphIntegration(backend=None)
-	integration.utils = LangraphUtils()
-	integration.agent_introspector._all_nodes = ["node_a"]
-
-	await integration.generate_execution_artifacts(
-		Mock(), str(tmp_path / "main.py"), final_state={}
-	)
-
-	assert (tmp_path / "agent_execution_results" / "execution_summary.md").is_file()

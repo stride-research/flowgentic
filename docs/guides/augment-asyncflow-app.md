@@ -66,6 +66,11 @@ a dictionary:
 A component that returns anything other than a mapping or a Pydantic model
 raises `TypeError`.
 
+With OpenTelemetry configured, each call is also an `invoke_agent <identity>`
+span. The span carries the AsyncFlow task's uid and backend, and the spans of
+the component's own model calls nest under it; see
+[Telemetry](../features/telemetry.md).
+
 ## 4. Call the agent at the decision point
 
 The application builds the agent's context, calls it, and then checks its

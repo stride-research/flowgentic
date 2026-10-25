@@ -40,7 +40,6 @@ APPLICATION_MODULES = {
     "direct": "direct_agentic_application",
 }
 TIMING_FIELDS = {"started", "finished", "duration"}
-REPORT = Path("agent_execution_results") / "execution_summary.md"
 
 if str(DEMO_DIR) not in sys.path:
     sys.path.insert(0, str(DEMO_DIR))
@@ -137,10 +136,6 @@ def test_flowgentic_and_direct_versions_match(tmp_path: Path) -> None:
     assert flowgentic["execution"]["max_compute_parallelism"] == 4
     assert flowgentic["service"]["loads"] == 1
     assert without_timing(direct) == without_timing(flowgentic)
-
-    # Only the Flowgentic run writes the node-level Markdown report.
-    assert (tmp_path / "flowgentic" / REPORT).is_file()
-    assert not (tmp_path / "direct" / REPORT).exists()
 
 
 # Criterion 2: both versions submit the same AsyncFlow components.
@@ -295,57 +290,9 @@ async def test_cancelling_a_cycle_cancels_inflight_simulations(
         assert all(sim["future"].cancelled() for sim in simulations)
 
 
-# Criterion 7: the node-level report comes from Flowgentic's telemetry module
-# (GraphIntrospector), not from the execution adapter; it works on the direct
-# version's nodes too.
-async def test_flowgentic_report_works_without_the_adapter(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from langgraph.graph import StateGraph
-
-    from flowgentic.utils.telemetry.introspection import GraphIntrospector
-
-    # --8<-- [start:report-without-adapter]
-    introspector = GraphIntrospector()
-
-    class IntrospectedStateGraph(StateGraph):
-        def add_node(self, name: str, node: Any, **kwargs: Any) -> Any:
-            wrapped = introspector.introspect_node(node, name)
-            return super().add_node(name, wrapped, **kwargs)
-
-    monkeypatch.setattr(
-        demo("direct_agentic_application"), "StateGraph", IntrospectedStateGraph
-    )
-    async with await open_campaign("direct", one_cycle_settings()) as (
-        application,
-        _,
-        adapter,
-    ):
-        assert adapter is None
-        state = await application.graph.ainvoke(application.state)
-
-    nodes = [
-        "planner_agent",
-        "simulation_executor",
-        "analyst_agent",
-        "supervisor_agent",
-    ]
-    introspector._all_nodes = nodes
-    introspector._final_state = state
-    (tmp_path / REPORT).parent.mkdir(parents=True)
-    introspector.generate_report(str((tmp_path / REPORT).parent))
-
-    report = (tmp_path / REPORT).read_text()
-    assert all(f"Total:{node}" in report for node in nodes)
-    # --8<-- [end:report-without-adapter]
-
-
-# Criterion 7 (amendment A2): AsyncFlow's own OpenTelemetry spans. Opt-in:
-# AsyncFlow (0.5.0, 0.6.0) needs RHAPSODY's TelemetryManager, which neither AsyncFlow
-# nor Flowgentic depends on. Run with
-#   uv run --extra dev --with 'rhapsody-py[telemetry]==0.6.0' \
-#       pytest -s tests/integration/test_substitution.py -k telemetry
+# Criterion 7 (amendment A2): AsyncFlow's own OpenTelemetry spans. AsyncFlow
+# (0.5.0, 0.6.0) needs RHAPSODY's TelemetryManager, which neither AsyncFlow nor
+# Flowgentic depends on; the dev extra installs it.
 @pytest.mark.parametrize("integration", INTEGRATIONS)
 async def test_asyncflow_telemetry_spans(integration: str) -> None:
     pytest.importorskip(
