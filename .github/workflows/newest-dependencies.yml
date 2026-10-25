@@ -1,9 +1,10 @@
 name: Newest dependency releases
-# Weekly, and by hand: the suite on the newest releases the dependency ranges
-# allow, which a fresh install gets, and on the newest AsyncFlow and Academy
-# releases beyond the ranges, so a coming AsyncFlow 0.7 or Academy 2.0 shows up
-# before anyone widens a range. A scheduled failure within the ranges opens an
-# issue; the job beyond the ranges reports without failing the run.
+# Weekly, and by hand: the suite and the docs build on the newest releases the
+# dependency ranges allow, which a fresh install gets; and the suite on the
+# newest AsyncFlow and Academy releases beyond the ranges, so a coming AsyncFlow
+# 0.7 or Academy 2.0 shows up before anyone widens a range. A scheduled failure
+# within the ranges opens an issue; the job beyond the ranges reports without
+# failing the run.
 on:
   schedule:
     - cron: "17 6 * * 1"
@@ -43,10 +44,13 @@ jobs:
       - name: "Show tested versions"
         run: >-
           uv run --frozen --python ${{ matrix.python-version }} --extra dev python -c
-          "import importlib.metadata as m; print({p: m.version(p) for p in ('langgraph', 'langgraph-prebuilt', 'langchain-core', 'langchain', 'langchain-openai', 'langchain-ollama', 'pydantic', 'radical-asyncflow', 'academy-py')})"
+          "import importlib.metadata as m; print({p: m.version(p) for p in ('langgraph', 'langgraph-prebuilt', 'langchain-core', 'langchain', 'langchain-openai', 'langchain-ollama', 'pydantic', 'radical-asyncflow', 'academy-py', 'mkdocs-material', 'mkdocstrings', 'mkdocstrings-python', 'pymdown-extensions')})"
 
       - name: Run python tests
         run: uv run --frozen --python ${{ matrix.python-version }} --extra dev pytest -q tests/
+
+      - name: Build documentation
+        run: uv run --frozen --python ${{ matrix.python-version }} --extra dev mkdocs build --strict
 
   report:
     needs: within_ranges
@@ -61,7 +65,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          title="Tests fail on the newest dependency releases"
+          title="Tests or the docs build fail on the newest dependency releases"
           existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
             --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
