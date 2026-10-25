@@ -37,7 +37,7 @@ dev = [
     "mkdocstrings[python]>=0.30",
     # pymdown-extensions 12.2 breaks mkdocstrings before 1.0.7, which needs
     # Python 3.11.
-    "pymdown-extensions>=10.16,<12.2",
+    "pymdown-extensions>=10.16,<12.4",
     "mkdocs_gen_files>=0.5",
     "mkdocs-literate-nav>=0.6",
     "mkdocs-section-index>=0.3.10",
