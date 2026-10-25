@@ -73,7 +73,8 @@ compiles it with an in-memory checkpointer:
 ```
 
 It then streams the run and writes the node report next to `main.py`; see
-[Telemetry](../features/telemetry.md).
+[Telemetry](../features/telemetry.md). A run that ends in the error handler
+raises `RuntimeError` with the stages' errors, so it exits non-zero.
 
 The variant `research_agent_memory/` adds a `MemoryManager`; see
 [Memory](../features/memory.md).

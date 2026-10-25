@@ -86,6 +86,13 @@ class ScriptedChatModel(BaseChatModel):
         return ChatResult(generations=[ChatGeneration(message=reply)])
 
 
+class FailingChatModel(ScriptedChatModel):
+    """A chat model whose every call fails, as a provider's does in an outage."""
+
+    def _generate(self, *args: Any, **kwargs: Any) -> ChatResult:
+        raise ConnectionError("The model provider is unreachable.")
+
+
 def scripted_provider(**script: Any) -> Callable[..., ScriptedChatModel]:
     """Return a stand-in for ``ChatLLMProvider`` that builds scripted models."""
 
@@ -93,6 +100,11 @@ def scripted_provider(**script: Any) -> Callable[..., ScriptedChatModel]:
         return ScriptedChatModel(**script)
 
     return provider
+
+
+def failing_provider(provider: str, *args: Any, **kwargs: Any) -> FailingChatModel:
+    """A stand-in for ``ChatLLMProvider`` whose models fail on every call."""
+    return FailingChatModel()
 
 
 async def run_example(
@@ -202,6 +214,24 @@ async def test_sequential_research_agent(
     assert report(copy).is_file()
 
 
+async def test_sequential_research_agent_fails_when_the_model_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The nodes route the error to the error handler; the run must still fail,
+    # or the live test, which checks the exit code, passes with no model
+    with pytest.raises(
+        RuntimeError, match="Research agent error: The model provider is unreachable"
+    ):
+        await run_example(
+            "sequential/research_agent",
+            "start_app",
+            ["components.nodes"],
+            failing_provider,
+            tmp_path,
+            monkeypatch,
+        )
+
+
 async def test_sequential_research_agent_memory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -254,6 +284,24 @@ async def test_supervisor_toy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert set(state["results"]) == {"agent_A", "agent_B"}
     assert state["final_summary"] == ANSWER
     assert report(copy).is_file()
+
+
+async def test_supervisor_toy_raises_the_graph_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider = scripted_provider(
+        tool_args={
+            "RoutingDecision": {
+                "routing_decision": [],
+                "routing_rationale": "No agent fits the query.",
+            }
+        }
+    )
+
+    with pytest.raises(ValueError, match="Empty routing decision"):
+        await run_example(
+            "supervisor/toy", "main", ["main"], provider, tmp_path, monkeypatch
+        )
 
 
 async def test_supervisor_product_research(
