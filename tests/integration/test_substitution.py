@@ -197,20 +197,12 @@ async def test_both_versions_place_tasks_on_the_named_backends() -> None:
     }
 
 
-# Criterion 3 (amendment A1): a simulation that keeps failing.
-@pytest.mark.parametrize(
-    ("integration", "expected_attempts"),
-    (
-        # The explicit policy only: 4 simulations x 2 attempts.
-        ("direct", 8),
-        # The same policy, inside Flowgentic's implicit node retry
-        # (3 attempts), which re-runs the whole simulation batch.
-        ("flowgentic", 24),
-    ),
-)
+# Criterion 3 (amendment A1): a simulation that keeps failing. Both versions
+# apply only the application's policy: 4 simulations x 2 attempts. Up to
+# 0.3.0, Flowgentic's implicit node retry re-ran the whole batch (24 attempts).
+@pytest.mark.parametrize("integration", INTEGRATIONS)
 async def test_persistent_simulation_failure(
     integration: str,
-    expected_attempts: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     common = demo("campaign_common")
@@ -238,31 +230,18 @@ async def test_persistent_simulation_failure(
         # Let sibling simulations still in their retry finish failing.
         await asyncio.sleep(0.3)
 
-    assert len(attempts) == expected_attempts
+    assert len(attempts) == 8
 
 
-# Criterion 3 (amendment A1): Flowgentic's default per-attempt timeout (30 s)
-# also wraps graph nodes. Scaled down to 0.3 s here, a node that outlasts it is
-# cancelled and re-run, simulations included; the direct version has no node
-# timeout and completes.
-@pytest.mark.parametrize(
-    ("integration", "expected_starts"),
-    (("direct", 4), ("flowgentic", 12)),
-)
-async def test_node_exceeding_the_default_timeout_is_rerun(
+# Criterion 3 (amendment A1): a graph node runs once, however long its work
+# takes. Up to 0.3.0, Flowgentic wrapped every node in a 30 s timeout; scaled
+# down to 0.3 s, a node like this one was cancelled and re-run (12 starts
+# against 4) until the cycle failed.
+@pytest.mark.parametrize("integration", INTEGRATIONS)
+async def test_slow_node_runs_once(
     integration: str,
-    expected_starts: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from flowgentic.langGraph import fault_tolerance
-
-    def scaled_down_defaults(self: Any) -> None:
-        self.default_cfg = fault_tolerance.RetryConfig(timeout_sec=0.3)
-
-    monkeypatch.setattr(
-        fault_tolerance.LangraphToolFaultTolerance, "__init__", scaled_down_defaults
-    )
-
     module = demo(APPLICATION_MODULES[integration])
     evaluate_candidate = module.evaluate_candidate
     starts = []
@@ -283,14 +262,10 @@ async def test_node_exceeding_the_default_timeout_is_rerun(
         _,
         _,
     ):
-        if integration == "flowgentic":
-            with pytest.raises(asyncio.TimeoutError):
-                await application.graph.ainvoke(application.state)
-        else:
-            state = await application.graph.ainvoke(application.state)
-            assert state["spent"] == 4
+        state = await application.graph.ainvoke(application.state)
 
-    assert len(starts) == expected_starts
+    assert state["spent"] == 4
+    assert len(starts) == 4
 
 
 # Criterion 3: cancelling a cycle while its simulations are in flight.

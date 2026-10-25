@@ -11,10 +11,10 @@ nav:
       - Augment an AsyncFlow application: guides/augment-asyncflow-app.md
       - LangGraph on AsyncFlow with Flowgentic: guides/langgraph-on-asyncflow.md
       - LangGraph on AsyncFlow directly: guides/langgraph-direct.md
+      - Retries and timeouts: guides/retries-and-timeouts.md
       - Academy actions as AsyncFlow tasks: guides/academy-on-asyncflow.md
       - Architecture: architecture.md
   - Features:
-      - Fault tolerance: features/fault_tolerance.md
       - Services: features/services.md
       - Telemetry: features/telemetry.md
       - Logging: features/logging.md

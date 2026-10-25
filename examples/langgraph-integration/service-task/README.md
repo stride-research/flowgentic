@@ -225,7 +225,7 @@ If your service uses threads (like the example server), ensure proper:
 
 ## 🔗 Related
 
-- [Fault Tolerance Documentation](../../../docs/features/fault_tolerance.md)
+- [Retries and Timeouts](../../../docs/guides/retries-and-timeouts.md)
 - [Memory Management](../../../docs/features/memory.md)
 - [Dynamic Graph Creation](../../../docs/features/dynamic-graph.md)
 

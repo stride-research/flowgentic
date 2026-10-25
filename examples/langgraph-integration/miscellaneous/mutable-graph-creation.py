@@ -6,8 +6,8 @@ This example demonstrates how to dynamically modify a LangGraph at runtime:
 - Reduce: Remove nodes from the graph
 - Update: Replace nodes with different implementations
 
-All nodes use flowgentic's AsyncFlow integration with proper async execution,
-fault tolerance, and comprehensive logging.
+All nodes use flowgentic's AsyncFlow integration with proper async execution
+and comprehensive logging.
 """
 
 import asyncio

@@ -10,9 +10,10 @@ AsyncFlow task, a resident service or a graph node.
     [substitution experiment](../evaluation/substitution.md) ran the same
     application with and without it. Without it, the application kept the same
     results, task identity, cancellation, service reuse and backend placement,
-    in about the same code. With it, every call and graph node also gets an
-    implicit retry and timeout, which re-runs scientific work. For new
-    applications, see [LangGraph on AsyncFlow directly](langgraph-direct.md).
+    in about the same code. Up to 0.3, the adapter also wrapped every call and
+    graph node in an implicit retry and timeout, which re-ran scientific work;
+    0.4.0 removes them. For new applications, see
+    [LangGraph on AsyncFlow directly](langgraph-direct.md).
 
 The code on this page comes from the agentic demo,
 `examples/ai-hpc-coupling/agentic_application.py`, and from
@@ -50,11 +51,11 @@ application has already created.
 
 ## Decorate functions
 
-`integration.execution_wrappers.asyncflow(func=None, *, flow_type, retry=None,
-backend=None, capture_stdio=False, **kwargs)` registers an async function with
-AsyncFlow. `flow_type` is required in practice: without it the decorator fails
-with `AttributeError`. `tool_description` is read from `kwargs`, and other
-keywords are accepted and ignored. The demo binds it to a short name:
+`integration.execution_wrappers.asyncflow(func=None, *, flow_type,
+backend=None, capture_stdio=False, tool_description=None)` registers an async
+function with AsyncFlow. `flow_type` is required in practice: without it the
+decorator fails with `AttributeError`. Any other keyword raises `TypeError`.
+The demo binds it to a short name:
 
 ```python
 --8<-- "examples/ai-hpc-coupling/agentic_application.py:decorator-alias"
@@ -71,8 +72,8 @@ keywords are accepted and ignored. The demo binds it to a short name:
 
 `backend` places a task on a named backend; `EXECUTION_BLOCK` does not pass it
 to AsyncFlow. `tool_description` is the tool's description for the model.
-Every flow type wraps the call in a retry policy: `retry`, or by default 3
-attempts of at most 30 s each. See [Fault tolerance](../features/fault_tolerance.md).
+Each call runs once, with no retry and no timeout; see
+[Retries and timeouts](retries-and-timeouts.md).
 
 ### A resident service
 
@@ -89,8 +90,8 @@ service. See [Services](../features/services.md).
 --8<-- "examples/ai-hpc-coupling/agentic_application.py:agent-tools"
 ```
 
-`run_simulation` runs on `compute` with its own retry policy,
-`SIMULATION_RETRY` (2 attempts, 5 s each); the other tools use the default.
+`run_simulation` runs on `compute`, the other tools on `ai`. The executor
+below retries a transient simulation failure once.
 
 ### Tasks
 
@@ -137,9 +138,8 @@ AsyncFlow task on `compute` and returns its result to the model
 (`test_llm_selected_tool_runs_as_an_asyncflow_task`).
 
 LangGraph 1.x's `ToolNode` re-raises tool errors by default, where 0.6
-returned them to the model as messages. A tool that still fails after its
-retries aborts the graph run, unless the application passes
-`handle_tool_errors=True` to `ToolNode`.
+returned them to the model as messages. A tool that fails aborts the graph
+run, unless the application passes `handle_tool_errors=True` to `ToolNode`.
 
 ## Hand off to another agent
 
@@ -175,10 +175,9 @@ model class. `tests/unit/test_llm_providers.py` builds each one offline.
 
 ## Things to know
 
-- The default retry policy also wraps graph nodes. A node whose work takes
-  longer than 30 s is cancelled and re-run with all its tasks, and fails after
-  the third attempt; a node that fails with a retryable error re-runs its
-  tasks. Give such nodes their own `retry` policy.
+- Flowgentic retries nothing. A graph node takes LangGraph's `retry_policy`
+  and `timeout`, and a task call is wrapped by the application; see
+  [Retries and timeouts](retries-and-timeouts.md).
 - Importing Flowgentic configures no logging. `flowgentic.configure_logging()`
   prints its records; see [Logging](../features/logging.md).
 - [Project status](../status.md) lists what is not validated, such as remote

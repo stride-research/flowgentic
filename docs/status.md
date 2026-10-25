@@ -15,8 +15,8 @@ which ran the agentic demo with and without the adapter. Without it, the demo
 kept the same results, task identity, cancellation, service reuse, backend
 placement, tool selection and handoffs, in about the same code and with 32
 fewer third-party packages. The adapter's only distinct contribution was an
-implicit retry and timeout on every call and graph node, which re-runs
-scientific work.
+implicit retry and timeout on every call and graph node, which re-ran
+scientific work; 0.4.0 removes them.
 
 `bind_agent`, which binds an agent component to an AsyncFlow task, remains a
 documented recipe: [Augment an AsyncFlow application](guides/augment-asyncflow-app.md).
@@ -49,10 +49,9 @@ AsyncFlow minor release may break. Its `examples` extra adds
 - Not validated: using an engine that the caller creates (the integration
   always creates its own), and any remote or HPC backend. Cancellation reaching
   in-flight AsyncFlow tasks is validated on local backends only.
-- The adapter's default retry policy (3 attempts of at most 30 s each) also
-  wraps graph nodes: a node that runs longer than 30 s fails, and a node that
-  fails with a retryable error re-runs its tasks. See
-  [Fault tolerance](features/fault_tolerance.md).
+- AsyncFlow 0.6.0 has no per-task retry or timeout, so applications wrap the
+  task calls that need them. See
+  [Retries and timeouts](guides/retries-and-timeouts.md).
 - Token accounting: the agentic demo records no tokens, even in live mode
   (substitution report, row 5).
 - Live runs of the design-pattern examples need a model provider and

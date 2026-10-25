@@ -14,9 +14,9 @@ Flowgentic 0.3.1 is in maintenance mode. It preserves the July 2026 work as a
 documented, tested snapshot. The LangGraph execution adapter
 (`LangraphIntegration`) is frozen and gets no new features: the
 [substitution experiment](evaluation/substitution.md) found that, in the
-agentic demo, its only distinct contribution beyond AsyncFlow and LangGraph is
-an implicit retry and timeout on every call and graph node, which re-runs
-scientific work. New applications can bind agents with `bind_agent`, or run
+agentic demo, its only distinct contribution beyond AsyncFlow and LangGraph
+was an implicit retry and timeout on every call and graph node, which re-ran
+scientific work; 0.4.0 removes them. New applications can bind agents with `bind_agent`, or run
 LangGraph on AsyncFlow directly.
 
 | Agent framework | Workflow engine | Backends | Python |
