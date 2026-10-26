@@ -51,16 +51,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # refs/tags/: actions/checkout prefers a branch of the same name.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: refs/tags/${{ needs.select.outputs.ref }}
-      - uses: astral-sh/setup-uv@v10.3.1
+      - uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
       - run: uv sync --frozen --extra dev
       - run: uv run --frozen --extra dev mkdocs build --strict
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: ./site
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
