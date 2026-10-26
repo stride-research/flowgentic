@@ -102,7 +102,8 @@ predate this changelog, so their changes are not listed here.
   and 1.0.7 needs Python 3.11. CI runs the suite on the lowest versions the
   ranges allow. A weekly workflow runs the suite and the docs build on the
   newest releases within them, and the suite on the newest AsyncFlow and Academy
-  releases beyond them. Dependabot updates `uv.lock` and the workflows' actions.
+  releases beyond them. Dependabot updates `uv.lock` within the ranges, never
+  the ranges themselves, and the workflows' actions.
 
 ### Removed
 
