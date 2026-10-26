@@ -24,6 +24,7 @@ from agentic_support import (  # noqa: E402
     SupervisorDecision,
     enforce_candidate_policy,
     enforce_supervisor_policy,
+    fallback_plan,
     planner_checks,
 )
 
@@ -143,6 +144,17 @@ def test_every_returned_candidate_lies_within_the_bounds(
 
     assert len(accepted) == 3
     assert all(EDGE_LOWER <= value <= EDGE_UPPER for value in accepted), accepted
+
+
+def test_bounds_too_narrow_for_a_fallback_batch_stop_the_campaign() -> None:
+    # Six-decimal rounding puts two of four evenly spaced points on 1e-6
+    with pytest.raises(ValueError, match="4 distinct candidates"):
+        fallback_plan(
+            [0.0, 0.0, 0.0, 0.0],
+            expected_count=4,
+            lower_bound=0.0,
+            upper_bound=0.000002,
+        )
 
 
 def test_agent_cannot_stop_before_a_hard_condition() -> None:

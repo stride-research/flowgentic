@@ -123,7 +123,9 @@ the runner prints a count of them.
 
 - **The fallback is not checked.** It must be valid by construction. The demo's
   fallback runs the surrogate's batch, or an evenly spaced one if the
-  surrogate's fails the checks.
+  surrogate's fails the checks. If the bounds are too narrow for that one too,
+  it raises `ValueError`, and `accept` propagates it as a failure, so the
+  campaign stops before an unchecked batch runs.
 - **No fallback means `NotAccepted`**, raised once the attempts run out, with
   every attempt in its `attempts`.
 - **What stays outside the checks:** normalising a value, such as rounding,

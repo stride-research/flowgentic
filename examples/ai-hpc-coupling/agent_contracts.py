@@ -111,17 +111,26 @@ def fallback_plan(
     lower_bound: float,
     upper_bound: float,
 ) -> PlannerDecision:
-    """Plan the surrogate's batch, or an evenly spaced one if it fails the checks."""
+    """Plan the surrogate's batch, or an evenly spaced one if it fails the checks.
+
+    Raises ``ValueError`` when the evenly spaced batch fails them too, so that no
+    unchecked batch runs.
+    """
+    bounds = {
+        "expected_count": expected_count,
+        "lower_bound": lower_bound,
+        "upper_bound": upper_bound,
+    }
     candidates = round_candidates(
         surrogate_candidates[:expected_count], lower_bound, upper_bound
     )
-    if not _candidate_batch_is_valid(
-        candidates,
-        expected_count=expected_count,
-        lower_bound=lower_bound,
-        upper_bound=upper_bound,
-    ):
+    if not _candidate_batch_is_valid(candidates, **bounds):
         candidates = evenly_spaced(lower_bound, upper_bound, expected_count)
+        if not _candidate_batch_is_valid(candidates, **bounds):
+            raise ValueError(
+                f"[{lower_bound}, {upper_bound}] cannot hold {expected_count} "
+                "distinct candidates at six decimals"
+            )
     return PlannerDecision(
         candidates=candidates,
         rationale="No agent proposal passed the checks; run the surrogate's batch.",
