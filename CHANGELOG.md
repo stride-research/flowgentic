@@ -28,10 +28,36 @@ predate this changelog, so their changes are not listed here.
   instrumentation for LangChain and OpenAI, and `rhapsody-py[telemetry]`. See
   [Telemetry](https://stride-research.github.io/flowgentic/features/telemetry/).
 - The AI-HPC demo's runners take `--trace PATH`, which writes the run's spans
-  to `PATH`, one JSON object per line. `examples/telemetry/cost.py` computes
-  cost from such a file in three ways: the cost a provider reported, when a
-  span carries one; usage times a price, for a remote model; and a share of a
-  deployment's GPU-hours, for a model on the allocation.
+  and events to `PATH`, one JSON object per line. `examples/telemetry/cost.py`
+  computes cost from such a file in three ways: the cost a provider reported,
+  when a span carries one; usage times a price, for a remote model; and a share
+  of a deployment's GPU-hours, for a model on the allocation.
+- `flowgentic.acceptance`, which accepts or rejects an agent's output on
+  explicit criteria, for runs with no human in the loop.
+  `accept(propose, *, checks=(), attempts=1, fallback=None, name=None)`:
+  - asks the producer for a proposal, and runs the checks on it in order,
+    stopping at the first rejection;
+  - asks again, within `attempts`, handing the producer every earlier attempt
+    so that it can build the re-ask;
+  - returns an `Outcome` with the value, the disposition (`accepted` or
+    `fallback`) and every attempt, or raises `NotAccepted` with the attempts
+    when nothing passed and there is no fallback.
+
+  A check or the producer rejects an output with `Rejected(reason, check=...)`
+  or a Pydantic `ValidationError`; any other exception propagates at once, with
+  no further attempt. Each call is an `accept <name>` span with one
+  `accept.attempt <name>` span per attempt, and each check that ran emits a
+  `gen_ai.evaluation.result` event through OpenTelemetry's Logs API. A rejected
+  value is recorded only when OpenTelemetry's GenAI content capture puts
+  content on spans. See
+  [Acceptance](https://stride-research.github.io/flowgentic/features/acceptance/).
+- The agentic AI-HPC demo's planner passes `accept`: three checks (the batch
+  size, the bounds, distinct candidates), one re-ask with the reasons, and the
+  surrogate's batch as the fallback. Its record of each decision holds the
+  disposition and every rejected proposal, and the runner prints their count.
+  The version without Flowgentic writes the same policy by hand, and the
+  substitution tests check that both reach the same decisions on a re-ask and
+  on a fallback.
 
 ### Changed
 
@@ -52,9 +78,10 @@ predate this changelog, so their changes are not listed here.
   model outputs, message lists or graph states, at any level. Records use lazy
   `%`-style arguments, and CI checks it.
 - The AI-HPC demo's decision model keeps the model's raw message
-  (`with_structured_output(..., include_raw=True)`) and raises its parsing
-  error. Its messages no longer carry token counts set to zero, which claimed
-  a measurement nobody made.
+  (`with_structured_output(..., include_raw=True)`), and rejects an answer it
+  cannot use with `Rejected`: one that does not parse, a refusal, or one cut
+  off at the token limit. Its messages no longer carry token counts set to
+  zero, which claimed a measurement nobody made.
 - The documentation site follows the latest release: it deploys when the
   repository's latest GitHub release is published (not a pre-release, nor a
   patch to an older line), or by hand for a given release tag, no longer on

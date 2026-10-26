@@ -2,8 +2,8 @@
 
 A recipe, not a Flowgentic API. Flowgentic records no cost: prices change
 weekly, and an allocation's GPU-hours come from the batch system, not from a
-trace. This reads the span file that the AI-HPC demo's ``--trace`` writes, one
-JSON object per line, and prices each inference span in one of three ways:
+trace. This reads the file that the AI-HPC demo's ``--trace`` writes, one span
+or event per line, and prices each inference span in one of three ways:
 
 - the cost the provider reported, when the span carries one;
 - usage times the price in force, for a model behind a priced API;
@@ -42,12 +42,14 @@ class Price:
 
 
 def inference_spans(path: Path) -> list[dict[str, Any]]:
-    """Return the inference spans in a JSON-lines span file."""
-    spans = [json.loads(line) for line in path.read_text().splitlines() if line]
+    """Return the inference spans in a JSON-lines file of spans and events."""
+    records = [json.loads(line) for line in path.read_text().splitlines() if line]
+    # A span has a context; an event, a log record, has a span_id instead
     return [
-        span
-        for span in spans
-        if span["attributes"].get("gen_ai.operation.name") in INFERENCE_OPERATIONS
+        record
+        for record in records
+        if "context" in record
+        and record["attributes"].get("gen_ai.operation.name") in INFERENCE_OPERATIONS
     ]
 
 

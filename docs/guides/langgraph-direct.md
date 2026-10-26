@@ -6,7 +6,10 @@ tasks without Flowgentic. This recipe is the port that the
 demo: `examples/ai-hpc-coupling/direct_agentic_application.py` keeps the
 LangGraph graph, node bodies, tools, state and policy guards of
 `agentic_application.py`, and replaces each Flowgentic decorator with a direct
-AsyncFlow call. It imports nothing from Flowgentic.
+AsyncFlow call. The planner's node also writes by hand the acceptance policy
+that the Flowgentic version gets from `accept`; see
+[Acceptance](../features/acceptance.md). From Flowgentic it imports only
+`Rejected`, which the demo's shared checks and decision model raise.
 
 `tests/integration/test_substitution.py` runs both versions with the same
 arguments and finds the same decisions and results, in CI.
@@ -110,4 +113,5 @@ runner and demo support code; a standalone direct application needs only
 | Tools, tasks, services, nodes | `asyncflow` decorator | `flow.function_task`, `flow.block`, `langchain_core.tools.tool` |
 | Retry and timeout | Only what the application writes | Only what the application writes |
 | Handoff tool | `create_task_description_handoff_tool` | About 17 lines |
+| Accepting the planner's proposals | `accept`, with spans and evaluation events | The same policy in a hand-written loop, 3 more code lines, with no record in the trace |
 | Third-party packages (fresh resolve, Python 3.10) | 74 | 42 |

@@ -48,3 +48,7 @@ def test_agentic_rehearsal_demo_records_decisions_and_resources(
         "analyst",
         "supervisor",
     ]
+    # The rehearsal planner's proposal passes every check at the first attempt
+    assert decisions[0]["decision"]["disposition"] == "accepted"
+    assert decisions[0]["decision"]["rejected_attempts"] == []
+    assert decisions[0]["policy_status"] == "agent proposal accepted"

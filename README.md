@@ -40,6 +40,11 @@ and the archived branches.
   Each call to the bound agent runs the component as that task and returns its
   structured decision with the agent's identity and timing, and is an
   OpenTelemetry `invoke_agent` span.
+- **`accept`** (`flowgentic.acceptance`) accepts or rejects an agent's output
+  on explicit checks, before it becomes HPC work. It asks again with the
+  reasons, within an attempt budget, and falls back to a deterministic value
+  when no proposal passes. Each call, attempt and check is recorded in the
+  run's trace.
 - **`LangraphIntegration`** (`flowgentic.langGraph`) runs a LangGraph graph's
   tools, services, tasks and nodes as AsyncFlow tasks, in their caller's trace,
   with conversation memory and a graph that changes at runtime.

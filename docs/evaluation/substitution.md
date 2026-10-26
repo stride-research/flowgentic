@@ -101,6 +101,48 @@ implicit defaults do.
     with an empty context). The direct version calls AsyncFlow itself, and
     needs the same code for the same result.
 
+!!! note "Changed in 0.4.0 (2026-10-25): rows 1 and 6, the planner's acceptance"
+    Rows 1 and 6 record 0.3.0, where both versions' planners called
+    `enforce_candidate_policy`: one proposal, checked and silently replaced by
+    the surrogate's batch if it failed. In 0.4.0 the Flowgentic version's
+    planner calls [`accept`](../features/acceptance.md) instead, with three
+    checks, one re-ask and the surrogate's batch as the fallback. The direct
+    version writes the same policy by hand.
+
+    Same decisions: `test_both_versions_accept_planner_proposals_alike` runs
+    one cycle of each version with a scripted planner that proposes outside the
+    bounds. If the planner corrects itself once told why, both versions accept
+    its second proposal. If it never does, both run the fallback after two
+    rejections. In both cases the two versions record the same decision,
+    disposition, rejected proposals, re-ask feedback, events and simulated
+    batch. `test_flowgentic_and_direct_versions_match` still finds the
+    rehearsal runs equal, with every planner decision accepted at the first
+    attempt.
+
+    Code: the planner node is 76 code lines in the Flowgentic version and 79 in
+    the direct one, both 57 before. `accept` replaces the direct version's
+    loop, but its producer function and the conversion of its attempts into
+    the agent trace's records take nearly as many lines. In this demo it saves
+    3 code lines. Line counts are of non-blank, non-comment, non-docstring
+    lines.
+
+    What `accept` supplies and the hand-written loop does not:
+    - The record in the trace. Each planner decision is an `accept planner`
+      span, with an `accept.attempt planner` span per proposal and a
+      `gen_ai.evaluation.result` event per check that ran. The direct version
+      records none of them.
+    - Attempts that the producer cannot share by mistake. The first version of
+      the direct loop passed its own list of rejections into the planner's
+      task. A task on a thread backend shares what it is given, so a later
+      rejection showed up in an earlier re-ask's feedback. The equality test
+      caught it, and the loop now passes a copy. `accept` hands each attempt a
+      new tuple.
+
+    Row 6 says that `direct_agentic_application.py` imports nothing from
+    Flowgentic. It now imports `Rejected`, which the demo's shared checks and
+    decision model raise. A standalone direct application would define its
+    own exception.
+
 ## LangGraph 1.x and AsyncFlow 0.6.0 (amendment A4, R8)
 
 Row 6 counts the LangGraph 1.x port as a maintenance cost. R5 first estimated

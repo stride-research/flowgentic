@@ -15,6 +15,7 @@ nav:
       - Academy actions as AsyncFlow tasks: guides/academy-on-asyncflow.md
       - Architecture: architecture.md
   - Features:
+      - Acceptance: features/acceptance.md
       - Services: features/services.md
       - Telemetry: features/telemetry.md
       - Logging: features/logging.md

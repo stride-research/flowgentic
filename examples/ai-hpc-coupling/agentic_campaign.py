@@ -185,6 +185,13 @@ async def run(args: argparse.Namespace) -> int:
             "  agent decisions recorded: "
             f"{len(state.get('agent_trace', []))} with policy enforcement"
         )
+        plans = [e["decision"] for e in state["agent_trace"] if e["agent"] == "planner"]
+        accepted = sum(plan["disposition"] == "accepted" for plan in plans)
+        rejected = sum(len(plan["rejected_attempts"]) for plan in plans)
+        print(
+            f"  planner decisions: {accepted} accepted, "
+            f"{len(plans) - accepted} fallback, {rejected} proposals rejected"
+        )
         print(
             "  end-to-end state: "
             f"reason -> {state['spent']} simulations -> uncertainty "
@@ -193,7 +200,7 @@ async def run(args: argparse.Namespace) -> int:
         print(f"  stopped because: {stop_reason}")
         print(f"  machine-readable summary: {summary_path}")
         if tracing is not None:
-            print(f"  OpenTelemetry spans: {tracing.path}")
+            print(f"  OpenTelemetry spans and events: {tracing.path}")
 
     return 0
 

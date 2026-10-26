@@ -96,6 +96,7 @@ Proof points
   bounded agent tools mapped to named backends: ai, compute
   observed compute parallelism: 4
   agent decisions recorded: 15 with policy enforcement
+  planner decisions: 5 accepted, 0 fallback, 0 proposals rejected
   end-to-end state: reason -> 20 simulations -> uncertainty 0.2013
   stopped because: scientific uncertainty goal reached
 ```
@@ -103,7 +104,9 @@ Proof points
 The application, not the agents, decides when to stop: it ends the campaign
 once the uncertainty reaches 0.25 or less, or when the budget of 24
 simulations or the maximum of 8 cycles runs out. The agents' recommendations pass
-through deterministic policy guards first.
+through deterministic policy guards first. The planner's proposals pass
+[acceptance](features/acceptance.md) checks: a rejected batch is asked for once
+more, with the reasons, and the surrogate's batch runs if that fails too.
 
 ## Read the outputs
 
@@ -119,7 +122,8 @@ Each demo writes its results under `examples/ai-hpc-coupling/`:
 `uncertainty`), the resident service's counters (`service`), the execution
 evidence (`execution`: the backend names, then the measured peak compute
 parallelism, retries and one timed event per task) and, for the agentic demo, every agent decision with
-its policy status (`agents`) and the integration that ran (`integration`):
+its policy status (`agents`), the planner's disposition and rejected proposals,
+and the integration that ran (`integration`):
 
 ```bash
 uv run python -c "import json; s = json.load(open('examples/ai-hpc-coupling/agentic_demo_results/campaign_summary.json')); print({k: s[k] for k in ('implementation', 'integration', 'cycles', 'simulations', 'stop_reason')})"
@@ -130,9 +134,9 @@ uv run python -c "import json; s = json.load(open('examples/ai-hpc-coupling/agen
 ```
 
 With `--trace PATH`, a demo's runner also writes the run's OpenTelemetry
-spans to `PATH`, one JSON object per line: the agents' decisions, the tasks
-they and the campaign launch, and any model calls, as one trace. See
-[Telemetry](features/telemetry.md).
+spans and events to `PATH`, one JSON object per line: the agents' decisions,
+the planner's acceptance checks, the tasks they and the campaign launch, and
+any model calls, as one trace. See [Telemetry](features/telemetry.md).
 
 ## Other runs
 

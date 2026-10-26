@@ -1,8 +1,8 @@
 """The cost recipe in ``examples/telemetry/cost.py``, on recorded spans.
 
 Scripted OpenAI-compatible models answer with fixed usage; OpenTelemetry's
-LangChain instrumentation records each call; the spans are written as the
-demo's ``--trace`` writes them, and the recipe prices them.
+LangChain instrumentation records each call; the spans, and two events, are
+written as the demo's ``--trace`` writes them, and the recipe prices them.
 """
 
 # ruff: noqa: S101
@@ -17,6 +17,8 @@ from types import ModuleType
 
 import pytest
 from langchain_openai import ChatOpenAI
+from opentelemetry import _logs
+from opentelemetry.sdk._logs.export import InMemoryLogRecordExporter
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
@@ -50,6 +52,7 @@ def usage(prompt: int, completion: int, cached: int = 0) -> dict[str, object]:
 async def span_file(
     tmp_path: Path,
     span_exporter: InMemorySpanExporter,
+    log_exporter: InMemoryLogRecordExporter,
     scripted_chat_model: Callable[..., ChatOpenAI],
 ) -> Path:
     """Record one remote call and three local ones, one of them unmeasured."""
@@ -63,13 +66,17 @@ async def span_file(
         model = scripted_chat_model("ok", usage=reported, base_url=base_url)
         await model.ainvoke("hi")
 
-    path = tmp_path / "spans.jsonl"
-    path.write_text(
-        "".join(
-            span.to_json(indent=None) + "\n"
-            for span in span_exporter.get_finished_spans()
-        )
+    # The demo's file also holds events, which are log records
+    logger = _logs.get_logger("events")
+    logger.emit(
+        event_name="gen_ai.evaluation.result",
+        attributes={"gen_ai.evaluation.name": "within_bounds"},
     )
+    logger.emit(body="an event without attributes")
+
+    records = [*span_exporter.get_finished_spans(), *log_exporter.get_finished_logs()]
+    path = tmp_path / "spans.jsonl"
+    path.write_text("".join(record.to_json(indent=None) + "\n" for record in records))
     return path
 
 
