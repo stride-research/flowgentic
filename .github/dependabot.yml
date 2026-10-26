@@ -7,6 +7,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # The ranges in pyproject.toml are chosen by hand, and some bounds say why
+    # in a comment. Dependabot's default strategy for a library widens them to
+    # admit a new release, so it only updates uv.lock within them.
+    versioning-strategy: "lockfile-only"
     groups:
       uv:
         patterns: ["*"]
