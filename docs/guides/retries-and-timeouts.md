@@ -78,6 +78,20 @@ The chat model retries its own requests and enforces its own deadline. With
 `ChatLLMProvider("openrouter", model=..., max_retries=2, timeout=120)` sets
 both on the `ChatOpenAI` it builds.
 
+## An agent's loop
+
+An agent built with LangChain's `create_agent` takes middleware from
+`langchain.agents.middleware` that retries and limits its calls:
+
+- `ModelRetryMiddleware` and `ToolRetryMiddleware` retry a failed model or
+  tool call with exponential backoff, twice by default. Their retries come on
+  top of the SDK's: with two of each, one model call can make up to nine
+  requests.
+- `ModelCallLimitMiddleware` and `ToolCallLimitMiddleware` cap the model and
+  tool calls per run (`run_limit`) or per thread (`thread_limit`). By default,
+  a model call limit ends the run, and a tool call limit refuses the call and
+  lets the model carry on.
+
 ## A service
 
 A `SERVICE_TASK` starts one service per call. Flowgentic does not restart a
