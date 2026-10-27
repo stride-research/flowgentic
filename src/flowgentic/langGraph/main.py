@@ -39,12 +39,6 @@ from pydantic import BaseModel, Field
 
 from flowgentic import _asyncflow
 from flowgentic.langGraph.execution_wrappers import ExecutionWrappersLangraph
-from flowgentic.langGraph.memory import (
-	LangraphMemoryManager,
-	MemoryConfig,
-	MemoryEnabledState,
-	MemoryManager,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +67,6 @@ class LangraphIntegration:
 		self.execution_wrappers: ExecutionWrappersLangraph = ExecutionWrappersLangraph(
 			flow=self.flow
 		)
-		self.memory_manager: LangraphMemoryManager = LangraphMemoryManager()
 
 		logger.info("Started the LangGraph integration's WorkflowEngine")
 		return self

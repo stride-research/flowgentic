@@ -200,6 +200,12 @@ remain unexercised; they are unevaluated, not failed:
   in both versions against an ADR checkout, but no test covers it.
 - Remote or HPC backends: both versions ran on local backends only.
 
+!!! note "Changed in 0.4.0 (2026-10-27): row 6 and this list"
+    Row 6 and this list record 0.3.0. Flowgentic 0.4.0 removes the memory
+    manager and the mutable graph, so `LangraphIntegration` no longer creates a
+    memory manager and neither feature is left to evaluate. See the
+    [changelog](../changelog.md).
+
 ## Summary for D1
 
 In this application, the execution adapter's only distinct contribution is its

@@ -39,9 +39,8 @@ and the archived branches.
   when no proposal passes. Each call, attempt and check is recorded in the
   run's trace. See [Acceptance](features/acceptance.md).
 - **`LangraphIntegration`** (`flowgentic.langGraph`) runs a LangGraph graph's
-  tools, services, tasks and nodes as AsyncFlow tasks, in their caller's trace,
-  with conversation memory and a graph that changes at runtime. See
-  [LangGraph on AsyncFlow with Flowgentic](guides/langgraph-on-asyncflow.md)
+  tools, services, tasks and nodes as AsyncFlow tasks, in their caller's trace.
+  See [LangGraph on AsyncFlow with Flowgentic](guides/langgraph-on-asyncflow.md)
   and [Telemetry](features/telemetry.md).
   The same graph runs on AsyncFlow without Flowgentic:
   [LangGraph on AsyncFlow directly](guides/langgraph-direct.md).

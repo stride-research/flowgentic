@@ -74,6 +74,3 @@ compiles it with an in-memory checkpointer:
 It then streams the run and returns the final state. A run that ends in the
 error handler raises `RuntimeError` with the stages' errors, so it exits
 non-zero.
-
-The variant `research_agent_memory/` adds a `MemoryManager`; see
-[Memory](../features/memory.md).

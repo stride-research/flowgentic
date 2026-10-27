@@ -27,7 +27,10 @@ A LangGraph application can also run on AsyncFlow without Flowgentic:
 [LangGraph on AsyncFlow directly](guides/langgraph-direct.md). So can an
 application that calls Academy agents from its tasks:
 [Academy actions as AsyncFlow tasks](guides/academy-on-asyncflow.md), which
-replaces the `flowgentic.academy` module that 0.4.0 removed.
+replaces the `flowgentic.academy` module that 0.4.0 removed. 0.4.0 also
+removes the memory manager and the mutable graph, which served none of this;
+LangChain's middleware and LangGraph's own routing cover them; see the
+[changelog](changelog.md).
 
 ## Supported configuration
 

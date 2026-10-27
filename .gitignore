@@ -15,6 +15,13 @@ dist/
 .eggs/
 *.egg
 
+# Coverage
+.coverage
+.coverage.*
+coverage.xml
+coverage_report/
+htmlcov/
+
 # Virtual environments
 
 .venv/
