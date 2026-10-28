@@ -28,9 +28,10 @@ A LangGraph application can also run on AsyncFlow without Flowgentic:
 application that calls Academy agents from its tasks:
 [Academy actions as AsyncFlow tasks](guides/academy-on-asyncflow.md), which
 replaces the `flowgentic.academy` module that 0.4.0 removed. 0.4.0 also
-removes the memory manager and the mutable graph, which served none of this;
-LangChain's middleware and LangGraph's own routing cover them; see the
-[changelog](changelog.md).
+removes the memory manager and the mutable graph, which served none of this.
+LangChain's middleware bounds an agent's history. LangGraph routes within a
+run, and a graph that should change between runs is built anew as a
+`StateGraph`; see the [changelog](changelog.md).
 
 ## Supported configuration
 
@@ -73,7 +74,7 @@ demos' traces.
       a logger provider.
     - RHAPSODY's Dragon-vLLM endpoint reports word counts as token counts.
 - Live runs of the design-pattern examples need a model provider and
-  credentials. CI runs four of them with a scripted chat model in place of the
+  credentials. CI runs three of them with a scripted chat model in place of the
   provider (`tests/integration/test_design_patterns_offline.py`), which shows
   that they complete, not what a live model makes of them.
   `make tests-integration-llm` runs two of them live, given
