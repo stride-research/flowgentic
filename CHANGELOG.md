@@ -27,9 +27,12 @@ kept, the entry says how.
   `flowgentic.langGraph.fault_tolerance` and the decorator's `retry=` are
   gone, and an unknown keyword raises `TypeError`. The nearest to 0.3's
   default of 3 attempts of at most 30 s each is, on a graph node,
-  `add_node(..., retry_policy=RetryPolicy(max_attempts=3), timeout=30)`; on a
-  model call, the chat model's `max_retries` and `timeout`; on an AsyncFlow
-  task, a wrapper in the application.
+  `add_node(..., retry_policy=RetryPolicy(max_attempts=3), timeout=30)`, where
+  `timeout` needs LangGraph 1.2 or later. LangGraph's default `retry_on`
+  retries `ConnectionError` and an attempt that timed out, but not the other
+  `OSError`s that 0.3 retried: name the transient ones in `retry_on`. On a
+  model call, the chat model's `max_retries` and `timeout` take its place; on
+  an AsyncFlow task, a wrapper in the application.
 - `flowgentic.academy` is gone, and Flowgentic no longer depends on
   academy-py. Call Academy agents from AsyncFlow tasks directly, with
   `academy-py>=1.0,<2` installed, as
