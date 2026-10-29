@@ -6,18 +6,21 @@ title: Flowgentic
 
 Flowgentic runs agent components and LangGraph workflows as tasks on
 [RADICAL AsyncFlow](https://github.com/radical-cybertools/radical.asyncflow).
-This documentation describes Flowgentic 0.3.1.
+This documentation describes Flowgentic 0.4.0.
 
 ## Status
 
-Flowgentic 0.3.1 is in maintenance mode. It preserves the July 2026 work as a
-documented, tested snapshot. The LangGraph execution adapter
-(`LangraphIntegration`) is frozen and gets no new features: the
-[substitution experiment](evaluation/substitution.md) found that, in the
+Flowgentic 0.4.0 is a repair release in maintenance mode. It removes features
+that 0.3 shipped broken or unsafe, or that did not serve its purpose. It adds
+`accept`, which checks an agent's output before it becomes HPC work, and it
+carries the trace into the tasks it submits, so an agent's decisions, the tasks
+they run in and their model calls form one OpenTelemetry trace. The LangGraph
+execution adapter (`LangraphIntegration`) is frozen and gets no new features:
+the [substitution experiment](evaluation/substitution.md) found that, in the
 agentic demo, its only distinct contribution beyond AsyncFlow and LangGraph
 was an implicit retry and timeout on every call and graph node, which re-ran
-scientific work; 0.4.0 removes them. New applications can bind agents with `bind_agent`, or run
-LangGraph on AsyncFlow directly.
+scientific work; 0.4.0 removes them. New applications can bind agents with
+`bind_agent`, or run LangGraph on AsyncFlow directly.
 
 | Agent framework | Workflow engine | Backends | Python |
 | --- | --- | --- | --- |
@@ -58,7 +61,7 @@ in two of them.
 | An ADR action or AuCaM workflow launches an agent workflow whose tools run through AsyncFlow | AuCaM, AsyncFlow | `LangraphIntegration` (frozen) |
 | An external harness (Claude Code, Codex, OpenClaw) steers a run or submits a campaign | ADR, AuCaM | None |
 
-ADR and AuCaM are not released, and Flowgentic 0.3.1 does not support ADR
+ADR and AuCaM are not released, and Flowgentic 0.4.0 does not support ADR
 mode; see [Project status](status.md).
 
 ## Install

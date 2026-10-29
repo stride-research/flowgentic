@@ -21,10 +21,14 @@ Documentation: [stride-research.github.io/flowgentic](https://stride-research.gi
 
 ## Status
 
-Flowgentic 0.3.1 is in maintenance mode. It preserves the July 2026 work as a
-documented, tested snapshot. The LangGraph execution adapter
-(`LangraphIntegration`) is frozen and gets no new features. New applications can bind
-agents with `bind_agent`, or run LangGraph on AsyncFlow directly.
+Flowgentic 0.4.0 is a repair release in maintenance mode. It removes features
+that 0.3 shipped broken or unsafe, or that did not serve its purpose. It adds
+`accept`, which checks an agent's output before it becomes HPC work, and it
+carries the trace into the tasks it submits, so an agent's decisions, the tasks
+they run in and their model calls form one OpenTelemetry trace. The LangGraph
+execution adapter (`LangraphIntegration`) is frozen and gets no new features.
+New applications can bind agents with `bind_agent`, or run LangGraph on
+AsyncFlow directly.
 
 | Agent framework | Workflow engine | Backends | Python |
 | --- | --- | --- | --- |
