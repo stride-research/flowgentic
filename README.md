@@ -63,12 +63,12 @@ uv sync --locked
 ```
 
 Or build the wheel and install it into a new environment. The
-[v0.3.1 GitHub release](https://github.com/stride-research/flowgentic/releases/tag/v0.3.1) carries the same wheel.
+[v0.4.0 GitHub release](https://github.com/stride-research/flowgentic/releases/tag/v0.4.0) carries the same wheel.
 
 ```bash
 uv build
 uv venv --python 3.10 flowgentic-env
-uv pip install --python flowgentic-env/bin/python dist/flowgentic-0.3.1-py3-none-any.whl
+uv pip install --python flowgentic-env/bin/python dist/flowgentic-0.4.0-py3-none-any.whl
 ```
 
 ## Run the demos
@@ -106,7 +106,7 @@ holds the metadata, and GitHub's "Cite this repository" menu turns it into APA
 or BibTeX:
 
 > Alsaadi, A., Amirghofran, Y., Barbero, C., Cordovez, D., Dominguez, J.,
-> Oliveros, D., & Turilli, M. (2026). *Flowgentic* (Version 0.3.1) [Computer
+> Oliveros, D., & Turilli, M. (2026). *Flowgentic* (Version 0.4.0) [Computer
 > software]. https://github.com/stride-research/flowgentic
 
 ## License

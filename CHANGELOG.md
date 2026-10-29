@@ -7,7 +7,45 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
-## [Unreleased]
+## [0.4.0] - 2026-10-29
+
+A repair release. It removes features that 0.3 shipped broken or unsafe, or
+that did not serve Flowgentic's purpose: running agent decisions as workflow
+tasks, checking their outputs and tracing them with the tasks. It adds
+acceptance of agent outputs and OpenTelemetry tracing.
+
+**Breaking changes.** Each is detailed below. Where 0.3's behaviour can be
+kept, the entry says how.
+
+- `import flowgentic` no longer configures logging. To print Flowgentic's
+  records, call `flowgentic.configure_logging()`.
+- The logging utilities (`flowgentic.utils.Logger`, its formatters and
+  filter, `add_context_to_log`) and the settings file (`config.yml`,
+  `FLOWGENTIC_CONFIG`, `flowgentic.settings`) are gone. Configure logging in
+  the application, or call `flowgentic.configure_logging()`.
+- Each decorated call runs once: the retry loop,
+  `flowgentic.langGraph.fault_tolerance` and the decorator's `retry=` are
+  gone, and an unknown keyword raises `TypeError`. The nearest to 0.3's
+  default of 3 attempts of at most 30 s each is, on a graph node,
+  `add_node(..., retry_policy=RetryPolicy(max_attempts=3), timeout=30)`; on a
+  model call, the chat model's `max_retries` and `timeout`; on an AsyncFlow
+  task, a wrapper in the application.
+- `flowgentic.academy` is gone, and Flowgentic no longer depends on
+  academy-py. Call Academy agents from AsyncFlow tasks directly, with
+  `academy-py>=1.0,<2` installed, as
+  [Academy actions as AsyncFlow tasks](https://stride-research.github.io/flowgentic/guides/academy-on-asyncflow/)
+  shows.
+- The node report is gone: `flowgentic.utils.telemetry`,
+  `LangraphIntegration.agent_introspector`, `generate_execution_artifacts` and
+  `LangraphUtils.render_graph`. Export the run's spans to a trace backend or
+  a JSON-lines file instead, and draw a graph with LangGraph's
+  `app.get_graph().draw_png(path)`.
+- `flowgentic.langGraph.memory`, the integration's `memory_manager` and
+  `flowgentic.langGraph.mutable_graph` are gone, with two attributes of
+  `ExecutionWrappersLangraph` that nothing used. Bound an agent's history with
+  LangChain's `SummarizationMiddleware`, `ContextEditingMiddleware` or
+  `trim_messages`, and build a new `StateGraph` to change a graph between
+  runs.
 
 ### Added
 
@@ -137,14 +175,14 @@ Nobody uses Flowgentic yet, so these go without a deprecation period.
   on HPC resources belongs to RADICAL's execution layer, and an agent that
   drives the workflow to ADR. Flowgentic no longer depends on academy-py; the
   `examples` extra brings `academy-py>=1.0,<2` for the example.
-- The settings file: `config.yml`, looked up at import in the working
-  directory, `~/.flowgentic/`, the file named by `FLOWGENTIC_CONFIG` and the
-  source tree, and the `flowgentic.settings` module. An unrelated `config.yml`
-  in the working directory made `import flowgentic` fail with `KeyError`, and
-  the file held only the log level, now the application's, and the report's
-  paths, which went with the report.
-- `flowgentic.utils.Logger`, its colored and JSON formatters, the base64
-  redaction filter and `flowgentic.utils.add_context_to_log`. Use
+- **Breaking:** the settings file: `config.yml`, looked up at import in the
+  working directory, `~/.flowgentic/`, the file named by `FLOWGENTIC_CONFIG`
+  and the source tree, and the `flowgentic.settings` module. An unrelated
+  `config.yml` in the working directory made `import flowgentic` fail with
+  `KeyError`, and the file held only the log level, now the application's, and
+  the report's paths, which went with the report.
+- **Breaking:** `flowgentic.utils.Logger`, its colored and JSON formatters,
+  the base64 redaction filter and `flowgentic.utils.add_context_to_log`. Use
   `flowgentic.configure_logging()` or the application's own logging
   configuration; OpenTelemetry's logging instrumentation adds trace and span
   ids to every record.
@@ -343,5 +381,6 @@ on `main`.
   - Each test matrix job runs its own Python with the dev extra.
   - The bandit job runs again.
 
+[0.4.0]: https://github.com/stride-research/flowgentic/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/stride-research/flowgentic/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/stride-research/flowgentic/compare/0.2.0...v0.3.0
