@@ -19,8 +19,6 @@ nav:
       - Services: features/services.md
       - Telemetry: features/telemetry.md
       - Logging: features/logging.md
-      - Memory: features/memory.md
-      - Mutable graph: features/mutable_graph.md
   - Design patterns:
       - Sequential: design_patterns/sequential.md
       - Supervisor: design_patterns/supervisor.md

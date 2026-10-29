@@ -96,8 +96,6 @@ class ExecutionWrappersLangraph:
 
 	def __init__(self, flow: "WorkflowEngine") -> None:
 		self.flow = flow
-		self.react_agents: Dict[str, Any] = {}
-		self.service_registry: Dict[str, Any] = {}
 
 	def asyncflow(
 		self,
@@ -114,7 +112,6 @@ class ExecutionWrappersLangraph:
 		Args:
 		    flow_type: AsyncFlowType enum specifying the decoration behavior:
 		        - AGENT_TOOL_AS_FUNCTION: Creates a LangChain tool (with @tool wrapper)
-		        - AGENT_TOOL_AS_SERVICE: Creates a LangChain tool with persistent service instance
 		        - FUNCTION_TASK: Creates a simple asyncflow task (with *args, **kwargs)
 		        - SERVICE_TASK: Creates a persistent service task
 		        - EXECUTION_BLOCK: Creates a block node

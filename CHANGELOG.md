@@ -73,10 +73,9 @@ predate this changelog, so their changes are not listed here.
 - Log records follow a level contract: DEBUG for per-call detail, INFO for
   lifecycle events, WARNING for degraded results and refused requests, ERROR
   for failures. Per-call records that were INFO are DEBUG, such as the
-  decorator's "Registering function … as AsyncFlow …". `MutableGraph`'s
-  refusals, which return `False`, are WARNING. No record carries prompts,
-  model outputs, message lists or graph states, at any level. Records use lazy
-  `%`-style arguments, and CI checks it.
+  decorator's "Registering function … as AsyncFlow …". No record carries
+  prompts, model outputs, message lists or graph states, at any level. Records
+  use lazy `%`-style arguments, and CI checks it.
 - The AI-HPC demo's decision model keeps the model's raw message
   (`with_structured_output(..., include_raw=True)`), and rejects an answer it
   cannot use with `Rejected`: one that does not parse, a refusal, or one cut
@@ -86,9 +85,9 @@ predate this changelog, so their changes are not listed here.
   repository's latest GitHub release is published (not a pre-release, nor a
   patch to an older line), or by hand for a given release tag, no longer on
   every push to `main`. It stops describing changes that no release contains.
-- CI runs four design-pattern examples, `sequential/research_agent`,
-  `sequential/research_agent_memory`, `supervisor/toy` and
-  `supervisor/product_research`, with a scripted chat model in place of
+- CI runs three design-pattern examples, `sequential/research_agent`,
+  `supervisor/toy` and `supervisor/product_research`, with a scripted chat
+  model in place of
   `ChatLLMProvider`, and checks that each completes.
   They need OpenRouter credentials, so CI had never run them. Live runs stay
   opt-in: `make tests-integration-llm` locally, or the LLM examples workflow,
@@ -163,6 +162,28 @@ Nobody uses Flowgentic yet, so these go without a deprecation period.
   draw a graph, call LangGraph's `app.get_graph().draw_png(path)`. The
   design-pattern examples' committed `agent_execution_results/` files are gone,
   and the examples' entry points return the final state.
+- **Breaking:** the memory manager and the mutable graph. Neither runs agent
+  decisions or model calls as workflow tasks, checks their outputs or traces
+  them, and LangChain and LangGraph cover both:
+  - `flowgentic.langGraph.memory` (`MemoryConfig`, `MemoryManager`,
+    `LangraphMemoryManager`, `MemoryEnabledState`), the integration's
+    `memory_manager`, and the example `sequential/research_agent_memory`. Its
+    trimming ignored the pairing of a tool call with its result, so every
+    strategy could return a conversation that a chat API rejects: `trim_last`
+    could keep a tool result whose call it had dropped, and
+    `importance_based` reordered the messages by score. `"summarize"` made a
+    blocking model call on the event loop, and five parameters had no effect.
+    For an agent built with `create_agent`, `SummarizationMiddleware` and
+    `ContextEditingMiddleware` from `langchain.agents.middleware` bound the
+    history and keep each tool call with its result; in a graph of one's own,
+    `langchain_core.messages.trim_messages` does.
+  - `flowgentic.langGraph.mutable_graph` (`MutableGraph`) and its example. It
+    changed no running graph: each edit recompiled a new sequential
+    `StateGraph` from a list of node names, and refused edits returned
+    `False`. Within a run, LangGraph routes with conditional edges, `Send` and
+    `Command(goto=...)`; between runs, build a new `StateGraph`.
+  - `ExecutionWrappersLangraph.react_agents` and `service_registry`, which
+    nothing used.
 
 ### Fixed
 

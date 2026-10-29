@@ -76,12 +76,6 @@ examples-sequential-research:
 	$(UV_RUN_EXAMPLES) python -m examples.langgraph-integration.design_patterns.sequential.research_agent.main
 examples-supervisor-toy: 
 	$(UV_RUN_EXAMPLES) python -m examples.langgraph-integration.design_patterns.supervisor.toy.main
-#### Memory
-examples-sequential-research-memory:
-	$(UV_RUN_EXAMPLES) python -m examples.langgraph-integration.design_patterns.sequential.research_agent_memory.main
 ### Services
 examples-services-intermittent-task: 
 	$(UV_RUN_EXAMPLES) python -m examples.langgraph-integration.service-task.service-intermittent
-### Miscellaneous
-examples-runtime-graph:
-	$(UV_RUN_EXAMPLES) python -m examples.langgraph-integration.miscellaneous.mutable-graph-creation

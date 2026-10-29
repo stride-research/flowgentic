@@ -48,9 +48,9 @@ no code for any of these.
 
 | Level | What Flowgentic logs there |
 | --- | --- |
-| `DEBUG` | Per-call detail: functions registered and submitted, tasks completed, graph edits |
-| `INFO` | Lifecycle: the integration's `WorkflowEngine` started and shut down, the report written |
-| `WARNING` | Degraded results (a failed summary, a graph that could not be rendered), and requests refused with `False`, such as a `MutableGraph` edit |
+| `DEBUG` | Per-call detail: functions registered and submitted, tasks completed, the number of agents a router chose |
+| `INFO` | Lifecycle: the integration's `WorkflowEngine` started and shut down |
+| `WARNING` | The integration's `WorkflowEngine` shut down after an exception |
 | `ERROR` | Failures |
 
 ## What the records leave out

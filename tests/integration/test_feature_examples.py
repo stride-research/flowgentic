@@ -1,7 +1,7 @@
-"""Run the offline feature examples that the documentation site includes.
+"""Run the offline feature example that the documentation site includes.
 
-The Mutable graph and Services pages show code from these examples, so the
-examples run here, in CI, without credentials.
+The Services page shows code from this example, so the example runs here, in
+CI, without credentials.
 """
 
 # ruff: noqa: S101
@@ -28,27 +28,6 @@ def run_example(module: str) -> str:
     )
     assert completed.returncode == 0, completed.stderr
     return completed.stdout
-
-
-def test_mutable_graph_example() -> None:
-    output = run_example(
-        "examples.langgraph-integration.miscellaneous.mutable-graph-creation"
-    )
-
-    paths = [
-        line.removeprefix("Execution Path:").strip()
-        for line in output.splitlines()
-        if line.startswith("Execution Path:")
-    ]
-    assert paths == [
-        "node_a → node_b",
-        "node_a → node_b → node_c",
-        "node_a → node_c",
-        "node_a → node_d",
-        "node_a → node_f → node_d",
-    ]
-    assert "Conditional Result 1: decision → standard" in output
-    assert "Conditional Result 2: decision → optimize" in output
 
 
 def test_service_task_example() -> None:

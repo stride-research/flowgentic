@@ -202,39 +202,6 @@ async def test_sequential_research_agent_fails_when_the_model_does(
         )
 
 
-async def test_sequential_research_agent_memory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    provider = scripted_provider(
-        tool_args={
-            "web_search": {"query": "renewable energy storage"},
-            "data_analysis": {"data": "battery storage costs"},
-            "document_generator": {"content": "storage findings"},
-            "recommendation_engine": {"analysis": "storage findings"},
-        }
-    )
-
-    state = await run_example(
-        "sequential/research_agent_memory",
-        "start_app",
-        ["main", "components.nodes"],
-        provider,
-        tmp_path,
-        monkeypatch,
-    )
-
-    assert state["current_stage"] == "completed", state["errors"]
-    assert state["errors"] == []
-    assert state["research_agent_output"].output_content == ANSWER
-    assert state["synthesis_agent_output"].output_content == ANSWER
-    assert tool_results(state) == {
-        "web_search": "success",
-        "data_analysis": "success",
-        "document_generator": "success",
-        "recommendation_engine": "success",
-    }
-
-
 async def test_supervisor_toy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     provider = scripted_provider(
         tool_args={

@@ -226,6 +226,5 @@ If your service uses threads (like the example server), ensure proper:
 ## 🔗 Related
 
 - [Retries and Timeouts](../../../docs/guides/retries-and-timeouts.md)
-- [Memory Management](../../../docs/features/memory.md)
-- [Dynamic Graph Creation](../../../docs/features/dynamic-graph.md)
+- [Services](../../../docs/features/services.md)
 

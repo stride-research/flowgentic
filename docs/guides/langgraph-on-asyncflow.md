@@ -43,7 +43,6 @@ Inside the context, the integration exposes:
 | --- | --- |
 | `flow` | The AsyncFlow `WorkflowEngine` |
 | `execution_wrappers` | The `asyncflow` decorator and the handoff tool |
-| `memory_manager` | Conversation memory; see [Memory](../features/memory.md) |
 
 The integration always creates its own engine: it cannot run on an engine the
 application has already created.

@@ -27,6 +27,3 @@ def test_llm_example(module: str) -> None:
 		timeout=300,
 	)
 
-# Memory
-# Services
-# MCP
