@@ -3,7 +3,7 @@ message: "If you use Flowgentic in your work, please cite it as below."
 type: software
 title: Flowgentic
 version: 0.4.0
-date-released: 2026-10-29
+date-released: 2026-10-30
 abstract: >-
   Flowgentic runs agent components and LangGraph workflows as tasks on
   RADICAL AsyncFlow.

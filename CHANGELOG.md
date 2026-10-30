@@ -7,7 +7,7 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
-## [0.4.0] - 2026-10-29
+## [0.4.0] - 2026-10-30
 
 A repair release. It removes features that 0.3 shipped broken or unsafe, or
 that did not serve Flowgentic's purpose: running agent decisions as workflow
