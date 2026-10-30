@@ -21,10 +21,14 @@ Documentation: [stride-research.github.io/flowgentic](https://stride-research.gi
 
 ## Status
 
-Flowgentic 0.3.1 is in maintenance mode. It preserves the July 2026 work as a
-documented, tested snapshot. The LangGraph execution adapter
-(`LangraphIntegration`) is frozen and gets no new features. New applications can bind
-agents with `bind_agent`, or run LangGraph on AsyncFlow directly.
+Flowgentic 0.4.0 is a repair release in maintenance mode. It removes features
+that 0.3 shipped broken or unsafe, or that did not serve its purpose. It adds
+`accept`, which checks an agent's output before it becomes HPC work, and it
+carries the trace into the tasks it submits, so an agent's decisions, the tasks
+they run in and their model calls form one OpenTelemetry trace. The LangGraph
+execution adapter (`LangraphIntegration`) is frozen and gets no new features.
+New applications can bind agents with `bind_agent`, or run LangGraph on
+AsyncFlow directly.
 
 | Agent framework | Workflow engine | Backends | Python |
 | --- | --- | --- | --- |
@@ -59,12 +63,12 @@ uv sync --locked
 ```
 
 Or build the wheel and install it into a new environment. The
-[v0.3.1 GitHub release](https://github.com/stride-research/flowgentic/releases/tag/v0.3.1) carries the same wheel.
+[v0.4.0 GitHub release](https://github.com/stride-research/flowgentic/releases/tag/v0.4.0) carries the same wheel.
 
 ```bash
 uv build
 uv venv --python 3.10 flowgentic-env
-uv pip install --python flowgentic-env/bin/python dist/flowgentic-0.3.1-py3-none-any.whl
+uv pip install --python flowgentic-env/bin/python dist/flowgentic-0.4.0-py3-none-any.whl
 ```
 
 ## Run the demos
@@ -102,7 +106,7 @@ holds the metadata, and GitHub's "Cite this repository" menu turns it into APA
 or BibTeX:
 
 > Alsaadi, A., Amirghofran, Y., Barbero, C., Cordovez, D., Dominguez, J.,
-> Oliveros, D., & Turilli, M. (2026). *Flowgentic* (Version 0.3.1) [Computer
+> Oliveros, D., & Turilli, M. (2026). *Flowgentic* (Version 0.4.0) [Computer
 > software]. https://github.com/stride-research/flowgentic
 
 ## License

@@ -2,8 +2,8 @@ cff-version: 1.2.0
 message: "If you use Flowgentic in your work, please cite it as below."
 type: software
 title: Flowgentic
-version: 0.3.1
-date-released: 2026-10-23
+version: 0.4.0
+date-released: 2026-10-29
 abstract: >-
   Flowgentic runs agent components and LangGraph workflows as tasks on
   RADICAL AsyncFlow.

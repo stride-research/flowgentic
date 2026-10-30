@@ -2,11 +2,13 @@
 
 ## Maintenance mode
 
-Flowgentic 0.3.0 is a consolidation release. It preserves the July 2026 work
-as a documented, tested snapshot: fixes and evidence, and no new features.
-0.3.1, a patch release, fixes defects that 0.3.0 documented in its memory
-strategies, `MutableGraph.update_graph`, `generate_execution_artifacts` and
-telemetry; see the [changelog](changelog.md).
+Flowgentic 0.4.0 is a repair release in maintenance mode. 0.3.0 preserved the
+July 2026 work as a documented, tested snapshot, and 0.3.1 fixed defects that
+0.3.0 documented. 0.4.0 removes features that 0.3 shipped broken or unsafe, or
+that did not serve Flowgentic's purpose, and adds acceptance of agent outputs
+and one trace across decisions, tasks and model calls. The
+[changelog](changelog.md) lists each change, and what replaces each feature it
+removes.
 
 The LangGraph execution adapter (`LangraphIntegration` and its `asyncflow`
 decorators) is frozen in maintenance mode and gets no new features. The
@@ -39,7 +41,7 @@ run, and a graph that should change between runs is built anew as a
 | --- | --- | --- | --- |
 | LangGraph 1.x | RADICAL AsyncFlow 0.6.0 | Local | 3.10, 3.11, 3.12 |
 
-Tested environment, from `uv.lock`: LangGraph 1.2.16, langchain-core 1.6.13,
+Tested environment, from `uv.lock`: LangGraph 1.2.16, langchain-core 1.7.0,
 langchain 1.4.7, radical-asyncflow 0.6.0 and academy-py 1.0.0. CI runs the
 test suite on Python 3.10, 3.11 and 3.12, and on Python 3.10 with the lowest
 versions the dependency ranges allow; a weekly workflow runs it, and builds
@@ -59,6 +61,9 @@ demos' traces.
 - Not validated: using an engine that the caller creates (the integration
   always creates its own), and any remote or HPC backend. Cancellation reaching
   in-flight AsyncFlow tasks is validated on local backends only.
+- The recipe for calling Academy agents from AsyncFlow tasks is tested with
+  Academy's local exchange and AsyncFlow's local backend only; see
+  [Academy actions as AsyncFlow tasks](guides/academy-on-asyncflow.md#limitations).
 - AsyncFlow 0.6.0 has no per-task retry or timeout, so applications wrap the
   task calls that need them. See
   [Retries and timeouts](guides/retries-and-timeouts.md).
