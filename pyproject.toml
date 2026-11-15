@@ -1,6 +1,6 @@
 [project]
 name = "flowgentic"
-version = "0.4.0"
+version = "0.5.0.dev0"
 description = "A library to enable running agentic frameworks on HPC environments."
 readme = "README.md"
 authors = [

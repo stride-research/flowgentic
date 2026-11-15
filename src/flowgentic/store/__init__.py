@@ -17,7 +17,8 @@ which holds for a store inside one job's allocation.
 
 from __future__ import annotations
 
-import pickle  # nosec B403 - values come from processes of the same job
+# Values come from processes of the same job.
+import pickle  # nosec B403
 import threading
 from typing import Any, Protocol, runtime_checkable
 
@@ -68,7 +69,8 @@ class MemoryStore:
 			if default is MISSING:
 				raise KeyError(key)
 			return default
-		return pickle.loads(data)  # nosec B301 - written by this store
+		# Written by this store.
+		return pickle.loads(data)  # nosec B301
 
 	def put(self, key: str, value: Any) -> None:
 		data = pickle.dumps(value, protocol=5)

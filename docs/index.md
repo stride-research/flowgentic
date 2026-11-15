@@ -24,7 +24,8 @@ scientific work; 0.4.0 removes them. New applications can bind agents with
 
 | Agent framework | Workflow engine | Backends | Python |
 | --- | --- | --- | --- |
-| LangGraph 1.x | RADICAL AsyncFlow 0.6.0 | Local | 3.10, 3.11, 3.12 |
+| LangGraph 1.x | RADICAL AsyncFlow 0.6.0 | Local | 3.11, 3.12, 3.13 |
+| LangGraph 1.x, at scale | RHAPSODY 0.7, RaDEX | Local; Dragon, tested by hand | 3.11, 3.12, 3.13 |
 
 [Project status](status.md) lists the tested versions, the known limitations
 and the archived branches.
@@ -71,7 +72,7 @@ From a clone, with the locked environment:
 ```bash
 git clone https://github.com/stride-research/flowgentic.git
 cd flowgentic
-uv sync --locked
+uv sync --locked --all-extras
 ```
 
 Or build the wheel and install it into a new environment. The
@@ -79,8 +80,8 @@ Or build the wheel and install it into a new environment. The
 
 ```bash
 uv build
-uv venv --python 3.10 flowgentic-env
-uv pip install --python flowgentic-env/bin/python dist/flowgentic-0.4.0-py3-none-any.whl
+uv venv --python 3.11 flowgentic-env
+uv pip install --python flowgentic-env/bin/python "flowgentic[langgraph,asyncflow] @ $(ls dist/flowgentic-*.whl)"
 ```
 
 [Getting started](getting-started.md) runs the two offline demos.

@@ -7,6 +7,45 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
+## [Unreleased]
+
+**Breaking changes.**
+
+- Flowgentic requires Python 3.11 or later. RHAPSODY, AsyncFlow 0.7 and Dragon
+  require it, and the new parts use `asyncio.TaskGroup` and `asyncio.timeout`.
+  To stay on Python 3.10, stay on 0.4.
+- The dependencies are split by path. A plain install brings only pydantic
+  and the OpenTelemetry API. Add the extras you use: `langgraph` (LangGraph and
+  LangChain), `asyncflow`, `rhapsody`, `mcp`. 0.4's dependencies are
+  `flowgentic[langgraph,asyncflow]`.
+- `flowgentic.langGraph` is renamed `flowgentic.langgraph`.
+
+### Added
+
+- `flowgentic.host`: an agent host that runs many agents in one process
+  through a runner per framework. It tunes the cyclic collector while it runs,
+  caps live agents, staggers their starts, resumes agents that suspend on
+  tasks, and counts agents by state: working, waiting, making a model request.
+- `flowgentic.langgraph.GraphRunner`, `KeyValueSaver`, `bind_tools` and
+  `route_tool_calls`: LangGraph graphs in the agent host, checkpoints in a
+  key-value store, Flowgentic's tools as LangChain tools, and each tool call as
+  its own task, so a resumed agent runs no tool twice.
+- `flowgentic.store`: RaDEX and in-memory key-value stores.
+- `flowgentic.tools`: tools declared to run inline, as RHAPSODY function tasks
+  (`task_tool`), or through the tool service (`mcp_tool`), keyed so that a
+  repeated call runs nothing; a policy (`TaskOrder`) for when tasks reach
+  RHAPSODY.
+- `flowgentic.tools.service` and `flowgentic.tools.mcp`: a tool service for
+  many agent processes over queues the caller passes in, and a supervised pool
+  of MCP clients, in which a failed connection fails only its own calls.
+- `flowgentic.fleet`: the model fleet's client, with routing and admission
+  per replica as policies, a share of each replica's caps per process, recovery
+  from a server that goes away, and one record per call.
+- OpenTelemetry metrics for agents by state, the host's loop lag and collector
+  pauses, admission, model calls and tool calls; an `invoke_agent` span per
+  agent run.
+- `examples/agents-at-scale/`, a campaign that runs offline, tested in CI.
+
 ## [0.4.0] - 2026-10-30
 
 A repair release. It removes features that 0.3 shipped broken or unsafe, or

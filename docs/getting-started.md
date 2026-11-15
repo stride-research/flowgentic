@@ -6,7 +6,7 @@ model credentials: AsyncFlow executes on two local backends, `ai` and
 `compute`, and the agentic demo takes its decisions from a scripted
 "rehearsal" model.
 
-You need [uv](https://docs.astral.sh/uv/) and Python 3.10, 3.11 or 3.12.
+You need [uv](https://docs.astral.sh/uv/) and Python 3.11, 3.12 or 3.13.
 
 ## Install
 
@@ -15,7 +15,7 @@ From a clone, with the locked environment:
 ```bash
 git clone https://github.com/stride-research/flowgentic.git
 cd flowgentic
-uv sync --locked
+uv sync --locked --all-extras
 ```
 
 `uv sync --locked` installs the versions in `uv.lock` and fails if the lock is
@@ -27,8 +27,8 @@ wheel.
 
 ```bash
 uv build
-uv venv --python 3.10 flowgentic-env
-uv pip install --python flowgentic-env/bin/python dist/flowgentic-0.3.0-py3-none-any.whl
+uv venv --python 3.11 flowgentic-env
+uv pip install --python flowgentic-env/bin/python "flowgentic[langgraph,asyncflow] @ $(ls dist/flowgentic-*.whl)"
 ```
 
 ## Run the deterministic demo

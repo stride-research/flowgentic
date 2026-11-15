@@ -39,11 +39,12 @@ run, and a graph that should change between runs is built anew as a
 
 | Agent framework | Workflow engine | Backends | Python |
 | --- | --- | --- | --- |
-| LangGraph 1.x | RADICAL AsyncFlow 0.6.0 | Local | 3.10, 3.11, 3.12 |
+| LangGraph 1.x | RADICAL AsyncFlow 0.6.0 | Local | 3.11, 3.12, 3.13 |
+| LangGraph 1.x, at scale | RHAPSODY 0.7, RaDEX | Local; Dragon, tested by hand | 3.11, 3.12, 3.13 |
 
 Tested environment, from `uv.lock`: LangGraph 1.2.16, langchain-core 1.7.0,
 langchain 1.4.7, radical-asyncflow 0.6.0 and academy-py 1.0.0. CI runs the
-test suite on Python 3.10, 3.11 and 3.12, and on Python 3.10 with the lowest
+test suite on Python 3.11, 3.12 and 3.13, and on Python 3.11 with the lowest
 versions the dependency ranges allow; a weekly workflow runs it, and builds
 the docs, on the newest releases within the ranges. The package requires
 `langgraph>=1.1.5,<2.0`; `langchain-core`, `langchain`, `langchain-openai` and

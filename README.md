@@ -3,7 +3,7 @@
     <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT">
   </a>
   <a href="https://www.python.org/downloads/">
-    <img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg" alt="Python 3.10, 3.11, 3.12">
+    <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue.svg" alt="Python 3.11, 3.12, 3.13">
   </a>
   <a href="https://github.com/stride-research/flowgentic/actions/workflows/continuous_integration.yml">
     <img src="https://github.com/stride-research/flowgentic/actions/workflows/continuous_integration.yml/badge.svg?branch=main" alt="CI">
@@ -15,24 +15,32 @@
 
 # Flowgentic
 
-Flowgentic runs agent components and LangGraph workflows as tasks on
-[RADICAL AsyncFlow](https://github.com/radical-cybertools/radical.asyncflow).
+Flowgentic runs LLM agents and their tools on HPC resources with the RADICAL
+stack: as tasks on [RADICAL AsyncFlow](https://github.com/radical-cybertools/radical.asyncflow),
+and as LangGraph agents at scale whose tools run as
+[RHAPSODY](https://github.com/radical-cybertools/rhapsody) tasks and whose state
+lives in [RaDEX](https://github.com/radical-cybertools/radex).
 Documentation: [stride-research.github.io/flowgentic](https://stride-research.github.io/flowgentic/).
 
 ## Status
 
-Flowgentic 0.4.0 is a repair release in maintenance mode. It removes features
-that 0.3 shipped broken or unsafe, or that did not serve its purpose. It adds
-`accept`, which checks an agent's output before it becomes HPC work, and it
-carries the trace into the tasks it submits, so an agent's decisions, the tasks
-they run in and their model calls form one OpenTelemetry trace. The LangGraph
-execution adapter (`LangraphIntegration`) is frozen and gets no new features.
-New applications can bind agents with `bind_agent`, or run LangGraph on
-AsyncFlow directly.
+`main` is heading for 0.5.0, in active development. It adds the path for
+LangGraph agents at scale: an agent host that runs thousands of agents per
+process, tools placed inline, as RHAPSODY tasks or behind a shared MCP tool
+service, a RaDEX checkpointer, and a model fleet client with admission and
+routing by agent ([guide](https://stride-research.github.io/flowgentic/guides/agents-at-scale/)).
+It requires Python 3.11 and splits the dependencies by path into extras:
+`langgraph`, `asyncflow`, `rhapsody` and `mcp`.
+
+Flowgentic 0.4.0, the latest release, is a repair release. It adds `accept`,
+which checks an agent's output before it becomes HPC work, and carries the
+trace into the tasks it submits, so an agent's decisions, the tasks they run in
+and their model calls form one OpenTelemetry trace.
 
 | Agent framework | Workflow engine | Backends | Python |
 | --- | --- | --- | --- |
-| LangGraph 1.x | RADICAL AsyncFlow 0.6.0 | Local | 3.10, 3.11, 3.12 |
+| LangGraph 1.x | RADICAL AsyncFlow 0.6.0 | Local | 3.11, 3.12, 3.13 |
+| LangGraph 1.x, at scale | RHAPSODY 0.7, RaDEX | Local; Dragon, tested by hand | 3.11, 3.12, 3.13 |
 
 [Project status](https://stride-research.github.io/flowgentic/status/) lists the tested versions, the known limitations
 and the archived branches.
@@ -59,7 +67,7 @@ From a clone, with the locked environment:
 ```bash
 git clone https://github.com/stride-research/flowgentic.git
 cd flowgentic
-uv sync --locked
+uv sync --locked --all-extras
 ```
 
 Or build the wheel and install it into a new environment. The
@@ -67,8 +75,8 @@ Or build the wheel and install it into a new environment. The
 
 ```bash
 uv build
-uv venv --python 3.10 flowgentic-env
-uv pip install --python flowgentic-env/bin/python dist/flowgentic-0.4.0-py3-none-any.whl
+uv venv --python 3.11 flowgentic-env
+uv pip install --python flowgentic-env/bin/python "flowgentic[langgraph,asyncflow] @ $(ls dist/flowgentic-*.whl)"
 ```
 
 ## Run the demos

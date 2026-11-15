@@ -222,10 +222,14 @@ def test_which_errors_of_langchain_openai_are_transient():
     def matches(cls):
         return any(c.__name__ in TRANSIENT for c in cls.__mro__)
 
-    for name in ("OpenAIConnectionError", "OpenAITimeoutError", "OpenAIAPIError", "OpenAIAuthenticationError"):
-        assert matches(getattr(base, name)), name
-    for name in ("OpenAIInvalidRequestError", "OpenAIContextOverflowError", "OpenAIModelNotFoundError"):
-        assert not matches(getattr(base, name)), name
+    # langchain-openai wraps the client's errors in later 1.x releases only
+    def wrappers(*names):
+        return [getattr(base, n) for n in names if hasattr(base, n)]
+
+    for cls in wrappers("OpenAIConnectionError", "OpenAITimeoutError", "OpenAIAPIError", "OpenAIAuthenticationError"):
+        assert matches(cls), cls
+    for cls in wrappers("OpenAIInvalidRequestError", "OpenAIContextOverflowError", "OpenAIModelNotFoundError"):
+        assert not matches(cls), cls
 
 
 async def test_the_chat_model_routes_by_the_thread_id():

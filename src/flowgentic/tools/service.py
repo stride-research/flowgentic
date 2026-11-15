@@ -31,7 +31,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import pickle  # nosec B403 - both ends of the queues belong to one job
+# Both ends of the queues belong to one job.
+import pickle  # nosec B403
 import queue
 import threading
 import time
@@ -53,7 +54,8 @@ def _pack(obj: Any) -> bytes:
 
 
 def _unpack(data: bytes) -> Any:
-	return pickle.loads(data)  # nosec B301 - written by a process of the same job
+	# Written by a process of the same job.
+	return pickle.loads(data)  # nosec B301
 
 
 class ToolServiceError(Exception):
