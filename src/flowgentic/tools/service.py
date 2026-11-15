@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+
 # Both ends of the queues belong to one job.
 import pickle  # nosec B403
 import queue
