@@ -130,3 +130,20 @@ def test_configure_logging_writes_to_the_given_stream() -> None:
 	assert result.returncode == 0, result.stderr
 	assert "WARNING flowgentic.example: retrying node-a" in result.stdout
 	assert result.stderr == ""
+
+
+def test_an_agent_process_imports_no_mcp_client() -> None:
+	"""The agent processes run the tool service's client and the task tools;
+	only the service process needs the MCP SDK and its web stack, which cost
+	each agent process tens of megabytes."""
+	result = run_python(
+		"""
+		import json, sys
+		import flowgentic.host, flowgentic.langgraph, flowgentic.tools
+		from flowgentic.tools.service import ToolServiceClient
+		heavy = ("mcp", "starlette", "uvicorn")
+		print(json.dumps(sorted(m for m in heavy if m in sys.modules)))
+		"""
+	)
+	assert result.returncode == 0, result.stderr
+	assert json.loads(result.stdout) == []

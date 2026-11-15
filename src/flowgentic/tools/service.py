@@ -39,9 +39,10 @@ import threading
 import time
 from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from flowgentic.tools.mcp import SupervisedMcpPool
+if TYPE_CHECKING:  # the agent processes' side needs no MCP client
+	from flowgentic.tools.mcp import SupervisedMcpPool
 
 __all__ = ["ToolService", "ToolServiceClient", "ToolServiceError", "serve"]
 
