@@ -1,0 +1,229 @@
+"""Which agent a coroutine works for, what it is doing, and the tasks it waits on.
+
+The agent host sets a context variable in each agent's task. asyncio copies the
+context into the tasks a framework creates for the agent's nodes and tool
+calls, so the fleet and the tools reach the agent through it, without being
+passed anything. Outside a host they find no agent and record nothing, so they
+work without one.
+
+An agent may run several tool calls at once. Each call opens an activity, and
+the agent's state is the most telling of its open activities, so concurrent
+calls never undo each other's state.
+
+The registry of pending tasks is how a suspended agent is resumed: a task tool
+registers the future of each task it submits under the task's key, and the host
+awaits that future while the agent is suspended.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import threading
+import time
+import weakref
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from enum import IntEnum
+
+
+class AgentState(IntEnum):
+	"""What an agent is doing."""
+
+	PENDING = 0
+	"""Not started."""
+	WORKING = 1
+	"""In the agent process: the framework's own steps and inline tools."""
+	TOOL_CALL = 2
+	"""A call running in the tool service, such as an MCP tool."""
+	MODEL_QUEUED = 3
+	"""Waiting for its model replica to admit a request."""
+	MODEL_REQUEST = 4
+	"""A request in flight at a model server."""
+	TOOL_WAIT = 5
+	"""Waiting for a task, queued or running, suspended or not."""
+	DONE = 6
+	"""Finished, failed or interrupted."""
+
+
+CATEGORY: dict[AgentState, str] = {
+	AgentState.WORKING: "working",
+	AgentState.TOOL_CALL: "working",
+	AgentState.MODEL_QUEUED: "waiting",
+	AgentState.TOOL_WAIT: "waiting",
+	AgentState.MODEL_REQUEST: "model_request",
+}
+"""The three categories reported for a campaign: working, waiting, and making a
+model request."""
+
+# With several activities open, the agent's state is the first of these.
+_PRECEDENCE = (
+	AgentState.TOOL_CALL,
+	AgentState.MODEL_REQUEST,
+	AgentState.MODEL_QUEUED,
+	AgentState.TOOL_WAIT,
+)
+
+_N = len(AgentState)
+
+# Every AgentStates in the process, for the telemetry's observable gauges.
+_all_states: weakref.WeakSet[AgentStates] = weakref.WeakSet()
+
+
+class AgentStates:
+	"""How many agents are in each state, and the agent-seconds spent in each.
+
+	``enter`` is called on the event loop and costs O(1). ``counts``,
+	``agent_seconds`` and ``by_category`` may be read from another thread, such
+	as a sampler or a metrics exporter.
+	"""
+
+	def __init__(self, agents: Iterable[str] = ()) -> None:
+		self._state: dict[str, AgentState] = {}
+		self._counts = [0] * _N
+		self._seconds = [0.0] * _N
+		self._t = time.monotonic()
+		self._lock = threading.Lock()
+		for agent in agents:
+			self.add(agent)
+		_all_states.add(self)
+
+	def add(self, agent: str) -> None:
+		"""Count a new agent, as pending."""
+		with self._lock:
+			if agent in self._state:
+				return
+			self._state[agent] = AgentState.PENDING
+			self._counts[AgentState.PENDING] += 1
+
+	def enter(self, agent: str, state: AgentState) -> AgentState:
+		"""Move ``agent`` to ``state``; return the state it was in."""
+		old = self._state[agent]
+		if old != state:
+			with self._lock:
+				self._advance(time.monotonic())
+				self._counts[old] -= 1
+				self._counts[state] += 1
+				self._state[agent] = state
+		return old
+
+	def state(self, agent: str) -> AgentState:
+		return self._state[agent]
+
+	def _advance(self, now: float) -> None:
+		dt = now - self._t
+		if dt > 0:
+			for s, c in enumerate(self._counts):
+				if c:
+					self._seconds[s] += c * dt
+			self._t = now
+
+	def counts(self) -> dict[AgentState, int]:
+		"""Agents in each state now."""
+		with self._lock:
+			return {AgentState(s): c for s, c in enumerate(self._counts)}
+
+	def agent_seconds(self) -> dict[AgentState, float]:
+		"""Agent-seconds spent in each state so far."""
+		with self._lock:
+			self._advance(time.monotonic())
+			return {AgentState(s): v for s, v in enumerate(self._seconds)}
+
+	def by_category(self) -> dict[str, float]:
+		"""Agent-seconds working, waiting and making a model request."""
+		out = {"working": 0.0, "waiting": 0.0, "model_request": 0.0}
+		for state, seconds in self.agent_seconds().items():
+			category = CATEGORY.get(state)
+			if category is not None:
+				out[category] += seconds
+		return out
+
+	def summary(self) -> dict:
+		"""Agent-seconds by state and by category, and each category's share."""
+		seconds = self.agent_seconds()
+		categories = self.by_category()
+		active = sum(categories.values())
+		return {
+			"agent_seconds": {s.name.lower(): round(v, 3) for s, v in seconds.items()},
+			"agent_seconds_by_category": {
+				k: round(v, 3) for k, v in categories.items()
+			},
+			"share_by_category": {
+				k: (round(v / active, 4) if active else None)
+				for k, v in categories.items()
+			},
+		}
+
+
+class _Agent:
+	"""The context variable's value: one live agent, with its open activities."""
+
+	__slots__ = ("id", "states", "_open")
+
+	def __init__(self, agent_id: str, states: AgentStates) -> None:
+		self.id = agent_id
+		self.states = states
+		self._open = [0] * _N
+
+	def open(self, state: AgentState) -> None:
+		self._open[state] += 1
+		self._update()
+
+	def close(self, state: AgentState) -> None:
+		self._open[state] -= 1
+		self._update()
+
+	def _update(self) -> None:
+		for state in _PRECEDENCE:
+			if self._open[state]:
+				self.states.enter(self.id, state)
+				return
+		self.states.enter(self.id, AgentState.WORKING)
+
+
+_current: ContextVar[_Agent | None] = ContextVar("flowgentic_agent", default=None)
+
+
+def set_current_agent(agent_id: str, states: AgentStates) -> None:
+	"""Make ``agent_id`` the current task's agent. The host calls it in each
+	agent's own task, so it reaches that agent's nodes and tools only."""
+	_current.set(_Agent(agent_id, states))
+
+
+def current_agent() -> str | None:
+	"""The id of the agent the current coroutine works for, if any."""
+	agent = _current.get()
+	return None if agent is None else agent.id
+
+
+@contextmanager
+def activity(state: AgentState) -> Iterator[None]:
+	"""Count the current agent as in ``state`` for the duration of the block."""
+	agent = _current.get()
+	if agent is None:
+		yield
+		return
+	agent.open(state)
+	try:
+		yield
+	finally:
+		agent.close(state)
+
+
+# --- tasks agents wait on --------------------------------------------------------
+
+_pending: dict[str, asyncio.Future] = {}
+
+
+def register_pending(key: str, future: asyncio.Future) -> None:
+	"""Record the future of a submitted task under its key."""
+	_pending[key] = future
+
+
+def forget_pending(key: str) -> None:
+	_pending.pop(key, None)
+
+
+def pending(key: str) -> asyncio.Future | None:
+	"""The future of the task submitted under ``key`` in this process."""
+	return _pending.get(key)
