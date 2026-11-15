@@ -206,3 +206,54 @@ async def test_many_agents_in_one_host():
     await session.close()
     assert report.finished == 1000
     assert RUNS == {"simulate": 1000, "inline_note": 1000}
+
+
+def write_result(x: float, key: str, scale: int) -> dict:
+    """What the worker runs: it needs a key and a scale the model never sees."""
+    RUNS["write_result"] = RUNS.get("write_result", 0) + 1
+    return {"key": key, "y": scale * x, "t_start": 1.0, "t_end": 2.0}
+
+
+class SimArgs(BaseModel):
+    x: float
+
+
+async def test_the_model_and_the_worker_see_different_things_and_budgets_refuse():
+    class Budget:
+        def __init__(self, most):
+            self.most, self.used = most, {}
+
+        async def admit(self, info):
+            n = self.used.get(info.agent_id, 0)
+            if n >= self.most:
+                raise RuntimeError(f"budget spent: at most {self.most} per agent")
+            self.used[info.agent_id] = n + 1
+
+        def done(self, info):
+            pass
+
+    session = await thread_session()
+    runtime = ToolRuntime(session, order=Budget(most=1))
+    records = []
+    runtime.add_listener(records.append)
+    sim = task_tool(
+        write_result,
+        name="simulate",
+        description="Simulate x.",
+        args_schema=SimArgs,
+        prepare=lambda agent, call, args: {**args, "key": f"res/{agent}/{call}", "scale": 10},
+        output=lambda value: {"result_key": value["key"]},
+    )
+    (tool_,) = bind_tools(runtime, [sim])
+    assert set(tool_.tool_call_schema.model_json_schema()["properties"]) == {"x"}
+    config = {"configurable": {"thread_id": "agent-1"}}
+    out = await tool_.ainvoke({"name": "simulate", "args": {"x": 2.0}, "id": "c1", "type": "tool_call"}, config)
+    assert out.content == '{"result_key": "res/agent-1/c1"}'
+    refused = await tool_.ainvoke({"name": "simulate", "args": {"x": 3.0}, "id": "c2", "type": "tool_call"}, config)
+    assert "budget spent: at most 1 per agent" in refused.content
+    await session.close()
+    assert RUNS == {"write_result": 1}
+    ok, no = records
+    assert ok.ok and ok.value["y"] == 20.0 and ok.info.kwargs["key"] == "res/agent-1/c1"
+    assert ok.t_submit <= ok.t_admit <= ok.t_end
+    assert not no.ok and no.t_admit is None and "budget spent" in no.error

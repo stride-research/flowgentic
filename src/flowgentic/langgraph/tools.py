@@ -93,9 +93,11 @@ def _task_tool(runtime: ToolRuntime, tool: TaskTool) -> BaseTool:
 				raise ToolException(
 					f"{tool.name} failed: {type(exc).__name__}: {exc}"[:500]
 				) from exc
+		if tool.output is not None:
+			value = tool.output(value)
 		return _output(value)
 
-	schema = create_schema_from_function(tool.name, tool.fn)
+	schema = tool.args_schema or create_schema_from_function(tool.name, tool.fn)
 	return StructuredTool(
 		name=tool.name,
 		description=tool.description,

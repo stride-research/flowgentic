@@ -43,6 +43,7 @@ __all__ = [
 	"McpTool",
 	"TaskInfo",
 	"TaskOrder",
+	"TaskRecord",
 	"TaskTool",
 	"ToolRuntime",
 	"mcp_tool",
@@ -63,6 +64,14 @@ class TaskTool:
 	function of the agent's id and the call's arguments. It is asked again when
 	the agent resumes, so it must give the same answer for the same call.
 	``task``: fields added to the RHAPSODY task's description.
+
+	What the model sees can differ from what the worker runs:
+	``args_schema`` (a pydantic model) gives the arguments the model sees, by
+	default ``fn``'s parameters; ``prepare(agent_id, call_id, args)`` returns the
+	keyword arguments ``fn`` is called with, adding what the model must not see,
+	such as where to write a result; ``output(value)`` turns ``fn``'s result
+	into what the model reads. ``prepare`` is called again when the agent
+	resumes, so it must give the same answer for the same call.
 	"""
 
 	fn: Callable[..., Any]
@@ -70,6 +79,9 @@ class TaskTool:
 	description: str
 	suspend: bool | Callable[[str, dict[str, Any]], bool] = False
 	task: dict[str, Any] = field(default_factory=dict)
+	args_schema: Any = None
+	prepare: Callable[[str, str, dict[str, Any]], dict[str, Any]] | None = None
+	output: Callable[[Any], Any] | None = None
 
 	def suspends(self, agent_id: str, args: dict[str, Any]) -> bool:
 		if callable(self.suspend):
@@ -83,11 +95,14 @@ def task_tool(
 	suspend: bool | Callable[[str, dict[str, Any]], bool] = False,
 	name: str | None = None,
 	description: str | None = None,
+	args_schema: Any = None,
+	prepare: Callable[[str, str, dict[str, Any]], dict[str, Any]] | None = None,
+	output: Callable[[Any], Any] | None = None,
 	**task: Any,
 ) -> Any:
 	"""Declare ``fn`` a task tool; usable as ``@task_tool`` or
 	``@task_tool(suspend=True)``. ``fn`` must be importable by the workers: a
-	top-level function."""
+	top-level function. See ``TaskTool`` for the options."""
 
 	def make(f: Callable[..., Any]) -> TaskTool:
 		return TaskTool(
@@ -96,6 +111,9 @@ def task_tool(
 			description=description or (f.__doc__ or "").strip() or f.__name__,
 			suspend=suspend,
 			task=dict(task),
+			args_schema=args_schema,
+			prepare=prepare,
+			output=output,
 		)
 
 	return make(fn) if fn is not None else make
@@ -123,19 +141,37 @@ def mcp_tool(name: str, *, description: str, args_schema: Any) -> McpTool:
 
 @dataclass(frozen=True, slots=True)
 class TaskInfo:
-	"""What an order policy knows about a task waiting to be submitted."""
+	"""What an order policy knows about a task waiting to be submitted: the
+	model's arguments, and the keyword arguments ``fn`` will be called with."""
 
 	key: str
 	agent_id: str
+	call_id: str
 	tool: str
 	args: dict[str, Any]
+	kwargs: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class TaskRecord:
+	"""One task, for listeners: when it was asked for, admitted and ended
+	(``time.time()``), and its value or error."""
+
+	info: TaskInfo
+	t_submit: float
+	t_admit: float | None
+	t_end: float
+	ok: bool
+	value: Any = None
+	error: str | None = None
 
 
 class TaskOrder(Protocol):
-	"""When tasks reach RHAPSODY."""
+	"""When, and whether, tasks reach RHAPSODY."""
 
 	async def admit(self, info: TaskInfo) -> None:
-		"""Return when the task may be submitted."""
+		"""Return when the task may be submitted, or raise to refuse it: the
+		agent reads the error, as it reads a failed task's."""
 		...
 
 	def done(self, info: TaskInfo) -> None:
@@ -182,6 +218,11 @@ class ToolRuntime:
 		self.submitted = 0
 		self.repeats = 0
 		self.failed = 0
+		self._listeners: list[Callable[[TaskRecord], None]] = []
+
+	def add_listener(self, listener: Callable[[TaskRecord], None]) -> None:
+		"""Call ``listener(record)`` as each task ends, before its agent is told."""
+		self._listeners.append(listener)
 
 	@staticmethod
 	def key(agent_id: str, call_id: str) -> str:
@@ -205,7 +246,19 @@ class ToolRuntime:
 			return job
 		if self.session is None:
 			raise RuntimeError("task tools need a ToolRuntime with a RHAPSODY session")
-		info = TaskInfo(key=key, agent_id=agent_id, tool=tool.name, args=dict(args))
+		kwargs = (
+			dict(args)
+			if tool.prepare is None
+			else tool.prepare(agent_id, call_id, dict(args))
+		)
+		info = TaskInfo(
+			key=key,
+			agent_id=agent_id,
+			call_id=call_id,
+			tool=tool.name,
+			args=dict(args),
+			kwargs=kwargs,
+		)
 		job = asyncio.ensure_future(self._run(tool, info))
 		self._jobs[key] = job
 		_agents.register_pending(key, job)
@@ -214,18 +267,30 @@ class ToolRuntime:
 
 	async def _run(self, tool: TaskTool, info: TaskInfo) -> Any:
 		t = time.monotonic()
+		t_submit = time.time()
+		t_admit: float | None = None
+		value: Any = None
+		error: str | None = None
 		outcome = "ok"
-		await self.order.admit(info)
 		try:
-			return await _rhapsody.run_function(
-				self.session, tool.fn, info.args, uid=self.uid(info.key), **tool.task
+			await self.order.admit(info)
+			t_admit = time.time()
+			value = await _rhapsody.run_function(
+				self.session, tool.fn, info.kwargs, uid=self.uid(info.key), **tool.task
 			)
-		except Exception:
+			return value
+		except Exception as exc:
 			self.failed += 1
 			outcome = "error"
+			error = f"{type(exc).__name__}: {exc}"
 			raise
 		finally:
 			self.order.done(info)
+			record = TaskRecord(
+				info, t_submit, t_admit, time.time(), error is None, value, error
+			)
+			for listener in self._listeners:
+				listener(record)
 			_telemetry.TOOL_DURATION.record(
 				time.monotonic() - t,
 				{
