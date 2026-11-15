@@ -23,8 +23,10 @@ import time
 import weakref
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
-from contextvars import ContextVar
+from contextvars import Context, ContextVar
 from enum import IntEnum
+
+from opentelemetry import context as otel_context
 
 
 class AgentState(IntEnum):
@@ -211,6 +213,30 @@ def activity(state: AgentState) -> Iterator[None]:
 
 
 # --- tasks agents wait on --------------------------------------------------------
+
+
+def task_context() -> Context:
+	"""A context for a task an agent asks for: the agent and the trace context,
+	and nothing else of the caller's.
+
+	An asyncio task keeps the context it was created in for as long as the task
+	is kept, after it ends too. A tool runs inside its framework's run, whose
+	context variables reach the agent's whole state (LangChain's run
+	configuration reaches LangGraph's channels), so a task kept for repeat
+	safety would keep that state alive for the rest of a campaign."""
+	agent = _current.get()
+	trace_context = otel_context.get_current()
+	ctx = Context()
+	ctx.run(_enter_task_context, agent, trace_context)
+	return ctx
+
+
+def _enter_task_context(
+	agent: _Agent | None, trace_context: otel_context.Context
+) -> None:
+	_current.set(agent)
+	otel_context.attach(trace_context)
+
 
 _pending: dict[str, asyncio.Future] = {}
 

@@ -259,7 +259,10 @@ class ToolRuntime:
 			args=dict(args),
 			kwargs=kwargs,
 		)
-		job = asyncio.ensure_future(self._run(tool, info))
+		# in a context of its own: a kept task keeps its context (_agents.task_context)
+		job = asyncio.get_running_loop().create_task(
+			self._run(tool, info), context=_agents.task_context()
+		)
 		self._jobs[key] = job
 		_agents.register_pending(key, job)
 		self.submitted += 1

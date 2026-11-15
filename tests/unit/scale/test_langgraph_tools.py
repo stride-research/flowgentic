@@ -3,6 +3,7 @@ repeat safety, failures, order policies, and the checkpoints written."""
 
 import asyncio
 import gc
+import weakref
 
 import pytest
 from _support import (
@@ -137,6 +138,56 @@ async def test_a_suspension_leaves_nothing_for_the_collector(calls):
         await session.close()
     assert left == []
     assert left_at_end == []
+
+
+async def test_a_kept_task_keeps_nothing_of_the_run_that_asked_for_it():
+    """The runtime keeps ended tasks, for repeat safety. An asyncio task keeps
+    the context it was created in, so a task created in its caller's context
+    would keep the framework's run alive with it: for LangGraph, the agent's
+    whole state, for the rest of the campaign."""
+    import contextvars
+
+    class State:
+        pass
+
+    run_var: contextvars.ContextVar = contextvars.ContextVar("run")
+    session = await thread_session()
+    runtime = ToolRuntime(session)
+    state = State()
+    alive = weakref.ref(state)
+
+    def ask():
+        run_var.set(state)
+        return runtime.submit(task_tool(simulate), "agent-1", "c1", {"x": 1.0})
+
+    job = contextvars.copy_context().run(ask)
+    assert await job == {"y": 2.0}
+    await session.close()
+    del state
+    assert alive() is None
+    assert runtime.stats()["retained"] == 1
+
+
+async def test_after_a_run_nothing_keeps_the_agents_messages():
+    session = await thread_session()
+    runtime = ToolRuntime(session)
+    graph = react_graph(
+        Scripted(script=simulations_then_answer(1)),
+        bind_tools(runtime, [task_tool(simulate)]),
+        KeyValueSaver(MemoryStore()),
+    )
+    gc.collect()
+    gc.disable()
+    try:
+        step = await GraphRunner(graph).start(Agent("agent-0", {"messages": []}))
+        await session.close()
+        messages = step.output["messages"]
+        assert [m.type for m in messages] == ["ai", "tool", "ai"]
+        kept = [weakref.ref(m) for m in messages]
+        del step, messages
+        assert [m() for m in kept] == [None, None, None]
+    finally:
+        gc.enable()
 
 
 async def test_without_suspension_the_agent_waits_in_memory():
