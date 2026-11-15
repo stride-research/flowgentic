@@ -64,7 +64,8 @@ async def test_a_suspended_agent_resumes_and_nothing_runs_twice():
     assert RUNS == {"simulate": 20, "inline_note": 20}  # each ran once per agent
     assert runtime.stats()["repeats"] == 20  # the resume found the task
     assert saver.checkpoints_put == 40  # one at the suspension, one at the end
-    assert sum(1 for k in store.keys() if "/c/" in k) == 20  # keep_last=1
+    assert sum(1 for k in store.keys() if k.endswith("/head")) == 20  # keep_last=1
+    assert not any("/c/" in k for k in store.keys())
     final = outputs["agent-0"]["messages"][-1].content
     assert '{"y": 3.0}' in final and "noted hi" in final
     seconds = host.states.agent_seconds()

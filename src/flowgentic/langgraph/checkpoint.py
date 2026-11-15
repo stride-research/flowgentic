@@ -4,24 +4,34 @@
 RaDEX on Dragon's distributed dictionary in an HPC run, a dictionary in-process
 in tests. Keys, for thread ``t`` and namespace ``ns``::
 
-    lg/{t}/{ns}/c/{checkpoint_id}  the typed checkpoint, typed metadata, parent id
-    lg/{t}/{ns}/latest             the newest checkpoint id
-    lg/{t}/{ns}/index              the retained checkpoint ids, oldest first
-    lg/{t}/{ns}/w/{checkpoint_id}  that checkpoint's pending writes
-    lg/{t}/namespaces              the namespaces the thread used
+    lg/{t}/{ns}/head               the newest checkpoint: its id, the typed
+                                   checkpoint, typed metadata, parent id
+    lg/{t}/{ns}/w                  pending writes, with the id of the checkpoint
+                                   they belong to: the newest one that has any
+    lg/{t}/{ns}/c/{checkpoint_id}  an older retained checkpoint, with its writes
+    lg/{t}/{ns}/index              the older retained ids, oldest first
+    lg/{t}/namespaces              the thread's namespaces other than the root
+
+Each store call is a round trip that blocks the event loop, and a RaDEX client
+grows with each, so the layout keeps them few. With the default ``keep_last=1``
+a checkpoint is one put, which replaces the previous one; its pending writes
+are one more; reading the newest checkpoint back is two gets; nothing is
+deleted. Writes under ``w`` that belong to an older checkpoint are ignored, and
+replaced by the next writes. An agent that suspends while its task runs, with
+``exit`` durability, costs four calls per suspension.
 
 ``put`` keeps only the newest ``keep_last`` checkpoints of a namespace: each
 checkpoint holds the agent's whole history, so keeping all of them grows with
-the square of a run's length.
+the square of a run's length. With ``keep_last`` above one, each checkpoint
+also moves the previous newest one, with its writes, under ``c/``.
 
-With ``exit`` durability and agents that suspend while their tasks run, an
-agent writes one checkpoint per suspension and one at its end.
-
-The store has no atomic update, so ``put`` and ``put_writes`` read a key,
-change it and write it back. That is safe because each agent's steps run in one
-process and every call here is synchronous, on the event loop, so a
-read-modify-write never yields to another coroutine halfway. The asynchronous
-methods call the synchronous ones for that reason.
+The store has no atomic update, so ``put_writes`` reads a key, changes it and
+writes it back. That is safe because each agent's steps run in one process and
+every call here is synchronous, on the event loop, so a read-modify-write never
+yields to another coroutine halfway. The asynchronous methods call the
+synchronous ones for that reason. The saver remembers the newest checkpoint it
+put for each thread (the most recent threads only), so the first writes on a new
+checkpoint need no read; anything it does not remember, it reads.
 
 ``list`` needs a thread id: RaDEX cannot list its keys.
 """
@@ -29,6 +39,7 @@ methods call the synchronous ones for that reason.
 from __future__ import annotations
 
 import random
+from collections import OrderedDict
 from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import Any
 
@@ -49,6 +60,8 @@ from flowgentic.store import KeyValueStore
 
 __all__ = ["KeyValueSaver"]
 
+_REMEMBERED = 20_000  # threads whose newest checkpoint the saver remembers
+
 
 class KeyValueSaver(BaseCheckpointSaver[str]):
 	"""Checkpoints in a ``KeyValueStore``; see the module's docstring."""
@@ -65,6 +78,8 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 		self.writes_put = 0
 		self.checkpoints_read = 0
 		self.checkpoint_bytes = 0
+		# (thread, namespace) -> [newest checkpoint id, whether it has writes]
+		self._newest: OrderedDict[tuple[str, str], list] = OrderedDict()
 
 	@staticmethod
 	def _prefix(thread_id: str, ns: str) -> str:
@@ -80,20 +95,31 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 			}
 		}
 
+	def _remember(
+		self, thread_id: str, ns: str, checkpoint_id: str, writes: bool
+	) -> None:
+		key = (thread_id, ns)
+		self._newest[key] = [checkpoint_id, writes]
+		self._newest.move_to_end(key)
+		while len(self._newest) > _REMEMBERED:
+			self._newest.popitem(last=False)
+
+	def _writes_of(self, prefix: str, checkpoint_id: str) -> list:
+		"""The stored pending writes of the newest checkpoint ``checkpoint_id``."""
+		saved = self.store.get(f"{prefix}/w", None)
+		return list(saved[1]) if saved is not None and saved[0] == checkpoint_id else []
+
 	def _tuple(
 		self,
 		thread_id: str,
 		ns: str,
 		checkpoint_id: str,
+		saved: tuple,
+		writes: list,
 		config: RunnableConfig | None = None,
-	) -> CheckpointTuple | None:
-		prefix = self._prefix(thread_id, ns)
-		saved = self.store.get(f"{prefix}/c/{checkpoint_id}", None)
-		if saved is None:
-			return None
+	) -> CheckpointTuple:
 		self.checkpoints_read += 1
 		checkpoint, metadata, parent_id = saved
-		writes = self.store.get(f"{prefix}/w/{checkpoint_id}", [])
 		writes = sorted(writes, key=lambda w: writes_sort_key(w[3], w[0], w[4]))
 		return CheckpointTuple(
 			config=config or self._config(thread_id, ns, checkpoint_id),
@@ -106,13 +132,44 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 			],
 		)
 
+	def _newest_tuple(
+		self, thread_id: str, ns: str, config: RunnableConfig | None = None
+	) -> CheckpointTuple | None:
+		prefix = self._prefix(thread_id, ns)
+		head = self.store.get(f"{prefix}/head", None)
+		if head is None:
+			return None
+		checkpoint_id = head[0]
+		writes = self._writes_of(prefix, checkpoint_id)
+		return self._tuple(thread_id, ns, checkpoint_id, head[1:], writes, config)
+
+	def _older_tuple(
+		self,
+		thread_id: str,
+		ns: str,
+		checkpoint_id: str,
+		config: RunnableConfig | None = None,
+	) -> CheckpointTuple | None:
+		saved = self.store.get(f"{self._prefix(thread_id, ns)}/c/{checkpoint_id}", None)
+		if saved is None:
+			return None
+		return self._tuple(thread_id, ns, checkpoint_id, saved[:3], saved[3], config)
+
 	def get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
 		thread_id = config["configurable"]["thread_id"]
 		ns = config["configurable"].get("checkpoint_ns", "")
-		if checkpoint_id := get_checkpoint_id(config):
-			return self._tuple(thread_id, ns, checkpoint_id, config)
-		latest = self.store.get(f"{self._prefix(thread_id, ns)}/latest", None)
-		return None if latest is None else self._tuple(thread_id, ns, latest)
+		checkpoint_id = get_checkpoint_id(config)
+		if not checkpoint_id:
+			return self._newest_tuple(thread_id, ns)
+		item = self._newest_tuple(thread_id, ns, config)
+		if item is not None and item.checkpoint["id"] == checkpoint_id:
+			return item
+		if self.keep_last == 1:
+			return None
+		return self._older_tuple(thread_id, ns, checkpoint_id, config)
+
+	def _namespaces(self, thread_id: str) -> list[str]:
+		return ["", *sorted(self.store.get(f"lg/{thread_id}/namespaces", set()))]
 
 	def list(
 		self,
@@ -132,18 +189,24 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 		id_wanted = get_checkpoint_id(config)
 		before_id = get_checkpoint_id(before) if before else None
 		namespaces = (
-			[ns_wanted]
-			if ns_wanted is not None
-			else sorted(self.store.get(f"lg/{thread_id}/namespaces", set()))
+			[ns_wanted] if ns_wanted is not None else self._namespaces(thread_id)
 		)
 		for ns in namespaces:
-			index = self.store.get(f"{self._prefix(thread_id, ns)}/index", [])
-			for checkpoint_id in reversed(index):
+			newest = self._newest_tuple(thread_id, ns)
+			if newest is None:
+				continue
+			older = self.store.get(f"{self._prefix(thread_id, ns)}/index", [])
+			ids = [newest.checkpoint["id"], *reversed(older)]
+			for checkpoint_id in ids:
 				if id_wanted and checkpoint_id != id_wanted:
 					continue
 				if before_id and checkpoint_id >= before_id:
 					continue
-				item = self._tuple(thread_id, ns, checkpoint_id)
+				item = (
+					newest
+					if checkpoint_id == newest.checkpoint["id"]
+					else self._older_tuple(thread_id, ns, checkpoint_id)
+				)
 				if item is None:
 					continue
 				if filter and not all(
@@ -155,6 +218,25 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 						return
 					limit -= 1
 				yield item
+
+	def _keep_previous(self, prefix: str, checkpoint_id: str) -> None:
+		"""Move the newest checkpoint, with its writes, among the older retained
+		ones, and drop the oldest beyond ``keep_last``."""
+		head = self.store.get(f"{prefix}/head", None)
+		if head is None or head[0] == checkpoint_id:
+			return
+		previous = head[0]
+		writes = self._writes_of(prefix, previous)
+		self.store.put(f"{prefix}/c/{previous}", (*head[1:], writes))
+		index = self.store.get(f"{prefix}/index", [])
+		if previous not in index:
+			index.append(previous)
+		index.sort()
+		keep = self.keep_last - 1
+		dropped, index = index[:-keep], index[-keep:]
+		for old in dropped:
+			self.store.delete(f"{prefix}/c/{old}")
+		self.store.put(f"{prefix}/index", index)
 
 	def put(
 		self,
@@ -173,25 +255,18 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 		)
 		self.checkpoint_bytes += len(typed_checkpoint[1]) + len(typed_metadata[1])
 		parent_id = config["configurable"].get("checkpoint_id")
-		self.store.put(
-			f"{prefix}/c/{checkpoint_id}", (typed_checkpoint, typed_metadata, parent_id)
-		)
-		index = self.store.get(f"{prefix}/index", None)
-		if index is None:  # the namespace's first checkpoint: record the namespace
-			index = []
+		if self.keep_last > 1:
+			self._keep_previous(prefix, checkpoint_id)
+		if ns and (thread_id, ns) not in self._newest:
 			namespaces = self.store.get(f"lg/{thread_id}/namespaces", set())
 			if ns not in namespaces:
 				namespaces.add(ns)
 				self.store.put(f"lg/{thread_id}/namespaces", namespaces)
-		if checkpoint_id not in index:
-			index.append(checkpoint_id)
-		index.sort()
-		dropped, index = index[: -self.keep_last], index[-self.keep_last :]
-		self.store.put(f"{prefix}/latest", index[-1])
-		self.store.put(f"{prefix}/index", index)
-		for old in dropped:
-			self.store.delete(f"{prefix}/c/{old}")
-			self.store.delete(f"{prefix}/w/{old}")
+		self.store.put(
+			f"{prefix}/head",
+			(checkpoint_id, typed_checkpoint, typed_metadata, parent_id),
+		)
+		self._remember(thread_id, ns, checkpoint_id, writes=False)
 		self.checkpoints_put += 1
 		return self._config(thread_id, ns, checkpoint_id)
 
@@ -205,8 +280,26 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 		thread_id = config["configurable"]["thread_id"]
 		ns = config["configurable"].get("checkpoint_ns", "")
 		checkpoint_id = config["configurable"]["checkpoint_id"]
-		key = f"{self._prefix(thread_id, ns)}/w/{checkpoint_id}"
-		stored = self.store.get(key, [])
+		prefix = self._prefix(thread_id, ns)
+		known = self._newest.get((thread_id, ns))
+		older: tuple | None = None
+		if known is not None and known[0] == checkpoint_id:
+			# the newest checkpoint, put by this saver: no writes yet, or some to read
+			stored = self._writes_of(prefix, checkpoint_id) if known[1] else []
+		else:
+			newest = known[0] if known is not None else None
+			if newest is None and self.keep_last > 1:
+				head = self.store.get(f"{prefix}/head", None)
+				newest = head[0] if head is not None else None
+			if newest is not None and newest != checkpoint_id:
+				# an older checkpoint: its writes are kept with it, if it is kept
+				if self.keep_last > 1:
+					older = self.store.get(f"{prefix}/c/{checkpoint_id}", None)
+				if older is None:
+					return
+				stored = list(older[3])
+			else:
+				stored = self._writes_of(prefix, checkpoint_id)
 		have = {(w[0], w[4]): i for i, w in enumerate(stored)}
 		changed = False
 		for idx, (channel, value) in enumerate(writes):
@@ -226,18 +319,24 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 				have[inner] = len(stored)
 				stored.append(entry)
 			changed = True
-		if changed:
-			self.store.put(key, stored)
-			self.writes_put += 1
+		if not changed:
+			return
+		if older is not None:
+			self.store.put(f"{prefix}/c/{checkpoint_id}", (*older[:3], stored))
+		else:
+			self.store.put(f"{prefix}/w", (checkpoint_id, stored))
+			if known is not None and known[0] == checkpoint_id:
+				known[1] = True
+		self.writes_put += 1
 
 	def delete_thread(self, thread_id: str) -> None:
-		for ns in self.store.get(f"lg/{thread_id}/namespaces", set()):
+		for ns in self._namespaces(thread_id):
 			prefix = self._prefix(thread_id, ns)
 			for checkpoint_id in self.store.get(f"{prefix}/index", []):
 				self.store.delete(f"{prefix}/c/{checkpoint_id}")
-				self.store.delete(f"{prefix}/w/{checkpoint_id}")
-			self.store.delete(f"{prefix}/latest")
-			self.store.delete(f"{prefix}/index")
+			for key in ("head", "w", "index"):
+				self.store.delete(f"{prefix}/{key}")
+			self._newest.pop((thread_id, ns), None)
 		self.store.delete(f"lg/{thread_id}/namespaces")
 
 	def get_next_version(self, current: str | None, channel: None) -> str:
