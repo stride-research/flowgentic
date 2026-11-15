@@ -29,12 +29,13 @@ from langchain_core.tools import (
 	ToolException,
 	create_schema_from_function,
 )
+from langgraph.errors import GraphInterrupt
 from langgraph.types import interrupt
 from pydantic import create_model
 
 from flowgentic import _agents
 from flowgentic._agents import AgentState
-from flowgentic.langgraph.runner import PENDING_KEY
+from flowgentic.langgraph.runner import PENDING_KEY, record_interrupt
 from flowgentic.tools import McpTool, TaskTool, ToolRuntime
 
 __all__ = ["bind_tools"]
@@ -85,7 +86,11 @@ def _task_tool(runtime: ToolRuntime, tool: TaskTool) -> BaseTool:
 		agent = _agent_id()
 		job = runtime.submit(tool, agent, call_id, kwargs)
 		if tool.suspends(agent, kwargs):
-			interrupt({PENDING_KEY: runtime.key(agent, call_id)})
+			try:
+				interrupt({PENDING_KEY: runtime.key(agent, call_id)})
+			except GraphInterrupt as exc:
+				record_interrupt(exc)  # freed when the run stops
+				raise
 		with _agents.activity(AgentState.TOOL_WAIT):
 			try:
 				value = await job

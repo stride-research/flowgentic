@@ -10,11 +10,24 @@ Any other interrupt ends the agent as interrupted.
 tool node as its own task (LangGraph's ``Send``). LangGraph saves the result of
 each finished call with the checkpoint, so when an agent resumes from a
 suspension only the call that suspended runs again, and no other tool does.
+
+A run that stops at a task tool's interrupt is freed when it stops. The
+interrupt is an exception, and the frames it passed through in LangChain and
+LangGraph keep it, or its traceback, in their locals: reference cycles that
+only the cyclic collector frees. With thousands of agents in a process, and the
+collector's first threshold raised as the host does, those cycles reach the
+older generations and make each collection longer. So the task tool records
+each interrupt it raises, and the runner clears the frames of its traceback
+once the run has stopped. When several tool calls of one step suspend,
+LangGraph's runner combines their interrupts into an exception of its own, and
+that one's frames are left to the collector.
 """
 
 from __future__ import annotations
 
+import traceback
 from collections.abc import Callable
+from contextvars import ContextVar
 from typing import Any, Literal
 
 from langgraph.graph import END
@@ -28,6 +41,29 @@ PENDING_KEY = "flowgentic_pending"
 """The key of the interrupt value a task tool raises: the task's key."""
 
 Durability = Literal["sync", "async", "exit"]
+
+# The interrupts task tools raised in the current run, to free once it stops.
+# Unset outside a GraphRunner, so a tool run another way keeps nothing.
+_raised: ContextVar[list[BaseException] | None] = ContextVar(
+	"flowgentic_raised", default=None
+)
+
+
+def record_interrupt(exc: BaseException) -> None:
+	"""Remember an interrupt raised in the current run, for the runner to free
+	when the run stops."""
+	raised = _raised.get()
+	if raised is not None:
+		raised.append(exc)
+
+
+def _free(raised: list[BaseException]) -> None:
+	# The run has stopped: every frame these exceptions passed through has
+	# returned, so clearing their locals changes nothing but what they keep.
+	for exc in raised:
+		traceback.clear_frames(exc.__traceback__)
+		exc.__traceback__ = None
+	raised.clear()
 
 
 class GraphRunner:
@@ -59,15 +95,21 @@ class GraphRunner:
 		return config
 
 	async def start(self, agent: Agent) -> Step:
-		out = await self.graph.ainvoke(
-			agent.input, self._config(agent), durability=self.durability
-		)
-		return _step(out)
+		return await self._run(agent.input, agent)
 
 	async def resume(self, agent: Agent, done: dict[str, Any]) -> Step:
-		out = await self.graph.ainvoke(
-			Command(resume=done), self._config(agent), durability=self.durability
-		)
+		return await self._run(Command(resume=done), agent)
+
+	async def _run(self, value: Any, agent: Agent) -> Step:
+		raised: list[BaseException] = []
+		token = _raised.set(raised)
+		try:
+			out = await self.graph.ainvoke(
+				value, self._config(agent), durability=self.durability
+			)
+		finally:
+			_raised.reset(token)
+			_free(raised)
 		return _step(out)
 
 

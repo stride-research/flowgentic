@@ -2,6 +2,7 @@
 repeat safety, failures, order policies, and the checkpoints written."""
 
 import asyncio
+import gc
 
 import pytest
 from _support import (
@@ -13,11 +14,11 @@ from _support import (
     thread_session,
     two_tools_then_answer,
 )
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
 from pydantic import BaseModel
 
-from flowgentic.host import Agent, AgentHost, AgentState, Stagger
+from flowgentic.host import Agent, AgentHost, AgentState, Finished, Stagger, Suspended
 from flowgentic.langgraph import GraphRunner, KeyValueSaver, bind_tools
 from flowgentic.store import MemoryStore
 from flowgentic.tools import TaskInfo, ToolRuntime, mcp_tool, task_tool
@@ -67,6 +68,75 @@ async def test_a_suspended_agent_resumes_and_nothing_runs_twice():
     assert '{"y": 3.0}' in final and "noted hi" in final
     seconds = host.states.agent_seconds()
     assert seconds[AgentState.TOOL_WAIT] > 0
+
+
+def simulations_then_answer(calls: int):
+    """First turn: ``calls`` simulations at once. Then answer."""
+
+    def script(messages: list) -> AIMessage:
+        if not any(m.type == "tool" for m in messages):
+            return AIMessage(
+                "",
+                tool_calls=[
+                    {"name": "simulate", "args": {"x": 1.0 + i}, "id": f"call-{i}"}
+                    for i in range(calls)
+                ],
+            )
+        return AIMessage("done")
+
+    return script
+
+
+def left_by(run_objects: tuple) -> list:
+    return [type(o).__name__ for o in gc.get_objects() if isinstance(o, run_objects)]
+
+
+@pytest.mark.parametrize(
+    "calls",
+    [
+        1,
+        pytest.param(
+            2,
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="LangGraph's runner combines a step's interrupts into an "
+                "exception of its own, which keeps its frames in a cycle",
+            ),
+        ),
+    ],
+)
+async def test_a_suspension_leaves_nothing_for_the_collector(calls):
+    """A suspended agent's run is freed when it stops, not at the collector's
+    next pass: with thousands of agents per process, what each suspension left
+    behind filled the collector's young generations."""
+    from langgraph.errors import GraphInterrupt
+    from langgraph.pregel._runner import PregelRunner
+
+    session = await thread_session()
+    runtime = ToolRuntime(session)
+    graph = react_graph(
+        Scripted(script=simulations_then_answer(calls)),
+        bind_tools(runtime, [task_tool(simulate, suspend=True)]),
+        KeyValueSaver(MemoryStore()),
+    )
+    runner = GraphRunner(graph)
+    agent = Agent("agent-0", {"messages": [HumanMessage("go")]})
+    gc.collect()
+    gc.disable()
+    try:
+        step = await runner.start(agent)
+        assert isinstance(step, Suspended) and len(step.waits) == calls
+        left = left_by((GraphInterrupt, PregelRunner))
+        await asyncio.wait([runtime._jobs[key] for _, key in step.waits])
+        done = {rid: {"flowgentic_done": key} for rid, key in step.waits}
+        step = await runner.resume(agent, done)
+        assert isinstance(step, Finished)
+        left_at_end = left_by((GraphInterrupt, PregelRunner))
+    finally:
+        gc.enable()
+        await session.close()
+    assert left == []
+    assert left_at_end == []
 
 
 async def test_without_suspension_the_agent_waits_in_memory():
