@@ -43,7 +43,7 @@ from typing import Any
 
 from flowgentic.tools.mcp import SupervisedMcpPool
 
-__all__ = ["ToolServiceClient", "ToolServiceError", "serve"]
+__all__ = ["ToolService", "ToolServiceClient", "ToolServiceError", "serve"]
 
 log = logging.getLogger(__name__)
 
@@ -159,13 +159,18 @@ class _Call:
 		self.t_recv = t_recv
 
 
-class _Service:
+class ToolService:
+	"""What ``serve`` runs: MCP calls through ``pool``, answered through
+	``out(src, answers)``. ``serve`` is the way to run it; a benchmark of the
+	service can drive it directly, handing ``on_requests`` a burst.
+	"""
+
 	def __init__(
 		self,
 		pool: SupervisedMcpPool,
 		out: Callable[[int, list], None],
-		call_timeout: float,
-		listener: Callable[[str, str, float, float, float, bool], None] | None,
+		call_timeout: float = 120.0,
+		listener: Callable[[str, str, float, float, float, bool], None] | None = None,
 	) -> None:
 		self.pool = pool
 		self.out = out
@@ -282,7 +287,7 @@ async def serve(
 			messages[0] += 1
 
 	await pool.start(wait=len(pool.servers), timeout=connect_timeout)
-	service = _Service(pool, out, call_timeout, listener)
+	service = ToolService(pool, out, call_timeout, listener)
 	stopped = asyncio.Event()
 	reader = _QueueReader(
 		requests,
