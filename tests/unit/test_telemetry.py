@@ -19,8 +19,8 @@ from radical.asyncflow import LocalExecutionBackend, WorkflowEngine
 
 from flowgentic import _asyncflow
 from flowgentic.agent import bind_agent
-from flowgentic.langGraph import utils as langgraph_utils
-from flowgentic.langGraph.main import LangraphIntegration
+from flowgentic.langgraph import utils as langgraph_utils
+from flowgentic.langgraph.main import LangraphIntegration
 
 
 class Component:

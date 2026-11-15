@@ -21,9 +21,9 @@ from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel
 from radical.asyncflow import LocalExecutionBackend, WorkflowEngine
 
-from flowgentic.langGraph.execution_wrappers import AsyncFlowType
+from flowgentic.langgraph.execution_wrappers import AsyncFlowType
 from flowgentic.utils.llm_providers import ChatLLMProvider
-from flowgentic.langGraph.main import LangraphIntegration
+from flowgentic.langgraph.main import LangraphIntegration
 
 from dotenv import load_dotenv
 

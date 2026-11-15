@@ -16,8 +16,8 @@ Key Proof Points:
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from flowgentic.langGraph.main import LangraphIntegration
-from flowgentic.langGraph.execution_wrappers import AsyncFlowType
+from flowgentic.langgraph.main import LangraphIntegration
+from flowgentic.langgraph.execution_wrappers import AsyncFlowType
 from radical.asyncflow import LocalExecutionBackend
 from dotenv import load_dotenv
 from .utils.simple_server import SimpleAsyncServer

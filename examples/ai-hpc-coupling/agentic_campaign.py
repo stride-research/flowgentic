@@ -41,7 +41,7 @@ from dotenv import load_dotenv
 from radical.asyncflow import WorkflowEngine
 from tracing import run_trace
 
-from flowgentic.langGraph.main import LangraphIntegration
+from flowgentic.langgraph.main import LangraphIntegration
 from flowgentic.utils.llm_providers import ChatLLMProvider
 
 

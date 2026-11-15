@@ -100,6 +100,6 @@ service that fails; the application decides whether to start another.
 ## Changes from 0.3
 
 Up to 0.3, every decorated call ran in a retry loop, configured with
-`RetryConfig` from `flowgentic.langGraph.fault_tolerance`: by default 3
+`RetryConfig` from `flowgentic.langgraph.fault_tolerance`: by default 3
 attempts of at most 30 s each. 0.4.0 removes the loop, the module and the
 decorator's `retry=` argument; see the [changelog](../changelog.md).

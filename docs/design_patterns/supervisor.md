@@ -38,7 +38,7 @@ parallel workers return:
 
 ## The router
 
-`create_llm_router(responsibilities, model)` (`flowgentic.langGraph.utils.supervisor`)
+`create_llm_router(responsibilities, model)` (`flowgentic.langgraph.utils.supervisor`)
 returns a node that asks the model which agents should handle `state.query`,
 with structured output, and stores its choice in `routing_decision` and
 `routing_rationale`. The example runs it as an `EXECUTION_BLOCK`:
