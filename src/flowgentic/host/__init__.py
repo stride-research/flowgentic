@@ -168,6 +168,7 @@ class AgentHost:
 		stagger: Stagger = Stagger(),
 		collector: Collector | None = Collector(),
 		on_done: Callable[[AgentResult, Any], None] | None = None,
+		states: AgentStates | None = None,
 	) -> None:
 		if max_live_agents < 1:
 			raise ValueError("max_live_agents must be at least 1")
@@ -176,7 +177,8 @@ class AgentHost:
 		self.stagger = stagger
 		self.collector = collector
 		self.on_done = on_done
-		self.states = AgentStates()
+		# the application may pass its own, to sample it while agents run
+		self.states = states if states is not None else AgentStates()
 
 	async def run(self, agents: Iterable[Agent]) -> HostReport:
 		"""Run every agent to its end, and report."""
