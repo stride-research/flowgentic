@@ -89,13 +89,15 @@ class AgentStates:
 			self.add(agent)
 		_all_states.add(self)
 
-	def _begin_run(self, ids: Iterable[str]) -> None:
+	def _begin_run(self, ids: Iterable[str], *, pending: int | None = None) -> None:
 		with self._lock:
 			if self._running:
 				raise RuntimeError("these agent states already track an active run")
 			self._state = dict.fromkeys(ids, AgentState.PENDING)
 			self._counts = [0] * _N
-			self._counts[AgentState.PENDING] = len(self._state)
+			self._counts[AgentState.PENDING] = (
+				len(self._state) if pending is None else pending
+			)
 			self._seconds = [0.0] * _N
 			self._t = time.monotonic()
 			self._running = True
@@ -104,10 +106,20 @@ class AgentStates:
 		with self._lock:
 			self._advance(time.monotonic())
 			self._t = None
+			total = sum(self._counts)
 			self._state = dict.fromkeys(self._state, AgentState.DONE)
 			self._counts = [0] * _N
-			self._counts[AgentState.DONE] = len(self._state)
+			self._counts[AgentState.DONE] = total
 			self._running = False
+
+	def _admit(self, agent: str) -> None:
+		# The indexed run counted all pending agents at startup.
+		with self._lock:
+			self._state[agent] = AgentState.PENDING
+
+	def _retire(self, agent: str) -> None:
+		with self._lock:
+			del self._state[agent]
 
 	def add(self, agent: str) -> None:
 		"""Count a new agent, as pending."""
@@ -182,11 +194,12 @@ class AgentStates:
 class _Agent:
 	"""The context variable's value: one live agent, with its open activities."""
 
-	__slots__ = ("id", "states", "_open", "registered")
+	__slots__ = ("id", "states", "_open", "registered", "finished")
 
 	def __init__(self, agent_id: str, states: AgentStates) -> None:
 		self.id = agent_id
 		self.states = states
+		self.finished = False
 		self._open = [0] * _N
 		self.registered: dict[str, asyncio.Future] = {}
 
@@ -199,6 +212,8 @@ class _Agent:
 		self._update()
 
 	def _update(self) -> None:
+		if self.finished:
+			return
 		for state in _PRECEDENCE:
 			if self._open[state]:
 				self.states.enter(self.id, state)
@@ -252,6 +267,7 @@ def release_pending() -> None:
 	"""Release this agent's task registrations when the runner finishes."""
 	agent = _current.get()
 	if agent is not None:
+		agent.finished = True
 		for key, future in agent.registered.items():
 			if _pending.get(key) is future:
 				_pending.pop(key)

@@ -31,7 +31,7 @@ import gc
 import logging
 import threading
 import time
-import traceback
+from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -157,9 +157,12 @@ class HostReport:
 	collector: dict
 	wall_s: float
 	errors: dict[str, int] = field(default_factory=dict)
+	outcomes: dict[str, int] = field(default_factory=dict)
 
 	@property
 	def finished(self) -> int:
+		if self.outcomes:
+			return self.outcomes.get("done", 0)
 		return sum(1 for a in self.agents if a.status == "done")
 
 
@@ -196,43 +199,83 @@ class AgentHost:
 	async def run(self, agents: Iterable[Agent]) -> HostReport:
 		"""Run every agent to its end, and report."""
 		work = list(agents)
-		results = {a.id: AgentResult(a.id) for a in work}
-		if len(results) != len(work):
+		if len({a.id for a in work}) != len(work):
 			raise ValueError("agent ids must be unique within a run")
-		self.states._begin_run(results)
+		self.states._begin_run(a.id for a in work)
 		try:
-			return await self._run(work, results)
+			return await self._run(work, len(work), indexed=False)
+		finally:
+			self.states._end_run()
+
+	async def run_indexed(
+		self,
+		indices: range,
+		input_for: Callable[[int], Any],
+		*,
+		id_prefix: str = "",
+	) -> HostReport:
+		"""Run a range of unique IDs with inputs built on admission.
+
+		The agent ID is the prefix followed by its decimal index. The report
+		keeps aggregate outcomes; on_done receives each individual result.
+		Only admitted agents have a per-ID state entry in this mode.
+		"""
+		if not isinstance(indices, range):
+			raise TypeError("indices must be a range")
+		count = len(indices)
+		self.states._begin_run((), pending=count)
+		try:
+			agents = (Agent(f"{id_prefix}{i}", input_for(i)) for i in indices)
+			return await self._run(agents, count, indexed=True)
 		finally:
 			self.states._end_run()
 
 	async def _run(
-		self, work: list[Agent], results: dict[str, AgentResult]
+		self, work: Iterable[Agent], count: int, *, indexed: bool
 	) -> HostReport:
+		results: list[AgentResult] = []
+		outcomes: Counter[str] = Counter()
+		errors: Counter[str] = Counter()
+		tasks: set[asyncio.Task] = set()
+		completed = asyncio.Queue()
+
+		def collect(task: asyncio.Task) -> None:
+			tasks.remove(task)
+			result = task.result()
+			outcomes[result.status] += 1
+			if result.status == "failed" and result.error:
+				errors[result.error.split(":", 1)[0]] += 1
+
 		lag, pauses = LoopLag(), CollectorPauses()
 		saved = self._collector_start()
 		freeze: dict = {}
 		lag.start()
 		pauses.start()
 		t0 = time.monotonic()
-		tasks: set[asyncio.Task] = set()
 		try:
-			first = min(len(work), self.max_live_agents)
-			for i, agent in enumerate(work):
+			first = min(count, self.max_live_agents)
+			inputs = iter(work)
+			for i in range(count):
 				if i and i % self.stagger.batch == 0:
 					await asyncio.sleep(self.stagger.interval_s)
 				if len(tasks) >= self.max_live_agents:
-					done, tasks = await asyncio.wait(
-						tasks, return_when=asyncio.FIRST_COMPLETED
-					)
-					for task in done:
-						task.result()
-				tasks.add(
-					asyncio.create_task(self._run_agent(agent, results[agent.id]))
-				)
+					collect(await completed.get())
+				while not completed.empty():
+					collect(completed.get_nowait())
+				agent = next(inputs)
+				result = AgentResult(agent.id)
+				if indexed:
+					self.states._admit(agent.id)
+				else:
+					results.append(result)
+				task = asyncio.create_task(self._run_agent(agent, result, indexed))
+				tasks.add(task)
+				task.add_done_callback(completed.put_nowait)
 				if i + 1 == first:
 					await asyncio.sleep(0)
 					freeze = self._collector_started(saved, t0)
-			await asyncio.gather(*tasks)
+			while tasks:
+				collect(await completed.get())
 		except BaseException:
 			for task in tasks:
 				task.cancel()
@@ -243,13 +286,9 @@ class AgentHost:
 			lag.stop()
 			pauses.stop()
 			self._collector_end(saved)
-		errors: dict[str, int] = {}
-		for r in results.values():
-			if r.status == "failed" and r.error:
-				kind = r.error.split(":", 1)[0]
-				errors[kind] = errors.get(kind, 0) + 1
 		return HostReport(
-			agents=list(results.values()),
+			agents=results,
+			outcomes=dict(outcomes),
 			states=self.states.summary(),
 			loop_lag=lag.summary(),
 			collector={
@@ -265,10 +304,12 @@ class AgentHost:
 				"freeze": freeze,
 			},
 			wall_s=round(wall, 3),
-			errors=errors,
+			errors=dict(errors),
 		)
 
-	async def _run_agent(self, agent: Agent, result: AgentResult) -> None:
+	async def _run_agent(
+		self, agent: Agent, result: AgentResult, indexed: bool
+	) -> AgentResult:
 		_agents.set_current_agent(agent.id, self.states)
 		states = self.states
 		result.t_start = time.time()
@@ -297,11 +338,7 @@ class AgentHost:
 				result.status = "failed"
 				result.error = f"{type(exc).__name__}: {exc}"[:500]
 				span.set_attribute(_telemetry.ERROR_TYPE, type(exc).__qualname__)
-				log.debug(
-					"agent %s failed: %s",
-					agent.id,
-					"".join(traceback.format_exception(exc)[-4:]),
-				)
+				log.debug("agent %s failed", agent.id, exc_info=True)
 			finally:
 				result.t_end = time.time()
 				_agents.release_pending()
@@ -312,6 +349,10 @@ class AgentHost:
 			except Exception as exc:
 				result.status = "failed"
 				result.error = f"{type(exc).__name__}: on_done: {exc}"[:500]
+
+		if indexed:
+			states._retire(agent.id)
+		return result
 
 	async def _wait(self, agent: Agent, step: Suspended) -> dict[str, Any]:
 		self.states.enter(agent.id, AgentState.TOOL_WAIT)

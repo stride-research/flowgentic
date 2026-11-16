@@ -305,3 +305,58 @@ def test_pending_seconds_start_when_the_agent_is_added(monkeypatch):
     states.add("a")
     now[0] += 2
     assert states.agent_seconds()[AgentState.PENDING] == 2
+
+
+async def test_indexed_run_bounds_inputs_and_retains_only_aggregate_outcomes():
+    built, completed = [], []
+    host = None
+
+    def make_input(i):
+        built.append(i)
+        assert len(built) - len(completed) <= 3
+        return i
+
+    class Runner:
+        async def start(self, agent):
+            assert agent.id == f"job-{agent.input}"
+            assert len(host.states._state) <= 3
+            await asyncio.sleep(0)
+            if agent.input == 12:
+                raise ValueError("bad")
+            if agent.input == 14:
+                return Interrupted(("ask",))
+            return Finished(agent.input)
+
+    host = AgentHost(Runner(), max_live_agents=3, stagger=FAST, collector=None,
+                     on_done=lambda result, output: completed.append(result.id))
+    report = await host.run_indexed(range(10, 30, 2), make_input, id_prefix="job-")
+    assert sorted(completed) == [f"job-{i}" for i in range(10, 30, 2)]
+    assert report.agents == [] and report.finished == 8
+    assert report.outcomes == {"done": 8, "failed": 1, "interrupted": 1}
+    assert report.errors == {"ValueError": 1}
+    assert host.states.counts()[AgentState.DONE] == 10
+    assert not host.states._state
+
+
+async def test_indexed_input_failure_cancels_live_tasks_and_releases_host():
+    started, stopped = asyncio.Event(), asyncio.Event()
+
+    class Runner:
+        async def start(self, agent):
+            if agent.id == "0":
+                started.set()
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    stopped.set()
+            return Finished(None)
+
+    def inputs(i):
+        if i == 2:
+            raise ValueError("input failure")
+
+    host = AgentHost(Runner(), max_live_agents=2, collector=None, stagger=FAST)
+    with pytest.raises(ValueError, match="input failure"):
+        await host.run_indexed(range(3), inputs)
+    assert started.is_set() and stopped.is_set()
+    assert (await host.run_indexed(range(0), inputs)).finished == 0

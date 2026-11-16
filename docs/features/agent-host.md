@@ -119,3 +119,31 @@ SDK:
   `flowgentic.agent.category`, both read when the SDK collects;
 - `flowgentic.host.loop.lag` and `flowgentic.host.gc.pause` record the event
   loop's lag and the collector's pauses.
+
+## Campaigns with millions of agent IDs
+
+Use `run_indexed` when agents can be named by a prefix and an integer. The
+host builds each input as a slot opens, keeps detailed state for live agents
+and returns counts in `report.outcomes`. Its `on_done` callback receives
+each individual result. Keep that callback bounded too. The ordinary `run`
+keeps its full per-agent report and validates all application-supplied IDs
+before starting work.
+
+```python
+host = AgentHost(runner, max_live_agents=256, on_done=save_result)
+report = await host.run_indexed(range(start, stop), make_input, id_prefix="campaign-")
+```
+
+Give different processes disjoint index ranges and route each thread's
+checkpoint updates through its owning process. Both host entry points use the
+runner's compiled graph and its configured checkpointer. A graph backed by
+RaDEX continues to read and write that dictionary in indexed mode. The total campaign population and the
+number of agents live at once are separate sizing parameters. Each live
+agent can own a graph invocation, pending futures and external requests.
+The default stagger of 100 starts every 0.5 seconds intentionally limits
+admission. Set it from the rate the downstream services can sustain.
+
+To measure host scheduling and peak process RSS on Linux or macOS, run
+`uv run --locked python benchmarks/agent_host.py --agents 100000`.
+Add `--full-report` for the ordinary host path. The runner finishes immediately,
+uses generated inputs and performs no model, checkpoint or network calls.
