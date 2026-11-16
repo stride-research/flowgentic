@@ -24,7 +24,7 @@ scientific work; 0.4.0 removes them. New applications can bind agents with
 
 | Agent framework | Workflow engine | Backends | Python |
 | --- | --- | --- | --- |
-| LangGraph 1.x | RADICAL AsyncFlow 0.6.0 | Local | 3.10, 3.11, 3.12 |
+| LangGraph 1.x | RADICAL AsyncFlow 0.6.0 | Local | 3.11, 3.12, 3.13 |
 
 [Project status](status.md) lists the tested versions, the known limitations
 and the archived branches.
@@ -41,7 +41,7 @@ and the archived branches.
   reasons, within an attempt budget, and falls back to a deterministic value
   when no proposal passes. Each call, attempt and check is recorded in the
   run's trace. See [Acceptance](features/acceptance.md).
-- **`LangraphIntegration`** (`flowgentic.langGraph`) runs a LangGraph graph's
+- **`LangraphIntegration`** (`flowgentic.langgraph`) runs a LangGraph graph's
   tools, services, tasks and nodes as AsyncFlow tasks, in their caller's trace.
   See [LangGraph on AsyncFlow with Flowgentic](guides/langgraph-on-asyncflow.md)
   and [Telemetry](features/telemetry.md).
@@ -74,13 +74,17 @@ cd flowgentic
 uv sync --locked
 ```
 
-Or build the wheel and install it into a new environment. The
-[v0.4.0 GitHub release](https://github.com/stride-research/flowgentic/releases/tag/v0.4.0) carries the same wheel.
+Flowgentic's core installs no agent framework and no workflow engine. Each
+path is an extra: `langgraph` and `asyncflow` for the LangGraph integration,
+`asyncflow` for `bind_agent`. The demos' `make` targets add what they need.
+
+Or build the wheel and install it into a new environment, with the extras you
+use:
 
 ```bash
 uv build
-uv venv --python 3.10 flowgentic-env
-uv pip install --python flowgentic-env/bin/python dist/flowgentic-0.4.0-py3-none-any.whl
+uv venv --python 3.11 flowgentic-env
+uv pip install --python flowgentic-env/bin/python "dist/flowgentic-0.4.0-py3-none-any.whl[langgraph,asyncflow]"
 ```
 
 [Getting started](getting-started.md) runs the two offline demos.

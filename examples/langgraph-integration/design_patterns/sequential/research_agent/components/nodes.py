@@ -1,12 +1,12 @@
 import sys
 from typing import Dict
 
-from flowgentic.langGraph.main import LangraphIntegration
+from flowgentic.langgraph.main import LangraphIntegration
 from ..utils.schemas import WorkflowState, AgentOutput
 from .utils.actions_registry import ActionsRegistry
 
 import asyncio
-from flowgentic.langGraph.execution_wrappers import AsyncFlowType
+from flowgentic.langgraph.execution_wrappers import AsyncFlowType
 from flowgentic.utils.llm_providers import ChatLLMProvider
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage, SystemMessage

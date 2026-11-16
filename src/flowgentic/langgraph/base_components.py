@@ -2,7 +2,7 @@ from typing import Dict
 from langgraph.graph import END, StateGraph
 from abc import ABC, abstractmethod
 
-from flowgentic.langGraph.main import LangraphIntegration
+from flowgentic.langgraph.main import LangraphIntegration
 
 
 class BaseToolRegistry(ABC):

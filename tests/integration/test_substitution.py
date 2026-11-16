@@ -29,7 +29,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import InjectedState, ToolNode, tools_condition
 from langgraph.types import Command, Send
 
-from flowgentic.langGraph.execution_wrappers import AsyncFlowType, BaseLLMAgentState
+from flowgentic.langgraph.execution_wrappers import AsyncFlowType, BaseLLMAgentState
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 DEMO_DIR = REPOSITORY / "examples" / "ai-hpc-coupling"
@@ -421,7 +421,7 @@ async def open_engine(integration: str) -> AsyncIterator[tuple[Any, Any]]:
     """Yield an AsyncFlow engine and, for Flowgentic, its integration."""
     backends = await demo("campaign_common").create_local_backends(4)
     if integration == "flowgentic":
-        from flowgentic.langGraph.main import LangraphIntegration
+        from flowgentic.langgraph.main import LangraphIntegration
 
         async with LangraphIntegration(backend=backends) as adapter:
             yield adapter.flow, adapter

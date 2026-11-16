@@ -1,8 +1,17 @@
-from langchain_core.language_models import BaseChatModel
-from langchain_openai import ChatOpenAI
-from langchain_ollama import ChatOllama
-from typing import Any, Optional
 import os
+from typing import Any, Optional
+
+try:
+	from langchain_core.language_models import BaseChatModel
+	from langchain_ollama import ChatOllama
+	from langchain_openai import ChatOpenAI
+except ModuleNotFoundError as exc:
+	if exc.name not in {"langchain_core", "langchain_ollama", "langchain_openai"}:
+		raise
+	raise ModuleNotFoundError(
+		"Flowgentic's chat providers need LangChain: install flowgentic[langgraph]",
+		name=exc.name,
+	) from exc
 
 
 class ChatOpenRouter(ChatOpenAI):

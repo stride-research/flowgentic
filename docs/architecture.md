@@ -31,10 +31,10 @@ flowchart LR
 | --- | --- |
 | `flowgentic.agent` | `bind_agent` and `AgentTask`: an agent component as an AsyncFlow task, each call an `invoke_agent` span; see [Telemetry](features/telemetry.md) |
 | `flowgentic.acceptance` | `accept`, `Rejected`, `NotAccepted`, `Outcome` and `Attempt`: an agent's output checked, re-asked for and accepted or replaced by a fallback, each call an `accept` span; see [Acceptance](features/acceptance.md) |
-| `flowgentic.langGraph.main` | `LangraphIntegration`: creates and shuts down the `WorkflowEngine` |
-| `flowgentic.langGraph.execution_wrappers` | `AsyncFlowType`, the `asyncflow` decorator, the handoff tool, `BaseLLMAgentState` |
-| `flowgentic.langGraph.utils` | An LLM router and fan-out for supervisor graphs |
-| `flowgentic.langGraph.base_components` | `BaseToolRegistry`: a base class that registers an application's tools and tasks by name |
+| `flowgentic.langgraph.main` | `LangraphIntegration`: creates and shuts down the `WorkflowEngine` |
+| `flowgentic.langgraph.execution_wrappers` | `AsyncFlowType`, the `asyncflow` decorator, the handoff tool, `BaseLLMAgentState` |
+| `flowgentic.langgraph.utils` | An LLM router and fan-out for supervisor graphs |
+| `flowgentic.langgraph.base_components` | `BaseToolRegistry`: a base class that registers an application's tools and tasks by name |
 | `flowgentic.utils.llm_providers` | `ChatLLMProvider`: OpenRouter, OpenAI and Ollama chat models |
 | `flowgentic` | `configure_logging`: prints Flowgentic's log records, which import leaves to the application; see [Logging](features/logging.md) |
 | `flowgentic._asyncflow` | Private: the one module that calls AsyncFlow. `bind_agent`, `LangraphIntegration`, the `asyncflow` decorator and the handoff tool open and close engines and register tasks, services and blocks through it. It carries the caller's trace context into each task and service |

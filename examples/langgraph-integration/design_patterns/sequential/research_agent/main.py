@@ -1,6 +1,6 @@
 from radical.asyncflow import LocalExecutionBackend
 from concurrent.futures import ThreadPoolExecutor
-from flowgentic.langGraph.main import LangraphIntegration
+from flowgentic.langgraph.main import LangraphIntegration
 from .components.builder import WorkflowBuilder
 from .utils.schemas import WorkflowState
 import asyncio

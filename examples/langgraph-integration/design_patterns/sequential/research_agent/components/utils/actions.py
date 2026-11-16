@@ -1,4 +1,4 @@
-from flowgentic.langGraph.execution_wrappers import AsyncFlowType
+from flowgentic.langgraph.execution_wrappers import AsyncFlowType
 import asyncio
 from typing import Dict, Any
 

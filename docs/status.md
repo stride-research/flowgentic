@@ -39,20 +39,28 @@ run, and a graph that should change between runs is built anew as a
 
 | Agent framework | Workflow engine | Backends | Python |
 | --- | --- | --- | --- |
-| LangGraph 1.x | RADICAL AsyncFlow 0.6.0 | Local | 3.10, 3.11, 3.12 |
+| LangGraph 1.x | RADICAL AsyncFlow 0.6.0 | Local | 3.11, 3.12, 3.13 |
 
 Tested environment, from `uv.lock`: LangGraph 1.2.16, langchain-core 1.7.0,
 langchain 1.4.7, radical-asyncflow 0.6.0 and academy-py 1.0.0. CI runs the
-test suite on Python 3.10, 3.11 and 3.12, and on Python 3.10 with the lowest
+test suite on Python 3.11, 3.12 and 3.13, and on Python 3.11 with the lowest
 versions the dependency ranges allow; a weekly workflow runs it, and builds
-the docs, on the newest releases within the ranges. The package requires
-`langgraph>=1.1.5,<2.0`; `langchain-core`, `langchain`, `langchain-openai` and
-`langchain-ollama` at `>=1.0,<2.0`; and `radical-asyncflow>=0.6,<0.7`, because
-before 1.0 an AsyncFlow minor release may break; and `opentelemetry-api>=1.43,<2`
-for its spans. Its `examples` extra adds `academy-py>=1.0,<2` for the Academy
-example, and the OpenTelemetry SDK, OpenTelemetry's GenAI instrumentation for
-LangChain and OpenAI (1.3b0, below 1.4) and `rhapsody-py[telemetry]` for the
-demos' traces.
+the docs, on the newest releases within the ranges.
+
+The core requires `pydantic` and `opentelemetry-api>=1.43,<2`, for its spans.
+Each path is an extra:
+
+- `langgraph`: `langgraph>=1.1.5,<2.0`, and `langchain-core`, `langchain`,
+  `langchain-openai` and `langchain-ollama` at `>=1.0,<2.0`.
+- `asyncflow`: `radical-asyncflow>=0.6,<0.7`, because before 1.0 an AsyncFlow
+  minor release may break.
+
+The LangGraph integration needs both extras, and `bind_agent` needs
+`asyncflow`. Without an extra it needs, importing it raises an error that
+names the extra. The `examples` extra adds both, with `academy-py>=1.0,<2` for
+the Academy example, and the OpenTelemetry SDK, OpenTelemetry's GenAI
+instrumentation for LangChain and OpenAI (1.3b0, below 1.4) and
+`rhapsody-py[telemetry]` for the demos' traces.
 
 ## Known limitations
 

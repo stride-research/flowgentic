@@ -7,7 +7,7 @@ from .actions import (
 	FormattingTasks,
 )
 
-from flowgentic.langGraph.base_components import BaseToolRegistry
+from flowgentic.langgraph.base_components import BaseToolRegistry
 
 
 class ActionsRegistry(BaseToolRegistry):

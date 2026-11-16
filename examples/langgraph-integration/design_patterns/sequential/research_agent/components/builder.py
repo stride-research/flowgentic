@@ -1,4 +1,4 @@
-from flowgentic.langGraph.main import LangraphIntegration
+from flowgentic.langgraph.main import LangraphIntegration
 from ..utils.schemas import WorkflowState
 from langgraph.graph import END, StateGraph
 from .utils.actions_registry import ActionsRegistry

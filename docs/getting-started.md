@@ -6,7 +6,7 @@ model credentials: AsyncFlow executes on two local backends, `ai` and
 `compute`, and the agentic demo takes its decisions from a scripted
 "rehearsal" model.
 
-You need [uv](https://docs.astral.sh/uv/) and Python 3.10, 3.11 or 3.12.
+You need [uv](https://docs.astral.sh/uv/) and Python 3.11, 3.12 or 3.13.
 
 ## Install
 
@@ -19,16 +19,19 @@ uv sync --locked
 ```
 
 `uv sync --locked` installs the versions in `uv.lock` and fails if the lock is
-out of date. Add `--extra dev` for the test and documentation tools.
+out of date. It installs Flowgentic's core, which needs no agent framework and
+no workflow engine. Each path is an extra: `--extra langgraph --extra asyncflow`
+for the LangGraph integration, `--extra asyncflow` for `bind_agent`. The demos'
+`make` targets add what they need, and `--extra dev` adds the test and
+documentation tools.
 
 To use Flowgentic as a package instead, build the wheel and install it into a
-new environment. The [v0.3.0 GitHub release](https://github.com/stride-research/flowgentic/releases/tag/v0.3.0) carries the same
-wheel.
+new environment, with the extras you use:
 
 ```bash
 uv build
-uv venv --python 3.10 flowgentic-env
-uv pip install --python flowgentic-env/bin/python dist/flowgentic-0.3.0-py3-none-any.whl
+uv venv --python 3.11 flowgentic-env
+uv pip install --python flowgentic-env/bin/python "dist/flowgentic-0.4.0-py3-none-any.whl[langgraph,asyncflow]"
 ```
 
 ## Run the deterministic demo
