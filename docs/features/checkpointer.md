@@ -17,8 +17,9 @@ graph = builder.compile(checkpointer=saver)
 await graph.ainvoke(state, {"configurable": {"thread_id": agent_id}}, durability="exit")
 ```
 
-`flowgentic.store` needs no extra. `KeyValueSaver` currently imports through the integration package and needs both the
-`langgraph` and `asyncflow` extras. `RadexStore` needs RaDEX's Python client, which is built from source
+`flowgentic.store` needs no extra. `KeyValueSaver` imports through the
+integration package for now, so it needs both the `langgraph` and `asyncflow`
+extras. `RadexStore` needs RaDEX's Python client, which is built from source
 with its C++ core: see [RaDEX](https://github.com/radical-cybertools/radex).
 Tensors, in either store, need NumPy.
 
@@ -57,11 +58,12 @@ calls few. For thread `t` and checkpoint namespace `ns`:
   run's length. With `keep_last=1` a checkpoint is one `put`, which replaces
   the previous one, and nothing is deleted. `keep_last=n` keeps the newest
   `n`, for time travel over the last steps.
-- **A root-namespace suspension with full channel values costs six store calls.**
-  With LangGraph's `exit` durability, an
-  agent that suspends while its task runs writes its checkpoint and its
-  pending writes, and reads both back when it resumes. Saving writes also
-  reads the current head and the existing writes so a retry preserves them.
+- **A suspension costs six store calls,** in the root namespace with ordinary
+  channels. With LangGraph's `exit` durability, an agent that suspends while
+  its task runs writes its checkpoint and its pending writes, and reads both
+  back when it resumes. Saving pending writes also reads the newest checkpoint
+  and the writes already saved, so that a retried save, or another saver in
+  the process, adds to those writes instead of replacing them.
 - LangGraph delta channels recover their history from a snapshot and the writes
   since that snapshot. The saver carries this information into the retained
   checkpoint before its parent expires. These checkpoints also read the parent.

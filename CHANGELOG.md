@@ -25,8 +25,12 @@ predate this changelog, so their changes are not listed here.
 - `flowgentic.langgraph.KeyValueSaver`, a LangGraph checkpointer that keeps
   agents' state in a key-value store, and `flowgentic.store` with two stores:
   RaDEX on a Dragon distributed dictionary, and a dictionary in the process.
-  The `langgraph` extra now names `langgraph-checkpoint`, which LangGraph
-  already brought.
+  The saver keeps each thread's newest checkpoint by default (`keep_last`).
+  Pending writes survive a retried save, a saver reopened over the same store
+  and other savers in the process, and delta channels keep the history they
+  replay after older checkpoints are dropped. A suspension costs six store
+  calls. The `langgraph` extra now names `langgraph-checkpoint`, which
+  LangGraph already brought.
 
 ### Changed
 

@@ -361,7 +361,7 @@ def test_thread_and_namespace_separators_cannot_alias():
 	assert saver.get_tuple(configs[1]) is None
 
 
-@pytest.mark.parametrize("durability", ["sync", "exit"])
+@pytest.mark.parametrize("durability", ["sync", "async", "exit"])
 async def test_delta_state_survives_pruning_and_reopening(durability):
 	from typing import Annotated, TypedDict
 
