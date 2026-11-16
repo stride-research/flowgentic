@@ -1,9 +1,63 @@
 """Flowgentic for LangGraph.
 
-``LangraphIntegration`` runs a LangGraph graph's tools, services, tasks and
-nodes as AsyncFlow tasks. It needs the ``langgraph`` and ``asyncflow`` extras:
-without them, importing this package raises an error that names them.
+Two paths:
+
+- **Agents in an agent host** (the ``langgraph`` extra): ``GraphRunner`` runs a
+  compiled graph's agents in a ``flowgentic.host.AgentHost``, and
+  ``route_tool_calls`` sends each tool call to the tool node as its own task.
+  ``KeyValueSaver`` is a checkpointer that keeps agents' state in a
+  ``flowgentic.store`` key-value store.
+- **Graphs on AsyncFlow** (the ``langgraph`` and ``asyncflow`` extras):
+  ``LangraphIntegration`` runs a graph's tools, services, tasks and nodes as
+  AsyncFlow tasks. It is imported when first used.
+
+Without the extras a path needs, using it raises an error that names them.
 """
+
+import importlib
+from typing import Any
+
+try:
+	from flowgentic.langgraph.runner import (
+		PENDING_KEY,
+		GraphRunner,
+		record_interrupt,
+		route_tool_calls,
+		tool_call_router,
+	)
+	from flowgentic.langgraph.checkpoint import KeyValueSaver
+except ModuleNotFoundError as exc:
+	# Other distributions can provide the langgraph namespace without langgraph.graph.
+	if exc.name not in {
+		"langgraph",
+		"langgraph.graph",
+		"langgraph.checkpoint",
+		"langchain_core",
+	}:
+		raise
+	raise ModuleNotFoundError(
+		"flowgentic.langgraph needs LangGraph: install flowgentic[langgraph], "
+		"with flowgentic[asyncflow] too for LangraphIntegration",
+		name=exc.name,
+	) from exc
+
+__all__ = [
+	"PENDING_KEY",
+	"BaseLLMAgentState",
+	"ExecutionWrappersLangraph",
+	"GraphRunner",
+	"KeyValueSaver",
+	"LangraphIntegration",
+	"record_interrupt",
+	"route_tool_calls",
+	"tool_call_router",
+]
+
+_ASYNCFLOW_PATH = {
+	"LangraphIntegration": "flowgentic.langgraph.main",
+	"ExecutionWrappersLangraph": "flowgentic.langgraph.execution_wrappers",
+	"BaseLLMAgentState": "flowgentic.langgraph.execution_wrappers",
+}
 
 _EXTRA_MODULES = (
 	"langgraph",
@@ -16,16 +70,20 @@ _EXTRA_MODULES = (
 	"radical.asyncflow",
 )
 
-try:
-	from .execution_wrappers import BaseLLMAgentState, ExecutionWrappersLangraph
-	from .main import LangraphIntegration
-except ModuleNotFoundError as exc:
-	if exc.name not in _EXTRA_MODULES:
-		raise
-	raise ModuleNotFoundError(
-		"flowgentic.langgraph needs LangGraph and AsyncFlow: install "
-		"flowgentic[langgraph,asyncflow]",
-		name=exc.name,
-	) from exc
 
-__all__ = ["BaseLLMAgentState", "ExecutionWrappersLangraph", "LangraphIntegration"]
+def __getattr__(name: str) -> Any:
+	module = _ASYNCFLOW_PATH.get(name)
+	if module is None:
+		raise AttributeError(f"module 'flowgentic.langgraph' has no attribute {name!r}")
+	try:
+		value = getattr(importlib.import_module(module), name)
+	except ModuleNotFoundError as exc:
+		if exc.name not in _EXTRA_MODULES:
+			raise
+		raise ModuleNotFoundError(
+			"flowgentic.langgraph needs LangGraph and AsyncFlow: install "
+			"flowgentic[langgraph,asyncflow]",
+			name=exc.name,
+		) from exc
+	globals()[name] = value
+	return value

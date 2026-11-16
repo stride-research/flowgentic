@@ -22,6 +22,38 @@ predate this changelog, so their changes are not listed here.
 
 ### Added
 
+- `flowgentic.host`: an agent host that runs many agents in one process,
+  through a runner per framework. While it runs it raises the cyclic
+  collector's first threshold and freezes the objects alive once agents have
+  started; it caps the agents live at once, staggers the first wave's starts,
+  resumes agents that wait on tasks, and counts agents by state, in three
+  categories: working, waiting, and making a model request. Its report gives
+  each agent's outcome, the agent-seconds by state, the event loop's lag and
+  the collector's pauses. Each agent's run is an `invoke_agent` span, and the
+  agents by state, the loop lag and the collector's pauses are OpenTelemetry
+  metrics.
+- `AgentHost.run_indexed(indices, input_for, id_prefix=...)` runs a range of
+  agents named by a prefix and an integer, and builds each agent's input as a
+  slot opens, so a process's memory does not grow with the campaign's size.
+  Its report keeps counts, not per-agent results; `on_done` receives each
+  result.
+- `HostReport.outcomes` counts the agents of a run by status.
+- `flowgentic.host.register_pending`, with which a tool records the future of
+  a task it submitted under the task's key, for the host to await when the
+  agent suspends.
+- `flowgentic.langgraph.GraphRunner`, the host's runner for LangGraph graphs,
+  and `route_tool_calls`, which sends each tool call to the tool node as its
+  own task, so that an agent resuming from a suspension runs no other tool
+  call again. A suspended run is freed as soon as it stops.
+- `flowgentic.langgraph.KeyValueSaver`, a LangGraph checkpointer that keeps
+  agents' state in a key-value store, and `flowgentic.store` with two stores:
+  RaDEX on a Dragon distributed dictionary, and a dictionary in the process.
+  The saver keeps each thread's newest checkpoint by default (`keep_last`).
+  Pending writes survive a retried save, a saver reopened over the same store
+  and other savers in the process, and delta channels keep the history they
+  replay after older checkpoints are dropped. A suspension costs six store
+  calls. The `langgraph` extra now names `langgraph-checkpoint`, which
+  LangGraph already brought.
 - A tool service, `flowgentic.tools.service`: one process that calls MCP tools
   for many agent processes over queues, and answers a repeated call once. Its
   MCP client, `flowgentic.tools.mcp.SupervisedMcpPool`, keeps a failed
@@ -33,6 +65,8 @@ predate this changelog, so their changes are not listed here.
 
 ### Changed
 
+- `flowgentic.langgraph` imports `LangraphIntegration` when first used, so
+  `GraphRunner` needs only the `langgraph` extra.
 - Importing a part whose extra is not installed raises `ModuleNotFoundError`
   with the extra to install.
 - CI runs the test suite on Python 3.11, 3.12 and 3.13, and on 3.11 with the
