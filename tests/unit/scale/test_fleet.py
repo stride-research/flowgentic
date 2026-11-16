@@ -252,3 +252,116 @@ async def test_the_chat_model_routes_by_the_thread_id():
     assert records[0].replica == records[2].replica
     with pytest.raises(ValueError, match="routes by agent"):
         await fleet.chat_model().ainvoke([HumanMessage("hi")])
+
+
+# --- per-call settings, a per-call reserve, and thinking tokens ---------------------
+
+
+class Recording:
+    """A chat model that records each call's keyword arguments, and replies
+    with the usage it was given."""
+
+    def __init__(self, usage=None, server=None, tag="v1"):
+        self.usage = usage
+        self.server = server
+        self.tag = tag
+        self.kwargs = []
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+    async def ainvoke(self, messages, **kwargs):
+        self.kwargs.append(kwargs)
+        if self.server is not None and self.server.get("tag", self.tag) != self.tag:
+            raise APIConnectionError("Connection error.")
+        reply = AIMessage(f"DONE {self.tag}")
+        if self.usage:
+            reply.usage_metadata = dict(self.usage)
+        return reply
+
+
+THINK = {"extra_body": {"thinking_token_budget": 256}, "max_tokens": 512}
+
+
+async def test_a_calls_settings_reach_its_replica_and_only_for_that_call():
+    model = Recording()
+    fleet = Fleet([model]).bind_tools([])
+    await fleet.ainvoke("a", [HumanMessage("hi")], **THINK)
+    await fleet.ainvoke("a", [HumanMessage("hi")])
+    assert model.kwargs == [THINK, {}]
+
+
+async def test_a_calls_settings_survive_a_replica_rebuilt_by_recovery():
+    server = {"tag": "v1"}
+    old, new = Recording(server=server, tag="v1"), Recording(server=server, tag="v2")
+
+    async def check(i):
+        return new if server["tag"] == "v2" else None
+
+    fleet = Fleet([old], recovery=Recovery(check, poll_s=0.02)).bind_tools([])
+    server["tag"] = "v2"  # the server came back elsewhere
+    reply = await fleet.ainvoke("a", [HumanMessage("hi")], **THINK)
+    assert reply.content == "DONE v2"
+    assert old.kwargs == [THINK] and new.kwargs == [THINK]
+
+
+async def test_a_reserve_adds_to_the_admission_estimate():
+    fleet = Fleet([Recording()], admission=TokenAdmission(100_000, 10))
+    records = []
+    fleet.add_listener(lambda record, reply: records.append(record))
+    await fleet.ainvoke("a", [HumanMessage("x" * 400)])
+    await fleet.ainvoke("b", [HumanMessage("x" * 400)], reserve=256)
+    assert records[1].estimate == records[0].estimate + 256
+
+
+async def two_calls(usage):
+    """The records of an agent's first two calls, on a replica that reports
+    ``usage``."""
+    fleet = Fleet([Recording(usage=usage)])
+    records = []
+    fleet.add_listener(lambda record, reply: records.append(record))
+    first = [HumanMessage("x" * 400)]
+    reply = await fleet.ainvoke("a", first)
+    await fleet.ainvoke("a", [*first, reply, HumanMessage("y" * 100)])
+    return records
+
+
+async def test_thinking_tokens_are_recorded_and_left_out_of_the_agents_size():
+    plain = await two_calls({"input_tokens": 1000, "output_tokens": 300})
+    thought = await two_calls(
+        {"input_tokens": 1000, "output_tokens": 300, "output_token_details": {"reasoning": 200}}
+    )
+    assert plain[0].reasoning_tokens is None
+    assert thought[0].reasoning_tokens == 200
+    # The reply's thinking is not in the conversation, so not in the next prompt.
+    assert thought[1].estimate == plain[1].estimate - 200
+
+
+async def test_a_record_carries_the_callers_meta():
+    fleet = Fleet([Recording()])
+    records = []
+    fleet.add_listener(lambda record, reply: records.append(record))
+    await fleet.ainvoke("a", [HumanMessage("hi")], meta={"budget": 256})
+    await fleet.ainvoke("a", [HumanMessage("hi")])
+    assert [r.meta for r in records] == [{"budget": 256}, None]
+
+
+async def test_the_chat_model_passes_settings_reserve_and_meta_per_call():
+    model = Recording()
+    fleet = Fleet([model], admission=TokenAdmission(100_000, 10))
+    records = []
+    fleet.add_listener(lambda record, reply: records.append(record))
+    chat = fleet.chat_model().bind_tools([])
+
+    async def node(state: MessagesState):
+        reply = await chat.ainvoke(state["messages"], reserve=256, meta={"budget": 256}, **THINK)
+        return {"messages": [reply]}
+
+    g = StateGraph(MessagesState)
+    g.add_node("model", node)
+    g.add_edge(START, "model")
+    await g.compile().ainvoke({"messages": [HumanMessage("hi")]}, {"configurable": {"thread_id": "t-1"}})
+    await fleet.ainvoke("t-2", [HumanMessage("hi")])
+    assert model.kwargs == [THINK, {}]
+    assert records[0].meta == {"budget": 256}
+    assert records[0].estimate == records[1].estimate + 256

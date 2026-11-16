@@ -22,19 +22,28 @@ fleet decides, for each call, which replica takes it and when:
   error, a timeout, a 5xx, a 401 after a new key) releases its place, waits for
   the replica to come back, and is sent again; after ``outage_s`` it fails.
 - **Accounting.** One ``CallRecord`` per call goes to the listeners: the wait
-  for admission, the time at the server, the tokens and the prompt tokens the
-  server found in its prefix cache, the gap since the agent's previous call,
-  and the tool whose result came just before. The fleet itself keeps counters.
+  for admission, the time at the server, the tokens, the prompt tokens the
+  server found in its prefix cache and the reply's reasoning tokens when the
+  server reports them, the gap since the agent's previous call, the tool whose
+  result came just before, and the caller's ``meta``. The fleet itself keeps
+  counters.
 
 A request's live context is estimated before it is sent: the agent's size
 after its previous call, as the server counted it, plus the characters added
 since, at the tokens per character the server's counts give, plus a reserve
-for the reply.
+for the reply and the call's own ``reserve``. The size leaves out the previous
+reply's reasoning tokens, when the server reports them
+(``output_token_details.reasoning``): the conversation does not keep a model's
+thinking.
 
 ``fleet.ainvoke(agent_id, messages)`` is the direct path, for a graph's own
 model node. ``fleet.chat_model()`` is a LangChain chat model for prebuilt
 agents, which reads the agent's id from the run config's ``thread_id``; it
-costs a LangChain call's overhead more per call.
+costs a LangChain call's overhead more per call. Both take, per call, settings
+for the replica (``extra_body``, ``max_tokens``, ...), which reach the replica
+for that call only, a ``reserve`` of tokens beyond the usual reply, such as a
+thinking budget, and a ``meta`` that the call's record carries. Which settings
+make a model think is the model's business, not the fleet's.
 """
 
 from __future__ import annotations
@@ -396,6 +405,10 @@ class CallRecord:
 	gap_s: float | None
 	after_tool: str | None
 	prev_prompt_tokens: int | None
+	reasoning_tokens: int | None = None
+	"""The reply's thinking, if the server reports it."""
+	meta: Any = None
+	"""What the caller passed with the call."""
 
 
 def message_chars(messages: Sequence[BaseMessage]) -> int:
@@ -455,6 +468,8 @@ class _Core:
 		self.completion_tokens = 0
 		self.cached_tokens = 0
 		self.cache_reported = 0
+		self.reasoning_tokens = 0
+		self.reasoning_reported = 0
 		self.in_flight = 0
 		self.in_flight_max = 0
 		self.replies_tool = 0
@@ -562,15 +577,29 @@ class Fleet:
 		return [g.load() for g in self._core.gates]
 
 	async def ainvoke(
-		self, agent_id: str, messages: Sequence[BaseMessage]
+		self,
+		agent_id: str,
+		messages: Sequence[BaseMessage],
+		*,
+		reserve: int = 0,
+		meta: Any = None,
+		**kwargs: Any,
 	) -> AIMessage:
-		"""Send an agent's call to its replica, through admission."""
+		"""Send an agent's call to its replica, through admission.
+
+		``kwargs`` go to the replica's ``ainvoke`` for this call only.
+		``reserve`` adds tokens to the call's admission estimate, for a reply
+		longer than usual, such as one that may think. ``meta`` goes into the
+		call's ``CallRecord``.
+		"""
+		if reserve < 0:
+			raise ValueError("reserve must not be negative")
 		core = self._core
 		i = core.routing.choose(agent_id, [g.load() for g in core.gates])
 		gate = core.gates[i]
 		state = core.agent(agent_id)
 		chars = message_chars(messages)
-		estimate = core.estimate(state, chars) + core.reply_reserve
+		estimate = core.estimate(state, chars) + core.reply_reserve + reserve
 		weight = estimate if core.counts_tokens else 0
 		last = messages[-1] if messages else None
 		after_tool = last.name if isinstance(last, ToolMessage) else None
@@ -587,7 +616,9 @@ class Fleet:
 					core.in_flight_max = max(core.in_flight_max, core.in_flight)
 					try:
 						with _agents.activity(AgentState.MODEL_REQUEST):
-							reply = await self._model(i).ainvoke(list(messages))
+							reply = await self._model(i).ainvoke(
+								list(messages), **kwargs
+							)
 					except Exception as exc:
 						core.errors[type(exc).__name__] += 1
 						if core.recovery is None or not transient(exc):
@@ -622,6 +653,7 @@ class Fleet:
 			done,
 			estimate,
 			after_tool,
+			meta,
 		)
 
 	def _account(
@@ -638,6 +670,7 @@ class Fleet:
 		done: float,
 		estimate: int,
 		after_tool: str | None,
+		meta: Any,
 	) -> AIMessage:
 		t_end = time.time()
 		core.calls[i] += 1
@@ -648,6 +681,11 @@ class Fleet:
 		if cached is not None:
 			core.cache_reported += 1
 			core.cached_tokens += int(cached)
+		reasoning = (usage.get("output_token_details") or {}).get("reasoning")
+		if reasoning is not None:
+			reasoning = int(reasoning)
+			core.reasoning_reported += 1
+			core.reasoning_tokens += reasoning
 		core.prompt_tokens += prompt
 		core.completion_tokens += completion
 		record = CallRecord(
@@ -663,8 +701,12 @@ class Fleet:
 			gap_s=None if state.last_end is None else asked_at - state.last_end,
 			after_tool=after_tool,
 			prev_prompt_tokens=state.prev_prompt,
+			reasoning_tokens=reasoning,
+			meta=meta,
 		)
-		core.learn(state, chars, message_chars([reply]), prompt, completion)
+		# The conversation keeps the reply but not its thinking.
+		kept = completion - (reasoning or 0)
+		core.learn(state, chars, message_chars([reply]), prompt, kept)
 		state.last_end = t_end
 		state.prev_prompt = prompt
 		if reply.tool_calls:
@@ -694,6 +736,10 @@ class Fleet:
 			"completion_tokens": core.completion_tokens,
 			"cached_tokens": core.cached_tokens if core.cache_reported else None,
 			"calls_with_cache_count": core.cache_reported,
+			"reasoning_tokens": (
+				core.reasoning_tokens if core.reasoning_reported else None
+			),
+			"calls_with_reasoning_count": core.reasoning_reported,
 			"in_flight_max": core.in_flight_max,
 			"gates": [g.stats() for g in core.gates],
 			"tokens_per_char": {
@@ -745,7 +791,10 @@ class FleetChatModel(BaseChatModel):
 				"the fleet routes by agent: run it in a LangGraph thread (a thread_id "
 				"in the config) or in an agent host"
 			)
-		reply = await self.fleet.ainvoke(str(agent), messages)
+		if stop is not None:
+			kwargs["stop"] = stop
+		# reserve and meta are the fleet's; the rest go to the replica
+		reply = await self.fleet.ainvoke(str(agent), messages, **kwargs)
 		return ChatResult(generations=[ChatGeneration(message=reply)])
 
 
