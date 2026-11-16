@@ -2,6 +2,8 @@
 
 import asyncio
 import gc
+import subprocess
+import sys
 
 import pytest
 
@@ -112,6 +114,7 @@ async def test_starts_are_staggered():
 
 async def test_collector_is_tuned_during_a_run_and_restored():
     before = gc.get_threshold()
+    already_frozen = bool(gc.get_freeze_count())
     seen = {}
 
     class Probe(FakeRunner):
@@ -123,19 +126,21 @@ async def test_collector_is_tuned_during_a_run_and_restored():
 
     report = await AgentHost(Probe(), stagger=FAST).run([Agent("a", None)])
     assert seen["threshold"] == 100_000 and seen["frozen"] > 0
-    assert gc.get_threshold() == before and gc.get_freeze_count() == 0
+    assert gc.get_threshold() == before and bool(gc.get_freeze_count()) == already_frozen
     assert report.collector["freeze"]["frozen"] > 0
+    assert report.collector["freeze"].get("already_frozen", False) == already_frozen
 
 
 async def test_collector_is_restored_when_a_run_is_cancelled():
     before = gc.get_threshold()
+    already_frozen = bool(gc.get_freeze_count())
     host = AgentHost(FakeRunner(sleep=10), stagger=FAST)
     task = asyncio.create_task(host.run([Agent("a", None)]))
     await asyncio.sleep(0.05)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    assert gc.get_threshold() == before and gc.get_freeze_count() == 0
+    assert gc.get_threshold() == before and bool(gc.get_freeze_count()) == already_frozen
 
 
 async def test_suspend_failure_and_foreign_interrupt():
@@ -247,6 +252,7 @@ async def test_one_cancelled_agent_and_callback_failure_leave_peers_running():
 
 async def test_overlapping_hosts_restore_process_collector():
     before = gc.get_threshold()
+    already_frozen = bool(gc.get_freeze_count())
     first, second = asyncio.Event(), asyncio.Event()
 
     class Waiting:
@@ -270,16 +276,25 @@ async def test_overlapping_hosts_restore_process_collector():
     finally:
         second.set()
         await b
-    assert gc.get_threshold() == before and gc.get_freeze_count() == 0
+    assert gc.get_threshold() == before and bool(gc.get_freeze_count()) == already_frozen
 
 
-async def test_host_preserves_a_preexisting_frozen_generation():
-    gc.freeze()
-    try:
-        await AgentHost(FakeRunner(), stagger=FAST).run([Agent("a", None)])
-        assert gc.get_freeze_count() > 0
-    finally:
-        gc.unfreeze()
+def test_host_preserves_a_preexisting_frozen_generation():
+    # Freezing then unfreezing in pytest would also thaw interpreter-owned objects.
+    code = """
+import asyncio, gc
+from flowgentic.host import Agent, AgentHost, Finished
+
+class Runner:
+    async def start(self, agent):
+        return Finished(None)
+
+gc.freeze()
+report = asyncio.run(AgentHost(Runner()).run([Agent("a", None)]))
+assert report.collector["freeze"]["already_frozen"]
+assert gc.get_freeze_count() > 0
+"""
+    subprocess.run([sys.executable, "-c", code], check=True)
 
 
 def test_pending_seconds_start_when_the_agent_is_added(monkeypatch):

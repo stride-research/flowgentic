@@ -352,8 +352,8 @@ class AgentHost:
 		with _collector_lock:
 			t = time.perf_counter()
 			if not _freeze_owners:
-				if gc.get_freeze_count():
-					return {}  # The application owns the permanent generation.
+				if frozen := gc.get_freeze_count():
+					return {"already_frozen": True, "frozen": frozen}
 				gc.collect()
 				gc.freeze()
 			_freeze_owners.add(token)
