@@ -84,15 +84,37 @@ class AgentStates:
 		self._seconds = [0.0] * _N
 		self._t = time.monotonic()
 		self._lock = threading.Lock()
+		self._running = False
 		for agent in agents:
 			self.add(agent)
 		_all_states.add(self)
+
+	def _begin_run(self, ids: Iterable[str]) -> None:
+		with self._lock:
+			if self._running:
+				raise RuntimeError("these agent states already track an active run")
+			self._state = dict.fromkeys(ids, AgentState.PENDING)
+			self._counts = [0] * _N
+			self._counts[AgentState.PENDING] = len(self._state)
+			self._seconds = [0.0] * _N
+			self._t = time.monotonic()
+			self._running = True
+
+	def _end_run(self) -> None:
+		with self._lock:
+			self._advance(time.monotonic())
+			self._t = None
+			self._state = dict.fromkeys(self._state, AgentState.DONE)
+			self._counts = [0] * _N
+			self._counts[AgentState.DONE] = len(self._state)
+			self._running = False
 
 	def add(self, agent: str) -> None:
 		"""Count a new agent, as pending."""
 		with self._lock:
 			if agent in self._state:
 				return
+			self._advance(time.monotonic())
 			self._state[agent] = AgentState.PENDING
 			self._counts[AgentState.PENDING] += 1
 
@@ -111,6 +133,8 @@ class AgentStates:
 		return self._state[agent]
 
 	def _advance(self, now: float) -> None:
+		if self._t is None:
+			return
 		dt = now - self._t
 		if dt > 0:
 			for s, c in enumerate(self._counts):
@@ -158,12 +182,13 @@ class AgentStates:
 class _Agent:
 	"""The context variable's value: one live agent, with its open activities."""
 
-	__slots__ = ("id", "states", "_open")
+	__slots__ = ("id", "states", "_open", "registered")
 
 	def __init__(self, agent_id: str, states: AgentStates) -> None:
 		self.id = agent_id
 		self.states = states
 		self._open = [0] * _N
+		self.registered: dict[str, asyncio.Future] = {}
 
 	def open(self, state: AgentState) -> None:
 		self._open[state] += 1
@@ -218,10 +243,26 @@ _pending: dict[str, asyncio.Future] = {}
 def register_pending(key: str, future: asyncio.Future) -> None:
 	"""Record the future of a submitted task under its key."""
 	_pending[key] = future
+	agent = _current.get()
+	if agent is not None:
+		agent.registered[key] = future
+
+
+def release_pending() -> None:
+	"""Release this agent's task registrations when the runner finishes."""
+	agent = _current.get()
+	if agent is not None:
+		for key, future in agent.registered.items():
+			if _pending.get(key) is future:
+				_pending.pop(key)
+		agent.registered.clear()
 
 
 def forget_pending(key: str) -> None:
 	_pending.pop(key, None)
+	agent = _current.get()
+	if agent is not None:
+		agent.registered.pop(key, None)
 
 
 def pending(key: str) -> asyncio.Future | None:

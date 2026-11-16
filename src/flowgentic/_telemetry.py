@@ -116,7 +116,7 @@ meter.create_observable_gauge(
 	unit="{agent}",
 	description="Agents in each state, across the process's agent hosts",
 )
-meter.create_observable_counter(
+meter.create_observable_gauge(
 	"flowgentic.agent.time",
 	callbacks=[_observe_agent_seconds],
 	unit="s",

@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import gc
 import logging
+import threading
 import time
 import traceback
 from collections.abc import Callable, Iterable
@@ -162,6 +163,13 @@ class HostReport:
 		return sum(1 for a in self.agents if a.status == "done")
 
 
+# CPython shares its thresholds and permanent generation across event loops.
+_collector_lock = threading.RLock()
+_thresholds: dict[object, int] = {}
+_original_thresholds: tuple[int, int, int]
+_freeze_owners: set[object] = set()
+
+
 class AgentHost:
 	"""Runs agents through ``runner``; see the module's docstring."""
 
@@ -188,29 +196,42 @@ class AgentHost:
 	async def run(self, agents: Iterable[Agent]) -> HostReport:
 		"""Run every agent to its end, and report."""
 		work = list(agents)
-		for agent in work:
-			self.states.add(agent.id)
 		results = {a.id: AgentResult(a.id) for a in work}
-		live = asyncio.Semaphore(self.max_live_agents)
+		if len(results) != len(work):
+			raise ValueError("agent ids must be unique within a run")
+		self.states._begin_run(results)
+		try:
+			return await self._run(work, results)
+		finally:
+			self.states._end_run()
+
+	async def _run(
+		self, work: list[Agent], results: dict[str, AgentResult]
+	) -> HostReport:
 		lag, pauses = LoopLag(), CollectorPauses()
 		saved = self._collector_start()
 		freeze: dict = {}
 		lag.start()
 		pauses.start()
 		t0 = time.monotonic()
-		tasks: list[asyncio.Task] = []
+		tasks: set[asyncio.Task] = set()
 		try:
 			first = min(len(work), self.max_live_agents)
-			loop = asyncio.get_running_loop()
-			for i in range(0, first, self.stagger.batch):
-				if i:
+			for i, agent in enumerate(work):
+				if i and i % self.stagger.batch == 0:
 					await asyncio.sleep(self.stagger.interval_s)
-				for agent in work[i : min(i + self.stagger.batch, first)]:
-					tasks.append(loop.create_task(self._live(agent, results, live)))
-			await asyncio.sleep(0)
-			freeze = self._collector_started(t0)
-			for agent in work[first:]:
-				tasks.append(loop.create_task(self._live(agent, results, live)))
+				if len(tasks) >= self.max_live_agents:
+					done, tasks = await asyncio.wait(
+						tasks, return_when=asyncio.FIRST_COMPLETED
+					)
+					for task in done:
+						task.result()
+				tasks.add(
+					asyncio.create_task(self._run_agent(agent, results[agent.id]))
+				)
+				if i + 1 == first:
+					await asyncio.sleep(0)
+					freeze = self._collector_started(saved, t0)
 			await asyncio.gather(*tasks)
 		except BaseException:
 			for task in tasks:
@@ -247,12 +268,6 @@ class AgentHost:
 			errors=errors,
 		)
 
-	async def _live(
-		self, agent: Agent, results: dict[str, AgentResult], live: asyncio.Semaphore
-	) -> None:
-		async with live:
-			await self._run_agent(agent, results[agent.id])
-
 	async def _run_agent(self, agent: Agent, result: AgentResult) -> None:
 		_agents.set_current_agent(agent.id, self.states)
 		states = self.states
@@ -278,7 +293,7 @@ class AgentHost:
 				else:
 					result.status = "done"
 					output = step.output
-			except Exception as exc:  # one agent's failure must not stop the others
+			except (Exception, asyncio.CancelledError) as exc:
 				result.status = "failed"
 				result.error = f"{type(exc).__name__}: {exc}"[:500]
 				span.set_attribute(_telemetry.ERROR_TYPE, type(exc).__qualname__)
@@ -289,9 +304,14 @@ class AgentHost:
 				)
 			finally:
 				result.t_end = time.time()
+				_agents.release_pending()
 				states.enter(agent.id, AgentState.DONE)
 		if self.on_done is not None:
-			self.on_done(result, output)
+			try:
+				self.on_done(result, output)
+			except Exception as exc:
+				result.status = "failed"
+				result.error = f"{type(exc).__name__}: on_done: {exc}"[:500]
 
 	async def _wait(self, agent: Agent, step: Suspended) -> dict[str, Any]:
 		self.states.enter(agent.id, AgentState.TOOL_WAIT)
@@ -313,29 +333,44 @@ class AgentHost:
 
 	# --- the collector -----------------------------------------------------------
 
-	def _collector_start(self) -> tuple[int, int, int] | None:
+	def _collector_start(self) -> object | None:
+		global _original_thresholds
 		if self.collector is None:
 			return None
-		saved = gc.get_threshold()
-		gc.collect()
-		gc.set_threshold(self.collector.threshold, saved[1], saved[2])
-		return saved
+		with _collector_lock:
+			if not _thresholds:
+				_original_thresholds = gc.get_threshold()
+			gc.collect()
+			gc.set_threshold(self.collector.threshold, *_original_thresholds[1:])
+			token = object()
+			_thresholds[token] = self.collector.threshold
+			return token
 
-	def _collector_started(self, t0: float) -> dict:
-		if self.collector is None or not self.collector.freeze:
+	def _collector_started(self, token: object | None, t0: float) -> dict:
+		if self.collector is None or not self.collector.freeze or token is None:
 			return {}
-		t = time.perf_counter()
-		gc.collect()
-		gc.freeze()
-		return {
-			"at_s": round(time.monotonic() - t0, 3),
-			"call_s": round(time.perf_counter() - t, 4),
-			"frozen": gc.get_freeze_count(),
-		}
+		with _collector_lock:
+			t = time.perf_counter()
+			if not _freeze_owners:
+				if gc.get_freeze_count():
+					return {}  # The application owns the permanent generation.
+				gc.collect()
+				gc.freeze()
+			_freeze_owners.add(token)
+			return {
+				"at_s": round(time.monotonic() - t0, 3),
+				"call_s": round(time.perf_counter() - t, 4),
+				"frozen": gc.get_freeze_count(),
+			}
 
-	def _collector_end(self, saved: tuple[int, int, int] | None) -> None:
-		if saved is None:
+	def _collector_end(self, token: object | None) -> None:
+		if token is None:
 			return
-		if self.collector is not None and self.collector.freeze:
-			gc.unfreeze()
-		gc.set_threshold(*saved)
+		with _collector_lock:
+			if token in _freeze_owners:
+				_freeze_owners.remove(token)
+				if not _freeze_owners:
+					gc.unfreeze()
+			del _thresholds[token]
+			threshold = next(reversed(_thresholds.values()), _original_thresholds[0])
+			gc.set_threshold(threshold, *_original_thresholds[1:])

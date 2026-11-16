@@ -215,3 +215,78 @@ async def test_the_host_records_agents_spans_and_its_own_health(
     assert time_by_state["tool_wait"].attributes["flowgentic.agent.category"] == "waiting"
     assert time_by_state["tool_wait"].value > 0
     assert points(metric_reader, "flowgentic.host.loop.lag")[0].count > 0
+
+
+async def test_duplicate_ids_fail_before_any_agent_starts():
+    runner = FakeRunner()
+    host = AgentHost(runner, collector=None)
+    with pytest.raises(ValueError, match="unique"):
+        await host.run([Agent("same", 1), Agent("same", 2)])
+    assert not runner.starts
+
+
+async def test_one_cancelled_agent_and_callback_failure_leave_peers_running():
+    class Runner(FakeRunner):
+        async def start(self, agent):
+            register_pending(agent.id, asyncio.get_running_loop().create_future())
+            if agent.id == "cancel":
+                raise asyncio.CancelledError()
+            return Finished(None)
+
+    def on_done(result, _output):
+        if result.id == "callback":
+            raise ValueError("callback failed")
+
+    host = AgentHost(Runner(), on_done=on_done, collector=None)
+    report = await host.run([Agent(key, None) for key in ("cancel", "callback", "ok")])
+    assert report.finished == 1 and report.errors == {"CancelledError": 1, "ValueError": 1}
+    assert all(_agents.pending(result.id) is None for result in report.agents)
+    await host.run([Agent("again", None)])
+    assert host.states.counts()[AgentState.DONE] == 1
+
+
+async def test_overlapping_hosts_restore_process_collector():
+    before = gc.get_threshold()
+    first, second = asyncio.Event(), asyncio.Event()
+
+    class Waiting:
+        async def start(self, agent):
+            await agent.input.wait()
+            return Finished(None)
+
+    async def launch(key, threshold, event):
+        host = AgentHost(Waiting(), collector=Collector(threshold=threshold))
+        task = asyncio.create_task(host.run([Agent(key, event)]))
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        return task
+
+    a = await launch("a", 100_001, first)
+    b = await launch("b", 100_002, second)
+    try:
+        first.set()
+        await a
+        assert gc.get_threshold()[0] == 100_002 and gc.get_freeze_count() > 0
+    finally:
+        second.set()
+        await b
+    assert gc.get_threshold() == before and gc.get_freeze_count() == 0
+
+
+async def test_host_preserves_a_preexisting_frozen_generation():
+    gc.freeze()
+    try:
+        await AgentHost(FakeRunner(), stagger=FAST).run([Agent("a", None)])
+        assert gc.get_freeze_count() > 0
+    finally:
+        gc.unfreeze()
+
+
+def test_pending_seconds_start_when_the_agent_is_added(monkeypatch):
+    now = [100.0]
+    monkeypatch.setattr(_agents.time, "monotonic", lambda: now[0])
+    states = AgentStates()
+    now[0] += 10
+    states.add("a")
+    now[0] += 2
+    assert states.agent_seconds()[AgentState.PENDING] == 2

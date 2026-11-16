@@ -28,7 +28,9 @@ print(report.finished, report.states["share_by_category"], report.loop_lag)
   first threshold (`Collector(threshold=100_000)`) and, once agents have
   started, moves the objects then alive out of the collector's reach
   (`gc.freeze()`). It restores both when `run` returns, and also when `run` is
-  cancelled. `collector=None` leaves the collector alone.
+  cancelled. Overlapping runs share the collector tuning until the last user
+  releases it. A generation frozen by the application stays frozen.
+  `collector=None` leaves the collector alone.
 - **It caps the agents live at once.** At most `max_live_agents` (5,000 by
   default) are live, suspended ones included. More are accepted, and each
   starts when a live one ends. The cap bounds how late the event loop runs and
@@ -65,6 +67,7 @@ campaign reports:
 | `TOOL_WAIT` | waiting | waiting for a task, queued or running, suspended or not |
 | `PENDING`, `DONE` | | not started, or ended |
 
+Each run requires unique agent IDs and starts its own accounting period.
 The counts can be read from another thread while agents run, for a sampler of
 your own: pass `states=` to share one `AgentStates`.
 
@@ -80,7 +83,8 @@ key names a future registered in the process with `register_pending`.
 the agent's id as `thread_id` and LangGraph's `exit` durability by default, so
 a checkpoint is saved only when a run ends or suspends. A tool suspends its
 agent by calling LangGraph's `interrupt({PENDING_KEY: key})` for a task
-registered under `key`, and records the interrupt with `record_interrupt`, so
+registered under `key`. The host releases an agent’s registrations when it
+finishes. The tool records the interrupt with `record_interrupt`, so
 the runner frees the run's frames as soon as it stops. Any other interrupt,
 such as a question for a human, ends the agent as `interrupted`.
 
