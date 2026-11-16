@@ -54,8 +54,9 @@ the agent's other tool calls do not run again either.
 A task or service call is keyed by its agent and the tool call's id. A call
 made again with the same key, as a framework does when it resumes an agent,
 gets the first call's result and runs nothing. The runtime keeps the last
-`retained` ended tasks (100,000 by default); the tool service keeps its own
-answers.
+`retained` ended tasks (100,000 by default), and an agent in a host finds the
+tasks it asked for until it ends, however many have ended since. The tool
+service keeps its own answers.
 
 An MCP call that lost its connection may or may not have run on the server. It
 is sent again only for a tool declared `idempotent=True`, such as a lookup.
@@ -70,9 +71,10 @@ A task tool's arguments for the model can differ from its function's:
   to write a result;
 - `output(value)` turns the function's result into what the model reads.
 
-`prepare` runs again when an agent resumes, so it must give the same answer
-for the same call. A failed, refused or lost call reaches the model as the
-tool's error, so the agent can read it and decide what to do.
+`prepare` runs once per task, when the task is submitted: an agent that
+resumes finds its task and does not call it again. A failed, refused or lost
+call reaches the model as the tool's error, so the agent can read it and
+decide what to do.
 
 ## Order of tasks
 

@@ -243,6 +243,40 @@ async def test_repeat_safety_and_retention():
         ToolRuntime(session, retained=0)
 
 
+async def test_a_resumed_agent_finds_its_task_after_the_runtime_dropped_it():
+    """``retained`` bounds the ended tasks the runtime keeps, but an agent finds
+    the tasks it asked for until it ends: with room for one ended task, agents
+    whose tasks end before they resume still run each simulation once."""
+    session = await thread_session()
+    runtime = ToolRuntime(session, retained=1)
+    graph = react_graph(
+        Scripted(script=sim_then_answer(note=False)),
+        bind_tools(runtime, [task_tool(simulate, suspend=True)]),
+        KeyValueSaver(MemoryStore()),
+    )
+    report = await AgentHost(GraphRunner(graph), stagger=FAST).run(inputs(20))
+    await session.close()
+    assert report.finished == 20 and all(a.suspensions == 1 for a in report.agents)
+    assert RUNS == {"simulate": 20}
+    assert runtime.stats()["repeats"] == 20 and runtime.stats()["retained"] == 1
+
+
+async def test_only_the_asking_agents_own_registrations_are_found():
+    """A future registered under the same key outside an agent, as a tool run
+    without a host leaves it, is not taken for the runtime's task."""
+    session = await thread_session()
+    runtime = ToolRuntime(session)
+    stale = asyncio.get_running_loop().create_future()
+    _agents.register_pending("a/c1", stale)
+    try:
+        job = runtime.submit(task_tool(simulate), "a", "c1", {"x": 1.0})
+        assert job is not stale and await job == {"y": 2.0}
+    finally:
+        _agents.forget_pending("a/c1")
+        await session.close()
+    assert RUNS == {"simulate": 1}
+
+
 async def test_a_task_outside_a_host_is_not_registered_for_one():
     session = await thread_session()
     runtime = ToolRuntime(session)

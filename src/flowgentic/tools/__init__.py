@@ -230,7 +230,8 @@ class ToolRuntime:
 
 	A task asked for by an agent the host runs is registered for the host
 	(``flowgentic.host.register_pending``) until that agent ends, so the host
-	can resume the agent when the task ends.
+	can resume the agent when the task ends, and the agent finds the task when
+	it resumes, even once more than ``retained`` tasks have ended since.
 	"""
 
 	def __init__(
@@ -281,6 +282,10 @@ class ToolRuntime:
 		frames its traceback would then keep."""
 		key = self.key(agent_id, call_id)
 		job = self._jobs.get(key)
+		if job is None:
+			# Dropped from the runtime's ended tasks, but still registered by the
+			# agent asking: an agent resuming after other tasks ended finds it.
+			job = _agents.registered(key)
 		if job is not None:
 			self.repeats += 1
 			return job

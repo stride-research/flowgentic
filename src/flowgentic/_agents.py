@@ -308,3 +308,9 @@ def forget_pending(key: str) -> None:
 def pending(key: str) -> asyncio.Future | None:
 	"""The future of the task submitted under ``key`` in this process."""
 	return _pending.get(key)
+
+
+def registered(key: str) -> asyncio.Future | None:
+	"""The future the current agent registered under ``key``, until it ends."""
+	agent = _current.get()
+	return None if agent is None else agent.registered.get(key)
