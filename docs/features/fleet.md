@@ -48,9 +48,11 @@ are LangChain chat models: anything with `ainvoke(messages)` that returns an
   connection error, a timeout, a 5xx, or a 401 after a new key) gives up its
   place, waits for the replica to come back, and is sent again.
   `check(i)` returns replica `i`'s model once its server serves again (a new
-  one if its address or key changed), or `None` while it is down. After
-  `outage_s` the call fails with the original error. Other errors fail at
-  once.
+  one if its address or key changed), or `None` while it is down. A call that
+  fails again once its replica is back waits `poll_s` before it is sent
+  again. `outage_s` after its first failure, the call fails with its last
+  error, even if the replica came back and the call kept failing, or `check`
+  did not answer. Other errors fail at once.
 
 A call's live context is estimated before it is sent: the agent's size after
 its previous call, as the server counted it, plus the characters added since,

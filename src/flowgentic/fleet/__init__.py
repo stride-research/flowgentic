@@ -20,7 +20,8 @@ fleet decides, for each call, which replica takes it and when:
   It is a static split.
 - **Recovery.** With ``Recovery``, a call whose server went away (a connection
   error, a timeout, a 5xx, a 401 after a new key) releases its place, waits for
-  the replica to come back, and is sent again; after ``outage_s`` it fails.
+  the replica to come back, and is sent again; ``outage_s`` after its first
+  failure it fails, even if the replica came back and the call kept failing.
 - **Accounting.** One ``CallRecord`` per call goes to the listeners: the wait
   for admission, the time at the server, the tokens, the prompt tokens the
   server found in its prefix cache and the reply's reasoning tokens when the
@@ -328,7 +329,9 @@ class Recovery:
 	``check(i)`` returns replica ``i``'s chat model once its server serves
 	again, a new one if its endpoint or key changed, or ``None`` while it is
 	down. The first call that fails on a replica starts one watch, which calls
-	``check`` every ``poll_s`` seconds; later calls wait on the same watch.
+	``check`` every ``poll_s`` seconds; later calls wait on the same watch. A
+	call that fails again after its replica came back waits ``poll_s`` before
+	it is sent again, and fails ``outage_s`` after its first failure.
 	"""
 
 	def __init__(
@@ -347,16 +350,19 @@ class Recovery:
 		self._watches: dict[int, asyncio.Future] = {}
 		self._tasks: set[asyncio.Task] = set()
 
-	async def wait(self, i: int) -> Any | None:
+	async def wait(self, i: int, timeout: float | None = None) -> Any | None:
 		"""Replica ``i``'s model once it serves again, or ``None`` after
-		``outage_s``."""
+		``outage_s``, or after ``timeout`` seconds for this caller."""
 		future = self._watches.get(i)
 		if future is None:
 			future = self._watches[i] = asyncio.get_running_loop().create_future()
 			task = asyncio.create_task(self._watch(i, future))
 			self._tasks.add(task)
 			task.add_done_callback(self._tasks.discard)
-		return await asyncio.shield(future)
+		# asyncio.wait leaves the watch running when this caller times out or
+		# is cancelled.
+		done, _ = await asyncio.wait({future}, timeout=timeout)
+		return future.result() if done else None
 
 	async def _watch(self, i: int, future: asyncio.Future) -> None:
 		t0 = time.monotonic()
@@ -614,6 +620,7 @@ class Fleet:
 		asked_at = time.time()
 		asked = time.monotonic()
 		attrs = {_telemetry.FLEET_NAME: core.name, _telemetry.FLEET_REPLICA: i}
+		failing_since: float | None = None
 		with _agents.activity(AgentState.MODEL_QUEUED):
 			while True:
 				await gate.acquire(weight)
@@ -639,7 +646,16 @@ class Fleet:
 					gate.release(weight)
 				if failed is None:
 					break
-				model = await core.recovery.wait(i)
+				# outage_s bounds the call, not only one watch: a call that fails
+				# again once its replica is back pauses before the next try, and
+				# fails outage_s after its first failure.
+				recovery = core.recovery
+				if failing_since is None:
+					failing_since = time.monotonic()
+				else:
+					await asyncio.sleep(recovery.poll_s)
+				left = recovery.outage_s - (time.monotonic() - failing_since)
+				model = await recovery.wait(i, left) if left > 0 else None
 				if model is None:
 					raise failed
 				if model is not core.replicas[i]:

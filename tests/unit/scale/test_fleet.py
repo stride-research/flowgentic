@@ -202,6 +202,10 @@ async def test_never_back_fails_with_the_original_error_and_bad_requests_fail_at
     fleet = Fleet([Down(server)], recovery=Recovery(check, outage_s=0.1, poll_s=0.02))
     with pytest.raises(APIConnectionError):
         await fleet.ainvoke("a", [HumanMessage("hi")])
+    for _ in range(100):  # the call's own outage_s ends first; the watch's at its next poll
+        if fleet.stats()["recovery"]["gave_up"]:
+            break
+        await asyncio.sleep(0.01)
     assert fleet.stats()["recovery"]["gave_up"] == {0: 1}
 
     class Bad(Down):
@@ -211,6 +215,42 @@ async def test_never_back_fails_with_the_original_error_and_bad_requests_fail_at
     fleet = Fleet([Bad(server)], recovery=Recovery(check, outage_s=10, poll_s=0.02))
     with pytest.raises(ValueError):
         await fleet.ainvoke("a", [HumanMessage("hi")])  # fails at once: not transient
+
+
+class InternalServerError(Exception):
+    """Named as the OpenAI client's error for a 5xx."""
+
+
+async def test_a_call_the_replica_keeps_refusing_fails_after_outage_s():
+    class Refusing(Down):
+        async def ainvoke(self, messages):
+            self.calls += 1
+            await asyncio.sleep(0.001)
+            raise InternalServerError("500")
+
+    model = Refusing({"up": True})
+
+    async def check(i):
+        return model  # its health check passes, but every call fails
+
+    fleet = Fleet([model], recovery=Recovery(check, outage_s=0.3, poll_s=0.05))
+    with pytest.raises(InternalServerError):
+        await asyncio.wait_for(fleet.ainvoke("a", [HumanMessage("hi")]), 5)
+    assert model.calls < 10  # a pause between tries, not a loop of them
+
+
+async def test_a_call_fails_after_outage_s_while_the_check_hangs():
+    answer = asyncio.Event()
+
+    async def check(i):
+        await answer.wait()  # a health probe to a node that does not answer
+
+    fleet = Fleet([Down({"up": False})], recovery=Recovery(check, outage_s=0.1, poll_s=0.02))
+    try:
+        with pytest.raises(APIConnectionError):
+            await asyncio.wait_for(fleet.ainvoke("a", [HumanMessage("hi")]), 5)
+    finally:
+        answer.set()
 
 
 def test_which_errors_of_langchain_openai_are_transient():
