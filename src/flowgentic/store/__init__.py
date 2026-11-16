@@ -22,10 +22,9 @@ import os
 # Values come from processes of the same job.
 import pickle  # nosec B403
 import threading
-from collections import OrderedDict
 from typing import Any, Protocol, runtime_checkable
 
-__all__ = ["MISSING", "KeyValueStore", "MemoryStore", "RadexStore", "WriteThroughStore"]
+__all__ = ["MISSING", "KeyValueStore", "MemoryStore", "RadexStore"]
 
 
 class _Missing:
@@ -56,92 +55,6 @@ class KeyValueStore(Protocol):
 	def contains(self, key: str) -> bool:
 		"""Whether ``key`` holds a value."""
 		...
-
-
-class WriteThroughStore:
-	"""A bounded read cache for a store partition exclusively owned by one process.
-
-	Route *all* access to the partition through one wrapper while it is owned.
-	Share it among savers in that process. On handoff, stop the old owner and
-	create a new wrapper at the receiving owner, including when handing back.
-	Every put and delete reaches the backing store before returning. Hits return
-	freshly unpickled values so one reader cannot change another reader's data.
-	"""
-
-	def __init__(
-		self, store: KeyValueStore, *, max_bytes: int, max_entries: int = 16_384
-	) -> None:
-		if max_bytes <= 0 or max_entries <= 0:
-			raise ValueError("max_bytes and max_entries must be positive")
-		self.store = store
-		self.max_bytes = max_bytes
-		self.max_entries = max_entries
-		self._cache: OrderedDict[str, bytes] = OrderedDict()
-		self._bytes = 0
-		self._lock = threading.Lock()
-		# Serialize operations on each key. Unrelated keys can do backing I/O
-		# concurrently, without holding the LRU bookkeeping lock.
-		self._key_locks = tuple(threading.Lock() for _ in range(64))
-
-	def _forget(self, key: str) -> None:
-		# Called with the cache lock held.
-		old = self._cache.pop(key, None)
-		if old is not None:
-			self._bytes -= len(old)
-
-	def _remember(self, key: str, value: Any) -> None:
-		try:
-			data = pickle.dumps(value, protocol=5)
-		except Exception:
-			# RaDEX accepts cloudpickle values that standard pickle cannot encode.
-			# The backing operation succeeded and the cache is optional.
-			return
-		if len(data) > self.max_bytes:
-			return
-		with self._lock:
-			self._cache[key] = data
-			self._bytes += len(data)
-			while self._bytes > self.max_bytes or len(self._cache) > self.max_entries:
-				_, evicted = self._cache.popitem(last=False)
-				self._bytes -= len(evicted)
-
-	def get(self, key: str, default: Any = MISSING) -> Any:
-		with self._key_locks[hash(key) % len(self._key_locks)]:
-			with self._lock:
-				data = self._cache.get(key)
-				if data is not None:
-					self._cache.move_to_end(key)
-			if data is not None:
-				return pickle.loads(data)  # nosec B301 - cached from the trusted store
-			try:
-				value = self.store.get(key)
-			except KeyError:
-				if default is MISSING:
-					raise
-				return default
-			self._remember(key, value)
-			return value
-
-	def put(self, key: str, value: Any) -> None:
-		with self._key_locks[hash(key) % len(self._key_locks)]:
-			# Evict first: a backing write can commit and still raise.
-			with self._lock:
-				self._forget(key)
-			self.store.put(key, value)
-			self._remember(key, value)
-
-	def delete(self, key: str) -> None:
-		with self._key_locks[hash(key) % len(self._key_locks)]:
-			with self._lock:
-				self._forget(key)
-			self.store.delete(key)
-
-	def contains(self, key: str) -> bool:
-		with self._key_locks[hash(key) % len(self._key_locks)]:
-			with self._lock:
-				if key in self._cache:
-					return True
-			return self.store.contains(key)
 
 
 class MemoryStore:
