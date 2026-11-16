@@ -514,7 +514,9 @@ class SupervisedMcpPool:
 		"""Call `call` lost its connection: send it again if allowed, else fail it."""
 		if call.fut.done():
 			return
-		if closing:
+		if (
+			closing or self._closing
+		):  # never re-queue once close() has emptied the queue
 			self.counts["closed"] += 1
 			call.fut.set_exception(
 				McpPoolClosed(
