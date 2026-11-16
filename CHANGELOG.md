@@ -62,6 +62,16 @@ predate this changelog, so their changes are not listed here.
   again only when the caller passes `idempotent=True`, as a lookup can. A
   failure that left the call safe to repeat is not kept, so asking again with
   the same uid calls the tool again.
+- `flowgentic.fleet`: a client for a fleet of model replicas. It keeps each
+  agent on one replica, so the agent's prompt stays in that replica's prefix
+  cache; admits calls under caps on each replica's tokens of live context and
+  requests in flight, shared among agent processes; waits out a replica whose
+  server went away, for at most `outage_s` per call; and records each call. Per call it passes settings to the
+  replica, adds a `reserve` to the admission estimate, such as a thinking
+  budget, and carries the caller's `meta` into the call's record; reasoning
+  tokens are recorded and left out of the agent's size. The admission wait,
+  the time at the replica and each replica's load are OpenTelemetry metrics.
+  It needs the `langgraph` extra.
 
 ### Changed
 
