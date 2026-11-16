@@ -74,7 +74,9 @@ A task tool's arguments for the model can differ from its function's:
 `prepare` runs once per task, when the task is submitted: an agent that
 resumes finds its task and does not call it again. A failed, refused or lost
 call reaches the model as the tool's error, so the agent can read it and
-decide what to do.
+decide what to do. A runtime set up wrong, without the RHAPSODY session or the
+started service client a tool needs, raises `RuntimeError` instead: with
+`ToolNode`'s default error handling, the agent fails.
 
 ## Order of tasks
 

@@ -17,6 +17,7 @@ from flowgentic.host import Agent, AgentHost, AgentState, Finished, Stagger, Sus
 from flowgentic.langgraph import GraphRunner, KeyValueSaver, bind_tools
 from flowgentic.store import MemoryStore
 from flowgentic.tools import TaskInfo, ToolRuntime, mcp_tool, task_tool
+from flowgentic.tools.service import ToolServiceClient, ToolServiceError
 
 FAST = Stagger(batch=50, interval_s=0.0)
 
@@ -424,7 +425,7 @@ class FakeService:
     async def call(self, uid, tool, args, *, idempotent=False):
         self.calls.append((uid, tool, args, idempotent))
         if args["material"] == "bad":
-            raise RuntimeError("server gone")
+            raise ToolServiceError("server gone")
         return {"material": args["material"], "score": 0.5}
 
 
@@ -442,13 +443,41 @@ async def test_mcp_tools_go_through_the_service():
     out = await lookup_.ainvoke(call, config)
     assert '"score": 0.5' in out.content
     bad = await lookup_.ainvoke({**call, "args": {"material": "bad"}}, config)
-    assert "lookup failed: RuntimeError: server gone" in bad.content
+    assert "lookup failed: ToolServiceError: server gone" in bad.content
     await write_.ainvoke({**call, "name": "write", "id": "c10"}, config)
     assert service.calls == [
         ("agent-7/c9", "lookup", {"material": "x"}, True),
         ("agent-7/c9", "lookup", {"material": "bad"}, True),
         ("agent-7/c10", "write", {"material": "x"}, False),  # not idempotent by default
     ]
+
+
+@pytest.mark.parametrize("setup", ["task, no session", "mcp, no service", "mcp, client not started"])
+async def test_a_runtime_set_up_wrong_fails_the_agent(setup):
+    """A misconfigured campaign is loud: a tool whose runtime lacks the session
+    or the started service client it needs fails its agent, with ToolNode's
+    default error handling, rather than tell the model that the call failed."""
+    import queue
+
+    if setup.startswith("task"):
+        runtime, tool_, call = ToolRuntime(), task_tool(simulate), ("simulate", {"x": 1.0})
+        expected = "task tools need a ToolRuntime with a RHAPSODY session"
+    else:
+        client = ToolServiceClient(queue.Queue(), queue.Queue(), index=0) if "client" in setup else None
+        runtime = ToolRuntime(service=client)
+        tool_ = mcp_tool("lookup", description="Look up.", args_schema=LookupArgs)
+        call = ("lookup", {"material": "x"})
+        expected = "ToolServiceClient.start() was not called" if client else "need a ToolRuntime with a tool service"
+    graph = react_graph(
+        Scripted(script=calls_then_answer(call)),
+        bind_tools(runtime, [tool_]),
+        KeyValueSaver(MemoryStore()),
+        handle_tool_errors=None,
+    )
+    report = await AgentHost(GraphRunner(graph), stagger=FAST).run(inputs(1))
+    (agent,) = report.agents
+    assert agent.status == "failed" and agent.error.startswith("RuntimeError: ")
+    assert expected in agent.error
 
 
 def points(reader, name: str) -> list:

@@ -398,7 +398,8 @@ class ToolRuntime:
 		self, tool: McpTool, agent_id: str, call_id: str, args: dict[str, Any]
 	) -> Any:
 		"""Call an MCP tool through the tool service; a repeated key gets the
-		service's kept answer."""
+		service's kept answer. ``RuntimeError`` means the runtime is set up
+		wrong: no service client, or one not started."""
 		if self.service is None:
 			raise RuntimeError(
 				"MCP tools need a ToolRuntime with a tool service client"

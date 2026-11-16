@@ -83,9 +83,14 @@ def calls_then_answer(*calls: tuple[str, dict]) -> Callable[[list[BaseMessage]],
     return script
 
 
-def react_graph(model: Any, tools: list, saver: Any = None):
-    """model -> each tool call as its own task -> model, until no tool call."""
-    node = ToolNode(tools, handle_tool_errors=True)
+def react_graph(model: Any, tools: list, saver: Any = None, *, handle_tool_errors: Any = True):
+    """model -> each tool call as its own task -> model, until no tool call.
+    ``handle_tool_errors=None`` keeps ToolNode's default, which re-raises a
+    tool's own errors."""
+    if handle_tool_errors is None:
+        node = ToolNode(tools)
+    else:
+        node = ToolNode(tools, handle_tool_errors=handle_tool_errors)
 
     async def call_model(state: MessagesState):
         return {"messages": [await model.ainvoke(state["messages"])]}

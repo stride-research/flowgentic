@@ -12,7 +12,9 @@ and the tool returns the task's result. The user's function runs once, in a
 RHAPSODY worker.
 
 A failed, refused or lost task or service call reaches the model as the
-tool's error, so the agent can read it and decide what to do.
+tool's error, so the agent can read it and decide what to do. A runtime set
+up wrong, without the session or the started service client a tool needs,
+raises ``RuntimeError`` and fails the agent.
 """
 
 from __future__ import annotations
@@ -138,6 +140,10 @@ def _mcp_tool(runtime: ToolRuntime, tool: McpTool) -> BaseTool:
 		with _agents.activity(AgentState.TOOL_CALL):
 			try:
 				value = await runtime.call_service(tool, agent, call_id, kwargs)
+			except RuntimeError:
+				# Set up wrong: no service client, or one not started. As with
+				# a task tool, the agent fails rather than tell its model.
+				raise
 			except Exception as exc:  # the model reads the failure
 				raise ToolException(
 					f"{tool.name} failed: {type(exc).__name__}: {exc}"[:500]
