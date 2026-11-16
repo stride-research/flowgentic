@@ -8,7 +8,14 @@ import pytest
 from mcp_fakes import FakeServer
 from mcp import MCPError
 
-from flowgentic.tools.mcp import Backoff, McpConnectionLost, McpPoolClosed, McpUnavailable, SupervisedMcpPool
+from flowgentic.tools.mcp import (
+    Backoff,
+    McpCallTimeout,
+    McpConnectionLost,
+    McpPoolClosed,
+    McpUnavailable,
+    SupervisedMcpPool,
+)
 
 
 FAST = Backoff(initial=0.01, factor=2.0, maximum=0.05, jitter=0.0)
@@ -286,3 +293,57 @@ async def test_cancelled_closer_does_not_strand_the_pool():
     with pytest.raises(McpPoolClosed):
         await call
     assert not srv.live()
+
+
+async def test_errors_say_whether_the_call_may_have_run():
+    async def error(task):
+        try:
+            await task
+        except BaseException as exc:
+            return type(exc), exc.may_have_run
+        raise AssertionError("the call did not fail")
+
+    srv = FakeServer()
+    pool = SupervisedMcpPool(srv.connect, clients=1, per_client=1, backoff=FAST, resends=0)
+    await pool.start()
+    # A timeout: on the client, or still in the queue behind it.
+    taken = asyncio.create_task(pool.call("hang", {}, timeout=0.2))
+    waiting = asyncio.create_task(pool.call("echo", {}, timeout=0.1))
+    assert await error(waiting) == (McpCallTimeout, False)
+    assert await error(taken) == (McpCallTimeout, True)
+    # A lost connection.
+    assert await error(asyncio.create_task(pool.call("break", {}))) == (McpConnectionLost, True)
+    # A cancelled caller.
+    await until(lambda: pool.stats()["connected"] == 1)
+    taken = asyncio.create_task(pool.call("hang", {}))
+    await until(lambda: srv.active == 1)
+    waiting = asyncio.create_task(pool.call("echo", {}))
+    await asyncio.sleep(0.01)
+    taken.cancel()
+    waiting.cancel()
+    assert await error(taken) == (asyncio.CancelledError, True)
+    assert await error(waiting) == (asyncio.CancelledError, False)
+    await until(lambda: srv.active == 0)
+    # Closing: in flight, and queued.
+    taken = asyncio.create_task(pool.call("hang", {}))
+    await until(lambda: srv.active == 1)
+    waiting = asyncio.create_task(pool.call("echo", {}))
+    await asyncio.sleep(0.01)
+    await pool.close()
+    assert await error(taken) == (McpPoolClosed, True)
+    assert await error(waiting) == (McpPoolClosed, False)
+    with pytest.raises(McpPoolClosed) as refused:
+        await pool.call("echo", {})
+    assert not refused.value.may_have_run
+
+
+async def test_fails_queued_calls_as_never_run_when_unavailable():
+    srv = FakeServer(down=True)
+    pool = SupervisedMcpPool(srv.connect, clients=1, backoff=FAST, unavailable_after=0.1)
+    await pool.start(wait=0)
+    with pytest.raises(McpUnavailable) as queued:
+        await pool.call("echo", {})
+    with pytest.raises(McpUnavailable) as refused:
+        await pool.call("echo", {})
+    assert not queued.value.may_have_run and not refused.value.may_have_run
+    await pool.close()

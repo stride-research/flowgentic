@@ -26,6 +26,10 @@ predate this changelog, so their changes are not listed here.
   for many agent processes over queues, and answers a repeated call once. Its
   MCP client, `flowgentic.tools.mcp.SupervisedMcpPool`, keeps a failed
   connection from cancelling other calls. The pool needs the new `mcp` extra.
+  Calls are not resent by default: a call that lost its connection is sent
+  again only when the caller passes `idempotent=True`, as a lookup can. A
+  failure that left the call safe to repeat is not kept, so asking again with
+  the same uid calls the tool again.
 
 ### Changed
 

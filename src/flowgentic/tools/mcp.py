@@ -33,6 +33,10 @@ What the pool guarantees:
 A call that fails with `McpConnectionLost` may or may not have run on the server. It is sent again
 only when the caller says the tool is safe to repeat (`idempotent=True`), at most `resends` times.
 
+Every error the pool raises for a call says whether the call may have reached a server:
+`may_have_run` is True once a client has taken the call, and False when it failed in the queue or
+was refused at once. A caller that keeps outcomes can then retry what never ran.
+
 With an SDK that contains transport errors per request (the fix proposed for python-sdk#3522), a
 dropped connection reaches the pool as `MCPError(CONNECTION_CLOSED)` on that call alone; the pool
 treats it the same way, and restarts a client after `max_losses` such losses in a row.
@@ -67,6 +71,7 @@ import anyio  # the MCP SDK's own dependency
 __all__ = [
 	"Backoff",
 	"McpCallError",
+	"McpCallTimeout",
 	"McpConnectionLost",
 	"McpPoolClosed",
 	"McpUnavailable",
@@ -77,7 +82,14 @@ log = logging.getLogger(__name__)
 
 
 class McpCallError(Exception):
-	"""A call the pool could not complete."""
+	"""A call the pool could not complete. `may_have_run` is True when a client had taken the
+	call, so the server may have run it; False when the call never left the pool."""
+
+	may_have_run: bool = False
+
+	def __init__(self, *args: object, may_have_run: bool = False) -> None:
+		super().__init__(*args)
+		self.may_have_run = may_have_run
 
 
 class McpConnectionLost(McpCallError):
@@ -90,6 +102,10 @@ class McpUnavailable(McpCallError):
 
 class McpPoolClosed(McpCallError):
 	"""The pool closed before the call finished."""
+
+
+class McpCallTimeout(McpCallError, TimeoutError):
+	"""The call's `timeout` ran out, in the queue or on a client."""
 
 
 @dataclass(frozen=True)
@@ -231,8 +247,10 @@ class SupervisedMcpPool:
 		self, wait: int = 1, timeout: float | None = None, *, all_servers: bool = False
 	) -> None:
 		"""Starts one supervisor per client, and waits until `wait` clients are connected (0: do
-		not wait). With `all_servers`, also wait for a connection to each server. If they are not connected within `timeout` (default `connect_timeout`), closes
-		the pool and raises `McpUnavailable`."""
+		not wait) and, with `all_servers`, until every server has a connected client. If that
+		takes more than `timeout` seconds (default `connect_timeout`), closes the pool and raises
+		`McpUnavailable`. Raises `McpPoolClosed` if the pool was closed before or during startup.
+		If the start is cancelled, closes the pool first."""
 		if self._closing:
 			raise McpPoolClosed("the MCP pool is closed")
 		if self._started:
@@ -270,8 +288,9 @@ class SupervisedMcpPool:
 	) -> Any:
 		"""Calls tool `name` and returns its result (a tool's own errors are results, with
 		`is_error` set). Raises `McpConnectionLost`, `McpUnavailable`, `McpPoolClosed`,
-		`TimeoutError` after `timeout` seconds (default `call_timeout`) from now, or the server's
-		`MCPError`."""
+		`McpCallTimeout` (a `TimeoutError`) after `timeout` seconds (default `call_timeout`) from
+		now, or the server's `MCPError`. The pool's own errors carry `may_have_run`. If the
+		caller is cancelled, the `CancelledError` carries `may_have_run` too."""
 		if not self._started or self._closing:
 			raise McpPoolClosed("the MCP pool is not running")
 		if self._unavailable():
@@ -295,9 +314,14 @@ class SupervisedMcpPool:
 				return await call.fut
 		except TimeoutError:
 			self.counts["timed_out"] += 1
-			raise TimeoutError(
-				f"MCP call {name!r} took more than {timeout} s"
+			raise McpCallTimeout(
+				f"MCP call {name!r} took more than {timeout} s",
+				may_have_run=call.client != -1,
 			) from None
+		except asyncio.CancelledError as exc:
+			# For whoever cancelled the caller: had a client taken the call?
+			exc.may_have_run = call.client != -1  # type: ignore[attr-defined]
+			raise
 
 	async def close(self, drain: float = 0.0, timeout: float = 10.0) -> None:
 		"""Stops intake; lets queued and in-flight calls finish for up to `drain` seconds; fails
@@ -319,7 +343,7 @@ class SupervisedMcpPool:
 				and loop.time() < end
 			):
 				await asyncio.sleep(0.01)
-		self._fail_queued(McpPoolClosed("the MCP pool closed"), "closed")
+		self._fail_queued(McpPoolClosed, "the MCP pool closed", "closed")
 		if self._unavailable_timer is not None:
 			self._unavailable_timer.cancel()
 		for task in self._supervisors:
@@ -493,7 +517,10 @@ class SupervisedMcpPool:
 		if closing:
 			self.counts["closed"] += 1
 			call.fut.set_exception(
-				McpPoolClosed("the MCP pool closed while the call was in flight")
+				McpPoolClosed(
+					"the MCP pool closed while the call was in flight",
+					may_have_run=True,
+				)
 			)
 		elif call.resends > 0 and self._loop.time() < call.deadline:
 			call.resends -= 1
@@ -503,16 +530,18 @@ class SupervisedMcpPool:
 			self.counts["connection_lost"] += 1
 			call.fut.set_exception(
 				McpConnectionLost(
-					f"MCP client {call.client}'s connection failed while {call.name!r} was in flight"
+					f"MCP client {call.client}'s connection failed while {call.name!r} was in flight",
+					may_have_run=True,
 				)
 			)
 
-	def _fail_queued(self, exc: McpCallError, count: str) -> None:
+	def _fail_queued(self, error: type[McpCallError], message: str, count: str) -> None:
 		while not self._queue.empty():
 			call = self._queue.get_nowait()
 			if not call.fut.done():
 				self.counts[count] += 1
-				call.fut.set_exception(exc)
+				# A queued call that was resent had run on a client before.
+				call.fut.set_exception(error(message, may_have_run=call.client != -1))
 
 	def _up(self, conn: _Conn, attempt: int) -> None:
 		self._conns[conn.index] = conn
@@ -553,9 +582,8 @@ class SupervisedMcpPool:
 		self._unavailable_timer = None
 		if self._unavailable() and not self._closing:
 			self._fail_queued(
-				McpUnavailable(
-					f"no MCP client connected to {self.server} for {self.unavailable_after} s: {self.last_error()}"
-				),
+				McpUnavailable,
+				f"no MCP client connected to {self.server} for {self.unavailable_after} s: {self.last_error()}",
 				"unavailable",
 			)
 

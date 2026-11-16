@@ -5,6 +5,7 @@ import asyncio
 import pickle
 import queue
 import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -136,7 +137,7 @@ async def test_client_stop_settles_unanswered_calls():
     client.stop()
     with pytest.raises(ToolServiceError, match="stopped"):
         await asyncio.wait_for(task, 1)
-    with pytest.raises(RuntimeError, match="running"):
+    with pytest.raises(ToolServiceError, match="tool service stopped"):
         await client.call("again", "tool", {})
     assert client.stats()["unanswered"] == 0
 
@@ -193,10 +194,16 @@ async def test_real_sdk_result_through_supervised_service():
     from flowgentic.tools.mcp import SupervisedMcpPool
 
     mcp = MCPServer("local")
+    failed = []
 
     @mcp.tool()
     def echo(value: str) -> str:
         return value
+
+    @mcp.tool()
+    def fail(key: str) -> str:
+        failed.append(key)
+        raise ValueError(f"no such key: {key}")
 
     pool = SupervisedMcpPool(lambda: Client(mcp), clients=1, per_client=1)
     requests, replies = queue.Queue(), queue.Queue()
@@ -206,10 +213,15 @@ async def test_real_sdk_result_through_supervised_service():
     try:
         good, bad = await asyncio.wait_for(asyncio.gather(
             client.call("ok", "echo", {"value": "hello"}),
-            client.call("bad", "echo", {"value": lambda: None}),
+            client.call("bad", "fail", {"key": "x"}),
             return_exceptions=True,
         ), 5)
-        assert good == "hello" and isinstance(bad, ToolServiceError)
+        assert good == "hello"
+        assert isinstance(bad, ToolServiceError) and "fail" in str(bad)
+        # The tool's own error is final: asking again replays it.
+        with pytest.raises(ToolServiceError, match="fail"):
+            await asyncio.wait_for(client.call("bad", "fail", {"key": "x"}), 5)
+        assert failed == ["x"]
     finally:
         requests.put(None)
         await asyncio.wait_for(service, 2)
@@ -257,3 +269,140 @@ async def test_answer_store_failure_never_reissues_an_uncertain_call():
         await asyncio.gather(*service._tasks)
         service.flush()
     assert len(pool.calls) == 1 and [r[1] for r in replies] == [False, True, True]
+
+
+async def until(cond, timeout=2.0):
+    end = time.monotonic() + timeout
+    while not cond():
+        assert time.monotonic() < end, "condition not met in time"
+        await asyncio.sleep(0.005)
+
+
+async def ask(service, uid, tool, args, idempotent=False):
+    """One request straight to a ToolService; its answers as (ok, payload)."""
+    replies = []
+    service.out = lambda src, items: replies.extend(items)
+    service.on_requests([(uid, tool, args, 0, 0, idempotent)], 0)
+    await asyncio.gather(*service._tasks)
+    service.flush()
+    return [(r[1], r[2]) for r in replies]
+
+
+@pytest.mark.parametrize("store", ["memory", "shelf"])
+async def test_a_call_that_never_ran_is_not_kept(store, tmp_path):
+    import shelve
+    from flowgentic.tools.mcp import McpUnavailable
+    from flowgentic.tools.service import ToolService
+
+    class Pool(FakePool):
+        async def call(self, tool, args, **kw):
+            if not self.calls:
+                self.calls.append((tool, args))
+                raise McpUnavailable("no MCP client connected for 10 s")
+            return await super().call(tool, args, **kw)
+
+    pool = Pool()
+    answers = shelve.open(str(tmp_path / "answers")) if store == "shelf" else None
+    service = ToolService(pool, None, answer_store=answers)
+    try:
+        assert await ask(service, "a", "lookup", {"key": 1}) == [
+            (False, "McpUnavailable: no MCP client connected for 10 s")
+        ]
+        assert not service.calls and (answers is None or "a" not in answers)
+        assert await ask(service, "a", "lookup", {"key": 1}) == [(True, {"echo": 1})]
+        assert await ask(service, "a", "lookup", {"key": 1}) == [(True, {"echo": 1})]
+        assert len(pool.calls) == 2 and service.stats()["retryable"] == 1
+    finally:
+        if answers is not None:
+            answers.close()
+    if store == "shelf":
+        with shelve.open(str(tmp_path / "answers")) as answers:
+            assert dict(answers) == {"a": (True, {"echo": 1})}
+
+
+@pytest.mark.parametrize("idempotent, runs", [(False, 1), (True, 2)])
+async def test_a_call_that_may_have_run_is_kept_unless_idempotent(idempotent, runs):
+    from mcp_fakes import FakeServer
+    from flowgentic.tools.mcp import Backoff, SupervisedMcpPool
+    from flowgentic.tools.service import ToolService
+
+    srv = FakeServer()
+    fast = Backoff(initial=0.01, factor=2.0, maximum=0.05, jitter=0.0)
+    async with SupervisedMcpPool(srv.connect, clients=1, per_client=1, backoff=fast, resends=0) as pool:
+        service = ToolService(pool, None)
+        for _ in range(2):
+            [(ok, payload)] = await ask(service, "w", "break", {}, idempotent)
+            assert not ok and payload.startswith("McpConnectionLost")
+        assert sum(c.names.count("break") for c in srv.conns) == runs
+        assert ("w" in service.calls) is not idempotent
+
+
+async def test_shutdown_keeps_no_call_that_never_ran():
+    from mcp_fakes import FakeServer
+    from flowgentic.tools.mcp import SupervisedMcpPool
+
+    srv = FakeServer()
+    pool = SupervisedMcpPool(srv.connect, clients=1, per_client=2)
+    store = {}
+    requests, replies = queue.Queue(), queue.Queue()
+    service = asyncio.create_task(
+        serve(requests, [replies], pool, drain_timeout=0.1, answer_store=store)
+    )
+    await until(lambda: pool.stats()["connected"] == 1)
+    client = ToolServiceClient(requests, replies, 0)
+    client.start()
+    calls = [  # the first two run on the client's two slots; the rest wait in the queue
+        asyncio.create_task(client.call("running", "hang", {})),
+        asyncio.create_task(client.call("running-idempotent", "hang", {}, idempotent=True)),
+        asyncio.create_task(client.call("queued", "hang", {})),
+        asyncio.create_task(client.call("queued-idempotent", "hang", {}, idempotent=True)),
+    ]
+    await until(lambda: srv.active == 2)
+    requests.put(pickle.dumps(None))
+    stats = await asyncio.wait_for(service, 5)
+    out = await asyncio.wait_for(asyncio.gather(*calls, return_exceptions=True), 2)
+    assert all(isinstance(r, ToolServiceError) for r in out)
+    assert ["in flight" in str(r) for r in out] == [True, True, False, False]
+    assert list(store) == ["running"]  # the only one that may have run and must not run twice
+    assert stats["retryable"] == 3
+
+
+class _Unloadable:
+    """Pickles, but cannot be unpickled: like a class only the agent process can import."""
+
+    def __reduce__(self):
+        return (getattr, (int, "no_such_attribute"))
+
+
+async def test_a_message_that_cannot_be_unpickled_is_skipped():
+    requests, replies = queue.Queue(), queue.Queue()
+    service = asyncio.create_task(serve(requests, [replies], FakePool()))
+    client = ToolServiceClient(requests, replies, 0)
+    client.start()
+    try:
+        requests.put(pickle.dumps([("lost", "lookup", {"x": _Unloadable()}, 0, 0)]))
+        assert await asyncio.wait_for(client.call("next", "lookup", {"key": 1}), 2) == {"echo": 1}
+    finally:
+        requests.put(pickle.dumps(None))
+        stats = await asyncio.wait_for(service, 2)
+        client.stop()
+    assert stats["skipped_messages"] == 1 and stats["unique"] == 1
+
+
+async def test_a_failed_reader_stops_the_service_and_settles_callers():
+    class Pool(FakePool):
+        async def call(self, tool, args, **kw):
+            await asyncio.sleep(3600)
+
+    requests, replies = queue.Queue(), queue.Queue()
+    service = asyncio.create_task(serve(requests, [replies], Pool(), drain_timeout=0.1))
+    client = ToolServiceClient(requests, replies, 0)
+    client.start()
+    waiting = asyncio.create_task(client.call("waiting", "lookup", {}))
+    await until(lambda: requests.empty())
+    await asyncio.sleep(0.05)
+    requests.put(pickle.dumps(5))  # unpickles, but is not a list of requests
+    stats = await asyncio.wait_for(service, 2)
+    with pytest.raises(ToolServiceError, match="stopped"):
+        await asyncio.wait_for(waiting, 2)
+    assert stats["failed"] == {"lookup": 1}

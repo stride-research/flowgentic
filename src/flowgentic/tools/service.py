@@ -15,12 +15,19 @@ In agent process ``i``::
 
     client = ToolServiceClient(requests, replies[i], index=i)
     client.start()  # on the agent process's event loop
-    result = await client.call(uid, "lookup", {"key": "x"})
+    result = await client.call(uid, "lookup", {"key": "x"}, idempotent=True)
+
+``idempotent=True`` says the tool can safely run twice, as a lookup can: a
+call that lost its connection is sent again, and a failure that left its
+outcome unknown is not kept. Leave it out for tools with side effects.
 
 A repeated uid is answered without calling again: while the first call runs,
 the new asker joins its waiters; once it has ended, the asker gets the kept
-answer at once. The service keeps every answer until it stops. A ``None`` on
-the request queue stops the service.
+answer at once. The service keeps each final answer until it stops, in memory
+or in an ``answer_store``: a result, or a failure after which a call that is
+not idempotent may have run. Any other failure, such as a call that never left
+the queue, reaches its waiters but is not kept, so asking again calls again. A
+``None`` on the request queue stops the service.
 
 Requests and answers travel in batches of up to 512, pickled. Pickle is safe
 here only because both ends are processes of the same job; the queues must not
@@ -97,8 +104,10 @@ class _QueueReader(threading.Thread):
 	"""Blocks on a queue and hands what arrived to the event loop, in batches.
 
 	Each message is a pickled list of items, or ``None``, which stops the
-	reader after ``on_stop`` runs on the loop. ``stop()`` stops it within a
-	second.
+	reader after ``on_stop`` runs on the loop. A message that cannot be
+	unpickled is logged and skipped. If the reader fails anyway, ``on_stop``
+	still runs, so that the loop's side stops and settles its callers.
+	``stop()`` stops it within a second, without ``on_stop``.
 	"""
 
 	def __init__(
@@ -117,12 +126,26 @@ class _QueueReader(threading.Thread):
 		self.on_stop = on_stop
 		self.max_messages = max_messages
 		self.passes = 0
+		self.skipped = 0  # messages that could not be unpickled
 		self._halt = threading.Event()
 
 	def stop(self) -> None:
 		self._halt.set()
 
 	def run(self) -> None:
+		ended = False  # by a None on the queue, or by stop()
+		try:
+			ended = self._read()
+		except Exception:
+			log.exception("%s: the reader failed", self.name)
+		finally:
+			if not ended and self.on_stop is not None:
+				try:
+					self.loop.call_soon_threadsafe(self.on_stop)
+				except RuntimeError:  # the loop is already closed
+					pass
+
+	def _read(self) -> bool:
 		while not self._halt.is_set():
 			try:
 				raw = self.q.get(timeout=1.0)
@@ -133,7 +156,7 @@ class _QueueReader(threading.Thread):
 				time.sleep(0.1)
 				continue
 			if self._halt.is_set():
-				return
+				return True
 			raws = [raw]
 			while len(raws) < self.max_messages:
 				try:
@@ -143,19 +166,29 @@ class _QueueReader(threading.Thread):
 			items: list = []
 			stop = False
 			for r in raws:
-				message = None if r is None else _unpack(r)
+				try:
+					message = None if r is None else _unpack(r)
+				except Exception as exc:
+					# Its callers get no answer; everyone else's requests go on.
+					self.skipped += 1
+					log.error(
+						"%s: skipped a message that cannot be unpickled: %r",
+						self.name,
+						exc,
+					)
+					continue
 				if message is None:
 					stop = True
 					break
-				else:
-					items.extend(message)
+				items.extend(message)
 			self.passes += 1
 			if items:
 				self.loop.call_soon_threadsafe(self.handler, items, time.time())
 			if stop:
 				if self.on_stop is not None:
 					self.loop.call_soon_threadsafe(self.on_stop)
-				return
+				return True
+		return True
 
 
 class _Call:
@@ -194,6 +227,7 @@ class ToolService:
 		self.received = 0
 		self.repeats_running = 0
 		self.repeats_done = 0
+		self.retryable = 0  # failures answered but not kept
 		self.ok: Counter[str] = Counter()
 		self.failed: Counter[str] = Counter()
 		self.failures: list[str] = []
@@ -235,15 +269,21 @@ class ToolService:
 		self, uid: str, call: _Call, tool: str, args: dict, idempotent: bool
 	) -> None:
 		t_call = time.time()
+		# Final: the server answered, or a call that must not run twice may have
+		# run. Any other failure reaches this attempt's waiters but is not kept,
+		# so that asking again calls again.
+		final = True
 		try:
 			result = await self.pool.call(
 				tool, args, timeout=self.call_timeout, idempotent=idempotent
 			)
 			ok, payload = mcp_data(result)
-		except asyncio.CancelledError:
+		except asyncio.CancelledError as exc:
 			ok, payload = False, "tool service stopped during the call"
+			final = not idempotent and getattr(exc, "may_have_run", True)
 		except Exception as exc:  # reported to the agent
 			ok, payload = False, f"{type(exc).__name__}: {exc}"[:500]
+			final = not idempotent and getattr(exc, "may_have_run", True)
 		t_done = time.time()
 		self.inflight -= 1
 		(self.ok if ok else self.failed)[tool] += 1
@@ -254,14 +294,19 @@ class ToolService:
 				self.listener(uid, tool, call.t_recv, t_call, t_done, ok)
 			except Exception:
 				log.exception("tool service listener failed for %s", uid)
-		self.calls[uid] = (ok, payload)
-		if self.answer_store is not None:
+		if not final:
+			self.retryable += 1
+			del self.calls[uid]
+		elif self.answer_store is None:
+			self.calls[uid] = (ok, payload)
+		else:
 			try:
 				self.answer_store[uid] = (ok, payload)
 			except Exception:
 				log.exception(
 					"could not save answer for %s; retaining it in memory", uid
 				)
+				self.calls[uid] = (ok, payload)
 			else:
 				del self.calls[uid]
 		answer = (uid, ok, payload, (call.t_recv, t_call, t_done))
@@ -287,12 +332,14 @@ class ToolService:
 		self.flush()
 
 	def stats(self) -> dict:
-		"""Requests received, distinct calls, repeats, and outcomes per tool."""
+		"""Requests received, calls made, repeats, failures not kept, and
+		outcomes per tool."""
 		return {
 			"received": self.received,
 			"unique": self.unique,
 			"repeats_running": self.repeats_running,
 			"repeats_done": self.repeats_done,
+			"retryable": self.retryable,
 			"ok": dict(self.ok),
 			"failed": dict(self.failed),
 			"failures": self.failures,
@@ -367,6 +414,7 @@ async def serve(
 		stats.update(
 			reply_messages=messages[0],
 			reader_passes=reader.passes,
+			skipped_messages=reader.skipped,
 			pool=pool.stats(),
 			up_s=round(time.time() - t_ready, 1),
 		)
@@ -377,9 +425,11 @@ class ToolServiceClient:
 	"""An agent process's side of the tool service.
 
 	``await call(uid, tool, args)`` sends a request and returns the tool's
-	result, or raises ``ToolServiceError``. Requests made in one pass of the
-	event loop go out together. A second call with a uid still in flight shares
-	the first call's answer. ``listener(uid, total_s, at_service_s)`` is called
+	result, or raises ``ToolServiceError``, also once the service has stopped.
+	Pass ``idempotent=True`` only for a tool that can safely run twice, such as
+	a lookup. Requests made in one pass of the event loop go out together. A
+	second call with a uid still in flight shares the first call's answer.
+	``listener(uid, total_s, at_service_s)`` is called
 	once per answer: the time from asking to the answer, and of that, the time
 	the service held the call.
 	"""
@@ -401,6 +451,7 @@ class ToolServiceClient:
 		self._flush_scheduled = False
 		self._reader: _QueueReader | None = None
 		self._loop: asyncio.AbstractEventLoop | None = None
+		self._stopped = False
 		self._asked: dict[str, float] = {}
 		self.sent = 0
 		self.answered = 0
@@ -422,9 +473,11 @@ class ToolServiceClient:
 		self._reader.start()
 
 	def stop(self) -> None:
-		"""Stop reading answers, within a second."""
+		"""Stop reading answers, within a second, and fail the calls still
+		waiting. It runs on its own once the service has stopped."""
 		if self._reader is not None:
 			self._reader.stop()
+		self._stopped = True
 		self._loop = None
 		self.outbox.clear()
 		for future in self.pending.values():
@@ -436,8 +489,10 @@ class ToolServiceClient:
 	async def call(
 		self, uid: str, tool: str, args: dict, *, idempotent: bool = False
 	) -> Any:
+		if self._stopped:
+			raise ToolServiceError("tool service stopped")
 		if self._loop is None:
-			raise RuntimeError("ToolServiceClient must be started and running")
+			raise RuntimeError("ToolServiceClient.start() was not called")
 		future = self.pending.get(uid)
 		if future is None:
 			future = self.pending[uid] = self._loop.create_future()
