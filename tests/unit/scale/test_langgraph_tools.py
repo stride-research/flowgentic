@@ -3,6 +3,7 @@ repeat safety, failures, order policies, telemetry, and the checkpoints written.
 
 import asyncio
 import gc
+import traceback
 import weakref
 
 import pytest
@@ -136,18 +137,28 @@ async def test_a_kept_task_keeps_nothing_of_the_run_that_asked_for_it():
     assert runtime.stats()["retained"] == 1
 
 
-async def test_after_a_run_nothing_keeps_the_agents_messages():
+@pytest.mark.parametrize("suspend", [False, True], ids=["inline", "suspended"])
+@pytest.mark.parametrize("fn", [simulate, broken], ids=["ok", "failed"])
+async def test_after_a_run_nothing_keeps_the_agents_messages(fn, suspend):
+    """The runtime keeps each ended task, and a failed task keeps its exception.
+    Raised in the tool, that exception would keep the tool's frames, and on
+    CPython 3.12 those of the LangGraph run around it, with the agent's messages."""
     session = await thread_session()
     runtime = ToolRuntime(session)
     graph = react_graph(
-        Scripted(script=sim_then_answer(note=False)),
-        bind_tools(runtime, [task_tool(simulate)]),
+        Scripted(script=sim_then_answer(sim=fn.__name__, note=False)),
+        bind_tools(runtime, [task_tool(fn, suspend=suspend)]),
         KeyValueSaver(MemoryStore()),
     )
+    runner = GraphRunner(graph)
+    agent = Agent("agent-0", {"messages": []})
     gc.collect()
     gc.disable()
     try:
-        step = await GraphRunner(graph).start(Agent("agent-0", {"messages": []}))
+        step = await runner.start(agent)
+        if suspend:
+            await asyncio.wait([runtime._jobs[key] for _, key in step.waits])
+            step = await runner.resume(agent, {rid: {"flowgentic_done": key} for rid, key in step.waits})
         await session.close()
         messages = step.output["messages"]
         assert [m.type for m in messages] == ["ai", "tool", "ai"]
@@ -156,6 +167,12 @@ async def test_after_a_run_nothing_keeps_the_agents_messages():
         assert [m() for m in kept] == [None, None, None]
     finally:
         gc.enable()
+    job = runtime._jobs["agent-0/call-0"]
+    error = job.exception()
+    assert (error is None) == (fn is simulate)
+    if error is not None:  # no frame of the tool that waited on the task
+        frames = [f.f_code.co_filename for f, _ in traceback.walk_tb(error.__traceback__)]
+        assert not [f for f in frames if f.endswith(("langgraph/tools.py", "langchain_core/tools/base.py"))]
 
 
 async def test_without_suspension_the_agent_waits_in_memory():
@@ -269,6 +286,24 @@ async def test_an_order_policy_decides_when_tasks_are_submitted():
     await session.close()
     assert order.admitted == order.ended == ["a/c1"]  # done only for admitted tasks
     assert [(r.info.key, r.outcome) for r in records] == [("a/c2", "cancelled"), ("a/c1", "ok")]
+
+
+async def test_cancelling_a_tool_that_waits_cancels_its_task():
+    """The tool waits for its task without raising the task's exception, and
+    cancelling the tool still cancels the task, as awaiting the task would."""
+    session = await thread_session()
+    runtime = ToolRuntime(session, order=Held())
+    (tool_,) = bind_tools(runtime, [task_tool(simulate)])
+    call = {"name": "simulate", "args": {"x": 1.0}, "id": "c1", "type": "tool_call"}
+    waiting = asyncio.create_task(tool_.ainvoke(call, {"configurable": {"thread_id": "a"}}))
+    await asyncio.sleep(0.05)
+    job = runtime._jobs["a/c1"]
+    waiting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiting
+    await asyncio.wait([job])
+    await session.close()
+    assert job.cancelled() and RUNS == {}
 
 
 def write_result(x: float, key: str, scale: int) -> dict:

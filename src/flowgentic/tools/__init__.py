@@ -274,7 +274,11 @@ class ToolRuntime:
 		self, tool: TaskTool, agent_id: str, call_id: str, args: dict[str, Any]
 	) -> asyncio.Future:
 		"""The future of the task for this call: a new task, or the one already
-		submitted under the same key."""
+		submitted under the same key.
+
+		A failed task keeps its exception for as long as it is kept. Read it
+		with ``exception()`` rather than raise it in a framework's code, whose
+		frames its traceback would then keep."""
 		key = self.key(agent_id, call_id)
 		job = self._jobs.get(key)
 		if job is not None:

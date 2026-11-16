@@ -17,6 +17,7 @@ tool's error, so the agent can read it and decide what to do.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Iterable
 from typing import Annotated, Any
@@ -80,6 +81,23 @@ def _output(value: Any) -> str:
 	return value if isinstance(value, str) else json.dumps(value, default=str)
 
 
+async def _settled(job: asyncio.Future) -> None:
+	"""Wait for a task to end without raising its exception here.
+
+	The runtime keeps an ended task, and RHAPSODY's session its failure, so the
+	task's exception lives on. Raised here, it would keep this tool's frames in
+	its traceback, and on CPython 3.12 those of the LangGraph run that called
+	the tool, with the agent's whole state. Cancelling the wait cancels the
+	task, as awaiting it would."""
+	if job.done():
+		return
+	try:
+		await asyncio.wait((job,))
+	except asyncio.CancelledError:
+		job.cancel()
+		raise
+
+
 def _task_tool(runtime: ToolRuntime, tool: TaskTool) -> BaseTool:
 	async def run(**kwargs: Any) -> str:
 		call_id = kwargs.pop(_CALL_ID)
@@ -92,12 +110,13 @@ def _task_tool(runtime: ToolRuntime, tool: TaskTool) -> BaseTool:
 				record_interrupt(exc)  # freed when the run stops
 				raise
 		with _agents.activity(AgentState.TOOL_WAIT):
-			try:
-				value = await job
-			except Exception as exc:  # the model reads the failure
-				raise ToolException(
-					f"{tool.name} failed: {type(exc).__name__}: {exc}"[:500]
-				) from exc
+			await _settled(job)
+		error = None if job.cancelled() else job.exception()
+		if error is not None:  # the model reads the failure
+			raise ToolException(
+				f"{tool.name} failed: {type(error).__name__}: {error}"[:500]
+			) from error
+		value = job.result()
 		if tool.output is not None:
 			value = tool.output(value)
 		return _output(value)
