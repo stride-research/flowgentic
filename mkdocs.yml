@@ -21,6 +21,7 @@ nav:
       - Checkpointer: features/checkpointer.md
       - Tool placement: features/tools.md
       - Tool service: features/tool-service.md
+      - Fleet: features/fleet.md
       - Telemetry: features/telemetry.md
       - Logging: features/logging.md
   - Design patterns:

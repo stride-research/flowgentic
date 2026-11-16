@@ -13,6 +13,8 @@ GenAI utilities also import.
 """
 
 import os
+import sys
+from collections.abc import Callable
 from importlib.metadata import version
 
 from opentelemetry import _logs, context, metrics, propagate, trace
@@ -147,6 +149,62 @@ TOOL_DURATION = meter.create_histogram(
 	"flowgentic.tool.duration",
 	unit="s",
 	description="Time from a tool call's submission to its result",
+)
+
+
+# --- The fleet's metrics ----------------------------------------------------------
+#
+# Admission and the replicas' load. The loads are read from the process's fleets
+# when the SDK collects, and only if ``flowgentic.fleet`` was imported.
+
+FLEET_NAME = "flowgentic.fleet.name"
+FLEET_REPLICA = "flowgentic.fleet.replica"
+
+ADMISSION_WAIT = meter.create_histogram(
+	"flowgentic.fleet.admission.wait",
+	unit="s",
+	description="Time a model request waited for its replica's admission",
+)
+MODEL_SERVICE = meter.create_histogram(
+	"flowgentic.fleet.request.duration",
+	unit="s",
+	description="Time a model request spent at its replica, after admission",
+)
+
+
+def _observe_fleet(kind: str) -> Callable[[object], list]:
+	"""A callback that reads one kind of each replica's load: ``tokens``,
+	``requests`` or ``waiting``."""
+
+	def observe(options: object) -> list:
+		fleet = sys.modules.get("flowgentic.fleet")
+		if fleet is None:
+			return []
+		return [
+			metrics.Observation(value, {FLEET_NAME: name, FLEET_REPLICA: replica})
+			for (name, replica), value in fleet._loads(kind).items()
+		]
+
+	return observe
+
+
+meter.create_observable_gauge(
+	"flowgentic.fleet.tokens.active",
+	callbacks=[_observe_fleet("tokens")],
+	unit="{token}",
+	description="Tokens of live context in flight at each replica, as admitted",
+)
+meter.create_observable_gauge(
+	"flowgentic.fleet.requests.active",
+	callbacks=[_observe_fleet("requests")],
+	unit="{request}",
+	description="Requests in flight at each replica",
+)
+meter.create_observable_gauge(
+	"flowgentic.fleet.requests.waiting",
+	callbacks=[_observe_fleet("waiting")],
+	unit="{request}",
+	description="Requests waiting for each replica's admission",
 )
 
 

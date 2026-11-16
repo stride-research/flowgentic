@@ -109,6 +109,14 @@ def test_the_checkpointer_names_its_extras() -> None:
 	assert "install flowgentic[langgraph]" in result.stderr
 
 
+def test_the_fleet_needs_langchain_only() -> None:
+	result = run_without(ASYNCFLOW + MCP, "from flowgentic.fleet import Fleet")
+	assert result.returncode == 0, result.stderr
+	result = run_without(LANGGRAPH, "import flowgentic.fleet")
+	assert result.returncode != 0
+	assert "install flowgentic[langgraph]" in result.stderr.splitlines()[-1]
+
+
 @pytest.mark.parametrize(
 	"missing", ["langchain_core", "langchain_openai", "langchain_ollama"]
 )
@@ -173,6 +181,7 @@ def test_chat_provider_imports_without_asyncflow() -> None:
 		("flowgentic.langgraph", "langgraph.types"),
 		("flowgentic.langgraph", "langgraph.checkpoint.base"),
 		("flowgentic.utils", "langchain_core.language_models"),
+		("flowgentic.fleet", "langchain_core.messages"),
 		("flowgentic.tools.mcp", "mcp.client"),
 		("flowgentic.tools.mcp", "anyio"),
 	],
