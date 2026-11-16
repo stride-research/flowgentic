@@ -41,16 +41,18 @@ LANGGRAPH = [
 ]
 ASYNCFLOW = ["radical", "radical.asyncflow"]
 MCP = ["mcp", "mcp_types"]
+RHAPSODY = ["rhapsody"]
 
 
 def test_the_core_needs_no_extra() -> None:
-	"""Without LangGraph, LangChain or AsyncFlow, the core imports and works."""
+	"""Without any extra, the core imports and works."""
 	result = run_without(
-		LANGGRAPH + ASYNCFLOW + MCP,
+		LANGGRAPH + ASYNCFLOW + MCP + RHAPSODY,
 		"""
 		import flowgentic
 		from flowgentic.acceptance import accept
 		from flowgentic.store import MemoryStore, RadexStore
+		from flowgentic.tools import ToolRuntime, mcp_tool, task_tool
 		from flowgentic.tools.service import ToolServiceClient
 		flowgentic.configure_logging()
 		MemoryStore().put("k", 1)
@@ -121,6 +123,40 @@ def test_the_mcp_pool_names_its_extra() -> None:
 		result = run_without(blocked, "import flowgentic.tools.mcp")
 		assert result.returncode != 0
 		assert "install flowgentic[mcp]" in result.stderr.splitlines()[-1], blocked
+
+
+TASK = """
+import asyncio
+from flowgentic.tools import ToolRuntime, task_tool
+
+def double(x):
+	return 2 * x
+
+async def main():
+	await ToolRuntime(session=object()).submit(task_tool(double), "a", "c1", {"x": 1})
+
+asyncio.run(main())
+"""
+
+
+def test_task_tools_name_their_extra_when_they_run() -> None:
+	result = run_without(RHAPSODY, TASK)
+	assert result.returncode != 0
+	assert "install flowgentic[rhapsody]" in result.stderr.splitlines()[-1]
+	result = run_without(["rhapsody.api"], TASK)  # a broken install, not a missing one
+	assert result.stderr.splitlines()[-1] == "ModuleNotFoundError: No module named 'rhapsody.api'"
+
+
+def test_langgraph_tools_need_langgraph_only() -> None:
+	result = run_without(
+		ASYNCFLOW + MCP + RHAPSODY,
+		"""
+		from flowgentic.langgraph import bind_tools
+		from flowgentic.tools import ToolRuntime, task_tool
+		print("ok")
+		""",
+	)
+	assert result.returncode == 0, result.stderr
 
 
 def test_chat_provider_imports_without_asyncflow() -> None:

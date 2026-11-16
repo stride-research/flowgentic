@@ -3,8 +3,8 @@ revision = 5
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version >= '3.14' and sys_platform != 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'emscripten'",
     "python_full_version >= '3.11.5' and python_full_version < '3.12'",
     "python_full_version < '3.11.5'",
@@ -706,11 +706,14 @@ langgraph = [
 mcp = [
     { name = "mcp" },
 ]
+rhapsody = [
+    { name = "rhapsody-py" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "academy-py", marker = "extra == 'examples'", specifier = ">=1.0,<2" },
-    { name = "flowgentic", extras = ["examples", "mcp"], marker = "extra == 'dev'" },
+    { name = "flowgentic", extras = ["examples", "rhapsody", "mcp"], marker = "extra == 'dev'" },
     { name = "flowgentic", extras = ["langgraph", "asyncflow"], marker = "extra == 'examples'" },
     { name = "langchain", marker = "extra == 'langgraph'", specifier = ">=1.0,<2.0" },
     { name = "langchain-core", marker = "extra == 'langgraph'", specifier = ">=1.0,<2.0" },
@@ -737,10 +740,11 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "python-dotenv", marker = "extra == 'examples'", specifier = ">=1.0" },
     { name = "radical-asyncflow", marker = "extra == 'asyncflow'", specifier = ">=0.6,<0.7" },
-    { name = "rhapsody-py", extras = ["telemetry"], marker = "extra == 'examples'", specifier = ">=0.6,<0.7" },
+    { name = "rhapsody-py", marker = "extra == 'rhapsody'", specifier = ">=0.7,<0.8" },
+    { name = "rhapsody-py", extras = ["telemetry"], marker = "extra == 'examples'", specifier = ">=0.7,<0.8" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12.11" },
 ]
-provides-extras = ["langgraph", "asyncflow", "mcp", "examples", "dev"]
+provides-extras = ["langgraph", "asyncflow", "rhapsody", "mcp", "examples", "dev"]
 
 [[package]]
 name = "frozenlist"
@@ -1338,8 +1342,8 @@ version = "3.11.3"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version >= '3.14' and sys_platform != 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'emscripten'",
     "python_full_version >= '3.11.5' and python_full_version < '3.12'",
 ]
@@ -1848,8 +1852,8 @@ version = "2.5.5"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version >= '3.14' and sys_platform != 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'emscripten'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/4e/3a/8770c288c47f0b5c2a786d3c20e79f66fd245f2d42cd232d7cd5e00e83e5/numpy-2.5.5.tar.gz", hash = "sha256:5cddc243c75114ba845f01b1f87aca1572dbf7b6c2d88636ed3e1d2bccd7f1bf", size = 20873892, upload-time = "2026-11-15T21:32:28.607Z" }
@@ -2585,8 +2589,8 @@ version = "13.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version >= '3.14' and sys_platform != 'emscripten'",
+    "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform == 'emscripten'",
     "python_full_version >= '3.12' and python_full_version < '3.14' and sys_platform != 'emscripten'",
     "python_full_version >= '3.11.5' and python_full_version < '3.12'",
 ]
@@ -2923,16 +2927,16 @@ wheels = [
 
 [[package]]
 name = "rhapsody-py"
-version = "0.6.0"
+version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
     { name = "requests" },
     { name = "typeguard" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fa/a0/d7de33222083f5cd02ea1f2110cb6940661406c78a37ffeb33c48274adaa/rhapsody_py-0.6.0.tar.gz", hash = "sha256:d7c11032fd7d991a3c6873592e3ca725d73f977057fff428a9ed0a23e3e0fda7", size = 238393, upload-time = "2026-10-20T01:55:10.484Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2f/1c/9beff17fcea6420ef69bece7328c926930d7114eeb90f2525c83257a3ca7/rhapsody_py-0.7.0.tar.gz", hash = "sha256:0cbd9d475d824b71457ac8ec65ccde207919f4f6c211ea27cf0551f63ca1ece3", size = 276471, upload-time = "2026-11-10T01:14:36.319Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8c/d5/8256e848e68b7972083605a964fa9c3183e0f02c4a90cedbaff6103be980/rhapsody_py-0.6.0-py3-none-any.whl", hash = "sha256:51c3ee1e007b402a75803e5e79ceaded32797a1fb7932939d76f7b8570316672", size = 116405, upload-time = "2026-10-20T01:55:09.218Z" },
+    { url = "https://files.pythonhosted.org/packages/cb/21/7682588771f6721a2b30dda871bf95b92f8b9b61910023a4d98c2b0f497a/rhapsody_py-0.7.0-py3-none-any.whl", hash = "sha256:12849e0766832974d17fad3e0cc4155f6615a4cddb70014cb2fc9f59ccc0aa1c", size = 126725, upload-time = "2026-11-10T01:14:34.469Z" },
 ]
 
 [package.optional-dependencies]

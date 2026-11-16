@@ -21,6 +21,9 @@ from opentelemetry import _logs, context, metrics, propagate, trace
 GEN_AI_OPERATION_NAME = "gen_ai.operation.name"
 GEN_AI_AGENT_NAME = "gen_ai.agent.name"
 GEN_AI_AGENT_ID = "gen_ai.agent.id"
+GEN_AI_TOOL_NAME = "gen_ai.tool.name"
+GEN_AI_TOOL_CALL_ID = "gen_ai.tool.call.id"
+EXECUTE_TOOL = "execute_tool"
 GEN_AI_RESPONSE_ID = "gen_ai.response.id"
 INVOKE_AGENT = "invoke_agent"
 EVALUATION_RESULT = "gen_ai.evaluation.result"
@@ -129,6 +132,22 @@ def emit_suspend(agent_id: str, waits: int) -> None:
 	logger.emit(
 		event_name=SUSPEND, attributes={GEN_AI_AGENT_ID: agent_id, SUSPEND_WAITS: waits}
 	)
+
+
+# --- Tools' metrics ------------------------------------------------------------
+#
+# A task or service tool's call is an ``execute_tool`` span, as the GenAI
+# conventions name it. Where the call ran, and how it ended, are Flowgentic's:
+# the conventions have no names for them.
+
+TOOL_KIND = "flowgentic.tool.kind"
+TOOL_OUTCOME = "flowgentic.tool.outcome"
+
+TOOL_DURATION = meter.create_histogram(
+	"flowgentic.tool.duration",
+	unit="s",
+	description="Time from a tool call's submission to its result",
+)
 
 
 def content_on_spans() -> bool:
