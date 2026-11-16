@@ -17,6 +17,8 @@ which holds for a store inside one job's allocation.
 
 from __future__ import annotations
 
+import os
+
 # Values come from processes of the same job.
 import pickle  # nosec B403
 import threading
@@ -165,3 +167,14 @@ class RadexStore:
 			return self._client.get_tensor(self._in(key))
 		except self._missing as exc:
 			raise KeyError(key) from exc
+
+
+def _reset_radex_clients_after_fork() -> None:
+	# Dragon channels belong to the attaching process. The inherited lock
+	# can also have been held by a thread that did not survive the fork.
+	RadexStore._clients = {}
+	RadexStore._clients_lock = threading.Lock()
+
+
+if hasattr(os, "register_at_fork"):
+	os.register_at_fork(after_in_child=_reset_radex_clients_after_fork)

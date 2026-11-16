@@ -263,7 +263,8 @@ def test_namespaces_are_listed_and_deleted_with_the_thread():
 		(item.config["configurable"]["checkpoint_ns"], item.checkpoint["id"])
 		for item in saver.list({"configurable": {"thread_id": "t"}})
 	]
-	assert listed == [("", "c1"), ("child:1", "s1")]
+	assert listed == [("child:1", "s1"), ("", "c1")]
+	assert next(saver.list({"configurable": {"thread_id": "t"}}, limit=1)).checkpoint["id"] == "s1"
 	saver.delete_thread("t")
 	assert store.keys() == []
 
@@ -296,7 +297,7 @@ class CountingStore(MemoryStore):
 		return calls
 
 
-async def test_an_agent_that_suspends_costs_four_store_calls_per_suspension():
+async def test_an_agent_that_suspends_costs_six_store_calls_per_suspension():
 	"""Each store call is a round trip that blocks the event loop, and RaDEX's
 	client grows with each. A suspension writes the checkpoint and its pending
 	writes, and the resume reads both back; nothing is deleted."""
@@ -305,7 +306,7 @@ async def test_an_agent_that_suspends_costs_four_store_calls_per_suspension():
 	g = graph(KeyValueSaver(store), stop_inside=True)
 	await g.ainvoke({"messages": [("human", "hi")]}, config, durability="exit")
 	assert store.take() == {
-		"get": 1,
+		"get": 3,
 		"put": 2,
 	}  # no checkpoint yet; then the suspension
 	await g.ainvoke(Command(resume="done"), config, durability="exit")
@@ -315,4 +316,96 @@ async def test_an_agent_that_suspends_costs_four_store_calls_per_suspension():
 	}  # the resume's read; the final checkpoint
 	await g.ainvoke({"messages": [("human", "again")]}, config, durability="exit")
 	await g.ainvoke(Command(resume="done"), config, durability="exit")
-	assert store.take() == {"get": 4, "put": 3}  # the same, on a thread with history
+	assert store.take() == {"get": 6, "put": 3}  # the same, on a thread with history
+
+
+@pytest.mark.parametrize("keep_last", [1, 2])
+def test_reopened_savers_merge_writes_and_ignore_evicted_checkpoints(keep_last):
+	store = MemoryStore()
+	first = KeyValueSaver(store, keep_last=keep_last)
+	second = KeyValueSaver(store, keep_last=keep_last)
+	c1 = checkpoint(first, "c1")
+	second.put_writes(c1, [("x", 1)], "one")
+	first.put_writes(c1, [("y", 2)], "two")
+	checkpoint(first, "c1")  # retrying the put preserves both task writes
+	first.put_writes(c1, [("z", 3)], "three")
+	assert pending(second, c1) == [("x", 1), ("y", 2), ("z", 3)]
+	c2 = checkpoint(second, "c2")
+	second.put_writes(c2, [("current", 4)], "four")
+	first.put_writes(c1, [("late", 5)], "five")
+	assert pending(first, c2) == [("current", 4)]
+	if keep_last == 2:
+		assert ("late", 5) in pending(second, c1)
+
+
+def test_writes_can_arrive_before_their_checkpoint():
+	saver = KeyValueSaver(MemoryStore())
+	c1 = checkpoint(saver, "c1")
+	c2 = saver._config("t", "", "c2")
+	saver.put_writes(c2, [("future", 1)], "one")
+	saver.put_writes(c1, [("current", 2)], "two")
+	assert pending(saver, c1) == [("current", 2)]
+	checkpoint(saver, "c2", parent="c1")
+	assert pending(saver, c2) == [("future", 1)]
+
+
+def test_thread_and_namespace_separators_cannot_alias():
+	saver = KeyValueSaver(MemoryStore())
+	configs = []
+	for thread, ns, value in [("a/b", "c", "one"), ("a", "b/c", "two"), ("a%2Fb", "c", "three")]:
+		cp = empty_checkpoint()
+		cp["id"] = value
+		configs.append(saver.put({"configurable": {"thread_id": thread, "checkpoint_ns": ns}}, cp, {}, {}))
+	saver.delete_thread("a")
+	assert [saver.get_tuple(c).checkpoint["id"] for c in configs[::2]] == ["one", "three"]
+	assert saver.get_tuple(configs[1]) is None
+
+
+@pytest.mark.parametrize("durability", ["sync", "exit"])
+async def test_delta_state_survives_pruning_and_reopening(durability):
+	from typing import Annotated, TypedDict
+
+	DeltaChannel = pytest.importorskip("langgraph.channels.delta").DeltaChannel
+
+	def accumulate(state, batches):
+		return state + [value for batch in batches for value in batch]
+
+	class State(TypedDict):
+		history: Annotated[list[str], DeltaChannel(accumulate, snapshot_frequency=3)]
+
+	builder = StateGraph(State)
+	builder.add_node("append", lambda state: {"history": ["node"]})
+	builder.add_edge(START, "append")
+	builder.add_edge("append", END)
+	store = MemoryStore()
+	config = {"configurable": {"thread_id": "delta"}}
+	expected = []
+	for label in ["one", "two", "three", "four"]:
+		graph = builder.compile(checkpointer=KeyValueSaver(store))
+		await graph.ainvoke({"history": [label]}, config, durability=durability)
+		expected.extend([label, "node"])
+		assert (await graph.aget_state(config)).values["history"] == expected
+
+
+def test_parallel_writes_from_two_savers_are_merged():
+	from concurrent.futures import ThreadPoolExecutor
+
+	store = MemoryStore()
+	savers = [KeyValueSaver(store), KeyValueSaver(store)]
+	config = checkpoint(savers[0], "c1")
+
+	def write(i):
+		savers[i % 2].put_writes(config, [("output", i)], str(i))
+
+	with ThreadPoolExecutor(max_workers=4) as pool:
+		list(pool.map(write, range(32)))
+	assert pending(savers[0], config) == [("output", i) for i in range(32)]
+
+
+def test_delete_removes_early_writes_from_child_namespace():
+	store = MemoryStore()
+	saver = KeyValueSaver(store)
+	config = {"configurable": {"thread_id": "t", "checkpoint_ns": "child", "checkpoint_id": "c"}}
+	saver.put_writes(config, [("early", 1)], "task")
+	saver.delete_thread("t")
+	assert not store.keys()

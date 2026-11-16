@@ -17,8 +17,8 @@ graph = builder.compile(checkpointer=saver)
 await graph.ainvoke(state, {"configurable": {"thread_id": agent_id}}, durability="exit")
 ```
 
-`flowgentic.store` needs no extra. `KeyValueSaver` needs the `langgraph`
-extra. `RadexStore` needs RaDEX's Python client, which is built from source
+`flowgentic.store` needs no extra. `KeyValueSaver` currently imports through the integration package and needs both the
+`langgraph` and `asyncflow` extras. `RadexStore` needs RaDEX's Python client, which is built from source
 with its C++ core: see [RaDEX](https://github.com/radical-cybertools/radex).
 Tensors, in either store, need NumPy.
 
@@ -47,7 +47,7 @@ calls few. For thread `t` and checkpoint namespace `ns`:
 | Key | Holds |
 | --- | --- |
 | `lg/{t}/{ns}/head` | the newest checkpoint, with its metadata and parent id |
-| `lg/{t}/{ns}/w` | the pending writes of the newest checkpoint that has any |
+| `lg/{t}/{ns}/w` | pending writes grouped by checkpoint id |
 | `lg/{t}/{ns}/c/{id}` | an older checkpoint, with its writes, when `keep_last` > 1 |
 | `lg/{t}/{ns}/index` | the older checkpoints' ids, oldest first |
 | `lg/{t}/namespaces` | the thread's namespaces other than the root |
@@ -57,13 +57,18 @@ calls few. For thread `t` and checkpoint namespace `ns`:
   run's length. With `keep_last=1` a checkpoint is one `put`, which replaces
   the previous one, and nothing is deleted. `keep_last=n` keeps the newest
   `n`, for time travel over the last steps.
-- **Suspending costs four calls.** With LangGraph's `exit` durability, an
+- **A root-namespace suspension with full channel values costs six store calls.**
+  With LangGraph's `exit` durability, an
   agent that suspends while its task runs writes its checkpoint and its
-  pending writes, and reads both back when it resumes.
+  pending writes, and reads both back when it resumes. Saving writes also
+  reads the current head and the existing writes so a retry preserves them.
+- LangGraph delta channels recover their history from a snapshot and the writes
+  since that snapshot. The saver carries this information into the retained
+  checkpoint before its parent expires. These checkpoints also read the parent.
 - **One process writes each thread.** The store has no atomic update, so the
   saver reads, changes and writes back the pending writes. That is safe
-  because an agent's steps run in one process, and every store call runs on
-  the event loop without yielding halfway.
+  because one process owns the thread, and updates in that process take a
+  lock shared by savers for the thread.
 - **`list` needs a thread id**, because RaDEX cannot list its keys.
 
 `saver.stats()` returns how many checkpoints and writes the saver has put, how
