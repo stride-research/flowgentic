@@ -1,0 +1,175 @@
+"""LangGraph agents in an agent host: suspension through a tool's interrupt,
+each tool call as its own task, foreign interrupts, run configuration, and a
+suspended run freed when it stops."""
+
+import asyncio
+import gc
+from typing import Annotated
+
+import pytest
+from _support import Scripted, calls_then_answer, react_graph
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import InjectedToolCallId, tool
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.errors import GraphInterrupt
+from langgraph.graph import END
+from langgraph.types import interrupt
+
+from flowgentic.host import Agent, AgentHost, AgentState, Finished, Interrupted, Stagger, Suspended, register_pending
+from flowgentic.langgraph import PENDING_KEY, GraphRunner, record_interrupt, route_tool_calls, tool_call_router
+
+FAST = Stagger(batch=50, interval_s=0.0)
+RUNS: dict[str, int] = {}
+TASKS: dict[str, asyncio.Future] = {}
+
+
+@pytest.fixture(autouse=True)
+def clear():
+    RUNS.clear()
+    TASKS.clear()
+
+
+def count(name: str) -> None:
+    RUNS[name] = RUNS.get(name, 0) + 1
+
+
+@tool
+async def slow_task(x: float, config: RunnableConfig, call_id: Annotated[str, InjectedToolCallId]) -> str:
+    """A task the agent suspends on, submitted once per call."""
+    key = f"{config['configurable']['thread_id']}/{call_id}"
+    future = TASKS.get(key)
+    if future is None:  # submitted once: a resumed agent finds it
+        count("submitted")
+        future = TASKS[key] = asyncio.get_running_loop().create_future()
+        asyncio.get_running_loop().call_later(0.02, future.set_result, 2 * x)
+        register_pending(key, future)
+    try:
+        interrupt({PENDING_KEY: key})
+    except GraphInterrupt as exc:
+        record_interrupt(exc)  # freed when the run stops
+        raise
+    return f"result {await future}"
+
+
+@tool
+def note(text: str) -> str:
+    """Take a note."""
+    count("note")
+    return f"noted {text}"
+
+
+@tool
+def ask_a_human(question: str) -> str:
+    """Ask a human."""
+    return interrupt({"question": question})
+
+
+def inputs(n: int):
+    return [Agent(f"agent-{i}", {"messages": [HumanMessage("go")]}) for i in range(n)]
+
+
+async def test_agents_suspend_resume_and_no_tool_runs_twice():
+    model = Scripted(script=calls_then_answer(("slow_task", {"x": 1.5}), ("note", {"text": "hi"})))
+    graph = react_graph(model, [slow_task, note], InMemorySaver())
+    outputs = {}
+    host = AgentHost(GraphRunner(graph), stagger=FAST, on_done=lambda r, out: outputs.__setitem__(r.id, out))
+    seen = set()
+
+    async def watch():
+        while len(outputs) < 20:
+            seen.update(host.states.counts())
+            seen.update(s for s, c in host.states.counts().items() if c)
+            await asyncio.sleep(0.005)
+
+    report, _ = await asyncio.gather(host.run(inputs(20)), watch())
+    assert report.finished == 20
+    assert all(a.suspensions == 1 for a in report.agents)
+    # The task was submitted once and the note taken once per agent: the
+    # resumed run ran only the call that suspended.
+    assert RUNS == {"submitted": 20, "note": 20}
+    final = outputs["agent-0"]["messages"][-1].content
+    assert "result 3.0" in final and "noted hi" in final
+    assert host.states.agent_seconds()[AgentState.TOOL_WAIT] > 0
+
+
+async def test_a_foreign_interrupt_ends_the_agent_as_interrupted():
+    model = Scripted(script=calls_then_answer(("ask_a_human", {"question": "go on?"})))
+    runner = GraphRunner(react_graph(model, [ask_a_human], InMemorySaver()))
+    step = await runner.start(Agent("a", {"messages": [HumanMessage("go")]}))
+    assert isinstance(step, Interrupted)
+    assert step.interrupts[0].value == {"question": "go on?"}
+
+
+async def test_run_configuration_is_merged_under_the_agents():
+    seen = {}
+
+    @tool
+    def peek(config: RunnableConfig) -> str:
+        """Look at the run configuration."""
+        seen.update(config["configurable"])
+        seen["recursion_limit"] = config["recursion_limit"]
+        return "ok"
+
+    model = Scripted(script=calls_then_answer(("peek", {})))
+    runner = GraphRunner(
+        react_graph(model, [peek], InMemorySaver()),
+        config={"recursion_limit": 50, "configurable": {"site": "a", "thread_id": "ignored"}},
+    )
+    agent = Agent("agent-7", {"messages": [HumanMessage("go")]}, config={"configurable": {"site": "b"}})
+    assert isinstance(await runner.start(agent), Finished)
+    assert seen["thread_id"] == "agent-7" and seen["site"] == "b" and seen["recursion_limit"] == 50
+
+
+def test_each_tool_call_goes_out_as_its_own_task():
+    calls = [{"name": "note", "args": {"text": str(i)}, "id": f"c{i}"} for i in range(3)]
+    message = AIMessage("", tool_calls=calls)
+    sends = route_tool_calls({"messages": [message]})
+    assert [(s.node, s.arg) for s in sends] == [("tools", [c]) for c in message.tool_calls]
+    assert route_tool_calls({"messages": [AIMessage("done")]}) == END
+    router = tool_call_router("run_tools", messages_key="history")
+    assert router({"history": [AIMessage("", tool_calls=calls[:1])]})[0].node == "run_tools"
+
+
+def left_by(run_objects: tuple) -> list:
+    return [type(o).__name__ for o in gc.get_objects() if isinstance(o, run_objects)]
+
+
+@pytest.mark.parametrize(
+    "calls",
+    [
+        1,
+        pytest.param(
+            2,
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="LangGraph's runner combines a step's interrupts into an "
+                "exception of its own, which keeps its frames in a cycle",
+            ),
+        ),
+    ],
+)
+async def test_a_suspension_leaves_nothing_for_the_collector(calls):
+    """A suspended agent's run is freed when it stops, not at the collector's
+    next pass: with thousands of agents per process, what each suspension left
+    behind filled the collector's young generations."""
+    from langgraph.pregel._runner import PregelRunner
+
+    model = Scripted(script=calls_then_answer(*[("slow_task", {"x": 1.0 + i}) for i in range(calls)]))
+    runner = GraphRunner(react_graph(model, [slow_task], InMemorySaver()))
+    agent = Agent("agent-0", {"messages": [HumanMessage("go")]})
+    gc.collect()
+    gc.disable()
+    try:
+        step = await runner.start(agent)
+        assert isinstance(step, Suspended) and len(step.waits) == calls
+        left = left_by((GraphInterrupt, PregelRunner))
+        await asyncio.wait([TASKS[key] for _, key in step.waits])
+        done = {rid: {"flowgentic_done": key} for rid, key in step.waits}
+        step = await runner.resume(agent, done)
+        assert isinstance(step, Finished)
+        left_at_end = left_by((GraphInterrupt, PregelRunner))
+    finally:
+        gc.enable()
+    assert left == []
+    assert left_at_end == []
