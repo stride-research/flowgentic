@@ -32,7 +32,13 @@ def run_without(blocked: list[str], code: str) -> subprocess.CompletedProcess:
 	)
 
 
-LANGGRAPH = ["langgraph", "langchain", "langchain_core", "langchain_openai", "langchain_ollama"]
+LANGGRAPH = [
+	"langgraph",
+	"langchain",
+	"langchain_core",
+	"langchain_openai",
+	"langchain_ollama",
+]
 ASYNCFLOW = ["radical", "radical.asyncflow"]
 
 
@@ -43,7 +49,9 @@ def test_the_core_needs_no_extra() -> None:
 		"""
 		import flowgentic
 		from flowgentic.acceptance import accept
+		from flowgentic.store import MemoryStore, RadexStore
 		flowgentic.configure_logging()
+		MemoryStore().put("k", 1)
 		print("ok")
 		""",
 	)
@@ -59,10 +67,14 @@ def test_the_asyncflow_path_names_its_extra() -> None:
 
 
 def test_the_langgraph_integration_names_its_extras() -> None:
-	result = run_without(ASYNCFLOW, "from flowgentic.langgraph import LangraphIntegration")
+	result = run_without(
+		ASYNCFLOW, "from flowgentic.langgraph import LangraphIntegration"
+	)
 	assert result.returncode != 0
 	assert "install flowgentic[langgraph,asyncflow]" in result.stderr.splitlines()[-1]
-	result = run_without(LANGGRAPH, "from flowgentic.langgraph import LangraphIntegration")
+	result = run_without(
+		LANGGRAPH, "from flowgentic.langgraph import LangraphIntegration"
+	)
 	assert result.returncode != 0
 	last = result.stderr.splitlines()[-1]
 	assert "install flowgentic[langgraph]" in last and "flowgentic[asyncflow]" in last
@@ -87,7 +99,15 @@ def test_the_graph_runner_needs_langgraph_only() -> None:
 	assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.parametrize("missing", ["langchain_core", "langchain_openai", "langchain_ollama"])
+def test_the_checkpointer_names_its_extras() -> None:
+	result = run_without(LANGGRAPH, "from flowgentic.langgraph import KeyValueSaver")
+	assert result.returncode != 0
+	assert "install flowgentic[langgraph]" in result.stderr
+
+
+@pytest.mark.parametrize(
+	"missing", ["langchain_core", "langchain_openai", "langchain_ollama"]
+)
 def test_chat_provider_names_its_extra(missing: str) -> None:
 	result = run_without([missing], "from flowgentic.utils import ChatLLMProvider")
 	assert result.returncode != 0
@@ -106,10 +126,14 @@ def test_chat_provider_imports_without_asyncflow() -> None:
 		("flowgentic.agent", "radical.asyncflow.data"),
 		("flowgentic.langgraph.main", "radical.asyncflow.data"),
 		("flowgentic.langgraph", "langgraph.types"),
+		("flowgentic.langgraph", "langgraph.checkpoint.base"),
 		("flowgentic.utils", "langchain_core.language_models"),
 	],
 )
 def test_other_import_errors_are_not_reworded(module: str, missing: str) -> None:
 	result = run_without([missing], f"import {module}")
 	assert result.returncode != 0
-	assert result.stderr.splitlines()[-1] == f"ModuleNotFoundError: No module named {missing!r}"
+	assert (
+		result.stderr.splitlines()[-1]
+		== f"ModuleNotFoundError: No module named {missing!r}"
+	)

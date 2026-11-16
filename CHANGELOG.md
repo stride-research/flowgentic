@@ -45,6 +45,15 @@ predate this changelog, so their changes are not listed here.
   and `route_tool_calls`, which sends each tool call to the tool node as its
   own task, so that an agent resuming from a suspension runs no other tool
   call again. A suspended run is freed as soon as it stops.
+- `flowgentic.langgraph.KeyValueSaver`, a LangGraph checkpointer that keeps
+  agents' state in a key-value store, and `flowgentic.store` with two stores:
+  RaDEX on a Dragon distributed dictionary, and a dictionary in the process.
+  The saver keeps each thread's newest checkpoint by default (`keep_last`).
+  Pending writes survive a retried save, a saver reopened over the same store
+  and other savers in the process, and delta channels keep the history they
+  replay after older checkpoints are dropped. A suspension costs six store
+  calls. The `langgraph` extra now names `langgraph-checkpoint`, which
+  LangGraph already brought.
 
 ### Changed
 
