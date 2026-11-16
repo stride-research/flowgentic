@@ -77,3 +77,18 @@ So the pool opens each client in a supervisor task of its own, and guarantees:
 `close()` stops intake, lets calls finish for up to `drain` seconds, fails the
 rest with `McpPoolClosed`, and never raises. `pool.stats()` returns the pool's
 state, its counters and its last errors.
+
+## Completed calls at campaign scale
+
+The default service keeps one compact outcome and payload per completed uid.
+For campaigns whose answers exceed the service's RAM budget, pass a mutable
+mapping as `answer_store`. For example, open a Python `shelve` on local disk
+for the lifetime of `serve`. Give each campaign and service shard its own
+shelf, and route every retry of a uid to its original shard. Reusing that
+shelf lets the service replay answers already recorded there. Storage grows
+with the number and size of distinct answers. Budget one mapping lookup per
+new uid and one write at completion. Disk latency affects the service loop.
+
+The store holds trusted tool results. It cannot settle a crash between a
+remote side effect and recording its answer. A non-idempotent tool that needs
+safe retries across that interval requires deduplication at the tool server.

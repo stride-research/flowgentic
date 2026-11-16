@@ -40,7 +40,7 @@ import queue
 import threading
 import time
 from collections import Counter, defaultdict
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, MutableMapping
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # the agent processes' side needs no MCP client
@@ -49,6 +49,8 @@ if TYPE_CHECKING:  # the agent processes' side needs no MCP client
 __all__ = ["ToolService", "ToolServiceClient", "ToolServiceError", "serve"]
 
 log = logging.getLogger(__name__)
+
+AnswerStore = MutableMapping[str, tuple[bool, Any]]
 
 CHUNK = 512  # requests or answers per queue message
 
@@ -157,11 +159,10 @@ class _QueueReader(threading.Thread):
 
 
 class _Call:
-	__slots__ = ("answer", "t_recv", "waiters")
+	__slots__ = ("t_recv", "waiters")
 
 	def __init__(self, src: int, t_recv: float) -> None:
 		self.waiters = [src]
-		self.answer: tuple | None = None
 		self.t_recv = t_recv
 
 
@@ -177,12 +178,16 @@ class ToolService:
 		out: Callable[[int, list], None],
 		call_timeout: float = 120.0,
 		listener: Callable[[str, str, float, float, float, bool], None] | None = None,
+		*,
+		answer_store: AnswerStore | None = None,
 	) -> None:
 		self.pool = pool
 		self.out = out
 		self.call_timeout = call_timeout
 		self.listener = listener
-		self.calls: dict[str, _Call] = {}
+		self.calls: dict[str, _Call | tuple[bool, Any]] = {}
+		self.answer_store = answer_store
+		self.unique = 0
 		self.outbox: dict[int, list] = defaultdict(list)
 		self._flush_scheduled = False
 		self.inflight = 0
@@ -199,7 +204,17 @@ class ToolService:
 		for uid, tool, args, src, _t_ask, *options in requests:
 			self.received += 1
 			call = self.calls.get(uid)
+			if call is None and self.answer_store is not None:
+				try:
+					call = self.answer_store.get(uid)
+				except Exception as exc:
+					# An unknown replay status must never trigger a tool execution.
+					self._queue(
+						src, (uid, False, f"answer lookup failed: {exc}", (t_recv,) * 3)
+					)
+					continue
 			if call is None:
+				self.unique += 1
 				call = self.calls[uid] = _Call(src, t_recv)
 				self.inflight += 1
 				task = loop.create_task(
@@ -207,14 +222,14 @@ class ToolService:
 				)
 				self._tasks.add(task)
 				task.add_done_callback(self._tasks.discard)
-			elif call.answer is None:
+			elif isinstance(call, _Call):
 				self.repeats_running += 1
 				call.waiters.append(src)
 			else:
 				# answered at once: its own times, not the first call's
 				self.repeats_done += 1
-				uid_, ok, payload, _ = call.answer
-				self._queue(src, (uid_, ok, payload, (t_recv, t_recv, t_recv)))
+				ok, payload = call
+				self._queue(src, (uid, ok, payload, (t_recv, t_recv, t_recv)))
 
 	async def _call(
 		self, uid: str, call: _Call, tool: str, args: dict, idempotent: bool
@@ -239,10 +254,19 @@ class ToolService:
 				self.listener(uid, tool, call.t_recv, t_call, t_done, ok)
 			except Exception:
 				log.exception("tool service listener failed for %s", uid)
-		call.answer = (uid, ok, payload, (call.t_recv, t_call, t_done))
+		self.calls[uid] = (ok, payload)
+		if self.answer_store is not None:
+			try:
+				self.answer_store[uid] = (ok, payload)
+			except Exception:
+				log.exception(
+					"could not save answer for %s; retaining it in memory", uid
+				)
+			else:
+				del self.calls[uid]
+		answer = (uid, ok, payload, (call.t_recv, t_call, t_done))
 		for src in call.waiters:
-			self._queue(src, call.answer)
-		call.waiters = []
+			self._queue(src, answer)
 
 	def _queue(self, src: int, answer: tuple) -> None:
 		self.outbox[src].append(answer)
@@ -266,7 +290,7 @@ class ToolService:
 		"""Requests received, distinct calls, repeats, and outcomes per tool."""
 		return {
 			"received": self.received,
-			"unique": len(self.calls),
+			"unique": self.unique,
 			"repeats_running": self.repeats_running,
 			"repeats_done": self.repeats_done,
 			"ok": dict(self.ok),
@@ -285,6 +309,7 @@ async def serve(
 	on_ready: Callable[[dict], Awaitable[None] | None] | None = None,
 	listener: Callable[[str, str, float, float, float, bool], None] | None = None,
 	drain_timeout: float = 60.0,
+	answer_store: AnswerStore | None = None,
 ) -> dict:
 	"""Serve MCP calls until ``None`` arrives on ``requests``; return counters.
 
@@ -310,7 +335,7 @@ async def serve(
 		for reply in replies:
 			reply.put(_pack(None))
 		raise
-	service = ToolService(pool, out, call_timeout, listener)
+	service = ToolService(pool, out, call_timeout, listener, answer_store=answer_store)
 	stopped = asyncio.Event()
 	reader = _QueueReader(
 		requests,

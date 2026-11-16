@@ -214,3 +214,46 @@ async def test_real_sdk_result_through_supervised_service():
         requests.put(None)
         await asyncio.wait_for(service, 2)
         client.stop()
+
+
+async def test_shelf_replays_a_completed_uid_after_reopening(tmp_path):
+    import shelve
+    from flowgentic.tools.service import ToolService
+
+    pool = FakePool()
+    replies = []
+    def out(src, items):
+        replies.extend(items)
+    request = [("a", "lookup", {"key": 42}, 0, 0)]
+    for i in range(2):
+        with shelve.open(str(tmp_path / "answers")) as answers:
+            service = ToolService(pool, out, answer_store=answers)
+            service.on_requests(request, 0)
+            await asyncio.gather(*service._tasks)
+            service.flush()
+            assert service.stats()["repeats_done"] == i
+            assert not service.calls
+    assert len(pool.calls) == 1
+    assert [r[2] for r in replies] == [{"echo": 42}] * 2
+
+
+async def test_answer_store_failure_never_reissues_an_uncertain_call():
+    from flowgentic.tools.service import ToolService
+
+    class Failing(dict):
+        def get(self, key):
+            if key == "unknown":
+                raise OSError("cannot read")
+            return super().get(key)
+
+        def __setitem__(self, key, value):
+            raise OSError("cannot write")
+
+    replies = []
+    pool = FakePool()
+    service = ToolService(pool, lambda src, items: replies.extend(items), answer_store=Failing())
+    for uid in ("unknown", "a", "a"):
+        service.on_requests([(uid, "lookup", {"key": 42}, 0, 0)], 0)
+        await asyncio.gather(*service._tasks)
+        service.flush()
+    assert len(pool.calls) == 1 and [r[1] for r in replies] == [False, True, True]
