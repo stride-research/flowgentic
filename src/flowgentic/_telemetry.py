@@ -138,6 +138,7 @@ def emit_suspend(agent_id: str, waits: int) -> None:
 # Admission and the replicas' load. The loads are read from the process's fleets
 # when the SDK collects, and only if ``flowgentic.fleet`` was imported.
 
+FLEET_NAME = "flowgentic.fleet.name"
 FLEET_REPLICA = "flowgentic.fleet.replica"
 
 ADMISSION_WAIT = meter.create_histogram(
@@ -161,8 +162,8 @@ def _observe_fleet(kind: str) -> Callable[[object], list]:
 		if fleet is None:
 			return []
 		return [
-			metrics.Observation(value, {FLEET_REPLICA: replica})
-			for replica, value in fleet._loads(kind)
+			metrics.Observation(value, {FLEET_NAME: name, FLEET_REPLICA: replica})
+			for (name, replica), value in fleet._loads(kind).items()
 		]
 
 	return observe

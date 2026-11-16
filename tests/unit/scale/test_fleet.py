@@ -1,4 +1,5 @@
-"""The fleet: routing, admission, accounting, recovery, and its chat model."""
+"""The fleet: routing, admission, accounting, recovery, its chat model and its
+metrics."""
 
 import asyncio
 import subprocess
@@ -365,3 +366,41 @@ async def test_the_chat_model_passes_settings_reserve_and_meta_per_call():
     assert model.kwargs == [THINK, {}]
     assert records[0].meta == {"budget": 256}
     assert records[0].estimate == records[1].estimate + 256
+
+
+# --- metrics -----------------------------------------------------------------------
+
+
+def points(reader, name: str, fleet: str) -> list:
+    """The data points of metric ``name`` for fleet ``fleet``, in the reader's
+    latest collection."""
+    data = reader.get_metrics_data()
+    out = []
+    for resource in data.resource_metrics if data else []:
+        for scope in resource.scope_metrics:
+            for metric in scope.metrics:
+                if metric.name == name:
+                    out.extend(
+                        p
+                        for p in metric.data.data_points
+                        if p.attributes.get("flowgentic.fleet.name") == fleet
+                    )
+    return out
+
+
+async def test_the_fleet_records_admission_and_each_replicas_load(metric_reader):
+    model = Slow()
+    other = Fleet([Slow()], name="other")  # another fleet in the process
+    fleet = Fleet([model], admission=RequestAdmission(1), name="metrics")
+    calls = asyncio.gather(*(fleet.ainvoke(a, [HumanMessage("hi")]) for a in agents(3)))
+    await asyncio.sleep(0.005)
+    active = points(metric_reader, "flowgentic.fleet.requests.active", "metrics")
+    waiting = points(metric_reader, "flowgentic.fleet.requests.waiting", "metrics")
+    assert [(p.attributes["flowgentic.fleet.replica"], p.value) for p in active] == [(0, 1)]
+    assert [p.value for p in waiting] == [2]
+    await calls
+    await other.ainvoke("a", [HumanMessage("hi")])
+    (wait,) = points(metric_reader, "flowgentic.fleet.admission.wait", "metrics")
+    (service,) = points(metric_reader, "flowgentic.fleet.request.duration", "metrics")
+    assert wait.count == 3 and wait.max > 0
+    assert service.count == 3 and service.min > 0

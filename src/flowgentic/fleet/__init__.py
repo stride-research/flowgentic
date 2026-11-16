@@ -27,6 +27,10 @@ fleet decides, for each call, which replica takes it and when:
   server reports them, the gap since the agent's previous call, the tool whose
   result came just before, and the caller's ``meta``. The fleet itself keeps
   counters.
+- **Metrics.** The wait for admission and the time at the replica are
+  OpenTelemetry histograms; each replica's tokens and requests in flight, and
+  its requests waiting, are gauges. They carry the fleet's ``name``, so the
+  fleets of several models in one process stay apart, and the replica's index.
 
 A request's live context is estimated before it is sent: the agent's size
 after its previous call, as the server counted it, plus the characters added
@@ -444,7 +448,9 @@ class _Core:
 		reply_reserve: int,
 		recovery: Recovery | None,
 		tracked_agents: int,
+		name: str,
 	) -> None:
+		self.name = name
 		self.replicas = list(replicas)
 		self.generation = [0] * len(replicas)
 		self.admission = admission
@@ -525,6 +531,7 @@ class Fleet:
 		reply_reserve: int = 64,
 		recovery: Recovery | None = None,
 		tracked_agents: int = 50_000,
+		name: str = "",
 	) -> None:
 		if not replicas:
 			raise ValueError("a fleet needs at least one replica")
@@ -538,6 +545,7 @@ class Fleet:
 			reply_reserve,
 			recovery,
 			tracked_agents,
+			name,
 		)
 		_all_fleets.add(self._core)
 		self._tools: tuple[Any, dict] | None = None
@@ -605,7 +613,7 @@ class Fleet:
 		after_tool = last.name if isinstance(last, ToolMessage) else None
 		asked_at = time.time()
 		asked = time.monotonic()
-		attrs = {_telemetry.FLEET_REPLICA: i}
+		attrs = {_telemetry.FLEET_NAME: core.name, _telemetry.FLEET_REPLICA: i}
 		with _agents.activity(AgentState.MODEL_QUEUED):
 			while True:
 				await gate.acquire(weight)
@@ -727,6 +735,7 @@ class Fleet:
 		"""The fleet's counters, with its gates' and its recovery's."""
 		core = self._core
 		return {
+			"name": core.name,
 			"replicas": len(core.replicas),
 			"share": core.share,
 			"reply_reserve_tokens": core.reply_reserve,
@@ -798,11 +807,12 @@ class FleetChatModel(BaseChatModel):
 		return ChatResult(generations=[ChatGeneration(message=reply)])
 
 
-def _loads(kind: str) -> list[tuple[int, int]]:
-	"""``(replica, value)`` of one kind of load, ``tokens``, ``requests`` or
-	``waiting``, across the process's fleets; read by the telemetry."""
-	out = []
+def _loads(kind: str) -> dict[tuple[str, int], int]:
+	"""One kind of load, ``tokens``, ``requests`` or ``waiting``, per fleet name
+	and replica, summed over the process's fleets; read by the telemetry."""
+	out: dict[tuple[str, int], int] = {}
 	for core in list(_all_fleets):
 		for i, gate in enumerate(core.gates):
-			out.append((i, getattr(gate.load(), kind)))
+			key = (core.name, i)
+			out[key] = out.get(key, 0) + getattr(gate.load(), kind)
 	return out
