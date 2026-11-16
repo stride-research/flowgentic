@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 import pytest
 from langchain_openai import ChatOpenAI
-from opentelemetry import _logs, trace
+from opentelemetry import _logs, metrics, trace
 from opentelemetry.instrumentation.genai.langchain import LangChainInstrumentor
 from opentelemetry.instrumentation.genai.openai import OpenAIInstrumentor
 from opentelemetry.sdk._logs import LoggerProvider
@@ -14,6 +14,8 @@ from opentelemetry.sdk._logs.export import (
     InMemoryLogRecordExporter,
     SimpleLogRecordProcessor,
 )
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
@@ -24,6 +26,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
 # test that reads spans or log records shares these exporters and clears them.
 _EXPORTER = InMemorySpanExporter()
 _LOG_EXPORTER = InMemoryLogRecordExporter()
+_METRIC_READER = InMemoryMetricReader()
 
 
 @pytest.fixture
@@ -48,6 +51,15 @@ def log_exporter() -> Iterator[InMemoryLogRecordExporter]:
     _LOG_EXPORTER.clear()
     yield _LOG_EXPORTER
     _LOG_EXPORTER.clear()
+
+
+@pytest.fixture
+def metric_reader() -> InMemoryMetricReader:
+    """Read the metrics of the global meter provider. The provider is set once
+    per process; histograms and counters keep what earlier tests recorded."""
+    if not isinstance(metrics.get_meter_provider(), MeterProvider):
+        metrics.set_meter_provider(MeterProvider(metric_readers=[_METRIC_READER]))
+    return _METRIC_READER
 
 
 @pytest.fixture(scope="module")
