@@ -62,9 +62,19 @@ predate this changelog, so their changes are not listed here.
   again only when the caller passes `idempotent=True`, as a lookup can. A
   failure that left the call safe to repeat is not kept, so asking again with
   the same uid calls the tool again.
+- Tool placement, `flowgentic.tools`: a tool runs inline, as a RHAPSODY task
+  (`task_tool`) or through the tool service (`mcp_tool`), and
+  `flowgentic.langgraph.bind_tools` turns these into LangChain tools. A task
+  tool may suspend its agent while its task runs. A call made again with the
+  same agent and call id gets the first call's result, so an agent that
+  resumes runs no task twice. A `TaskOrder` decides when tasks reach RHAPSODY,
+  or refuses them. Each task or service call is an `execute_tool` span and a
+  point of the `flowgentic.tool.duration` histogram. Task tools need the new
+  `rhapsody` extra.
 
 ### Changed
 
+- The `examples` extra moves to RHAPSODY 0.7 (`rhapsody-py[telemetry]>=0.7,<0.8`).
 - `flowgentic.langgraph` imports `LangraphIntegration` when first used, so
   `GraphRunner` needs only the `langgraph` extra.
 - Importing a part whose extra is not installed raises `ModuleNotFoundError`
