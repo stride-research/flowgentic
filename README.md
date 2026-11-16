@@ -3,7 +3,7 @@
     <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT">
   </a>
   <a href="https://www.python.org/downloads/">
-    <img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg" alt="Python 3.10, 3.11, 3.12">
+    <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue.svg" alt="Python 3.11, 3.12, 3.13">
   </a>
   <a href="https://github.com/stride-research/flowgentic/actions/workflows/continuous_integration.yml">
     <img src="https://github.com/stride-research/flowgentic/actions/workflows/continuous_integration.yml/badge.svg?branch=main" alt="CI">
@@ -32,7 +32,7 @@ AsyncFlow directly.
 
 | Agent framework | Workflow engine | Backends | Python |
 | --- | --- | --- | --- |
-| LangGraph 1.x | RADICAL AsyncFlow 0.6.0 | Local | 3.10, 3.11, 3.12 |
+| LangGraph 1.x | RADICAL AsyncFlow 0.6.0 | Local | 3.11, 3.12, 3.13 |
 
 [Project status](https://stride-research.github.io/flowgentic/status/) lists the tested versions, the known limitations
 and the archived branches.
@@ -62,13 +62,17 @@ cd flowgentic
 uv sync --locked
 ```
 
-Or build the wheel and install it into a new environment. The
-[v0.4.0 GitHub release](https://github.com/stride-research/flowgentic/releases/tag/v0.4.0) carries the same wheel.
+Flowgentic's core installs no agent framework and no workflow engine. Each
+path is an extra: `langgraph` and `asyncflow` for the LangGraph integration,
+`asyncflow` for `bind_agent`. The demos' `make` targets add what they need.
+
+Or build the wheel and install it into a new environment, with the extras you
+use:
 
 ```bash
 uv build
-uv venv --python 3.10 flowgentic-env
-uv pip install --python flowgentic-env/bin/python dist/flowgentic-0.4.0-py3-none-any.whl
+uv venv --python 3.11 flowgentic-env
+uv pip install --python flowgentic-env/bin/python "dist/flowgentic-0.4.0-py3-none-any.whl[langgraph,asyncflow]"
 ```
 
 ## Run the demos

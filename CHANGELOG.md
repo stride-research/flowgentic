@@ -7,6 +7,27 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
+## [Unreleased]
+
+**Breaking changes.**
+
+- Flowgentic requires Python 3.11 or later, as RHAPSODY, AsyncFlow 0.7 and
+  Dragon do. To stay on Python 3.10, stay on 0.4.
+- The dependencies are split by path. A plain install brings only pydantic and
+  the OpenTelemetry API. Install the extras you use: `langgraph` (LangGraph and
+  LangChain) and `asyncflow` (RADICAL AsyncFlow). The LangGraph integration
+  needs both, `bind_agent` needs `asyncflow`, and
+  `flowgentic[langgraph,asyncflow]` installs what 0.4 installed.
+- `flowgentic.langGraph` is renamed `flowgentic.langgraph`. Change the imports.
+
+### Changed
+
+- Importing a part whose extra is not installed raises `ModuleNotFoundError`
+  with the extra to install.
+- CI runs the test suite on Python 3.11, 3.12 and 3.13, and on 3.11 with the
+  lowest versions the ranges allow. The documentation's cap on
+  `pymdown-extensions`, needed only on Python 3.10, is lifted.
+
 ## [0.4.0] - 2026-10-30
 
 A repair release. It removes features that 0.3 shipped broken or unsafe, or

@@ -1,2 +1,29 @@
-from .execution_wrappers import ExecutionWrappersLangraph, BaseLLMAgentState
-from .main import LangraphIntegration
+"""Flowgentic for LangGraph.
+
+``LangraphIntegration`` runs a LangGraph graph's tools, services, tasks and
+nodes as AsyncFlow tasks. It needs the ``langgraph`` and ``asyncflow`` extras:
+without them, importing this package raises an error that names them.
+"""
+
+_EXTRA_MODULES = (
+	"langgraph",
+	"langchain",
+	"langchain_core",
+	"langchain_openai",
+	"langchain_ollama",
+	"radical",
+)
+
+try:
+	from .execution_wrappers import BaseLLMAgentState, ExecutionWrappersLangraph
+	from .main import LangraphIntegration
+except ModuleNotFoundError as exc:
+	if (exc.name or "").split(".")[0] not in _EXTRA_MODULES:
+		raise
+	raise ModuleNotFoundError(
+		"flowgentic.langgraph needs LangGraph and AsyncFlow: install "
+		"flowgentic[langgraph,asyncflow]",
+		name=exc.name,
+	) from exc
+
+__all__ = ["BaseLLMAgentState", "ExecutionWrappersLangraph", "LangraphIntegration"]

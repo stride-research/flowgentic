@@ -12,12 +12,23 @@ A task or service runs in the trace context of its caller. AsyncFlow's
 backends run a function in a pool thread or another process, where the
 caller's OpenTelemetry context does not follow, so the submitter passes it
 along as a W3C carrier and the task attaches it.
+
+AsyncFlow is an extra: without it, importing this module raises an error that
+names the extra to install.
 """
 
 import functools
 from typing import Any, Awaitable, Callable
 
-from radical.asyncflow import WorkflowEngine
+try:
+	from radical.asyncflow import WorkflowEngine
+except ModuleNotFoundError as exc:
+	if not (exc.name or "").startswith("radical"):
+		raise
+	raise ModuleNotFoundError(
+		"Flowgentic's AsyncFlow path needs AsyncFlow: install flowgentic[asyncflow]",
+		name=exc.name,
+	) from exc
 
 from flowgentic import _telemetry
 
