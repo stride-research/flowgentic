@@ -19,6 +19,7 @@ nav:
       - Agent host: features/agent-host.md
       - Services: features/services.md
       - Checkpointer: features/checkpointer.md
+      - Tool placement: features/tools.md
       - Tool service: features/tool-service.md
       - Fleet: features/fleet.md
       - Telemetry: features/telemetry.md

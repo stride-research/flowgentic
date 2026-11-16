@@ -12,12 +12,14 @@ configures the OpenTelemetry SDK, every span and event is a no-op.
 
 ## What records what
 
-Each layer records what it owns, and Flowgentic records only what no other
-layer knows:
+Each layer records what it owns, and Flowgentic records what no other layer
+knows. One of its spans, `execute_tool`, shares its name with a span of the
+LangChain instrumentation; see the end of this section.
 
 | Spans and events | Recorded by |
 | --- | --- |
 | `invoke_agent <identity>`, one per call of an agent bound with `bind_agent` | Flowgentic |
+| `execute_tool <tool>`, one per call of a task or MCP tool from `flowgentic.tools`; see [Tool placement](tools.md#what-it-reports) | Flowgentic |
 | `accept <name>`, one per call of `accept`, with an `accept.attempt <name>` span per attempt and a `gen_ai.evaluation.result` event per check that ran; see [Acceptance](acceptance.md) | Flowgentic |
 | `chat <model>`, `execute_tool <tool>`, `invoke_workflow <graph>` | OpenTelemetry's GenAI instrumentation for LangChain, with its OpenAI instrumentation |
 | `session`, `workflow`, `block`, `task` | RHAPSODY, once the application calls `flow.start_telemetry()` |
@@ -37,6 +39,16 @@ Flowgentic also carries the caller's trace context into every task and service
 it submits. AsyncFlow runs a task's function in a pool thread or in another
 process, where the context does not follow by itself. Without it, a model call
 made inside a task would start a trace of its own.
+
+With the LangChain instrumentation on, a call of a task or MCP tool has both
+LangChain's `execute_tool` span, one per run of the LangChain tool (two when
+the task suspends its agent), and Flowgentic's, with the same
+`gen_ai.tool.call.id`. Flowgentic's adds where the call ran
+(`flowgentic.tool.kind`, `task` or `service`), how it ended
+(`flowgentic.tool.outcome`, which tells a refused or cancelled task from a
+failed one), and the call's whole duration, from submission through the order
+policy's wait and the agent's suspension to the result, with the spans of the
+task's function under it.
 
 ## Set it up
 

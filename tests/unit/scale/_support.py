@@ -1,8 +1,10 @@
-"""Shared pieces for the tests of the agent host and its runners."""
+"""Shared pieces for the tests of the agent host, its runners and the tools."""
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -12,6 +14,35 @@ from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
 
 from flowgentic.langgraph import route_tool_calls
+
+RUNS: dict[str, int] = {}
+_RUNS_LOCK = threading.Lock()
+
+
+def count(name: str) -> None:
+    with _RUNS_LOCK:
+        RUNS[name] = RUNS.get(name, 0) + 1
+
+
+def simulate(x: float) -> dict:
+    """Run a simulation of x."""
+    count("simulate")
+    return {"y": 2 * x}
+
+
+def broken(x: float) -> dict:
+    """A simulation that fails."""
+    count("broken")
+    raise ValueError(f"no convergence at {x}")
+
+
+async def thread_session(workers: int = 8):
+    """A RHAPSODY session on a thread pool, as a laptop runs one."""
+    from rhapsody import Session
+    from rhapsody.backends import ConcurrentExecutionBackend
+
+    backend = await ConcurrentExecutionBackend(ThreadPoolExecutor(max_workers=workers))
+    return Session(backends=[backend])
 
 
 class Scripted(BaseChatModel):
@@ -52,9 +83,14 @@ def calls_then_answer(*calls: tuple[str, dict]) -> Callable[[list[BaseMessage]],
     return script
 
 
-def react_graph(model: Any, tools: list, saver: Any = None):
-    """model -> each tool call as its own task -> model, until no tool call."""
-    node = ToolNode(tools, handle_tool_errors=True)
+def react_graph(model: Any, tools: list, saver: Any = None, *, handle_tool_errors: Any = True):
+    """model -> each tool call as its own task -> model, until no tool call.
+    ``handle_tool_errors=None`` keeps ToolNode's default, which re-raises a
+    tool's own errors."""
+    if handle_tool_errors is None:
+        node = ToolNode(tools)
+    else:
+        node = ToolNode(tools, handle_tool_errors=handle_tool_errors)
 
     async def call_model(state: MessagesState):
         return {"messages": [await model.ainvoke(state["messages"])]}

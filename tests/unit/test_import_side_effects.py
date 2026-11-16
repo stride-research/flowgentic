@@ -147,3 +147,21 @@ def test_an_agent_process_imports_no_mcp_client() -> None:
 	)
 	assert result.returncode == 0, result.stderr
 	assert json.loads(result.stdout) == []
+
+
+def test_a_langgraph_agent_process_imports_no_mcp_sdk() -> None:
+	"""With the host, LangGraph and the tools' LangChain wrappers loaded, the
+	MCP SDK and its server stack stay out (LangChain brings httpx itself)."""
+	result = run_python(
+		"""
+		import json, sys
+		import flowgentic.host
+		from flowgentic.langgraph import GraphRunner, KeyValueSaver, bind_tools
+		from flowgentic.tools import ToolRuntime, mcp_tool, task_tool
+		from flowgentic.tools.service import ToolServiceClient
+		heavy = ("mcp", "mcp_types", "starlette", "uvicorn")
+		print(json.dumps(sorted(m for m in heavy if m in sys.modules)))
+		"""
+	)
+	assert result.returncode == 0, result.stderr
+	assert json.loads(result.stdout) == []
