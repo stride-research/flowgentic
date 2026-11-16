@@ -17,9 +17,8 @@ graph = builder.compile(checkpointer=saver)
 await graph.ainvoke(state, {"configurable": {"thread_id": agent_id}}, durability="exit")
 ```
 
-`flowgentic.store` needs no extra. `KeyValueSaver` imports through the
-integration package for now, so it needs both the `langgraph` and `asyncflow`
-extras. `RadexStore` needs RaDEX's Python client, which is built from source
+`flowgentic.store` needs no extra. `KeyValueSaver` needs the `langgraph`
+extra. `RadexStore` needs RaDEX's Python client, which is built from source
 with its C++ core: see [RaDEX](https://github.com/radical-cybertools/radex).
 Tensors, in either store, need NumPy.
 
