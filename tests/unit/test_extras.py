@@ -9,10 +9,21 @@ import subprocess
 import sys
 import textwrap
 
+import pytest
+
 
 def run_without(blocked: list[str], code: str) -> subprocess.CompletedProcess:
 	"""Run ``code`` in a new interpreter in which ``blocked`` cannot be imported."""
-	prelude = "import sys\n" + "".join(f"sys.modules[{name!r}] = None\n" for name in blocked)
+	prelude = textwrap.dedent(f"""
+		import sys
+
+		class BlockImports:
+		    def find_spec(self, fullname, path, target=None):
+		        if fullname in {blocked!r}:
+		            raise ModuleNotFoundError(f"No module named {{fullname!r}}", name=fullname)
+
+		sys.meta_path.insert(0, BlockImports())
+	""")
 	return subprocess.run(
 		[sys.executable, "-c", prelude + textwrap.dedent(code)],
 		capture_output=True,
@@ -54,8 +65,29 @@ def test_the_langgraph_integration_names_its_extras() -> None:
 		assert "install flowgentic[langgraph,asyncflow]" in result.stderr, blocked
 
 
-def test_other_import_errors_are_not_reworded() -> None:
-	"""A missing module that is not an extra's keeps its own error."""
-	result = run_without(["opentelemetry"], "import flowgentic.agent")
+@pytest.mark.parametrize("missing", ["langchain_core", "langchain_openai", "langchain_ollama"])
+def test_chat_provider_names_its_extra(missing: str) -> None:
+	result = run_without([missing], "from flowgentic.utils import ChatLLMProvider")
 	assert result.returncode != 0
-	assert "flowgentic[" not in result.stderr
+	assert "install flowgentic[langgraph]" in result.stderr.splitlines()[-1]
+
+
+def test_chat_provider_imports_without_asyncflow() -> None:
+	result = run_without(ASYNCFLOW, "from flowgentic.utils import ChatLLMProvider")
+	assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize(
+	("module", "missing"),
+	[
+		("flowgentic.agent", "opentelemetry"),
+		("flowgentic.agent", "radical.asyncflow.data"),
+		("flowgentic.langgraph", "radical.asyncflow.data"),
+		("flowgentic.langgraph", "langgraph.types"),
+		("flowgentic.utils", "langchain_core.language_models"),
+	],
+)
+def test_other_import_errors_are_not_reworded(module: str, missing: str) -> None:
+	result = run_without([missing], f"import {module}")
+	assert result.returncode != 0
+	assert result.stderr.splitlines()[-1] == f"ModuleNotFoundError: No module named {missing!r}"

@@ -23,7 +23,7 @@ from typing import Any, Awaitable, Callable
 try:
 	from radical.asyncflow import WorkflowEngine
 except ModuleNotFoundError as exc:
-	if not (exc.name or "").startswith("radical"):
+	if exc.name not in {"radical", "radical.asyncflow"}:
 		raise
 	raise ModuleNotFoundError(
 		"Flowgentic's AsyncFlow path needs AsyncFlow: install flowgentic[asyncflow]",
