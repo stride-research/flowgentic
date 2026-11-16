@@ -100,6 +100,15 @@ def test_share_scales_the_caps():
     assert RequestAdmission(3).gate(share=0.01).cap_requests == 1
 
 
+@pytest.mark.parametrize(
+    "admission",
+    [TokenAdmission(tokens=0, requests=96), TokenAdmission(tokens=1000, requests=0), RequestAdmission(0)],
+)
+def test_a_cap_below_one_is_refused_not_raised_to_one(admission):
+    with pytest.raises(ValueError, match="at least 1"):
+        Fleet([Slow()], admission=admission)
+
+
 async def test_admission_cap_states_and_records():
     models = [Slow(usage={"input_tokens": 100, "output_tokens": 5, "input_token_details": {"cache_read": 60}}), Slow()]
     names = agents(40)

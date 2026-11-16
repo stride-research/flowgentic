@@ -240,6 +240,10 @@ class Admission(Protocol):
 
 
 def _share(cap: int, share: float) -> int:
+	# A cap below 1 is a mistake, not a cap of 1: refuse it before the share
+	# is rounded up.
+	if cap < 1:
+		raise ValueError("the admission caps must be at least 1")
 	return max(1, int(cap * share))
 
 
