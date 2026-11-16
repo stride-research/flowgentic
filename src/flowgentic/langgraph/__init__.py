@@ -1,13 +1,16 @@
 """Flowgentic for LangGraph.
 
 ``LangraphIntegration`` runs a LangGraph graph's tools, services, tasks and
-nodes as AsyncFlow tasks. It needs the ``langgraph`` and ``asyncflow`` extras:
-without them, importing this package raises an error that names them.
+nodes as AsyncFlow tasks. ``KeyValueSaver`` is a checkpointer that keeps
+agents' state in a ``flowgentic.store`` key-value store. The package needs the
+``langgraph`` and ``asyncflow`` extras: without them, importing it raises an
+error that names them.
 """
 
 _EXTRA_MODULES = (
 	"langgraph",
 	"langgraph.graph",  # Other distributions can provide the langgraph namespace.
+	"langgraph.checkpoint",
 	"langchain",
 	"langchain_core",
 	"langchain_openai",
@@ -17,6 +20,7 @@ _EXTRA_MODULES = (
 )
 
 try:
+	from .checkpoint import KeyValueSaver
 	from .execution_wrappers import BaseLLMAgentState, ExecutionWrappersLangraph
 	from .main import LangraphIntegration
 except ModuleNotFoundError as exc:
@@ -28,4 +32,9 @@ except ModuleNotFoundError as exc:
 		name=exc.name,
 	) from exc
 
-__all__ = ["BaseLLMAgentState", "ExecutionWrappersLangraph", "LangraphIntegration"]
+__all__ = [
+	"BaseLLMAgentState",
+	"ExecutionWrappersLangraph",
+	"KeyValueSaver",
+	"LangraphIntegration",
+]

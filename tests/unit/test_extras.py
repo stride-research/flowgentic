@@ -43,7 +43,9 @@ def test_the_core_needs_no_extra() -> None:
 		"""
 		import flowgentic
 		from flowgentic.acceptance import accept
+		from flowgentic.store import MemoryStore, RadexStore
 		flowgentic.configure_logging()
+		MemoryStore().put("k", 1)
 		print("ok")
 		""",
 	)
@@ -65,6 +67,12 @@ def test_the_langgraph_integration_names_its_extras() -> None:
 		assert "install flowgentic[langgraph,asyncflow]" in result.stderr, blocked
 
 
+def test_the_checkpointer_names_its_extras() -> None:
+	result = run_without(LANGGRAPH, "from flowgentic.langgraph import KeyValueSaver")
+	assert result.returncode != 0
+	assert "install flowgentic[langgraph,asyncflow]" in result.stderr
+
+
 @pytest.mark.parametrize("missing", ["langchain_core", "langchain_openai", "langchain_ollama"])
 def test_chat_provider_names_its_extra(missing: str) -> None:
 	result = run_without([missing], "from flowgentic.utils import ChatLLMProvider")
@@ -84,6 +92,7 @@ def test_chat_provider_imports_without_asyncflow() -> None:
 		("flowgentic.agent", "radical.asyncflow.data"),
 		("flowgentic.langgraph", "radical.asyncflow.data"),
 		("flowgentic.langgraph", "langgraph.types"),
+		("flowgentic.langgraph", "langgraph.checkpoint.base"),
 		("flowgentic.utils", "langchain_core.language_models"),
 	],
 )
