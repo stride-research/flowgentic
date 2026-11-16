@@ -15,11 +15,12 @@ GenAI utilities also import.
 import os
 from importlib.metadata import version
 
-from opentelemetry import _logs, context, propagate, trace
+from opentelemetry import _logs, context, metrics, propagate, trace
 
 # GenAI semantic conventions (development status)
 GEN_AI_OPERATION_NAME = "gen_ai.operation.name"
 GEN_AI_AGENT_NAME = "gen_ai.agent.name"
+GEN_AI_AGENT_ID = "gen_ai.agent.id"
 GEN_AI_RESPONSE_ID = "gen_ai.response.id"
 INVOKE_AGENT = "invoke_agent"
 EVALUATION_RESULT = "gen_ai.evaluation.result"
@@ -50,6 +51,84 @@ ACCEPT_VALUE = "flowgentic.accept.value"
 
 tracer = trace.get_tracer("flowgentic", version("flowgentic"))
 logger = _logs.get_logger("flowgentic", version("flowgentic"))
+meter = metrics.get_meter("flowgentic", version("flowgentic"))
+
+# --- The agent host's metrics and events -----------------------------------------
+#
+# Flowgentic's own names, under ``flowgentic.``: the GenAI conventions have no
+# names for agents' states or an agent process's health. Counts of agents are
+# read from the hosts' AgentStates when the SDK collects, so a state change
+# costs nothing extra. Without an SDK, every instrument is a no-op.
+
+AGENT_STATE = "flowgentic.agent.state"
+AGENT_CATEGORY = "flowgentic.agent.category"
+GC_GENERATION = "flowgentic.gc.generation"
+SUSPEND = "flowgentic.agent.suspend"
+SUSPEND_WAITS = "flowgentic.agent.suspend.waits"
+
+LOOP_LAG = meter.create_histogram(
+	"flowgentic.host.loop.lag",
+	unit="s",
+	description="How late the agent host's event loop woke a 100 ms timer",
+)
+GC_PAUSE = meter.create_histogram(
+	"flowgentic.host.gc.pause",
+	unit="s",
+	description="Pauses of the cyclic garbage collector in an agent host",
+)
+
+
+def _observe_agents(options: object) -> list:
+	from flowgentic._agents import _all_states
+
+	totals: dict = {}
+	for states in list(_all_states):
+		for state, count in states.counts().items():
+			totals[state] = totals.get(state, 0) + count
+	return [
+		metrics.Observation(count, {AGENT_STATE: state.name.lower()})
+		for state, count in totals.items()
+	]
+
+
+def _observe_agent_seconds(options: object) -> list:
+	from flowgentic._agents import CATEGORY, _all_states
+
+	totals: dict = {}
+	for states in list(_all_states):
+		for state, seconds in states.agent_seconds().items():
+			totals[state] = totals.get(state, 0.0) + seconds
+	return [
+		metrics.Observation(
+			seconds,
+			{
+				AGENT_STATE: state.name.lower(),
+				AGENT_CATEGORY: CATEGORY.get(state, "none"),
+			},
+		)
+		for state, seconds in totals.items()
+	]
+
+
+meter.create_observable_gauge(
+	"flowgentic.agents",
+	callbacks=[_observe_agents],
+	unit="{agent}",
+	description="Agents in each state, across the process's agent hosts",
+)
+meter.create_observable_counter(
+	"flowgentic.agent.time",
+	callbacks=[_observe_agent_seconds],
+	unit="s",
+	description="Agent-seconds spent in each state",
+)
+
+
+def emit_suspend(agent_id: str, waits: int) -> None:
+	"""Record, on the agent's span, that it suspended on ``waits`` tasks."""
+	logger.emit(
+		event_name=SUSPEND, attributes={GEN_AI_AGENT_ID: agent_id, SUSPEND_WAITS: waits}
+	)
 
 
 def content_on_spans() -> bool:
