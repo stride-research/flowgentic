@@ -20,6 +20,14 @@ predate this changelog, so their changes are not listed here.
   `flowgentic[langgraph,asyncflow]` installs what 0.4 installed.
 - `flowgentic.langGraph` is renamed `flowgentic.langgraph`. Change the imports.
 
+### Added
+
+- `flowgentic.langgraph.KeyValueSaver`, a LangGraph checkpointer that keeps
+  agents' state in a key-value store, and `flowgentic.store` with two stores:
+  RaDEX on a Dragon distributed dictionary, and a dictionary in the process.
+  The `langgraph` extra now names `langgraph-checkpoint`, which LangGraph
+  already brought.
+
 ### Changed
 
 - Importing a part whose extra is not installed raises `ModuleNotFoundError`

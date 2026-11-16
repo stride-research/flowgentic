@@ -17,6 +17,7 @@ nav:
   - Features:
       - Acceptance: features/acceptance.md
       - Services: features/services.md
+      - Checkpointer: features/checkpointer.md
       - Telemetry: features/telemetry.md
       - Logging: features/logging.md
   - Design patterns:
