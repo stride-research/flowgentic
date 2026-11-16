@@ -69,8 +69,10 @@ So the pool opens each client in a supervisor task of its own, and guarantees:
   waiting also stops its call, which frees the slot.
 - **It resends only what is safe to repeat.** A call that lost its connection
   may or may not have run on the server. It is sent again only with
-  `idempotent=True`, at most `resends` times. The service sends its calls as
-  idempotent, since it answers each uid once.
+  `idempotent=True`, at most `resends` times. Pass `idempotent=True` to
+  `ToolServiceClient.call` only for tools whose execution can safely repeat.
+  A uid deduplicates requests at the service; a server can still have executed
+  a call whose reply was lost.
 
 `close()` stops intake, lets calls finish for up to `drain` seconds, fails the
 rest with `McpPoolClosed`, and never raises. `pool.stats()` returns the pool's

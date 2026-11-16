@@ -30,6 +30,7 @@ be reachable from outside it.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 
@@ -129,6 +130,8 @@ class _QueueReader(threading.Thread):
 				log.warning("%s: get failed: %r", self.name, exc)
 				time.sleep(0.1)
 				continue
+			if self._halt.is_set():
+				return
 			raws = [raw]
 			while len(raws) < self.max_messages:
 				try:
@@ -138,9 +141,10 @@ class _QueueReader(threading.Thread):
 			items: list = []
 			stop = False
 			for r in raws:
-				message = _unpack(r)
+				message = None if r is None else _unpack(r)
 				if message is None:
 					stop = True
+					break
 				else:
 					items.extend(message)
 			self.passes += 1
@@ -192,13 +196,15 @@ class ToolService:
 
 	def on_requests(self, requests: list, t_recv: float) -> None:
 		loop = asyncio.get_running_loop()
-		for uid, tool, args, src, _t_ask in requests:
+		for uid, tool, args, src, _t_ask, *options in requests:
 			self.received += 1
 			call = self.calls.get(uid)
 			if call is None:
 				call = self.calls[uid] = _Call(src, t_recv)
 				self.inflight += 1
-				task = loop.create_task(self._call(uid, call, tool, args))
+				task = loop.create_task(
+					self._call(uid, call, tool, args, bool(options and options[0]))
+				)
 				self._tasks.add(task)
 				task.add_done_callback(self._tasks.discard)
 			elif call.answer is None:
@@ -210,13 +216,17 @@ class ToolService:
 				uid_, ok, payload, _ = call.answer
 				self._queue(src, (uid_, ok, payload, (t_recv, t_recv, t_recv)))
 
-	async def _call(self, uid: str, call: _Call, tool: str, args: dict) -> None:
+	async def _call(
+		self, uid: str, call: _Call, tool: str, args: dict, idempotent: bool
+	) -> None:
 		t_call = time.time()
 		try:
 			result = await self.pool.call(
-				tool, args, timeout=self.call_timeout, idempotent=True
+				tool, args, timeout=self.call_timeout, idempotent=idempotent
 			)
 			ok, payload = mcp_data(result)
+		except asyncio.CancelledError:
+			ok, payload = False, "tool service stopped during the call"
 		except Exception as exc:  # reported to the agent
 			ok, payload = False, f"{type(exc).__name__}: {exc}"[:500]
 		t_done = time.time()
@@ -225,7 +235,10 @@ class ToolService:
 		if not ok and len(self.failures) < 10:
 			self.failures.append(f"{uid}: {payload}"[:300])
 		if self.listener is not None:
-			self.listener(uid, tool, call.t_recv, t_call, t_done, ok)
+			try:
+				self.listener(uid, tool, call.t_recv, t_call, t_done, ok)
+			except Exception:
+				log.exception("tool service listener failed for %s", uid)
 		call.answer = (uid, ok, payload, (call.t_recv, t_call, t_done))
 		for src in call.waiters:
 			self._queue(src, call.answer)
@@ -289,7 +302,14 @@ async def serve(
 			replies[src].put(_pack(items[i : i + CHUNK]))
 			messages[0] += 1
 
-	await pool.start(wait=len(pool.servers), timeout=connect_timeout)
+	try:
+		await pool.start(
+			wait=len(pool.servers), timeout=connect_timeout, all_servers=True
+		)
+	except BaseException:
+		for reply in replies:
+			reply.put(_pack(None))
+		raise
 	service = ToolService(pool, out, call_timeout, listener)
 	stopped = asyncio.Event()
 	reader = _QueueReader(
@@ -301,15 +321,23 @@ async def serve(
 	)
 	reader.start()
 	t_ready = time.time()
-	if on_ready is not None:
-		maybe = on_ready({"pool": pool.stats()})
-		if asyncio.iscoroutine(maybe):
-			await maybe
 	try:
+		if on_ready is not None:
+			maybe = on_ready({"pool": pool.stats()})
+			if inspect.isawaitable(maybe):
+				await maybe
 		await stopped.wait()
 		await service.drain(drain_timeout)
 	finally:
 		reader.stop()
+		await pool.close(timeout=5.0)
+		if service._tasks:
+			for task in service._tasks:
+				task.cancel()
+			await asyncio.gather(*service._tasks, return_exceptions=True)
+		service.flush()
+		for reply in replies:
+			reply.put(_pack(None))
 		stats = service.stats()
 		stats.update(
 			reply_messages=messages[0],
@@ -317,7 +345,6 @@ async def serve(
 			pool=pool.stats(),
 			up_s=round(time.time() - t_ready, 1),
 		)
-		await pool.close(timeout=5.0)
 	return stats
 
 
@@ -357,11 +384,14 @@ class ToolServiceClient:
 
 	def start(self) -> None:
 		"""Start reading answers; call it on the event loop that makes calls."""
+		if self._reader is not None:
+			raise RuntimeError("ToolServiceClient already started")
 		self._loop = asyncio.get_running_loop()
 		self._reader = _QueueReader(
 			self.replies,
 			self._loop,
 			self._on_answers,
+			on_stop=self.stop,
 			name=f"flowgentic-replies-{self.index}",
 		)
 		self._reader.start()
@@ -370,16 +400,25 @@ class ToolServiceClient:
 		"""Stop reading answers, within a second."""
 		if self._reader is not None:
 			self._reader.stop()
+		self._loop = None
+		self.outbox.clear()
+		for future in self.pending.values():
+			if not future.done():
+				future.set_exception(ToolServiceError("tool service client stopped"))
+		self.pending.clear()
+		self._asked.clear()
 
-	async def call(self, uid: str, tool: str, args: dict) -> Any:
+	async def call(
+		self, uid: str, tool: str, args: dict, *, idempotent: bool = False
+	) -> Any:
 		if self._loop is None:
-			raise RuntimeError("ToolServiceClient.start() was not called")
+			raise RuntimeError("ToolServiceClient must be started and running")
 		future = self.pending.get(uid)
 		if future is None:
 			future = self.pending[uid] = self._loop.create_future()
 			now = time.time()
 			self._asked[uid] = now
-			self.outbox.append((uid, tool, args, self.index, now))
+			self.outbox.append((uid, tool, args, self.index, now, idempotent))
 			self.sent += 1
 			if not self._flush_scheduled:
 				self._flush_scheduled = True
@@ -390,7 +429,26 @@ class ToolServiceClient:
 		self._flush_scheduled = False
 		items, self.outbox = self.outbox, []
 		for i in range(0, len(items), CHUNK):
-			self.requests.put(_pack(items[i : i + CHUNK]))
+			self._send_batch(items[i : i + CHUNK])
+
+	def _send_batch(self, batch: list) -> None:
+		try:
+			try:
+				message = _pack(batch)
+			except Exception:
+				if len(batch) == 1:
+					raise
+				# Packing failed before delivery. Isolate the invalid request.
+				for item in batch:
+					self._send_batch([item])
+				return
+			self.requests.put(message)
+		except Exception as exc:
+			for uid, *_ in batch:
+				future = self.pending.pop(uid)
+				self._asked.pop(uid)
+				future.set_exception(ToolServiceError(f"could not send request: {exc}"))
+		else:
 			self.messages += 1
 
 	def _on_answers(self, items: list, t: float) -> None:
@@ -401,7 +459,10 @@ class ToolServiceClient:
 				continue
 			self.answered += 1
 			if self.listener is not None and asked is not None:
-				self.listener(uid, t - asked, t_done - t_recv)
+				try:
+					self.listener(uid, t - asked, t_done - t_recv)
+				except Exception:
+					log.exception("tool service client listener failed for %s", uid)
 			if ok:
 				future.set_result(payload)
 			else:

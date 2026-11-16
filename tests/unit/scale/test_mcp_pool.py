@@ -257,3 +257,32 @@ def test_needs_a_client_per_server():
         SupervisedMcpPool(["http://127.0.0.1:1/mcp", "http://127.0.0.1:2/mcp"], clients=1)
     pool = SupervisedMcpPool(["http://127.0.0.1:1/mcp", "http://127.0.0.1:2/mcp"], clients=2)
     assert pool.servers == ["http://127.0.0.1:1/mcp", "http://127.0.0.1:2/mcp"]
+
+
+async def test_start_cancelled_or_missing_a_server_closes_supervisors():
+    up, down = FakeServer(), FakeServer(down=True)
+    pool = SupervisedMcpPool([up.connect, down.connect], clients=3, backoff=FAST)
+    start = asyncio.create_task(pool.start(wait=2, all_servers=True))
+    await until(lambda: len(up.live()) == 2)
+    assert not start.done()
+    start.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await start
+    assert not up.live() and all(task.done() for task in pool._supervisors)
+
+
+async def test_cancelled_closer_does_not_strand_the_pool():
+    srv = FakeServer()
+    pool = SupervisedMcpPool(srv.connect, clients=1, backoff=FAST)
+    await pool.start()
+    call = asyncio.create_task(pool.call("hang", {}))
+    await until(lambda: srv.active == 1)
+    closer = asyncio.create_task(pool.close(drain=0.05))
+    await asyncio.sleep(0)
+    closer.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await closer
+    await asyncio.wait_for(pool.close(), 1)
+    with pytest.raises(McpPoolClosed):
+        await call
+    assert not srv.live()

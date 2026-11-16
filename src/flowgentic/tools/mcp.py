@@ -209,7 +209,7 @@ class SupervisedMcpPool:
 		self._loop: asyncio.AbstractEventLoop | None = None
 		self._started = False
 		self._closing = False
-		self._closed = asyncio.Event()
+		self._close_task: asyncio.Task | None = None
 		self._changed = asyncio.Event()
 		self._down_since: float | None = None
 		self._unavailable_timer: asyncio.TimerHandle | None = None
@@ -227,10 +227,14 @@ class SupervisedMcpPool:
 	async def __aexit__(self, *exc: object) -> None:
 		await self.close()
 
-	async def start(self, wait: int = 1, timeout: float | None = None) -> None:
+	async def start(
+		self, wait: int = 1, timeout: float | None = None, *, all_servers: bool = False
+	) -> None:
 		"""Starts one supervisor per client, and waits until `wait` clients are connected (0: do
-		not wait). If they are not connected within `timeout` (default `connect_timeout`), closes
+		not wait). With `all_servers`, also wait for a connection to each server. If they are not connected within `timeout` (default `connect_timeout`), closes
 		the pool and raises `McpUnavailable`."""
+		if self._closing:
+			raise McpPoolClosed("the MCP pool is closed")
 		if self._started:
 			raise RuntimeError("the pool was already started")
 		self._started = True
@@ -240,16 +244,20 @@ class SupervisedMcpPool:
 			asyncio.create_task(self._supervise(i), name=f"mcp-client-{i}")
 			for i in range(self.clients)
 		]
-		if wait:
+		if wait or all_servers:
+			timeout = self.connect_timeout if timeout is None else timeout
 			try:
 				await asyncio.wait_for(
-					self._wait_connected(min(wait, self.clients)),
-					timeout or self.connect_timeout,
+					self._wait_connected(min(wait, self.clients), all_servers),
+					timeout,
 				)
+			except asyncio.CancelledError:
+				await self.close()
+				raise
 			except TimeoutError:
 				await self.close()
 				raise McpUnavailable(
-					f"no MCP client connected to {self.server} within {timeout or self.connect_timeout} s: {self.last_error()}"
+					f"MCP pool for {self.server} did not reach readiness within {timeout} s: {self.last_error()}"
 				) from None
 
 	async def call(
@@ -295,10 +303,13 @@ class SupervisedMcpPool:
 		"""Stops intake; lets queued and in-flight calls finish for up to `drain` seconds; fails
 		the rest with `McpPoolClosed`; waits up to `timeout` seconds for the clients to exit.
 		Never raises; a second call waits for the first."""
-		if self._closing:
-			await self._closed.wait()
-			return
-		self._closing = True
+		if self._close_task is None:
+			self._closing = True
+			self._notify()
+			self._close_task = asyncio.create_task(self._close(drain, timeout))
+		await asyncio.shield(self._close_task)
+
+	async def _close(self, drain: float, timeout: float) -> None:
 		loop = asyncio.get_running_loop()
 		if drain > 0:
 			end = loop.time() + drain
@@ -328,7 +339,6 @@ class SupervisedMcpPool:
 					task.get_name(),
 					timeout,
 				)
-		self._closed.set()
 
 	def stats(self) -> dict[str, Any]:
 		"""The pool's state and counters, and its last errors."""
@@ -563,9 +573,15 @@ class SupervisedMcpPool:
 		self._changed.set()
 		self._changed = asyncio.Event()
 
-	async def _wait_connected(self, n: int) -> None:
-		while len(self._conns) < n:
+	async def _wait_connected(self, n: int, all_servers: bool) -> None:
+		while not self._closing:
+			servers = len(self._connects)
+			if len(self._conns) >= n and (
+				not all_servers or len({i % servers for i in self._conns}) == servers
+			):
+				return
 			await self._changed.wait()
+		raise McpPoolClosed("the MCP pool closed during startup")
 
 
 def _describe(exc: BaseException) -> str:
