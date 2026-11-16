@@ -73,3 +73,51 @@ calls few. For thread `t` and checkpoint namespace `ns`:
 
 `saver.stats()` returns how many checkpoints and writes the saver has put, how
 many checkpoints it has read, and their mean size in bytes.
+
+## Reducing store traffic on an owned shard
+
+When a single process owns a shard, its savers can share a bounded
+`WriteThroughStore` over the backing store. For example:
+
+```python
+from flowgentic.store import RadexStore, WriteThroughStore
+
+owned = WriteThroughStore(RadexStore.attach(descriptor), max_bytes=32 << 20)
+saver = KeyValueSaver(owned)
+```
+
+Route every read, update and delete for those keys through the same wrapper.
+To hand off the shard, stop the outgoing writer and give the receiving writer
+a new wrapper with an empty cache. Independent readers or writers that go
+around the wrapper can leave its entries stale. Use the ordinary saver on a
+shared partition without exclusive ownership.
+
+Every write reaches the backing store before returning. The cache retains
+up to `max_bytes` of pickled values and `max_entries` keys (16,384 by
+default). The keys, Python bookkeeping and transient serialization buffers
+also consume memory. Size it for the concurrently active agents. Oversized
+values bypass retention and evicted values are read from the backing store.
+
+For a new root-namespace checkpoint with ordinary channels, writing the
+checkpoint, saving one batch of pending writes and reading it to resume uses
+three backing calls when the two keys stay resident. Those calls are two puts
+and the first lookup of pending writes. Once both keys are warm, the same
+sequence uses two puts. The ordinary saver uses six calls. Initial graph
+lookup and the final checkpoint after resuming are separate operations.
+Caching adds local serialization work, so benchmark the backing-store latency
+and the distance between suspension and resume on the intended allocation.
+
+To measure the actual Dragon path, use an active allocation and save its DDict's
+serialized descriptor in a local file. In the environment that has the RaDEX
+client and Flowgentic's integration dependencies installed, run:
+
+```bash
+uv run --no-sync python benchmarks/checkpoint_resume.py --backend radex --descriptor-file ddict.txt --agents 1000 --window 256
+```
+
+Repeat with `--cache-mib 32` and the same window and payload size. The benchmark
+suspends and resumes real LangGraph threads, then verifies the saved result
+directly against the selected backend. Its operation counts include the initial
+lookup and final checkpoint. Verification and cleanup run outside the timed
+interval. Each run uses and cleans up its own thread IDs. `--backend memory`
+is a local control; results identify the backend used.

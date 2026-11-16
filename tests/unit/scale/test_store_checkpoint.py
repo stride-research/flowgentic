@@ -409,3 +409,86 @@ def test_delete_removes_early_writes_from_child_namespace():
 	saver.put_writes(config, [("early", 1)], "task")
 	saver.delete_thread("t")
 	assert not store.keys()
+
+
+async def test_write_through_suspend_resume_and_handoff():
+	from flowgentic.store import WriteThroughStore
+
+	backing = CountingStore()
+	owned = WriteThroughStore(backing, max_bytes=1 << 20)
+	g = graph(KeyValueSaver(owned), stop_inside=True)
+	config = {"configurable": {"thread_id": "t"}}
+	await g.ainvoke({"messages": [("human", "hi")]}, config, durability="exit")
+	assert backing.take() == {"get": 2, "put": 2}
+	await g.ainvoke(Command(resume="done"), config, durability="exit")
+	assert backing.take() == {"put": 1}
+	await g.ainvoke({"messages": [("human", "again")]}, config, durability="exit")
+	assert backing.take() == {"put": 2}
+	# A different owner receives persisted writes, even if the first disappears.
+	new_owner = graph(KeyValueSaver(WriteThroughStore(backing, max_bytes=1 << 20)), True)
+	result = await new_owner.ainvoke(Command(resume="moved"), config, durability="exit")
+	assert result["messages"][-1].content == "b moved"
+	assert backing.take() == {"get": 2, "put": 1}
+
+
+def test_store_cache_is_bounded_and_values_are_isolated():
+	from flowgentic.store import WriteThroughStore
+
+	backing = CountingStore()
+	cache = WriteThroughStore(backing, max_bytes=128, max_entries=2)
+	cache.put("a", [1])
+	cache.get("a").append(2)
+	assert cache.get("a") == [1]
+	cache.put("b", 2)
+	cache.get("a")  # b is least recently used
+	cache.put("c", 3)
+	backing.take()
+	assert cache.get("b") == 2 and backing.take() == {"get": 1}
+	cache.put("large", bytes(1024))
+	backing.take()
+	assert cache.get("large") == bytes(1024) and backing.take() == {"get": 1}
+	cache.delete("b")
+	assert not cache.contains("b") and cache.get("b", 42) == 42
+	with pytest.raises(KeyError):
+		cache.get("b")
+
+
+def test_failed_backing_write_invalidates_cache():
+	from flowgentic.store import WriteThroughStore
+
+	class Uncertain(MemoryStore):
+		def put(self, key, value):
+			super().put(key, value)
+			if value == 2:
+				raise OSError("lost acknowledgement")
+
+	cache = WriteThroughStore(Uncertain(), max_bytes=1024)
+	cache.put("k", 1)
+	with pytest.raises(OSError, match="acknowledgement"):
+		cache.put("k", 2)
+	assert cache.get("k") == 2
+
+
+def test_store_cache_preserves_values_supported_only_by_the_backend():
+	from flowgentic.store import WriteThroughStore
+
+	class ExtendedStore(dict):
+		put = dict.__setitem__
+
+	backing = ExtendedStore()
+	cache = WriteThroughStore(backing, max_bytes=128)
+	cache.put("item", "old")
+	cache.put("item", lambda: "new")
+	assert backing["item"]() == cache.get("item")() == "new"
+
+
+def test_cache_evicts_on_total_value_bytes():
+	from flowgentic.store import WriteThroughStore
+
+	backing = CountingStore()
+	cache = WriteThroughStore(backing, max_bytes=100)
+	for key in ("a", "b"):
+		cache.put(key, bytes(64))
+	backing.take()
+	assert cache.get("b") == bytes(64) and backing.take() == {}
+	assert cache.get("a") == bytes(64) and backing.take() == {"get": 1}
