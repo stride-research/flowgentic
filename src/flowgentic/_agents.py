@@ -43,7 +43,7 @@ class AgentState(IntEnum):
 	TOOL_WAIT = 5
 	"""Waiting for a task, queued or running, suspended or not."""
 	DONE = 6
-	"""Finished, failed or interrupted."""
+	"""Finished, failed, interrupted or cancelled."""
 
 
 CATEGORY: dict[AgentState, str] = {
@@ -103,13 +103,11 @@ class AgentStates:
 			self._running = True
 
 	def _end_run(self) -> None:
+		# Agents that never started, in a run that failed or was cancelled,
+		# stay pending.
 		with self._lock:
 			self._advance(time.monotonic())
 			self._t = None
-			total = sum(self._counts)
-			self._state = dict.fromkeys(self._state, AgentState.DONE)
-			self._counts = [0] * _N
-			self._counts[AgentState.DONE] = total
 			self._running = False
 
 	def _admit(self, agent: str) -> None:

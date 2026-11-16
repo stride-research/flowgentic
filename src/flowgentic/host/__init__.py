@@ -8,12 +8,15 @@ LangGraph). It owns what makes thousands of agents in one Python process work:
   spends most of a busy agent process's time scanning the agents' live
   objects. The host raises its first threshold while it runs, and freezes the
   objects that exist once agents have started, so later collections skip them.
-  It restores both when ``run`` returns.
+  It restores both when ``run`` returns; if objects were already frozen when it
+  started, it leaves everything frozen.
 - **A cap on live agents.** At most ``max_live_agents`` agents are live at
-  once, suspended ones included; more are accepted, and each starts when a live
-  one ends. The cap bounds the event loop's lag and the collector's pauses.
-- **Staggered starts.** Agents start in batches, so they do not all reach
-  their first model call or their first suspension at the same moment.
+  once, suspended ones included; more are accepted, and each starts as soon as
+  a live one ends. The cap bounds the event loop's lag and the collector's
+  pauses.
+- **Staggered starts.** The first wave, up to the cap, starts in batches, so
+  its agents do not all reach their first model call or their first suspension
+  at the same moment. Later agents are not staggered.
 - **Suspension.** When an agent's runner reports that the agent waits on tasks,
   the host holds no state of the agent's, only its id and the tasks' futures:
   the framework keeps the state in its checkpoint. The host awaits the tasks and
@@ -21,7 +24,8 @@ LangGraph). It owns what makes thousands of agents in one Python process work:
   task's key with ``register_pending``, and the runner names those keys.
 - **Accounting.** ``AgentStates`` counts the agents in each state, from which a
   campaign reports how many agents are working, waiting, and making model
-  requests. One agent's failure never stops the others.
+  requests. One agent's failure never stops the others. When ``run`` is
+  cancelled, each live agent ends as ``cancelled``.
 """
 
 from __future__ import annotations
@@ -115,7 +119,10 @@ class Collector:
 
 	The first threshold rises to ``threshold`` (CPython's default is 700), and
 	with ``freeze`` the objects alive once agents have started are moved out of
-	the collector's reach. The defaults were measured on CPython 3.12.
+	the collector's reach. They are moved back when the host ends, unless
+	objects were already frozen when it froze: CPython 3.12 freezes some at
+	startup, and an application may freeze its own. The defaults were measured
+	on CPython 3.12.
 	"""
 
 	threshold: int = 100_000
@@ -124,7 +131,8 @@ class Collector:
 
 @dataclass(frozen=True, slots=True)
 class Stagger:
-	"""Start agents ``batch`` at a time, ``interval_s`` seconds apart."""
+	"""Start the first wave of agents, up to the host's cap, ``batch`` at a
+	time, ``interval_s`` seconds apart."""
 
 	batch: int = 100
 	interval_s: float = 0.5
@@ -136,15 +144,20 @@ class Stagger:
 
 @dataclass(slots=True)
 class AgentResult:
-	"""How one agent's run ended. Its output goes to ``on_done``, not here."""
+	"""How one agent's run ended. Its output goes to ``on_done``, not here.
+
+	``error`` is the agent's own error. ``callback_error`` is the error
+	``on_done`` raised for this agent, which also makes the agent ``failed``.
+	"""
 
 	id: str
-	status: str = "pending"  # done, failed or interrupted
+	status: str = "pending"  # done, failed, interrupted or cancelled
 	error: str | None = None
 	t_start: float = 0.0
 	t_end: float = 0.0
 	suspensions: int = 0
 	interrupts: tuple[Any, ...] = ()
+	callback_error: str | None = None
 
 
 @dataclass(slots=True)
@@ -171,6 +184,7 @@ _collector_lock = threading.RLock()
 _thresholds: dict[object, int] = {}
 _original_thresholds: tuple[int, int, int]
 _freeze_owners: set[object] = set()
+_frozen_before = 0  # the permanent generation's size before the first owner froze
 
 
 class AgentHost:
@@ -241,10 +255,14 @@ class AgentHost:
 
 		def collect(task: asyncio.Task) -> None:
 			tasks.remove(task)
+			if task.cancelled():  # cancelled from outside, not by this host
+				outcomes["cancelled"] += 1
+				return
 			result = task.result()
 			outcomes[result.status] += 1
-			if result.status == "failed" and result.error:
-				errors[result.error.split(":", 1)[0]] += 1
+			error = result.error or result.callback_error
+			if result.status == "failed" and error:
+				errors[error.split(":", 1)[0]] += 1
 
 		lag, pauses = LoopLag(), CollectorPauses()
 		saved = self._collector_start()
@@ -256,7 +274,8 @@ class AgentHost:
 			first = min(count, self.max_live_agents)
 			inputs = iter(work)
 			for i in range(count):
-				if i and i % self.stagger.batch == 0:
+				# Only the first wave is staggered; later agents fill free slots.
+				if i and i < first and i % self.stagger.batch == 0:
 					await asyncio.sleep(self.stagger.interval_s)
 				if len(tasks) >= self.max_live_agents:
 					collect(await completed.get())
@@ -315,6 +334,7 @@ class AgentHost:
 		result.t_start = time.time()
 		states.enter(agent.id, AgentState.WORKING)
 		output: Any = None
+		cancelled: asyncio.CancelledError | None = None
 		with _telemetry.tracer.start_as_current_span(
 			f"{_telemetry.INVOKE_AGENT} {agent.id}",
 			attributes={
@@ -335,10 +355,19 @@ class AgentHost:
 					result.status = "done"
 					output = step.output
 			except (Exception, asyncio.CancelledError) as exc:
-				result.status = "failed"
-				result.error = f"{type(exc).__name__}: {exc}"[:500]
+				task = asyncio.current_task()
+				if isinstance(exc, asyncio.CancelledError) and task.cancelling():
+					# This task was cancelled, as the host does when it stops:
+					# end the agent here, then let the task end cancelled.
+					result.status = "cancelled"
+					cancelled = exc
+				else:
+					# Any other error, a CancelledError raised inside the runner
+					# included, ends this agent only.
+					result.status = "failed"
+					result.error = f"{type(exc).__name__}: {exc}"[:500]
+					log.debug("agent %s failed", agent.id, exc_info=True)
 				span.set_attribute(_telemetry.ERROR_TYPE, type(exc).__qualname__)
-				log.debug("agent %s failed", agent.id, exc_info=True)
 			finally:
 				result.t_end = time.time()
 				_agents.release_pending()
@@ -348,10 +377,12 @@ class AgentHost:
 				self.on_done(result, output)
 			except Exception as exc:
 				result.status = "failed"
-				result.error = f"{type(exc).__name__}: on_done: {exc}"[:500]
+				result.callback_error = f"{type(exc).__name__}: {exc}"[:500]
 
 		if indexed:
 			states._retire(agent.id)
+		if cancelled is not None:
+			raise cancelled
 		return result
 
 	async def _wait(self, agent: Agent, step: Suspended) -> dict[str, Any]:
@@ -388,19 +419,22 @@ class AgentHost:
 			return token
 
 	def _collector_started(self, token: object | None, t0: float) -> dict:
+		global _frozen_before
 		if self.collector is None or not self.collector.freeze or token is None:
 			return {}
 		with _collector_lock:
 			t = time.perf_counter()
 			if not _freeze_owners:
-				if frozen := gc.get_freeze_count():
-					return {"already_frozen": True, "frozen": frozen}
+				# Freezing adds to what is frozen already, such as the objects
+				# CPython 3.12 freezes at startup or the application froze.
+				_frozen_before = gc.get_freeze_count()
 				gc.collect()
 				gc.freeze()
 			_freeze_owners.add(token)
 			return {
 				"at_s": round(time.monotonic() - t0, 3),
 				"call_s": round(time.perf_counter() - t, 4),
+				"frozen_before": _frozen_before,
 				"frozen": gc.get_freeze_count(),
 			}
 
@@ -410,7 +444,8 @@ class AgentHost:
 		with _collector_lock:
 			if token in _freeze_owners:
 				_freeze_owners.remove(token)
-				if not _freeze_owners:
+				# Unfreezing would also thaw what others froze: leave it all.
+				if not _freeze_owners and not _frozen_before:
 					gc.unfreeze()
 			del _thresholds[token]
 			threshold = next(reversed(_thresholds.values()), _original_thresholds[0])

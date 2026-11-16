@@ -112,9 +112,25 @@ async def test_starts_are_staggered():
     assert t[5] - t[4] > 0.08 and t[10] - t[9] > 0.08  # batches apart
 
 
+async def test_agents_after_the_first_wave_are_not_staggered():
+    runner = FakeRunner(sleep=0.01)
+    host = AgentHost(
+        runner,
+        max_live_agents=2,
+        stagger=Stagger(batch=1, interval_s=0.3),
+        collector=None,
+    )
+    report = await host.run(Agent(f"a{i}", None) for i in range(8))
+    t = sorted(runner.starts)
+    assert report.finished == 8
+    assert t[1] - t[0] > 0.25  # the first wave, two agents, is staggered
+    # The six later agents start as slots free, not 0.3 s apart (1.8 s in all).
+    assert t[-1] - t[1] < 0.2
+
+
 async def test_collector_is_tuned_during_a_run_and_restored():
     before = gc.get_threshold()
-    already_frozen = bool(gc.get_freeze_count())
+    frozen_before = gc.get_freeze_count()  # CPython 3.12 freezes some at startup
     seen = {}
 
     class Probe(FakeRunner):
@@ -125,10 +141,14 @@ async def test_collector_is_tuned_during_a_run_and_restored():
             return Finished(None)
 
     report = await AgentHost(Probe(), stagger=FAST).run([Agent("a", None)])
-    assert seen["threshold"] == 100_000 and seen["frozen"] > 0
-    assert gc.get_threshold() == before and bool(gc.get_freeze_count()) == already_frozen
-    assert report.collector["freeze"]["frozen"] > 0
-    assert report.collector["freeze"].get("already_frozen", False) == already_frozen
+    freeze = report.collector["freeze"]
+    assert seen["threshold"] == 100_000 and seen["frozen"] > frozen_before
+    assert freeze.keys() == {"at_s", "call_s", "frozen_before", "frozen"}
+    assert freeze["frozen_before"] == frozen_before and freeze["frozen"] > frozen_before
+    assert gc.get_threshold() == before
+    # An empty permanent generation is restored; one that was not is left frozen.
+    # (Frozen objects still die when their last reference goes, so counts drift.)
+    assert bool(gc.get_freeze_count()) == bool(frozen_before)
 
 
 async def test_collector_is_restored_when_a_run_is_cancelled():
@@ -245,9 +265,72 @@ async def test_one_cancelled_agent_and_callback_failure_leave_peers_running():
     host = AgentHost(Runner(), on_done=on_done, collector=None)
     report = await host.run([Agent(key, None) for key in ("cancel", "callback", "ok")])
     assert report.finished == 1 and report.errors == {"CancelledError": 1, "ValueError": 1}
+    # A CancelledError the runner raises, while the host is not cancelled, is a failure.
+    assert report.agents[0].status == "failed"
     assert all(_agents.pending(result.id) is None for result in report.agents)
     await host.run([Agent("again", None)])
     assert host.states.counts()[AgentState.DONE] == 1
+
+
+async def test_a_failing_on_done_keeps_the_agents_own_error():
+    def on_done(result, _output):
+        raise RuntimeError("sink down")
+
+    host = AgentHost(FakeRunner(), on_done=on_done, stagger=FAST, collector=None)
+    report = await host.run([Agent("x1", None), Agent("a1", None)])
+    failed, done = report.agents
+    assert failed.status == "failed" and failed.error == "ValueError: bad agent"
+    assert failed.callback_error == "RuntimeError: sink down"
+    assert done.status == "failed" and done.error is None
+    assert done.callback_error == "RuntimeError: sink down"
+    assert report.errors == {"ValueError": 1, "RuntimeError": 1}
+    assert report.outcomes == {"failed": 2}
+
+
+async def test_cancelling_the_host_ends_live_agents_as_cancelled():
+    seen = []
+
+    class Runner:
+        async def start(self, agent):
+            await asyncio.sleep(10)
+            return Finished(None)
+
+    host = AgentHost(
+        Runner(),
+        max_live_agents=3,
+        stagger=FAST,
+        collector=None,
+        on_done=lambda result, _output: seen.append((result.status, result.error)),
+    )
+    with pytest.raises(TimeoutError):
+        async with asyncio.timeout(0.1):
+            await host.run_indexed(range(10), lambda i: i)
+    assert seen == [("cancelled", None)] * 3
+    counts = host.states.counts()
+    # The three live agents ended; the seven that never started stay pending.
+    assert counts[AgentState.DONE] == 3 and counts[AgentState.PENDING] == 7
+    assert not host.states._state
+
+
+async def test_one_agent_task_cancelled_from_outside_leaves_the_host_running():
+    seen = []
+
+    class Runner:
+        async def start(self, agent):
+            if agent.id == "victim":
+                asyncio.get_running_loop().call_soon(asyncio.current_task().cancel)
+                await asyncio.sleep(10)
+            return Finished(None)
+
+    host = AgentHost(
+        Runner(),
+        stagger=FAST,
+        collector=None,
+        on_done=lambda result, _output: seen.append((result.id, result.status)),
+    )
+    report = await host.run([Agent("victim", None), Agent("ok", None)])
+    assert report.outcomes == {"cancelled": 1, "done": 1}
+    assert sorted(seen) == [("ok", "done"), ("victim", "cancelled")]
 
 
 async def test_overlapping_hosts_restore_process_collector():
@@ -279,8 +362,8 @@ async def test_overlapping_hosts_restore_process_collector():
     assert gc.get_threshold() == before and bool(gc.get_freeze_count()) == already_frozen
 
 
-def test_host_preserves_a_preexisting_frozen_generation():
-    # Freezing then unfreezing in pytest would also thaw interpreter-owned objects.
+def test_host_freezes_over_a_frozen_generation_and_leaves_it_frozen():
+    # In a fresh interpreter, so that what the host leaves frozen ends with it.
     code = """
 import asyncio, gc
 from flowgentic.host import Agent, AgentHost, Finished
@@ -290,9 +373,12 @@ class Runner:
         return Finished(None)
 
 gc.freeze()
+before = gc.get_freeze_count()
 report = asyncio.run(AgentHost(Runner()).run([Agent("a", None)]))
-assert report.collector["freeze"]["already_frozen"]
-assert gc.get_freeze_count() > 0
+freeze = report.collector["freeze"]
+assert freeze["frozen_before"] == before > 0, freeze
+assert freeze["frozen"] > before, freeze
+assert gc.get_freeze_count() > 0, "the host thawed objects it did not freeze"
 """
     subprocess.run([sys.executable, "-c", code], check=True)
 

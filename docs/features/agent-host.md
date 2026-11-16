@@ -29,31 +29,44 @@ print(report.finished, report.states["share_by_category"], report.loop_lag)
   started, moves the objects then alive out of the collector's reach
   (`gc.freeze()`). It restores both when `run` returns, and also when `run` is
   cancelled. Overlapping runs share the collector tuning until the last user
-  releases it. A generation frozen by the application stays frozen.
-  `collector=None` leaves the collector alone.
+  releases it. If objects were already frozen when the host froze (CPython
+  3.12 freezes some at startup, and an application may freeze its own), the
+  host still freezes and leaves everything frozen when it ends, since
+  unfreezing would also thaw the others' objects. `collector=None` leaves the
+  collector alone.
 - **It caps the agents live at once.** At most `max_live_agents` (5,000 by
   default) are live, suspended ones included. More are accepted, and each
-  starts when a live one ends. The cap bounds how late the event loop runs and
-  how long the collector pauses. Measure both for your own agents with
-  `HostReport.loop_lag` and `HostReport.collector`, and set the cap from them.
-- **It staggers starts.** Agents start `Stagger(batch=100, interval_s=0.5)` at
-  a time, so they do not all reach their first model call, or their first
-  suspension, at the same moment.
+  starts as soon as a live one ends. The cap bounds how late the event loop
+  runs and how long the collector pauses. Measure both for your own agents
+  with `HostReport.loop_lag` and `HostReport.collector`, and set the cap from
+  them.
+- **It staggers the first wave.** The first `max_live_agents` agents start
+  `Stagger(batch=100, interval_s=0.5)` at a time, so they do not all reach
+  their first model call, or their first suspension, at the same moment. Later
+  agents are not staggered: their starts follow the ends of live agents.
 - **It resumes agents that wait on tasks.** A runner reports a suspended agent
   with the keys of the tasks it waits on. The host holds only the agent's id
   and those tasks' futures, awaits the tasks, and resumes the agent; the
   framework keeps the agent's state in its checkpoint meanwhile.
 - **It isolates failures.** One agent's exception ends that agent, with the
-  error in its result, and never the others.
+  error in its result, and never the others. An exception from `on_done` makes
+  the agent `failed` and is kept in `callback_error`, beside the agent's own
+  `error`.
+- **It stops cleanly when cancelled.** When `run` is cancelled, each live agent
+  ends as `cancelled`, not `failed`; `on_done` receives it, and `run` raises
+  `CancelledError`. Agents that had not started stay `PENDING`.
 - **It keeps outputs out of memory.** Each agent's output goes to `on_done`,
   if given, and is not kept: a finished agent's state can be large.
 
 ## What it reports
 
 `run` returns a `HostReport`: each agent's status (`done`, `failed` or
-`interrupted`), error, times and suspensions; the agent-seconds spent in each
-state; the event loop's lag (time-weighted p99, maximum, share of time over
-100 ms); and the collector's pauses by generation.
+`interrupted`), error, times and suspensions; the count of each status
+(`outcomes`); the agent-seconds spent in each state; the event loop's lag
+(time-weighted p99, maximum, share of time over 100 ms); and the collector's
+pauses by generation. Its `collector["freeze"]` gives when the host froze
+(`at_s`), how long the freeze took (`call_s`), and the objects frozen before
+(`frozen_before`) and after (`frozen`).
 
 `AgentStates` counts agents in seven states and three categories, the ones a
 campaign reports:
@@ -124,7 +137,8 @@ SDK:
 
 Use `run_indexed` when agents can be named by a prefix and an integer. The
 host builds each input as a slot opens, keeps detailed state for live agents
-and returns counts in `report.outcomes`. Its `on_done` callback receives
+only, and returns counts in `report.outcomes` but no per-agent results in
+`report.agents`. Its `on_done` callback receives
 each individual result. Keep that callback bounded too. The ordinary `run`
 keeps its full per-agent report and validates all application-supplied IDs
 before starting work.
@@ -134,14 +148,12 @@ host = AgentHost(runner, max_live_agents=256, on_done=save_result)
 report = await host.run_indexed(range(start, stop), make_input, id_prefix="campaign-")
 ```
 
-Give different processes disjoint index ranges and route each thread's
-checkpoint updates through its owning process. Both host entry points use the
-runner's compiled graph and its configured checkpointer. A graph backed by
-RaDEX continues to read and write that dictionary in indexed mode. The total campaign population and the
-number of agents live at once are separate sizing parameters. Each live
-agent can own a graph invocation, pending futures and external requests.
-The default stagger of 100 starts every 0.5 seconds intentionally limits
-admission. Set it from the rate the downstream services can sustain.
+Give different processes disjoint index ranges, so that no agent runs in two
+processes. Both entry points run agents through the same runner, and the
+runner keeps each agent's state as it does in `run`. The total campaign
+population and the number of agents live at once are separate sizing
+parameters: each live agent can hold a framework run, pending futures and
+external requests, so set `max_live_agents` from what one process sustains.
 
 To measure host scheduling and peak process RSS on Linux or macOS, run
 `uv run --locked python benchmarks/agent_host.py --agents 100000`.
