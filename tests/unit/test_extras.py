@@ -40,16 +40,18 @@ LANGGRAPH = [
 	"langchain_ollama",
 ]
 ASYNCFLOW = ["radical", "radical.asyncflow"]
+MCP = ["mcp", "mcp_types"]
 
 
 def test_the_core_needs_no_extra() -> None:
 	"""Without LangGraph, LangChain or AsyncFlow, the core imports and works."""
 	result = run_without(
-		LANGGRAPH + ASYNCFLOW,
+		LANGGRAPH + ASYNCFLOW + MCP,
 		"""
 		import flowgentic
 		from flowgentic.acceptance import accept
 		from flowgentic.store import MemoryStore, RadexStore
+		from flowgentic.tools.service import ToolServiceClient
 		flowgentic.configure_logging()
 		MemoryStore().put("k", 1)
 		print("ok")
@@ -114,6 +116,13 @@ def test_chat_provider_names_its_extra(missing: str) -> None:
 	assert "install flowgentic[langgraph]" in result.stderr.splitlines()[-1]
 
 
+def test_the_mcp_pool_names_its_extra() -> None:
+	for blocked in (MCP, ["mcp_types"]):
+		result = run_without(blocked, "import flowgentic.tools.mcp")
+		assert result.returncode != 0
+		assert "install flowgentic[mcp]" in result.stderr.splitlines()[-1], blocked
+
+
 def test_chat_provider_imports_without_asyncflow() -> None:
 	result = run_without(ASYNCFLOW, "from flowgentic.utils import ChatLLMProvider")
 	assert result.returncode == 0, result.stderr
@@ -128,6 +137,8 @@ def test_chat_provider_imports_without_asyncflow() -> None:
 		("flowgentic.langgraph", "langgraph.types"),
 		("flowgentic.langgraph", "langgraph.checkpoint.base"),
 		("flowgentic.utils", "langchain_core.language_models"),
+		("flowgentic.tools.mcp", "mcp.client"),
+		("flowgentic.tools.mcp", "anyio"),
 	],
 )
 def test_other_import_errors_are_not_reworded(module: str, missing: str) -> None:
