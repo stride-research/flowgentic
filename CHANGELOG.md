@@ -20,6 +20,13 @@ predate this changelog, so their changes are not listed here.
   `flowgentic[langgraph,asyncflow]` installs what 0.4 installed.
 - `flowgentic.langGraph` is renamed `flowgentic.langgraph`. Change the imports.
 
+### Added
+
+- A tool service, `flowgentic.tools.service`: one process that calls MCP tools
+  for many agent processes over queues, and answers a repeated call once. Its
+  MCP client, `flowgentic.tools.mcp.SupervisedMcpPool`, keeps a failed
+  connection from cancelling other calls. The pool needs the new `mcp` extra.
+
 ### Changed
 
 - Importing a part whose extra is not installed raises `ModuleNotFoundError`
