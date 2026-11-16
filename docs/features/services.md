@@ -87,4 +87,4 @@ Without Flowgentic, the same service is `@flow.function_task(service=True)`; see
 
 ## API
 
-[`flowgentic.langGraph.execution_wrappers`](../api/flowgentic/langGraph/execution_wrappers.md)
+[`flowgentic.langgraph.execution_wrappers`](../api/flowgentic/langgraph/execution_wrappers.md)

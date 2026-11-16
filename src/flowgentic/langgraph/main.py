@@ -38,7 +38,7 @@ from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel, Field
 
 from flowgentic import _asyncflow
-from flowgentic.langGraph.execution_wrappers import ExecutionWrappersLangraph
+from flowgentic.langgraph.execution_wrappers import ExecutionWrappersLangraph
 
 logger = logging.getLogger(__name__)
 

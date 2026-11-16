@@ -5,7 +5,7 @@ import pytest
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 
-from flowgentic.langGraph.execution_wrappers import (AsyncFlowType,
+from flowgentic.langgraph.execution_wrappers import (AsyncFlowType,
                                                      ExecutionWrappersLangraph)
 
 try:

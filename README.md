@@ -49,7 +49,7 @@ and the archived branches.
   reasons, within an attempt budget, and falls back to a deterministic value
   when no proposal passes. Each call, attempt and check is recorded in the
   run's trace.
-- **`LangraphIntegration`** (`flowgentic.langGraph`) runs a LangGraph graph's
+- **`LangraphIntegration`** (`flowgentic.langgraph`) runs a LangGraph graph's
   tools, services, tasks and nodes as AsyncFlow tasks, in their caller's trace.
 
 ## Install

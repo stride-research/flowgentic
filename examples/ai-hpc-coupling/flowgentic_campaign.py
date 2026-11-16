@@ -23,7 +23,7 @@ from demo_support import (
 )
 from tracing import run_trace
 
-from flowgentic.langGraph.main import LangraphIntegration
+from flowgentic.langgraph.main import LangraphIntegration
 
 
 async def run(args: argparse.Namespace) -> int:
