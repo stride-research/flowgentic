@@ -1,68 +1,107 @@
 # Project status
 
-## Maintenance mode
+Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as
+AsyncFlow workflow tasks, and, from 0.5.0, as LangGraph agents at scale whose
+tools run as RHAPSODY tasks and whose state lives in RaDEX. The two paths are
+at different stages.
 
-Flowgentic 0.4.0 is a repair release in maintenance mode. 0.3.0 preserved the
-July 2026 work as a documented, tested snapshot, and 0.3.1 fixed defects that
-0.3.0 documented. 0.4.0 removes features that 0.3 shipped broken or unsafe, or
-that did not serve Flowgentic's purpose, and adds acceptance of agent outputs
-and one trace across decisions, tasks and model calls. The
+## Agents at scale: in active development
+
+0.5.0 adds the parts that run many thousands of LangGraph agents per process
+on an HPC allocation: the [agent host](features/agent-host.md), the
+[checkpointer](features/checkpointer.md), [tool placement](features/tools.md),
+the [tool service](features/tool-service.md) and the [fleet](features/fleet.md)
+client for model servers. [LangGraph agents at scale](guides/agents-at-scale.md)
+shows them together, in an example that runs on a laptop. Their interfaces
+may still change before 1.0, as the changelog will say.
+
+## AsyncFlow path: maintenance mode
+
+The AsyncFlow path is in maintenance mode: it gets fixes, not features. 0.3.0
+preserved the July 2026 work as a documented, tested snapshot, and 0.3.1 fixed
+defects that 0.3.0 documented. 0.4.0 removed features that 0.3 shipped broken
+or unsafe, or that did not serve Flowgentic's purpose, and added acceptance of
+agent outputs and one trace across decisions, tasks and model calls. The
 [changelog](changelog.md) lists each change, and what replaces each feature it
 removes.
 
 The LangGraph execution adapter (`LangraphIntegration` and its `asyncflow`
-decorators) is frozen in maintenance mode and gets no new features. The
-decision follows the [substitution experiment](evaluation/substitution.md),
-which ran the agentic demo with and without the adapter. Without it, the demo
-kept the same results, task identity, cancellation, service reuse, backend
-placement, tool selection and handoffs, in about the same code and with 32
-fewer third-party packages. The adapter's only distinct contribution was an
-implicit retry and timeout on every call and graph node, which re-ran
-scientific work; 0.4.0 removes them.
+decorators) is frozen and gets no new features. The decision follows the
+[substitution experiment](evaluation/substitution.md), which ran the agentic
+demo with and without the adapter. Without it, the demo kept the same
+results, task identity, cancellation, service reuse, backend placement, tool
+selection and handoffs, in about the same code and with 32 fewer third-party
+packages. The adapter's only distinct contribution was an implicit retry and
+timeout on every call and graph node, which re-ran scientific work; 0.4.0
+removed them.
 
 `bind_agent`, which binds an agent component to an AsyncFlow task, remains a
 documented recipe: [Augment an AsyncFlow application](guides/augment-asyncflow-app.md).
-`accept`, new in 0.4.0, accepts or rejects an agent's output on explicit
-checks, with re-asks and a deterministic fallback:
-[Acceptance](features/acceptance.md).
+`accept` accepts or rejects an agent's output on explicit checks, with
+re-asks and a deterministic fallback: [Acceptance](features/acceptance.md).
 A LangGraph application can also run on AsyncFlow without Flowgentic:
 [LangGraph on AsyncFlow directly](guides/langgraph-direct.md). So can an
 application that calls Academy agents from its tasks:
 [Academy actions as AsyncFlow tasks](guides/academy-on-asyncflow.md), which
 replaces the `flowgentic.academy` module that 0.4.0 removed. 0.4.0 also
-removes the memory manager and the mutable graph, which served none of this.
+removed the memory manager and the mutable graph, which served none of this.
 LangChain's middleware bounds an agent's history. LangGraph routes within a
 run, and a graph that should change between runs is built anew as a
 `StateGraph`; see the [changelog](changelog.md).
 
 ## Supported configuration
 
-| Agent framework | Workflow engine | Backends | Python |
+| Path | Agent framework | Runs tasks on | Python |
 | --- | --- | --- | --- |
-| LangGraph 1.x | RADICAL AsyncFlow 0.6.0 | Local | 3.11, 3.12, 3.13 |
+| Agents at scale | LangGraph 1.x | RHAPSODY 0.7: a thread pool in CI; Dragon on an allocation, not in CI | 3.11, 3.12, 3.13 |
+| AsyncFlow | LangGraph 1.x | RADICAL AsyncFlow 0.6.0, local backends | 3.11, 3.12, 3.13 |
 
-Tested environment, from `uv.lock`: LangGraph 1.2.16, langchain-core 1.7.0,
-langchain 1.4.7, radical-asyncflow 0.6.0 and academy-py 1.0.0. CI runs the
-test suite on Python 3.11, 3.12 and 3.13, and on Python 3.11 with the lowest
-versions the dependency ranges allow; a weekly workflow runs it, and builds
-the docs, on the newest releases within the ranges.
+Tested environment, from `uv.lock`: LangGraph 1.2.16, langgraph-checkpoint
+4.3.0, langchain-core 1.7.0, langchain 1.4.7, rhapsody-py 0.7.0, mcp 2.3.0,
+radical-asyncflow 0.6.0 and academy-py 1.0.0. CI runs the test suite on Python
+3.11, 3.12 and 3.13, and on Python 3.11 with the lowest versions the
+dependency ranges allow; a weekly workflow runs it, and builds the docs, on
+the newest releases within the ranges.
 
-The core requires `pydantic` and `opentelemetry-api>=1.43,<2`, for its spans.
-Each path is an extra:
+The core requires `pydantic` and `opentelemetry-api>=1.43,<2`, for its spans
+and metrics. Each path is an extra:
 
-- `langgraph`: `langgraph>=1.1.5,<2.0`, and `langchain-core`, `langchain`,
-  `langchain-openai` and `langchain-ollama` at `>=1.0,<2.0`.
+- `langgraph`: `langgraph>=1.1.5,<2.0`, `langgraph-checkpoint>=4.3,<5`, and
+  `langchain-core`, `langchain`, `langchain-openai` and `langchain-ollama` at
+  `>=1.0,<2.0`.
+- `rhapsody`: `rhapsody-py>=0.7,<0.8`, for task tools.
+- `mcp`: `mcp>=2.3,<2.4`, for the tool service's MCP clients.
 - `asyncflow`: `radical-asyncflow>=0.6,<0.7`, because before 1.0 an AsyncFlow
   minor release may break.
 
-The LangGraph integration needs both extras, and `bind_agent` needs
-`asyncflow`. Without an extra it needs, importing it raises an error that
-names the extra. The `examples` extra adds both, with `academy-py>=1.0,<2` for
-the Academy example, and the OpenTelemetry SDK, OpenTelemetry's GenAI
-instrumentation for LangChain and OpenAI (1.3b0, below 1.4) and
-`rhapsody-py[telemetry]` for the demos' traces.
+Agents at scale need `langgraph`, `rhapsody` and `mcp`:
+`flowgentic[langgraph,rhapsody,mcp]`. The LangGraph integration on AsyncFlow
+needs `langgraph` and `asyncflow`, and `bind_agent` needs `asyncflow`. Without
+an extra it needs, importing a part raises an error that names the extra.
+`flowgentic.host`, `flowgentic.store` and `flowgentic.tools` import with no
+extra. The `examples` extra adds `langgraph` and `asyncflow`, with
+`academy-py>=1.0,<2` for the Academy example, and the OpenTelemetry SDK,
+OpenTelemetry's GenAI instrumentation for LangChain and OpenAI (1.3b0, below
+1.4) and `rhapsody-py[telemetry]` for the demos' traces.
 
 ## Known limitations
+
+Agents at scale:
+
+- CI runs no part under Dragon. `RadexStore` is tested against a stand-in for
+  RaDEX's client, task tools run on RHAPSODY's thread-pool backend, and the
+  tool service's queues are the standard library's.
+- RaDEX has no package: `RadexStore` needs RaDEX's Python client built from
+  source with its C++ core.
+- An agent resumes only in the process that suspended it, because that
+  process awaits the agent's tasks.
+- Model admission is shared among agent processes in static, equal shares
+  (`Fleet(share=...)`): a process with fewer agents leaves part of its share
+  unused.
+- Python 3.14 is not tested. The host's collector settings were measured on
+  CPython 3.12, and 3.14 has a new, incremental collector.
+
+The AsyncFlow path:
 
 - ADR mode is not supported. The demos' `--controller adr` needs an ADR source
   checkout (`ADR_SRC`), because ADR is not released.

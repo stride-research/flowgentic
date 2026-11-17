@@ -77,7 +77,7 @@ jobs:
       - name: "Show tested versions"
         run: >-
           uv run --frozen --python ${{ matrix.python-version }} --extra dev python -c
-          "import importlib.metadata as m; print({p: m.version(p) for p in ('langgraph', 'langchain-core', 'langchain', 'radical-asyncflow')})"
+          "import importlib.metadata as m; print({p: m.version(p) for p in ('langgraph', 'langgraph-checkpoint', 'langchain-core', 'langchain', 'radical-asyncflow', 'rhapsody-py', 'mcp')})"
 
       - name: Run python tests with coverage
         run: |
@@ -131,7 +131,7 @@ jobs:
       - name: "Show tested versions"
         run: >-
           uv run --frozen --python 3.11 --extra dev python -c
-          "import importlib.metadata as m; print({p: m.version(p) for p in ('langgraph', 'langgraph-prebuilt', 'langchain-core', 'langchain', 'langchain-openai', 'langchain-ollama', 'pydantic', 'radical-asyncflow', 'academy-py')})"
+          "import importlib.metadata as m; print({p: m.version(p) for p in ('langgraph', 'langgraph-prebuilt', 'langchain-core', 'langchain', 'langchain-openai', 'langchain-ollama', 'pydantic', 'radical-asyncflow', 'academy-py', 'langgraph-checkpoint', 'rhapsody-py', 'mcp')})"
 
       - name: Run python tests
         run: uv run --frozen --python 3.11 --extra dev pytest -q tests/

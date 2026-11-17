@@ -92,13 +92,17 @@ predate this changelog, so their changes are not listed here.
 
 ### Changed
 
+- The status page, home page, README and architecture page describe both
+  paths: agents at scale, in active development, and the AsyncFlow path, in
+  maintenance mode.
 - The `examples` extra moves to RHAPSODY 0.7 (`rhapsody-py[telemetry]>=0.7,<0.8`).
 - `flowgentic.langgraph` imports `LangraphIntegration` when first used, so
   `GraphRunner` needs only the `langgraph` extra.
 - Importing a part whose extra is not installed raises `ModuleNotFoundError`
   with the extra to install.
 - CI runs the test suite on Python 3.11, 3.12 and 3.13, and on 3.11 with the
-  lowest versions the ranges allow. The documentation's cap on
+  lowest versions the ranges allow, and records the tested versions of
+  RHAPSODY, the MCP SDK and LangGraph's checkpointer with the others. The documentation's cap on
   `pymdown-extensions`, needed only on Python 3.10, is lifted.
 
 ## [0.4.0] - 2026-10-30
