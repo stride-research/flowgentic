@@ -490,6 +490,7 @@ on `main`.
   - Each test matrix job runs its own Python with the dev extra.
   - The bandit job runs again.
 
+[0.5.0]: https://github.com/stride-research/flowgentic/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/stride-research/flowgentic/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/stride-research/flowgentic/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/stride-research/flowgentic/compare/0.2.0...v0.3.0
