@@ -2,11 +2,12 @@ cff-version: 1.2.0
 message: "If you use Flowgentic in your work, please cite it as below."
 type: software
 title: Flowgentic
-version: 0.4.0
-date-released: 2026-10-30
+version: 0.5.0
+date-released: 2026-11-17
 abstract: >-
-  Flowgentic runs agent components and LangGraph workflows as tasks on
-  RADICAL AsyncFlow.
+  Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as
+  AsyncFlow workflow tasks, and as LangGraph agents at scale whose tools run
+  as RHAPSODY tasks and whose state lives in RaDEX.
 authors:
   - given-names: Aymen
     family-names: Alsaadi
@@ -29,5 +30,6 @@ keywords:
   - agents
   - LangGraph
   - RADICAL AsyncFlow
+  - RHAPSODY
   - workflows
   - HPC

@@ -7,7 +7,15 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
-## [Unreleased]
+## [0.5.0] - 2026-11-17
+
+Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as
+AsyncFlow workflow tasks, and, from this release, as LangGraph agents at scale
+whose tools run as RHAPSODY tasks and whose state lives in RaDEX. 0.5.0 adds
+that second path: an agent host that runs many thousands of agents per
+process, a checkpointer over a key-value store, tool placement with a shared
+MCP tool service, and a client for a fleet of model servers. The path is in
+active development; the AsyncFlow path stays in maintenance mode.
 
 **Breaking changes.**
 
