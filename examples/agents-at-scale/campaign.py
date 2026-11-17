@@ -1,0 +1,532 @@
+"""A campaign of LangGraph agents in agent hosts, offline, on a laptop.
+
+Each agent looks its candidate up through an MCP tool, runs a simulation as a
+RHAPSODY task and suspends while it runs, takes a note inline, and answers.
+
+The parts are Flowgentic's, and everything around them stands in for an HPC
+allocation:
+
+- a scripted model behind a ``Fleet`` of two replicas, for model servers;
+- RHAPSODY on a thread pool, for a RHAPSODY session on Dragon;
+- ``KeyValueSaver(MemoryStore())``, for ``KeyValueSaver(RadexStore(...))``;
+- the tool service in a thread of this process, for the tool service in a
+  process of its own;
+- an MCP server in a process of its own, on 127.0.0.1, for MCP servers on the
+  allocation.
+
+With ``--processes 1`` (the default) the agents run in this process, beside
+the tool service, which answers them over ``queue.Queue``. With more, each
+agent process runs its own ``AgentHost`` on its share of the agents, and they
+all share the one tool service over ``multiprocessing`` queues, as agent
+processes share it over Dragon's queues on an allocation.
+
+    python examples/agents-at-scale/campaign.py --agents 1000
+    python examples/agents-at-scale/campaign.py --agents 1000 --processes 2
+
+It needs the ``langgraph``, ``rhapsody`` and ``mcp`` extras; the ``dev`` extra
+has them all.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import multiprocessing
+import queue
+import socket
+import subprocess
+import sys
+import threading
+import time
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any
+
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import tool
+from langgraph.graph import START, MessagesState, StateGraph
+from langgraph.prebuilt import ToolNode
+from pydantic import BaseModel
+
+from flowgentic.fleet import Fleet, TokenAdmission
+from flowgentic.host import AgentHost, AgentResult, Stagger
+from flowgentic.langgraph import (
+    GraphRunner,
+    KeyValueSaver,
+    bind_tools,
+    route_tool_calls,
+)
+from flowgentic.store import MemoryStore
+from flowgentic.tools import ToolRuntime, mcp_tool, task_tool
+from flowgentic.tools.mcp import SupervisedMcpPool
+from flowgentic.tools.service import ToolServiceClient, serve
+
+# --- the tools -----------------------------------------------------------------
+
+
+def simulate(candidate: str, temperature: float) -> dict:
+    """Simulate a candidate at a temperature; return its score."""
+    time.sleep(0.01)  # the work
+    score = 1.0 - abs(temperature - 500.0) / 1000.0
+    return {"candidate": candidate, "temperature": temperature, "score": round(score, 4)}
+
+
+class LookupArgs(BaseModel):
+    candidate: str
+
+
+@tool
+def note(text: str) -> str:
+    """Write a note in the agent's log."""
+    return f"noted: {text}"
+
+
+# --8<-- [start:tools]
+TOOLS = [
+    # A RHAPSODY task; the agent suspends while it runs.
+    task_tool(simulate, suspend=True),
+    # An MCP tool, through the tool service. A lookup can safely run twice.
+    mcp_tool(
+        "lookup",
+        description="Reference data for a candidate.",
+        args_schema=LookupArgs,
+        idempotent=True,
+    ),
+    # Inline, in the agent's process.
+    note,
+]
+# --8<-- [end:tools]
+
+
+# --- the MCP server, in a process of its own --------------------------------------
+
+
+def serve_mcp(port: int) -> None:
+    """Run an MCP server with one tool, ``lookup``, on 127.0.0.1:``port``."""
+    import uvicorn
+    from mcp.server.mcpserver import MCPServer
+
+    server = MCPServer("reference-data", log_level="WARNING")
+
+    @server.tool()
+    async def lookup(candidate: str) -> dict:
+        """Reference data for a candidate: a temperature to start from."""
+        await asyncio.sleep(0.005)
+        return {"candidate": candidate, "start_temperature": 480.0}
+
+    app = server.streamable_http_app(
+        stateless_http=True, json_response=True, host="127.0.0.1"
+    )
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+
+
+class McpServer:
+    """``serve_mcp`` in a process of its own, as MCP servers run outside the
+    agent processes on an allocation."""
+
+    def __enter__(self) -> McpServer:
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        self.url = f"http://127.0.0.1:{port}/mcp"
+        self._proc = subprocess.Popen(
+            [sys.executable, __file__, "--mcp-server", str(port)]
+        )
+        deadline = time.monotonic() + 60
+        while True:
+            try:
+                socket.create_connection(("127.0.0.1", port), timeout=1).close()
+                return self
+            except OSError:
+                if self._proc.poll() is not None or time.monotonic() > deadline:
+                    self._proc.kill()
+                    raise RuntimeError("the MCP server did not start") from None
+                time.sleep(0.05)
+
+    def __exit__(self, *exc: object) -> None:
+        self._proc.terminate()
+        try:
+            self._proc.wait(10)
+        except subprocess.TimeoutExpired:
+            self._proc.kill()
+            self._proc.wait()
+
+
+# --- the tool service, in a thread of this process ----------------------------------
+
+
+class ToolService:
+    """The tool service in a thread: ``serve`` on queues the caller made."""
+
+    def __init__(self, url: str, requests: Any, replies: list) -> None:
+        self.requests = requests
+        self.stats: dict = {}
+        self._ready = threading.Event()
+        self._error: BaseException | None = None
+
+        def run() -> None:
+            pool = SupervisedMcpPool(url, clients=2, per_client=16)
+            try:
+                self.stats = asyncio.run(
+                    serve(requests, replies, pool, on_ready=lambda _: self._ready.set())
+                )
+            except BaseException as exc:
+                self._error = exc
+                self._ready.set()
+
+        self._thread = threading.Thread(target=run, daemon=True)
+
+    def __enter__(self) -> ToolService:
+        self._thread.start()
+        if not self._ready.wait(30) or self._error is not None:
+            raise RuntimeError("the tool service did not start") from self._error
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.requests.put(None)  # stops the service
+        self._thread.join(30)
+
+
+# --- a scripted model, standing in for the model servers -----------------------
+
+
+class ScriptedModel(BaseChatModel):
+    """Looks the candidate up; simulates it at the reference temperature and
+    notes that, in one turn; then answers with the score."""
+
+    latency_s: float = 0.005
+
+    @property
+    def _llm_type(self) -> str:
+        return "scripted"
+
+    def bind_tools(self, tools: Any, **kwargs: Any) -> ScriptedModel:
+        return self
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        raise NotImplementedError("the scripted model is asynchronous")
+
+    async def _agenerate(
+        self, messages: list[BaseMessage], stop=None, run_manager=None, **kwargs
+    ) -> ChatResult:
+        await asyncio.sleep(self.latency_s)
+        candidate = messages[0].content.split()[-1]
+        done = {m.name: m.content for m in messages if m.type == "tool"}
+        if "lookup" not in done:
+            reply = AIMessage(
+                "",
+                tool_calls=[
+                    {"name": "lookup", "args": {"candidate": candidate}, "id": "c1"}
+                ],
+            )
+        elif "simulate" not in done:
+            start = json.loads(done["lookup"])["start_temperature"]
+            reply = AIMessage(
+                "",
+                tool_calls=[
+                    {
+                        "name": "simulate",
+                        "args": {"candidate": candidate, "temperature": start},
+                        "id": "c2",
+                    },
+                    {
+                        "name": "note",
+                        "args": {"text": f"simulating {candidate}"},
+                        "id": "c3",
+                    },
+                ],
+            )
+        else:
+            reply = AIMessage(f"best score {json.loads(done['simulate'])['score']}")
+        # What a server would count: the prompt's size, and a short reply.
+        prompt = 200 + sum(len(str(m.content)) for m in messages) // 4
+        reply.usage_metadata = {
+            "input_tokens": prompt,
+            "output_tokens": 20,
+            "total_tokens": prompt + 20,
+        }
+        return ChatResult(generations=[ChatGeneration(message=reply)])
+
+
+# --- one agent process ----------------------------------------------------------
+
+
+# --8<-- [start:graph]
+def build_graph(fleet: Fleet, tools: list, saver: KeyValueSaver):
+    """model -> each tool call as its own task -> model, until it answers."""
+    fleet = fleet.bind_tools(tools)
+
+    async def model(state: MessagesState, config: RunnableConfig) -> dict:
+        agent = config["configurable"]["thread_id"]
+        return {"messages": [await fleet.ainvoke(agent, state["messages"])]}
+
+    g = StateGraph(MessagesState)
+    g.add_node("model", model)
+    g.add_node("tools", ToolNode(tools, handle_tool_errors=True))
+    g.add_edge(START, "model")
+    g.add_conditional_edges("model", route_tool_calls, ["tools", "__end__"])
+    g.add_edge("tools", "model")
+    return g.compile(checkpointer=saver)
+# --8<-- [end:graph]
+
+
+async def run_agents(
+    index: int,
+    processes: int,
+    agents: int,
+    requests: Any,
+    replies: Any,
+    workers: int = 8,
+) -> dict:
+    """Run agent process ``index``'s share of the campaign: agents ``index``,
+    ``index + processes``, and so on."""
+    from rhapsody import Session
+    from rhapsody.backends import ConcurrentExecutionBackend
+
+    # --8<-- [start:process]
+    client = ToolServiceClient(requests, replies, index=index)
+    client.start()
+    backend = await ConcurrentExecutionBackend(ThreadPoolExecutor(workers))
+    session = Session(backends=[backend])
+    runtime = ToolRuntime(session, client)
+    tools = bind_tools(runtime, TOOLS)
+    # Every process routes by the same hash, so each takes an equal share of
+    # every replica's caps.
+    fleet = Fleet(
+        [ScriptedModel(), ScriptedModel()],
+        admission=TokenAdmission(tokens=40_000, requests=64),
+        share=1 / processes,
+    )
+    saver = KeyValueSaver(MemoryStore())
+    # --8<-- [end:process]
+
+    answers: Counter[str] = Counter()
+    lifetimes = [0.0]
+    suspensions = [0]
+
+    def on_done(result: AgentResult, output: Any) -> None:
+        lifetimes[0] += result.t_end - result.t_start
+        suspensions[0] += result.suspensions
+        if output is not None:
+            answers[output["messages"][-1].content] += 1
+
+    # --8<-- [start:host]
+    host = AgentHost(
+        GraphRunner(build_graph(fleet, tools, saver)),
+        max_live_agents=5_000,
+        stagger=Stagger(batch=100, interval_s=0.05),
+        on_done=on_done,
+    )
+
+    def input_for(i: int) -> dict:
+        task = f"Find the best temperature for cand-{i:06d}"
+        return {"messages": [HumanMessage(task)]}
+
+    # --8<-- [end:host]
+
+    try:
+        report = await host.run_indexed(
+            range(index, agents, processes), input_for, id_prefix="agent-"
+        )
+    finally:
+        client.stop()
+        await session.close()
+    fleet_stats = fleet.stats()
+    return {
+        "index": index,
+        "agents": len(range(index, agents, processes)),
+        "outcomes": report.outcomes,
+        "errors": report.errors,
+        "suspensions": suspensions[0],
+        "answers": dict(answers),
+        "wall_s": report.wall_s,
+        "lifetimes_s": round(lifetimes[0], 3),
+        "agent_seconds": report.states["agent_seconds_by_category"],
+        "agent_seconds_by_state": {
+            state: seconds
+            for state, seconds in report.states["agent_seconds"].items()
+            if state not in ("pending", "done")
+        },
+        "loop_lag": report.loop_lag,
+        "collector": report.collector,
+        "model_calls": fleet_stats["calls"],
+        "model_calls_per_replica": fleet_stats["calls_per_replica"],
+        "tasks": runtime.stats(),
+        "checkpoints": saver.stats(),
+        "tool_service_client": client.stats(),
+    }
+
+
+def agent_process(
+    index: int,
+    processes: int,
+    agents: int,
+    requests: Any,
+    replies: Any,
+    results: Any,
+    workers: int,
+) -> None:
+    """An agent process's entry point: its share, reported on ``results``."""
+    try:
+        out = asyncio.run(run_agents(index, processes, agents, requests, replies, workers))
+    except BaseException as exc:
+        results.put({"index": index, "error": f"{type(exc).__name__}: {exc}"})
+        raise
+    results.put(out)
+
+
+# --- the campaign ---------------------------------------------------------------
+
+
+def run_campaign(agents: int = 200, processes: int = 1, workers: int = 8) -> dict:
+    """Run ``agents`` agents in ``processes`` agent processes against one tool
+    service; return the campaign's summary."""
+    if agents < 1 or processes < 1:
+        raise ValueError("a campaign needs at least one agent and one process")
+    t0 = time.monotonic()
+    with McpServer() as mcp:
+        if processes == 1:
+            requests, replies = queue.Queue(), [queue.Queue()]
+        else:
+            ctx = multiprocessing.get_context("spawn")
+            requests = ctx.Queue()
+            replies = [ctx.Queue() for _ in range(processes)]
+        with ToolService(mcp.url, requests, replies) as service:
+            if processes == 1:
+                parts = [
+                    asyncio.run(run_agents(0, 1, agents, requests, replies[0], workers))
+                ]
+            else:
+                results = ctx.Queue()
+                procs = [
+                    ctx.Process(
+                        target=agent_process,
+                        args=(i, processes, agents, requests, replies[i], results, workers),
+                        name=f"agent-process-{i}",
+                    )
+                    for i in range(processes)
+                ]
+                for p in procs:
+                    p.start()
+                parts = _collect(results, procs)
+    wall = time.monotonic() - t0
+    return summarize(parts, service.stats, agents, wall)
+
+
+def _collect(results: Any, procs: list, timeout_s: float = 600.0) -> list[dict]:
+    """Each agent process's summary, in process order; fail if one failed."""
+    parts: dict[int, dict] = {}
+    deadline = time.monotonic() + timeout_s
+    while len(parts) < len(procs):
+        try:
+            part = results.get(timeout=1.0)
+        except queue.Empty:
+            dead = [p for p in procs if p.exitcode not in (None, 0)]
+            if dead:
+                raise RuntimeError(f"{dead[0].name} exited with {dead[0].exitcode}")
+            if time.monotonic() > deadline:
+                raise TimeoutError("the agent processes did not finish") from None
+            continue
+        if "error" in part:
+            raise RuntimeError(f"agent process {part['index']} failed: {part['error']}")
+        parts[part["index"]] = part
+    for p in procs:
+        p.join(30)
+    return [parts[i] for i in sorted(parts)]
+
+
+def summarize(parts: list[dict], service: dict, agents: int, wall_s: float) -> dict:
+    """The campaign's totals over its agent processes."""
+
+    def total(key: str) -> int:
+        return sum(p[key] for p in parts)
+
+    def merged(key: str) -> dict:
+        out: Counter = Counter()
+        for p in parts:
+            out.update(p[key])
+        return dict(out)
+
+    seconds = merged("agent_seconds")
+    by_state = merged("agent_seconds_by_state")
+    lifetimes = sum(p["lifetimes_s"] for p in parts)
+    return {
+        "agents": agents,
+        "processes": len(parts),
+        "wall_s": round(wall_s, 3),
+        # From the first agent's start to the last agent's end, in the slowest process.
+        "hosts_wall_s": max(p["wall_s"] for p in parts),
+        "outcomes": merged("outcomes"),
+        "suspensions": total("suspensions"),
+        "answers": merged("answers"),
+        "agent_seconds": {k: round(v, 3) for k, v in seconds.items()},
+        "agent_seconds_by_state": {k: round(v, 3) for k, v in by_state.items()},
+        "lifetimes_s": round(lifetimes, 3),
+        # The share of the agents' lifetimes that the three categories account for.
+        "accounted": round(sum(seconds.values()) / lifetimes, 6) if lifetimes else None,
+        "model_calls": total("model_calls"),
+        "tasks": merged("tasks"),
+        "checkpoints_put": sum(p["checkpoints"]["checkpoints_put"] for p in parts),
+        "tool_service": {
+            k: service.get(k) for k in ("received", "unique", "ok", "failed")
+        },
+        "per_process": parts,
+    }
+
+
+def report(summary: dict) -> str:
+    """The summary in a few lines."""
+    seconds = summary["agent_seconds"]
+    active = sum(seconds.values()) or 1.0
+    shares = ", ".join(
+        f"{name.replace('_', ' ')} {v:.1f} s ({100 * v / active:.0f} %)"
+        for name, v in seconds.items()
+    )
+    states = ", ".join(
+        f"{name.replace('_', ' ')} {v:.1f} s"
+        for name, v in summary["agent_seconds_by_state"].items()
+    )
+    lag = max(p["loop_lag"].get("max_ms", 0.0) for p in summary["per_process"])
+    pauses = sum(p["collector"]["total_s"] for p in summary["per_process"])
+    process_word = "process" if summary["processes"] == 1 else "processes"
+    return "\n".join(
+        [
+            f"{summary['agents']} agents in {summary['processes']} agent "
+            f"{process_word}: {summary['outcomes']}; the hosts ran for "
+            f"{summary['hosts_wall_s']:.1f} s, the campaign {summary['wall_s']:.1f} s",
+            f"answers: {summary['answers']}",
+            f"agent-seconds: {shares}; "
+            f"{100 * summary['accounted']:.2f} % of the agents' lifetimes",
+            f"  by state: {states}",
+            f"model calls: {summary['model_calls']}; tasks: "
+            f"{summary['tasks']['submitted']} submitted, "
+            f"{summary['tasks']['repeats']} asked for again on resume; "
+            f"suspensions: {summary['suspensions']}; "
+            f"checkpoints: {summary['checkpoints_put']}; "
+            f"tool service calls: {summary['tool_service']['unique']}",
+            f"event loop lag at most {lag:.1f} ms; collector pauses {pauses:.3f} s",
+        ]
+    )
+
+
+def main(argv: list[str] | None = None) -> None:
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("--agents", type=int, default=200)
+    p.add_argument("--processes", type=int, default=1)
+    p.add_argument("--workers", type=int, default=8, help="RHAPSODY's threads per process")
+    p.add_argument("--json", action="store_true", help="print the whole summary as JSON")
+    p.add_argument("--mcp-server", type=int, metavar="PORT", help=argparse.SUPPRESS)
+    a = p.parse_args(argv)
+    if a.mcp_server:
+        serve_mcp(a.mcp_server)
+        return
+    summary = run_campaign(a.agents, a.processes, a.workers)
+    print(json.dumps(summary, indent=2) if a.json else report(summary))
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

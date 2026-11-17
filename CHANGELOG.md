@@ -22,6 +22,14 @@ predate this changelog, so their changes are not listed here.
 
 ### Added
 
+- `examples/agents-at-scale/`: a campaign of LangGraph agents on a laptop, in
+  one agent process or several, with a scripted model behind a fleet of two
+  replicas, RHAPSODY on a thread pool, the in-memory store, the tool service
+  and an MCP server on 127.0.0.1. CI runs it in one process and in two
+  processes that share one tool service. The guide
+  [LangGraph agents at scale](https://stride-research.github.io/flowgentic/guides/agents-at-scale/)
+  walks through it, and through choosing a process's limits from the host's
+  report.
 - `flowgentic.host`: an agent host that runs many agents in one process,
   through a runner per framework. While it runs it raises the cyclic
   collector's first threshold and freezes the objects alive once agents have
