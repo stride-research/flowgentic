@@ -216,6 +216,95 @@ def points(reader, name: str) -> list:
     return out
 
 
+def test_collecting_metrics_while_the_collector_runs_does_not_deadlock():
+    # An SDK's reader holds an instrument's lock while it builds a data point,
+    # and may allocate there; a collection that starts then must not record
+    # into that instrument. In a fresh interpreter, with a timeout: a deadlock
+    # wedges the process.
+    code = """
+import asyncio, faulthandler, gc
+from opentelemetry import metrics
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
+faulthandler.dump_traceback_later(20, exit=True)
+reader = InMemoryMetricReader()
+metrics.set_meter_provider(MeterProvider(metric_readers=[reader]))
+from flowgentic.host import Agent, AgentHost, Finished
+
+def pauses():
+    data = reader.get_metrics_data()
+    return sum(
+        p.count
+        for r in data.resource_metrics for s in r.scope_metrics for m in s.metrics
+        if m.name == "flowgentic.host.gc.pause" for p in m.data.data_points
+    )
+
+class Runner:
+    async def start(self, agent):
+        gc.collect(0)
+        await asyncio.sleep(0.25)  # the host records the pause
+        threshold = gc.get_threshold()
+        gc.set_threshold(1)  # a collection at almost every allocation
+        try:
+            return Finished(pauses())
+        finally:
+            gc.set_threshold(*threshold)
+
+seen = []
+host = AgentHost(Runner(), collector=None, on_done=lambda r, out: seen.append(out))
+report = asyncio.run(host.run([Agent("a", None)]))
+assert report.finished == 1, report.agents
+assert seen[0] >= 1, seen
+"""
+    run = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, timeout=60
+    )
+    assert run.returncode == 0, run.stderr[-3000:]
+
+
+async def test_overlapping_hosts_record_each_measurement_once(metric_reader):
+    def count(name):
+        return sum(p.count for p in points(metric_reader, name))
+
+    release = asyncio.Event()
+
+    class Waiting:
+        async def start(self, agent):
+            await release.wait()
+            return Finished(None)
+
+    gc_before = count("flowgentic.host.gc.pause")
+    lag_before = count("flowgentic.host.loop.lag")
+    enabled = gc.isenabled()
+    gc.disable()  # this test's collections only
+    try:
+        runs = [
+            asyncio.create_task(
+                AgentHost(Waiting(), stagger=FAST, collector=None).run([Agent(k, None)])
+            )
+            for k in ("a", "b")
+        ]
+        await asyncio.sleep(0.05)
+        for _ in range(5):
+            gc.collect(0)
+        await asyncio.sleep(0.5)
+        gc.collect(0)  # after the last lag sample, most likely: recorded at the end
+        release.set()
+        a, b = await asyncio.gather(*runs)
+    finally:
+        if enabled:
+            gc.enable()
+
+    # Each host's report has every pause of its run; the metric has each once.
+    assert a.collector["pauses"] == b.collector["pauses"] == 6
+    assert count("flowgentic.host.gc.pause") - gc_before == 6
+    # One timer for the loop: its samples are recorded once, not once per host.
+    lags = a.loop_lag["samples"], b.loop_lag["samples"]
+    assert min(lags) >= 3
+    assert max(lags) <= count("flowgentic.host.loop.lag") - lag_before < sum(lags)
+
+
 async def test_the_host_records_agents_spans_and_its_own_health(
     span_exporter, log_exporter, metric_reader
 ):
