@@ -87,7 +87,7 @@ class AsyncFlowType(Enum):
 	EXECUTION_BLOCK = "block"
 
 
-class ExecutionWrappersLangraph:
+class ExecutionWrappersLangGraph:
 	"""Enhanced integration between AsyncFlow WorkflowEngine and LangChain tools.
 
 	Supports both traditional workflow patterns and React agent orchestration

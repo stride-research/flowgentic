@@ -1,6 +1,6 @@
 # LangGraph on AsyncFlow with Flowgentic
 
-`LangraphIntegration` runs a LangGraph graph's tools, services, tasks and nodes
+`LangGraphIntegration` runs a LangGraph graph's tools, services, tasks and nodes
 as AsyncFlow tasks. It opens an AsyncFlow `WorkflowEngine`, and its
 `asyncflow` decorator turns an async function into a LangChain tool, an
 AsyncFlow task, a resident service or a graph node.
@@ -22,7 +22,7 @@ The code on this page comes from the agentic demo,
 
 ## Open the integration
 
-`LangraphIntegration(backend=...)` takes one AsyncFlow backend or a list of
+`LangGraphIntegration(backend=...)` takes one AsyncFlow backend or a list of
 named backends. The demo creates two local backends, `compute` and `ai`:
 
 ```python

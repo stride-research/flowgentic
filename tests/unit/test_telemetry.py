@@ -24,7 +24,7 @@ from radical.asyncflow import LocalExecutionBackend, WorkflowEngine
 from flowgentic import _asyncflow
 from flowgentic.agent import bind_agent
 from flowgentic.langgraph import utils as langgraph_utils
-from flowgentic.langgraph.main import LangraphIntegration
+from flowgentic.langgraph.main import LangGraphIntegration
 
 
 class Component:
@@ -172,5 +172,5 @@ async def test_a_task_runs_in_its_callers_trace_context(
 def test_the_node_report_is_gone() -> None:
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module("flowgentic.utils.telemetry")
-    assert not hasattr(LangraphIntegration, "generate_execution_artifacts")
+    assert not hasattr(LangGraphIntegration, "generate_execution_artifacts")
     assert not hasattr(langgraph_utils, "LangraphUtils")

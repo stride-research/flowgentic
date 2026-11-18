@@ -19,6 +19,9 @@ predate this changelog, so their changes are not listed here.
   needs both, `bind_agent` needs `asyncflow`, and
   `flowgentic[langgraph,asyncflow]` installs what 0.4 installed.
 - `flowgentic.langGraph` is renamed `flowgentic.langgraph`. Change the imports.
+- `LangraphIntegration` and `ExecutionWrappersLangraph` are renamed
+  `LangGraphIntegration` and `ExecutionWrappersLangGraph`, with no alias.
+  Change the imports.
 
 ### Added
 
@@ -55,6 +58,12 @@ predate this changelog, so their changes are not listed here.
   and `route_tool_calls`, which sends each tool call to the tool node as its
   own task, so that an agent resuming from a suspension runs no other tool
   call again. A suspended run is freed as soon as it stops.
+- `GraphRunner` lets one agent resume at most `recursion_limit` times, and
+  fails it with `GraphRecursionError` after that: each resume is a new
+  LangGraph run, which counts its steps afresh, so the limit alone would never
+  stop an agent that suspends on every turn. It refuses a graph compiled with
+  `interrupt_before` or `interrupt_after`, whose static breakpoints would end
+  an agent as finished, with partial output.
 - `flowgentic.langgraph.KeyValueSaver`, a LangGraph checkpointer that keeps
   agents' state in a key-value store, and `flowgentic.store` with two stores:
   RaDEX on a Dragon distributed dictionary, and a dictionary in the process.
@@ -72,6 +81,15 @@ predate this changelog, so their changes are not listed here.
   again only when the caller passes `idempotent=True`, as a lookup can. A
   failure that left the call safe to repeat is not kept, so asking again with
   the same uid calls the tool again.
+- A tool service call has a deadline: with no answer within the client's
+  `timeout` (150 s by default) it fails with `ToolServiceError`, and with
+  `alive`, a check that the service still runs (such as a test of its pid),
+  every waiting call fails as soon as the service has stopped. A call's arguments travel as JSON values,
+  so the service needs none of the agents' classes, and arguments with no JSON
+  form fail their own call. The service refuses a request from a process with
+  no reply queue, and a reply queue that fails loses no other process's
+  answers. An MCP success with no content is a success with no data, and a
+  result with several text blocks returns all of them.
 - Tool placement, `flowgentic.tools`: a tool runs inline, as a RHAPSODY task
   (`task_tool`) or through the tool service (`mcp_tool`), and
   `flowgentic.langgraph.bind_tools` turns these into LangChain tools. A task
@@ -81,6 +99,8 @@ predate this changelog, so their changes are not listed here.
   or refuses them. Each task or service call is an `execute_tool` span and a
   point of the `flowgentic.tool.duration` histogram. Task tools need the new
   `rhapsody` extra.
+- A task tool's function may be `async def`: the worker runs it to its end,
+  as RHAPSODY does with a coroutine function.
 - `flowgentic.fleet`: a client for a fleet of model replicas. It keeps each
   agent on one replica, so the agent's prompt stays in that replica's prefix
   cache; admits calls under caps on each replica's tokens of live context and

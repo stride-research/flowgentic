@@ -102,8 +102,18 @@ finishes. The tool records the interrupt with `record_interrupt`, so
 the runner frees the run's frames as soon as it stops. Any other interrupt,
 such as a question for a human, ends the agent as `interrupted`.
 
+Each resume is a new LangGraph run, which counts its steps against
+`recursion_limit` afresh. So `GraphRunner` also lets one agent resume at most
+`recursion_limit` times, and fails it with `GraphRecursionError` after that.
+Each resume runs at least one step, so an agent that would finish within the
+limit without suspending is never stopped by this. `GraphRunner` refuses a
+graph compiled with `interrupt_before` or `interrupt_after`: a static
+breakpoint stops a run without an interrupt, and the agent would end as
+finished, with partial output.
+
 `route_tool_calls` is the conditional edge after the model node: it sends
-each tool call to the tool node as its own task (LangGraph's `Send`).
+each tool call of the last message in the state's `messages` to the node named
+`tools`, each as its own task (LangGraph's `Send`).
 LangGraph saves each finished call's result with the checkpoint, so when an
 agent resumes, only the call that suspended runs again.
 

@@ -23,7 +23,7 @@ from demo_support import (
 )
 from tracing import run_trace
 
-from flowgentic.langgraph.main import LangraphIntegration
+from flowgentic.langgraph.main import LangGraphIntegration
 
 
 async def run(args: argparse.Namespace) -> int:
@@ -45,7 +45,7 @@ async def run(args: argparse.Namespace) -> int:
 
     async with (
         run_trace(args.trace, "ai-hpc-deterministic-demo") as tracing,
-        LangraphIntegration(backend=backends) as integration,
+        LangGraphIntegration(backend=backends) as integration,
     ):
         if tracing is not None:
             await tracing.attach(integration.flow)

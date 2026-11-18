@@ -16,7 +16,7 @@ Key Proof Points:
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from flowgentic.langgraph.main import LangraphIntegration
+from flowgentic.langgraph.main import LangGraphIntegration
 from flowgentic.langgraph.execution_wrappers import AsyncFlowType
 from radical.asyncflow import LocalExecutionBackend
 from dotenv import load_dotenv
@@ -28,7 +28,7 @@ load_dotenv()
 async def main():
 	backend = await LocalExecutionBackend(ThreadPoolExecutor())
 
-	async with LangraphIntegration(backend=backend) as agents_manager:
+	async with LangGraphIntegration(backend=backend) as agents_manager:
 		print("\n" + "=" * 70)
 		print("🎯 SERVICE_TASK: Persistent Service Behavior Demo")
 		print("=" * 70)

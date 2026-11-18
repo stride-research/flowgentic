@@ -3,7 +3,7 @@
 A service is a long-lived object that a workflow starts once and then uses
 many times: a loaded model, a simulator, a connection pool. AsyncFlow runs it
 as a service task (`function_task(..., service=True)`), and Flowgentic's
-`SERVICE_TASK` flow type registers one through `LangraphIntegration`.
+`SERVICE_TASK` flow type registers one through `LangGraphIntegration`.
 
 ## Start a service
 

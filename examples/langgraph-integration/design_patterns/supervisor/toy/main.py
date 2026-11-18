@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from radical.asyncflow import LocalExecutionBackend
 
 from flowgentic.langgraph.execution_wrappers import AsyncFlowType
-from flowgentic.langgraph.main import LangraphIntegration
+from flowgentic.langgraph.main import LangGraphIntegration
 from flowgentic.langgraph.utils.supervisor import create_llm_router, supervisor_fan_out
 from flowgentic.utils.llm_providers import ChatLLMProvider
 
@@ -51,7 +51,7 @@ async def main():
 	graph = StateGraph(GraphState)
 	backend = await LocalExecutionBackend(ThreadPoolExecutor())
 
-	async with LangraphIntegration(backend=backend) as agents_manager:
+	async with LangGraphIntegration(backend=backend) as agents_manager:
 		# --8<-- [start:router]
 		# Define the routing prompt template
 		routing_prompt_agents_responsibility = """

@@ -41,7 +41,7 @@ from dotenv import load_dotenv
 from radical.asyncflow import WorkflowEngine
 from tracing import run_trace
 
-from flowgentic.langgraph.main import LangraphIntegration
+from flowgentic.langgraph.main import LangGraphIntegration
 from flowgentic.utils.llm_providers import ChatLLMProvider
 
 
@@ -68,7 +68,7 @@ async def open_campaign(
     settings: CampaignSettings,
     decision_model: AgentDecisionModel,
 ) -> AsyncIterator[
-    tuple[CampaignApplication, WorkflowEngine, LangraphIntegration | None]
+    tuple[CampaignApplication, WorkflowEngine, LangGraphIntegration | None]
 ]:
     """Build the agentic campaign through Flowgentic or on AsyncFlow directly.
 
@@ -80,7 +80,7 @@ async def open_campaign(
         if integration == "flowgentic":
             # --8<-- [start:open-flowgentic]
             adapter = await stack.enter_async_context(
-                LangraphIntegration(backend=backends)
+                LangGraphIntegration(backend=backends)
             )
             flow = adapter.flow
             application = await build_agentic_campaign(
