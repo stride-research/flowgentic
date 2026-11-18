@@ -227,6 +227,25 @@ async def test_a_custom_admission_sees_whose_call_it_admits():
     assert records[-1].gap_s is None and records[-1].prev_prompt_tokens is None
 
 
+class CountedLoads(Ledger):
+    loads = 0
+
+    def load(self):
+        CountedLoads.loads += 1
+        return super().load()
+
+
+@pytest.mark.parametrize(
+    "routing, most",
+    [(AgentAffinity(), 0), (RoundRobin(), 0), (LeastLoaded(), 8)],  # at most one per replica
+)
+async def test_a_call_reads_the_replicas_loads_only_if_its_routing_does(routing, most):
+    fleet = Fleet([Recording() for _ in range(8)], admission=LedgerAdmission(CountedLoads), routing=routing)
+    CountedLoads.loads = 0
+    await fleet.ainvoke("a", [HumanMessage("hi")])
+    assert CountedLoads.loads == most
+
+
 def test_the_built_in_gates_are_gates_and_a_gate_that_is_not_is_refused():
     Gate = fleet_module.Gate
     assert isinstance(TokenAdmission(1000, 10).gate(1.0), Gate)

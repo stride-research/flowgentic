@@ -71,7 +71,7 @@ import time
 import weakref
 import zlib
 from collections import Counter, OrderedDict, deque
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -345,9 +345,40 @@ class RequestAdmission:
 
 
 class Routing(Protocol):
-	"""Chooses the replica for an agent's call."""
+	"""Chooses the replica for an agent's call. ``loads`` reads a replica's
+	load from its gate when the routing first asks for it, so a routing that
+	reads none, such as ``AgentAffinity``, costs no reads."""
 
 	def choose(self, agent_id: str, loads: Sequence[ReplicaLoad]) -> int: ...
+
+
+class _Loads(Sequence):
+	"""The replicas' loads for one call, each read from its gate once, when
+	first asked for."""
+
+	__slots__ = ("_gates", "_read")
+
+	def __init__(self, gates: list[Gate]) -> None:
+		self._gates = gates
+		self._read: list[ReplicaLoad | None] = [None] * len(gates)
+
+	def __len__(self) -> int:
+		return len(self._gates)
+
+	def __getitem__(self, i: Any) -> Any:
+		if isinstance(i, slice):
+			return [self[j] for j in range(*i.indices(len(self)))]
+		load = self._read[i]
+		if load is None:
+			load = self._read[i] = self._gates[i].load()
+		return load
+
+	def __iter__(self) -> Iterator[ReplicaLoad]:
+		self._read = [
+			load if load is not None else gate.load()
+			for load, gate in zip(self._read, self._gates)
+		]
+		return iter(self._read)
 
 
 class AgentAffinity:
@@ -371,10 +402,12 @@ class LeastLoaded:
 	"""Each call to the replica with the fewest requests in flight and waiting."""
 
 	def choose(self, agent_id: str, loads: Sequence[ReplicaLoad]) -> int:
-		return min(
-			range(len(loads)),
-			key=lambda i: (loads[i].requests + loads[i].waiting, loads[i].tokens),
-		)
+		best, chosen = None, 0
+		for i, load in enumerate(loads):  # each load read once
+			key = (load.requests + load.waiting, load.tokens)
+			if best is None or key < best:
+				best, chosen = key, i
+		return chosen
 
 
 # --- recovery ----------------------------------------------------------------------
@@ -806,7 +839,7 @@ class Fleet:
 		if reserve < 0:
 			raise ValueError("reserve must not be negative")
 		core = self._core
-		i = core.routing.choose(agent_id, [g.load() for g in core.gates])
+		i = core.routing.choose(agent_id, _Loads(core.gates))
 		gate = core.gates[i]
 		state = core.agent(agent_id)
 		chars = _message_chars(messages)
