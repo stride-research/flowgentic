@@ -7,6 +7,49 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
+## [Unreleased]
+
+### Changed
+
+- A task or MCP call made by a LangGraph agent is keyed by its agent, the
+  LangGraph task that runs the tool, and the tool call's id:
+  `agent/task/call`, where it was `agent/call`. LangGraph gives a task the
+  same id when it runs again on resume, so a repeated call still runs
+  nothing; outside a LangGraph run the key is `agent/call`, as before.
+  `ToolRuntime.key`, `submit` and `call_service` take the task as a
+  keyword-only `scope`. A `/` or `%` in an id is written `%2F` or `%25` in
+  the key.
+- A task's RHAPSODY uid escapes its key one-to-one: `/` is written `.`, `_`
+  is written `__`, and any character other than a letter, a digit or `-` is
+  written `_x<hex>_`, where every such character was `_`. A uid made by 0.5.0
+  for the same call differs.
+- Cancelling a task tool's wait, as cancelling its agent does, leaves the task
+  running, where it cancelled Flowgentic's side of the task. The task keeps its
+  place in its `TaskOrder` until it ends, and the same call made again gets its
+  result.
+- `ToolServiceClient` takes the service's `call_timeout` (120 s by default, as
+  `serve`'s), and its deadline, `timeout`, defaults to `call_timeout` plus
+  30 s: 150 s by default, as before. A `timeout` not above `call_timeout`
+  raises `ValueError`; pass the service's `call_timeout` with it.
+
+### Fixed
+
+- A model server that numbers its tool calls per message reuses call ids on
+  later turns, and the later, different call got the first call's result. It
+  now runs.
+- Two calls whose keys differ only in characters other than letters, digits,
+  `_`, `.` and `-`, such as `a.b/c` and `a/b.c`, shared one RHAPSODY uid, and
+  RHAPSODY answered both with one task.
+- A task tool's call made again after its wait was cancelled raised a bare
+  `CancelledError`, which failed its agent, and a cancelled wait released its
+  task's place in its `TaskOrder` while the task still ran. A task cancelled by
+  whoever holds its future now reaches the model as a failed call.
+- A RHAPSODY session keeps every task's description for its life, and each
+  held the task's arguments, its result, the backend's text of the result and
+  its exception. Flowgentic now drops them once it has read the task's outcome:
+  20,000 tasks with 10 kB results, on a thread pool, took 103 MB instead of
+  465 MB. RHAPSODY 0.7 still keeps each task's description.
+
 ## [0.5.0] - 2026-11-18
 
 Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as
@@ -536,6 +579,7 @@ on `main`.
   - Each test matrix job runs its own Python with the dev extra.
   - The bandit job runs again.
 
+[Unreleased]: https://github.com/stride-research/flowgentic/compare/v0.5.0...HEAD
 [0.5.0]: https://github.com/stride-research/flowgentic/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/stride-research/flowgentic/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/stride-research/flowgentic/compare/v0.3.0...v0.3.1
