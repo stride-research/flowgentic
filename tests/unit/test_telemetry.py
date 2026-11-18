@@ -1,10 +1,14 @@
-"""The spans Flowgentic records and the trace context it carries into tasks."""
+"""The spans and metrics Flowgentic records, and the trace context it carries
+into tasks."""
 
 # ruff: noqa: S101
 
 from __future__ import annotations
 
 import importlib
+import json
+import subprocess
+import sys
 from collections.abc import AsyncIterator
 from concurrent.futures import Executor, ProcessPoolExecutor, ThreadPoolExecutor
 from typing import Any
@@ -83,6 +87,64 @@ async def test_a_failed_decision_marks_its_span(
     (span,) = _spans_named(span_exporter, "invoke_agent analyst")
     assert span.status.status_code is StatusCode.ERROR
     assert span.attributes["error.type"] == "RuntimeError"
+
+
+# Values each histogram sees in a campaign, smallest to largest, in seconds
+TYPICAL_SECONDS = {
+    # the event loop's lag: none to a blocked loop
+    "flowgentic.host.loop.lag": ("LOOP_LAG", (0.0004, 0.003, 0.02, 0.08, 0.3, 1.5)),
+    # a young generation's pause to a full collection of a large heap
+    "flowgentic.host.gc.pause": ("GC_PAUSE", (0.00005, 0.0003, 0.002, 0.02, 0.2, 2.0)),
+    # a lookup in the tool service to an hour-long simulation
+    "flowgentic.tool.duration": ("TOOL_DURATION", (0.002, 0.05, 1, 20, 300, 3000)),
+    # admitted at once to a fleet saturated for minutes
+    "flowgentic.fleet.admission.wait": (
+        "ADMISSION_WAIT",
+        (0.0005, 0.02, 0.4, 3, 40, 200),
+    ),
+    # a short reply to a long reasoning one
+    "flowgentic.fleet.request.duration": (
+        "MODEL_SERVICE",
+        (0.05, 0.3, 2, 15, 60, 200),
+    ),
+}
+
+
+def test_histograms_in_seconds_spread_typical_values_over_buckets() -> None:
+    # In a fresh interpreter, so that these values stay out of the histograms
+    # other tests read. Flowgentic's instruments exist before the SDK is set,
+    # as in an application that configures it after importing Flowgentic.
+    code = f"""
+import json
+from flowgentic import _telemetry
+from opentelemetry import metrics
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
+reader = InMemoryMetricReader()
+metrics.set_meter_provider(MeterProvider(metric_readers=[reader]))
+for name, values in {TYPICAL_SECONDS!r}.values():
+    for value in values:
+        getattr(_telemetry, name).record(value)
+points = {{
+    m.name: m.data.data_points[0]
+    for r in reader.get_metrics_data().resource_metrics
+    for s in r.scope_metrics
+    for m in s.metrics
+}}
+print(json.dumps({{n: list(p.bucket_counts) for n, p in points.items()}}))
+"""
+    run = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+    )
+    counts = json.loads(run.stdout)
+    for metric, (_, values) in TYPICAL_SECONDS.items():
+        # Each value in a bucket of its own, none past the last bound.
+        assert sum(counts[metric]) == len(values), metric
+        assert max(counts[metric]) == 1 and counts[metric][-1] == 0, (
+            metric,
+            counts[metric],
+        )
 
 
 @pytest.mark.parametrize("executor", [ThreadPoolExecutor, ProcessPoolExecutor])

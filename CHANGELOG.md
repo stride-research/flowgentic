@@ -25,13 +25,23 @@ predate this changelog, so their changes are not listed here.
 - `flowgentic.host`: an agent host that runs many agents in one process,
   through a runner per framework. While it runs it raises the cyclic
   collector's first threshold and freezes the objects alive once agents have
-  started; it caps the agents live at once, staggers the first wave's starts,
-  resumes agents that wait on tasks, and counts agents by state, in three
-  categories: working, waiting, and making a model request. Its report gives
-  each agent's outcome, the agent-seconds by state, the event loop's lag and
-  the collector's pauses. Each agent's run is an `invoke_agent` span, and the
-  agents by state, the loop lag and the collector's pauses are OpenTelemetry
-  metrics.
+  started, and when the last host that froze ends it unfreezes every frozen
+  object, so no reference cycle stays frozen; it caps the agents live at
+  once, staggers the first wave's starts, resumes agents that wait on tasks,
+  and counts agents by state, in three categories: working, waiting, and
+  making a model request. Its report gives each agent's outcome, the
+  agent-seconds by state, the event loop's lag and the collector's pauses.
+  Each agent's run is an `invoke_agent` span, with status ERROR and the
+  exception when the agent fails, and the agents by state, the loop lag and
+  the collector's pauses are OpenTelemetry metrics. Hosts that run at the
+  same time record each lag sample and each pause once, and the pauses are
+  recorded from the event loop, never inside a collection, where an SDK's
+  locks could deadlock the process.
+- Flowgentic's histograms, all in seconds, advise the SDK of bucket
+  boundaries sized for what each measures, from the collector's pauses to
+  tool calls of an hour, in place of the SDK's default boundaries, which suit
+  milliseconds. The Telemetry page lists every metric and shows how to
+  configure a meter provider.
 - `AgentHost.run_indexed(indices, input_for, id_prefix=...)` runs a range of
   agents named by a prefix and an integer, and builds each agent's input as a
   slot opens, so a process's memory does not grow with the campaign's size.

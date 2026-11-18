@@ -58,6 +58,40 @@ tracer = trace.get_tracer("flowgentic", version("flowgentic"))
 logger = _logs.get_logger("flowgentic", version("flowgentic"))
 meter = metrics.get_meter("flowgentic", version("flowgentic"))
 
+# Bucket boundaries, in seconds, that each histogram advises the SDK to use. The
+# SDK's default boundaries (0, 5, 10, 25, ... 10000) suit milliseconds: values
+# in seconds would nearly all fall in its first bucket. A view the application
+# configures overrides the advice.
+
+LOOP_LAG_BUCKETS = (
+	0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10,
+)  # fmt: skip
+"""1 ms to 10 s: an idle loop's lag is under a millisecond, a blocked one's
+seconds."""
+GC_PAUSE_BUCKETS = (
+	0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1,
+	0.25, 0.5, 1, 2.5, 5, 10,
+)  # fmt: skip
+"""100 µs to 10 s: from a young generation's pause to a full collection of a
+large heap."""
+TOOL_DURATION_BUCKETS = (
+	0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30,
+	60, 120, 300, 600, 1800, 3600, 7200,
+)  # fmt: skip
+"""1 ms to 2 h: from a lookup in the tool service to a long simulation task."""
+ADMISSION_WAIT_BUCKETS = (
+	0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30,
+	60, 120, 300, 600,
+)  # fmt: skip
+"""1 ms to 10 min: from a request admitted at once to one that waits out a
+saturated fleet or a replica's outage."""
+REQUEST_DURATION_BUCKETS = (
+	0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28, 2.56, 5.12, 10.24, 20.48,
+	40.96, 81.92, 163.84, 327.68, 655.36,
+)  # fmt: skip
+"""10 ms to 11 min: the GenAI conventions' boundaries for a model call's
+duration, doubled three more times for long reasoning replies."""
+
 # --- The agent host's metrics and events -----------------------------------------
 #
 # Flowgentic's own names, under ``flowgentic.``: the GenAI conventions have no
@@ -75,11 +109,13 @@ LOOP_LAG = meter.create_histogram(
 	"flowgentic.host.loop.lag",
 	unit="s",
 	description="How late the agent host's event loop woke a 100 ms timer",
+	explicit_bucket_boundaries_advisory=LOOP_LAG_BUCKETS,
 )
 GC_PAUSE = meter.create_histogram(
 	"flowgentic.host.gc.pause",
 	unit="s",
 	description="Pauses of the cyclic garbage collector in an agent host",
+	explicit_bucket_boundaries_advisory=GC_PAUSE_BUCKETS,
 )
 
 
@@ -149,6 +185,7 @@ TOOL_DURATION = meter.create_histogram(
 	"flowgentic.tool.duration",
 	unit="s",
 	description="Time from a tool call's submission to its result",
+	explicit_bucket_boundaries_advisory=TOOL_DURATION_BUCKETS,
 )
 
 
@@ -164,11 +201,13 @@ ADMISSION_WAIT = meter.create_histogram(
 	"flowgentic.fleet.admission.wait",
 	unit="s",
 	description="Time a model request waited for its replica's admission",
+	explicit_bucket_boundaries_advisory=ADMISSION_WAIT_BUCKETS,
 )
 MODEL_SERVICE = meter.create_histogram(
 	"flowgentic.fleet.request.duration",
 	unit="s",
 	description="Time a model request spent at its replica, after admission",
+	explicit_bucket_boundaries_advisory=REQUEST_DURATION_BUCKETS,
 )
 
 
