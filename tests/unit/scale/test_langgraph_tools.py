@@ -3,6 +3,8 @@ repeat safety, failures, order policies, telemetry, and the checkpoints written.
 
 import asyncio
 import gc
+import threading
+import time
 import traceback
 import weakref
 from types import SimpleNamespace
@@ -325,22 +327,113 @@ async def test_an_order_policy_decides_when_tasks_are_submitted():
     assert [(r.info.key, r.outcome) for r in records] == [("a/c2", "cancelled"), ("a/c1", "ok")]
 
 
-async def test_cancelling_a_tool_that_waits_cancels_its_task():
-    """The tool waits for its task without raising the task's exception, and
-    cancelling the tool still cancels the task, as awaiting the task would."""
+async def test_cancelling_a_tool_that_waits_leaves_its_task_running():
+    """The task is shared by every call with its key: cancelling one waiter,
+    as cancelling its agent does, leaves the task running, and the call made
+    again gets the task's result."""
     session = await thread_session()
-    runtime = ToolRuntime(session, order=Held())
+    order = Held()
+    runtime = ToolRuntime(session, order=order)
     (tool_,) = bind_tools(runtime, [task_tool(simulate)])
     call = {"name": "simulate", "args": {"x": 1.0}, "id": "c1", "type": "tool_call"}
-    waiting = asyncio.create_task(tool_.ainvoke(call, {"configurable": {"thread_id": "a"}}))
+    config = {"configurable": {"thread_id": "a"}}
+    waiting = asyncio.create_task(tool_.ainvoke(call, config))
     await asyncio.sleep(0.05)
     job = runtime._jobs["a/c1"]
     waiting.cancel()
     with pytest.raises(asyncio.CancelledError):
         await waiting
-    await asyncio.wait([job])
+    assert not job.done()
+    order.gate.set()
+    again = await tool_.ainvoke(call, config)
     await session.close()
-    assert job.cancelled() and RUNS == {}
+    assert again.content == '{"y": 2.0}' and again.status == "success"
+    assert not job.cancelled() and RUNS == {"simulate": 1}
+    assert order.admitted == order.ended == ["a/c1"]
+
+
+async def test_a_call_made_again_after_a_timed_out_wait_gets_the_task():
+    session = await thread_session()
+    runtime = ToolRuntime(session)
+    (tool_,) = bind_tools(runtime, [task_tool(slow_simulate)])
+    call = {"name": "slow_simulate", "args": {"x": 1.0}, "id": "c1", "type": "tool_call"}
+    config = {"configurable": {"thread_id": "a"}}
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(tool_.ainvoke(call, config), 0.05)
+    out = await tool_.ainvoke(call, config)
+    await session.close()
+    assert out.content == '{"y": 2.0}' and RUNS == {"slow_simulate": 1}
+    assert not asyncio.current_task().cancelling()
+
+
+class OneAtATime:
+    """An order policy that admits one task at a time."""
+
+    def __init__(self):
+        self.slot = asyncio.Semaphore(1)
+
+    async def admit(self, info: TaskInfo) -> None:
+        await self.slot.acquire()
+
+    def done(self, info: TaskInfo) -> None:
+        self.slot.release()
+
+
+async def test_a_cancelled_wait_keeps_its_tasks_place_in_the_order_until_it_ends():
+    session = await thread_session()
+    runtime = ToolRuntime(session, order=OneAtATime())
+    (tool_,) = bind_tools(runtime, [task_tool(counted_simulate)])
+    calls = [
+        ({"name": "counted_simulate", "args": {"x": x}, "id": "c1", "type": "tool_call"},
+         {"configurable": {"thread_id": agent}})
+        for agent, x in (("a", 1.0), ("b", 2.0))
+    ]
+    waits = [asyncio.create_task(tool_.ainvoke(call, config)) for call, config in calls]
+    await asyncio.sleep(0.1)  # a's task runs; b's waits for its turn
+    waits[0].cancel()
+    await asyncio.gather(*waits, return_exceptions=True)
+    jobs = list(runtime._jobs.values())
+    await asyncio.wait(jobs)
+    await session.close()
+    assert COUNTED["peak"] == 1  # never two at once under a one-at-a-time order
+    assert [job.result() for job in jobs] == [{"y": 2.0}, {"y": 4.0}]
+
+
+async def test_a_task_cancelled_by_its_owner_reaches_the_model_as_an_error():
+    """A task future cancelled directly, not through a tool's wait, is a failed
+    call for the model to read, not a CancelledError that would fail its agent."""
+    session = await thread_session()
+    runtime = ToolRuntime(session, order=Held())
+    (tool_,) = bind_tools(runtime, [task_tool(simulate)])
+    call = {"name": "simulate", "args": {"x": 1.0}, "id": "c1", "type": "tool_call"}
+    config = {"configurable": {"thread_id": "a"}}
+    runtime.submit(task_tool(simulate), "a", "c1", {"x": 1.0}).cancel()
+    out = await tool_.ainvoke(call, config)
+    await session.close()
+    assert out.status == "error" and "simulate failed: its task was cancelled" in out.content
+    assert RUNS == {}
+
+
+def slow_simulate(x: float) -> dict:
+    """A simulation that takes a while."""
+    time.sleep(0.3)
+    RUNS["slow_simulate"] = RUNS.get("slow_simulate", 0) + 1
+    return {"y": 2 * x}
+
+
+COUNTED = {"running": 0, "peak": 0}
+_COUNTED_LOCK = threading.Lock()
+
+
+def counted_simulate(x: float) -> dict:
+    """A simulation that counts how many run at once."""
+    with _COUNTED_LOCK:
+        COUNTED["running"] += 1
+        COUNTED["peak"] = max(COUNTED["peak"], COUNTED["running"])
+    time.sleep(0.3)
+    with _COUNTED_LOCK:
+        COUNTED["running"] -= 1
+    return {"y": 2 * x}
 
 
 def write_result(x: float, key: str, scale: int) -> dict:

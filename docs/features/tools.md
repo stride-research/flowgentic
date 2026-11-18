@@ -68,6 +68,11 @@ ended tasks (100,000 by default), and an agent in a host finds the tasks it
 asked for until it ends, however many have ended since. The tool service keeps
 its own answers, by the same key.
 
+Cancelling an agent, or a task tool's wait, leaves the task running: the task
+belongs to every call with its key, and RHAPSODY does not stop a task that has
+started. The task keeps its place in its `TaskOrder` until it ends, and the
+call made again gets its result.
+
 A task's RHAPSODY uid is `flowgentic.` and its key, with `/` written `.`, `_`
 written `__`, and any character other than a letter, a digit or `-` written
 `_x<hex>_`, so different calls never share a uid.

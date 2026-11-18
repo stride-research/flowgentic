@@ -114,9 +114,6 @@ Agents at scale:
       runs, so a graph that runs a suspending subgraph in a loop, such as a
       supervisor, stores more with every turn.
 - Tools:
-    - Cancelling an agent while it waits on a task tool leaves the task
-      running in RHAPSODY, and releases the task's place in its `TaskOrder`
-      before the task ends.
     - `ToolRuntime(retained=...)` bounds what Flowgentic keeps of ended tasks,
       not what RHAPSODY keeps. RHAPSODY 0.7 keeps each task's description and
       result for the life of its session, so a process's memory grows with the

@@ -100,15 +100,14 @@ async def _settled(job: asyncio.Future) -> None:
 	The runtime keeps an ended task, and RHAPSODY's session its failure, so the
 	task's exception lives on. Raised here, it would keep this tool's frames in
 	its traceback, and on CPython 3.12 those of the LangGraph run that called
-	the tool, with the agent's whole state. Cancelling the wait cancels the
-	task, as awaiting it would."""
-	if job.done():
-		return
-	try:
+	the tool, with the agent's whole state.
+
+	Cancelling the wait leaves the task running. The task belongs to every call
+	with its key, such as the same call made again once its agent runs again,
+	and RHAPSODY does not stop a task that has started; so the task keeps its
+	place in its ``TaskOrder`` until it ends."""
+	if not job.done():
 		await asyncio.wait((job,))
-	except asyncio.CancelledError:
-		job.cancel()
-		raise
 
 
 def _task_tool(runtime: ToolRuntime, tool: TaskTool) -> BaseTool:
@@ -124,7 +123,9 @@ def _task_tool(runtime: ToolRuntime, tool: TaskTool) -> BaseTool:
 				raise
 		with _agents.activity(AgentState.TOOL_WAIT):
 			await _settled(job)
-		error = None if job.cancelled() else job.exception()
+		if job.cancelled():  # by whoever submitted it: the model reads it
+			raise ToolException(f"{tool.name} failed: its task was cancelled")
+		error = job.exception()
 		if error is not None:  # the model reads the failure
 			raise ToolException(
 				f"{tool.name} failed: {type(error).__name__}: {error}"[:500]
