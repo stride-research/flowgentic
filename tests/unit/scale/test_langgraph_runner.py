@@ -164,6 +164,55 @@ def test_the_asyncflow_integration_spells_langgraph():
     assert lg.ExecutionWrappersLangGraph.__name__ == "ExecutionWrappersLangGraph"
 
 
+@tool
+async def stuck_task(x: float, config: RunnableConfig, call_id: Annotated[str, InjectedToolCallId]) -> str:
+    """A task that never ends, or, for x < 0, one the host cannot find."""
+    key = f"{config['configurable']['thread_id']}/{call_id}"
+    if x >= 0 and key not in TASKS:
+        TASKS[key] = asyncio.get_running_loop().create_future()
+        register_pending(key, TASKS[key])
+    try:
+        interrupt({PENDING_KEY: key})
+    except GraphInterrupt as exc:
+        record_interrupt(exc)
+        raise
+    return "never"
+
+
+def slow_then(second: str, x: float):
+    """One slow task, then ``second``: the agent suspends twice."""
+
+    def script(messages):
+        done = sum(1 for m in messages if m.type == "tool")
+        name, args = ("slow_task", {"x": 1.0}) if done == 0 else (second, {"x": x})
+        return AIMessage("", tool_calls=[{"name": name, "args": args, "id": f"c{done}"}])
+
+    return script
+
+
+@pytest.mark.parametrize("ending", ["cancelled", "failed"])
+async def test_an_agent_that_ends_while_suspended_leaves_no_resume_count(ending):
+    """An agent cancelled, or failed by the host, while it waits between two
+    resumes never reaches the runner again: its count of resumes goes with it."""
+    x = 1.0 if ending == "cancelled" else -1.0
+    model = Scripted(script=slow_then("stuck_task", x))
+    runner = GraphRunner(react_graph(model, [slow_task, stuck_task], InMemorySaver()))
+    host = AgentHost(runner, stagger=FAST)
+    run = asyncio.create_task(host.run(inputs(3)))
+    if ending == "cancelled":
+        while len(TASKS) < 6:  # each agent waits on its second task
+            await asyncio.sleep(0.005)
+        await asyncio.sleep(0.01)
+        run.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await run
+    else:
+        report = await run
+        assert [a.status for a in report.agents] == ["failed"] * 3
+        assert all("did not submit" in a.error for a in report.agents)
+    assert not runner._resumes
+
+
 def left_by(run_objects: tuple) -> list:
     return [type(o).__name__ for o in gc.get_objects() if isinstance(o, run_objects)]
 

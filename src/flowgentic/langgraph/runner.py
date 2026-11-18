@@ -16,7 +16,10 @@ Each resume is a new LangGraph run, and LangGraph counts a run's steps against
 never stop an agent that suspends on every turn. So the runner also lets an
 agent resume at most ``recursion_limit`` times: each resume runs at least one
 step, so an agent that would finish within the limit without suspending is
-never stopped by it, and one that loops on a suspending tool is.
+never stopped by it, and one that loops on a suspending tool is. An agent's
+count lasts until it ends, or until the asyncio task that resumed it ends, as
+when the host cancels or fails an agent while it waits: the agent host runs
+each agent's start and resumes in one task.
 
 A graph compiled with ``interrupt_before`` or ``interrupt_after`` is refused:
 a static breakpoint stops a run without an interrupt in its output, so the
@@ -36,8 +39,10 @@ that one's frames are left to the collector.
 
 from __future__ import annotations
 
+import asyncio
 import traceback
 from contextvars import ContextVar
+from functools import partial
 from typing import Any, Literal
 
 from langgraph.errors import GraphRecursionError
@@ -110,7 +115,9 @@ class GraphRunner:
 		self.graph = graph
 		self.config = dict(config or {})
 		self.durability = durability
-		self._resumes: dict[str, int] = {}  # per suspended agent
+		# Resumes per suspended agent, each in a cell of its own, so that a
+		# count dropped and made again for the same id is not dropped twice.
+		self._resumes: dict[str, list[int]] = {}
 
 	def _config(self, agent: Agent) -> dict:
 		config = {**self.config, **(agent.config or {})}
@@ -135,16 +142,31 @@ class GraphRunner:
 	async def resume(self, agent: Agent, done: dict[str, Any]) -> Step:
 		config = self._config(agent)
 		limit = self._limit(config)
-		resumes = self._resumes.get(agent.id, 0) + 1
-		if resumes > limit:
+		count = self._count(agent.id)
+		count[0] += 1
+		if count[0] > limit:
 			self._resumes.pop(agent.id, None)
 			raise GraphRecursionError(
 				f"Agent {agent.id!r} suspended more than {limit} times, its "
 				"recursion_limit. Each resume runs at least one step; raise "
 				"recursion_limit in the run's config if the agent should go on."
 			)
-		self._resumes[agent.id] = resumes
 		return await self._run(Command(resume=done), agent, config)
+
+	def _count(self, agent_id: str) -> list[int]:
+		count = self._resumes.get(agent_id)
+		if count is None:
+			count = self._resumes[agent_id] = [0]
+			# An agent cancelled or failed by the host while it waits never
+			# comes back here: its count goes when the task running it ends.
+			task = asyncio.current_task()
+			if task is not None:
+				task.add_done_callback(partial(self._forget, agent_id, count))
+		return count
+
+	def _forget(self, agent_id: str, count: list[int], _task: asyncio.Task) -> None:
+		if self._resumes.get(agent_id) is count:
+			del self._resumes[agent_id]
 
 	async def _run(self, value: Any, agent: Agent, config: dict) -> Step:
 		raised: list[BaseException] = []
