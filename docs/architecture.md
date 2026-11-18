@@ -10,7 +10,7 @@ Flowgentic has two paths for agents on HPC resources.
   through one module, `flowgentic._rhapsody`.
 - **The AsyncFlow path** sits between an application's agent code and RADICAL
   AsyncFlow. `bind_agent` runs an agent component as an AsyncFlow task, and
-  `LangraphIntegration` runs a LangGraph graph's tools, services, tasks and
+  `LangGraphIntegration` runs a LangGraph graph's tools, services, tasks and
   nodes as AsyncFlow tasks. AsyncFlow schedules every task on a named backend.
   Flowgentic reaches AsyncFlow through one module, `flowgentic._asyncflow`.
 
@@ -77,7 +77,7 @@ flowchart LR
   end
   subgraph Flowgentic
     BIND[bind_agent]
-    LGI[LangraphIntegration<br/>asyncflow decorator]
+    LGI[LangGraphIntegration<br/>asyncflow decorator]
   end
   APP -- agent component --> BIND
   GRAPH -- tools, services, tasks, nodes --> LGI
@@ -92,13 +92,13 @@ flowchart LR
 | --- | --- |
 | `flowgentic.agent` | `bind_agent` and `AgentTask`: an agent component as an AsyncFlow task, each call an `invoke_agent` span; see [Telemetry](features/telemetry.md) |
 | `flowgentic.acceptance` | `accept`, `Rejected`, `NotAccepted`, `Outcome` and `Attempt`: an agent's output checked, re-asked for and accepted or replaced by a fallback, each call an `accept` span; see [Acceptance](features/acceptance.md) |
-| `flowgentic.langgraph.main` | `LangraphIntegration`: creates and shuts down the `WorkflowEngine` |
+| `flowgentic.langgraph.main` | `LangGraphIntegration`: creates and shuts down the `WorkflowEngine` |
 | `flowgentic.langgraph.execution_wrappers` | `AsyncFlowType`, the `asyncflow` decorator, the handoff tool, `BaseLLMAgentState` |
 | `flowgentic.langgraph.utils` | An LLM router and fan-out for supervisor graphs |
 | `flowgentic.langgraph.base_components` | `BaseToolRegistry`: a base class that registers an application's tools and tasks by name |
 | `flowgentic.utils.llm_providers` | `ChatLLMProvider`: OpenRouter, OpenAI and Ollama chat models |
 | `flowgentic` | `configure_logging`: prints Flowgentic's log records, which import leaves to the application; see [Logging](features/logging.md) |
-| `flowgentic._asyncflow` | Private: the one module that calls AsyncFlow. `bind_agent`, `LangraphIntegration`, the `asyncflow` decorator and the handoff tool open and close engines and register tasks, services and blocks through it. It carries the caller's trace context into each task and service |
+| `flowgentic._asyncflow` | Private: the one module that calls AsyncFlow. `bind_agent`, `LangGraphIntegration`, the `asyncflow` decorator and the handoff tool open and close engines and register tasks, services and blocks through it. It carries the caller's trace context into each task and service |
 | `flowgentic._telemetry` | Private, for both paths: the OpenTelemetry tracer, meter and logger, the span, metric, event and attribute names, the content switch, and the trace-context carrier |
 
 Academy agents' actions run in AsyncFlow tasks without a Flowgentic module:

@@ -100,9 +100,9 @@ active development; the AsyncFlow path stays in maintenance mode.
 - A tool service call has a deadline: with no answer within the client's
   `timeout` (150 s by default) it fails with `ToolServiceError`, and with
   `alive`, a check that the service still runs (such as a test of its pid),
-  every waiting call fails as soon as the service has stopped. A call's arguments travel as JSON values,
-  so the service needs none of the agents' classes, and arguments with no JSON
-  form fail their own call. The service refuses a request from a process with
+  every waiting call fails as soon as the service has stopped. A call's
+  arguments travel as JSON values, so the service needs none of the agents'
+  classes, and arguments with no JSON form fail their own call. The service refuses a request from a process with
   no reply queue, and a reply queue that fails loses no other process's
   answers. An MCP success with no content is a success with no data, and a
   result with several text blocks returns all of them.
@@ -141,14 +141,15 @@ active development; the AsyncFlow path stays in maintenance mode.
   paths: agents at scale, in active development, and the AsyncFlow path, in
   maintenance mode.
 - The `examples` extra moves to RHAPSODY 0.7 (`rhapsody-py[telemetry]>=0.7,<0.8`).
-- `flowgentic.langgraph` imports `LangraphIntegration` when first used, so
+- `flowgentic.langgraph` imports `LangGraphIntegration` when first used, so
   `GraphRunner` needs only the `langgraph` extra.
 - Importing a part whose extra is not installed raises `ModuleNotFoundError`
   with the extra to install.
 - CI runs the test suite on Python 3.11, 3.12 and 3.13, and on 3.11 with the
   lowest versions the ranges allow, and records the tested versions of
-  RHAPSODY, the MCP SDK and LangGraph's checkpointer with the others. The documentation's cap on
-  `pymdown-extensions`, needed only on Python 3.10, is lifted.
+  RHAPSODY, the MCP SDK and LangGraph's checkpointer with the others. The
+  documentation's cap on `pymdown-extensions`, needed only on Python 3.10, is
+  lifted.
 
 ## [0.4.0] - 2026-10-30
 

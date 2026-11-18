@@ -20,7 +20,7 @@ client for a fleet of model servers.
 an example that runs on a laptop.
 
 The AsyncFlow path is in maintenance mode: it gets fixes, not features. The
-LangGraph execution adapter (`LangraphIntegration`) is frozen: the
+LangGraph execution adapter (`LangGraphIntegration`) is frozen: the
 [substitution experiment](evaluation/substitution.md) found that, in the
 agentic demo, its only distinct contribution beyond AsyncFlow and LangGraph
 was an implicit retry and timeout on every call and graph node, which re-ran
@@ -70,7 +70,7 @@ The AsyncFlow path:
   reasons, within an attempt budget, and falls back to a deterministic value
   when no proposal passes. Each call, attempt and check is recorded in the
   run's trace. See [Acceptance](features/acceptance.md).
-- **`LangraphIntegration`** (`flowgentic.langgraph`) runs a LangGraph graph's
+- **`LangGraphIntegration`** (`flowgentic.langgraph`) runs a LangGraph graph's
   tools, services, tasks and nodes as AsyncFlow tasks, in their caller's trace.
   See [LangGraph on AsyncFlow with Flowgentic](guides/langgraph-on-asyncflow.md)
   and [Telemetry](features/telemetry.md).
@@ -87,7 +87,7 @@ in three of them.
 | An agent proposes a decision: LangGraph inside ADR `@decide`, or an AuCaM `CampaignController` | ADR, AuCaM | None |
 | A policy submits scientific work while `@decide` runs | None: it bypasses ADR's bounds, budgets and action IDs | None |
 | An existing application calls an agent at fixed decision points, as an AsyncFlow task | The application | `bind_agent` |
-| An ADR action or AuCaM workflow launches an agent workflow whose tools run through AsyncFlow | AuCaM, AsyncFlow | `LangraphIntegration` (frozen) |
+| An ADR action or AuCaM workflow launches an agent workflow whose tools run through AsyncFlow | AuCaM, AsyncFlow | `LangGraphIntegration` (frozen) |
 | An external harness (Claude Code, Codex, OpenClaw) steers a run or submits a campaign | ADR, AuCaM | None |
 | A campaign of many agents, each with its tools as RHAPSODY tasks, its model on the allocation and its state in the allocation's memory | The application | `AgentHost` and the parts of agents at scale |
 

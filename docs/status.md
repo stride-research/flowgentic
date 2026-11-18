@@ -25,7 +25,7 @@ agent outputs and one trace across decisions, tasks and model calls. The
 [changelog](changelog.md) lists each change, and what replaces each feature it
 removes.
 
-The LangGraph execution adapter (`LangraphIntegration` and its `asyncflow`
+The LangGraph execution adapter (`LangGraphIntegration` and its `asyncflow`
 decorators) is frozen and gets no new features. The decision follows the
 [substitution experiment](evaluation/substitution.md), which ran the agentic
 demo with and without the adapter. Without it, the demo kept the same
