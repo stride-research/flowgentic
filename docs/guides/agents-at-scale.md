@@ -214,9 +214,15 @@ on Dragon's resources:
   chat model of one server.
 
 Flowgentic imports nothing from Dragon: the application passes in the queues,
-the session and the store. CI runs the example without Dragon, and
-Flowgentic's own tests do not yet run under Dragon; see
-[Project status](../status.md#known-limitations).
+the session and the store. CI runs the example without Dragon. For this
+release the parts were tested under Dragon by hand: the store's contract on
+RaDEX, an agent suspended by one Dragon process and resumed by another, the
+tool service in a Dragon process serving two agent processes over Dragon's
+queues, and the worked example adapted to Dragon, with 1,000 agents in two
+processes, every suspension resumed from RaDEX. They passed under Dragon
+0.15.0 on Python 3.12, with RHAPSODY at commit `2523ead`, whose native Dragon
+backend is not in a release yet, and RaDEX at commit `9f9b0df`.
+See [Project status](../status.md#known-limitations).
 
 ## Telemetry
 

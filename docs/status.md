@@ -53,7 +53,7 @@ run, and a graph that should change between runs is built anew as a
 
 | Path | Agent framework | Runs tasks on | Python |
 | --- | --- | --- | --- |
-| Agents at scale | LangGraph 1.x | RHAPSODY 0.7: a thread pool in CI; Dragon on an allocation, not in CI | 3.11, 3.12, 3.13 |
+| Agents at scale | LangGraph 1.x | RHAPSODY 0.7 on a thread pool, in CI; RHAPSODY's native Dragon backend, not yet released, by hand | 3.11, 3.12, 3.13 |
 | AsyncFlow | LangGraph 1.x | RADICAL AsyncFlow 0.6.0, local backends | 3.11, 3.12, 3.13 |
 
 Tested environment, from `uv.lock`: LangGraph 1.2.16, langgraph-checkpoint
@@ -88,10 +88,16 @@ OpenTelemetry's GenAI instrumentation for LangChain and OpenAI (1.3b0, below
 
 Agents at scale:
 
-- Flowgentic's own tests do not yet run under Dragon. CI runs no part under
-  Dragon: `RadexStore` is tested against a stand-in for RaDEX's client, task
-  tools run on RHAPSODY's thread-pool backend, and the tool service's queues
-  are the standard library's.
+- CI runs no part under Dragon: `RadexStore` is tested against a stand-in for
+  RaDEX's client, task tools run on RHAPSODY's thread-pool backend, and the
+  tool service's queues are the standard library's. For this release the parts
+  were tested under Dragon by hand: the store's contract on RaDEX, an agent
+  suspended by one Dragon process and resumed by another, the tool service in
+  a Dragon process serving two agent processes over Dragon's queues, and the
+  worked example adapted to Dragon, with 1,000 agents in two processes, every
+  suspension resumed from RaDEX. They passed under Dragon 0.15.0 on Python
+  3.12, with RHAPSODY at commit `2523ead`, whose native Dragon backend is not
+  in a release yet, and RaDEX at commit `9f9b0df`.
 - RaDEX has no package: `RadexStore` needs RaDEX's Python client built from
   source with its C++ core.
 - An agent resumes only in the process that suspended it, because that
