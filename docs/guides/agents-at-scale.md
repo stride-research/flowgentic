@@ -233,7 +233,8 @@ cloudpickle send its functions by value. An application whose task functions
 live in an installed package needs nothing of the kind. The example also sets
 `DRAGON_PATCH_MP` again after importing RHAPSODY's backends: the import loads
 Dragon's LLM engine, which clears it, and processes started through Dragon's
-`multiprocessing` need it.
+`multiprocessing` need it
+([radical-cybertools/rhapsody#159](https://github.com/radical-cybertools/rhapsody/issues/159)).
 
 CI runs the example without Dragon. For this
 release the parts were tested under Dragon by hand: the store's contract on

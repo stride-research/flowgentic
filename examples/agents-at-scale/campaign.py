@@ -234,12 +234,16 @@ class ToolServiceProcess:
             raise RuntimeError(f"the tool service did not start: {ready}")
         return self
 
-    def __exit__(self, *exc: object) -> None:
+    def __exit__(self, exc_type: object, *exc: object) -> None:
         self.requests.put(None)  # stops the service
         try:
-            self.stats = self._status.get(timeout=60)
+            stats = self._status.get(timeout=60)
         finally:
             self._proc.join(30)
+        if isinstance(stats, dict):
+            self.stats = stats
+        elif exc_type is None:  # the service failed; an error in flight says more
+            raise RuntimeError(f"the tool service {stats}")
 
 
 # --- a scripted model, standing in for the model servers -----------------------
@@ -382,6 +386,7 @@ async def run_agents(
     suspensions = [0]
 
     def on_done(result: AgentResult, output: Any) -> None:
+        fleet.agent_done(result.id)  # the agent makes no more model calls
         lifetimes[0] += result.t_end - result.t_start
         suspensions[0] += result.suspensions
         if output is not None:
@@ -656,7 +661,13 @@ def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--agents", type=int, default=200)
     p.add_argument("--processes", type=int, default=1)
-    p.add_argument("--workers", type=int, default=8, help="RHAPSODY's threads per process")
+    p.add_argument(
+        "--workers",
+        type=int,
+        default=8,
+        help="RHAPSODY's workers: threads per agent process, or with --dragon "
+        "the native backend's workers per node",
+    )
     p.add_argument("--json", action="store_true", help="print the whole summary as JSON")
     p.add_argument(
         "--dragon",
