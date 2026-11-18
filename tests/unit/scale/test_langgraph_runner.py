@@ -17,7 +17,7 @@ from langgraph.graph import END
 from langgraph.types import interrupt
 
 from flowgentic.host import Agent, AgentHost, AgentState, Finished, Interrupted, Stagger, Suspended, register_pending
-from flowgentic.langgraph import PENDING_KEY, GraphRunner, record_interrupt, route_tool_calls, tool_call_router
+from flowgentic.langgraph import PENDING_KEY, GraphRunner, record_interrupt, route_tool_calls
 
 FAST = Stagger(batch=50, interval_s=0.0)
 RUNS: dict[str, int] = {}
@@ -127,8 +127,32 @@ def test_each_tool_call_goes_out_as_its_own_task():
     sends = route_tool_calls({"messages": [message]})
     assert [(s.node, s.arg) for s in sends] == [("tools", [c]) for c in message.tool_calls]
     assert route_tool_calls({"messages": [AIMessage("done")]}) == END
-    router = tool_call_router("run_tools", messages_key="history")
-    assert router({"history": [AIMessage("", tool_calls=calls[:1])]})[0].node == "run_tools"
+    assert route_tool_calls({"messages": []}) == END
+
+
+@pytest.mark.parametrize(
+    "breakpoint", [{"interrupt_before": ["b"]}, {"interrupt_after": ["a"]}, {"interrupt_before": "*"}]
+)
+def test_a_graph_with_static_breakpoints_is_refused(breakpoint):
+    """A static breakpoint stops a run without an interrupt in its output, so
+    the host would report the stopped agent as finished, with partial output."""
+    from langgraph.graph import START, MessagesState, StateGraph
+
+    g = StateGraph(MessagesState)
+    g.add_node("a", lambda s: {"messages": [("ai", "a")]})
+    g.add_node("b", lambda s: {"messages": [("ai", "b")]})
+    g.add_edge(START, "a")
+    g.add_edge("a", "b")
+    graph = g.compile(checkpointer=InMemorySaver(), **breakpoint)
+    with pytest.raises(ValueError, match="interrupt_before or interrupt_after"):
+        GraphRunner(graph)
+    assert isinstance(GraphRunner(g.compile(checkpointer=InMemorySaver())), GraphRunner)
+
+
+def test_route_tool_calls_is_the_only_router():
+    import flowgentic.langgraph as lg
+
+    assert "tool_call_router" not in lg.__all__ and not hasattr(lg, "tool_call_router")
 
 
 def left_by(run_objects: tuple) -> list:

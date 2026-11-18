@@ -11,6 +11,17 @@ tool node as its own task (LangGraph's ``Send``). LangGraph saves the result of
 each finished call with the checkpoint, so when an agent resumes from a
 suspension only the call that suspended runs again, and no other tool does.
 
+Each resume is a new LangGraph run, and LangGraph counts a run's steps against
+``recursion_limit`` from where that run starts. On its own, the limit would
+never stop an agent that suspends on every turn. So the runner also lets an
+agent resume at most ``recursion_limit`` times: each resume runs at least one
+step, so an agent that would finish within the limit without suspending is
+never stopped by it, and one that loops on a suspending tool is.
+
+A graph compiled with ``interrupt_before`` or ``interrupt_after`` is refused:
+a static breakpoint stops a run without an interrupt in its output, so the
+agent would end as finished, with partial output.
+
 A run that stops at a task tool's interrupt is freed when it stops. The
 interrupt is an exception, and the frames it passed through in LangChain and
 LangGraph keep it, or its traceback, in their locals: reference cycles that
@@ -26,16 +37,21 @@ that one's frames are left to the collector.
 from __future__ import annotations
 
 import traceback
-from collections.abc import Callable
 from contextvars import ContextVar
 from typing import Any, Literal
 
+from langgraph.errors import GraphRecursionError
 from langgraph.graph import END
 from langgraph.types import Command, Send
 
 from flowgentic.host import Agent, Finished, Interrupted, Step, Suspended
 
-__all__ = ["GraphRunner", "PENDING_KEY", "route_tool_calls", "tool_call_router"]
+try:  # LangGraph's limit for a run whose config sets none
+	from langgraph._internal._config import DEFAULT_RECURSION_LIMIT as _DEFAULT_LIMIT
+except ImportError:  # pragma: no cover - a LangGraph that moved it
+	_DEFAULT_LIMIT = 10_000
+
+__all__ = ["GraphRunner", "PENDING_KEY", "record_interrupt", "route_tool_calls"]
 
 PENDING_KEY = "flowgentic_pending"
 """The key of the interrupt value a task tool raises: the task's key."""
@@ -71,6 +87,8 @@ class GraphRunner:
 
 	``config`` is merged under each agent's own; ``durability`` is LangGraph's.
 	``exit``, the default, saves a checkpoint only when a run ends or suspends.
+	An agent resumes at most as many times as its run's ``recursion_limit``;
+	one more resume fails it with ``GraphRecursionError``.
 	"""
 
 	def __init__(
@@ -80,9 +98,19 @@ class GraphRunner:
 		config: dict | None = None,
 		durability: Durability = "exit",
 	) -> None:
+		if getattr(graph, "interrupt_before_nodes", None) or getattr(
+			graph, "interrupt_after_nodes", None
+		):
+			raise ValueError(
+				"GraphRunner cannot run a graph compiled with interrupt_before or "
+				"interrupt_after: a static breakpoint stops a run without an "
+				"interrupt, so the agent would end as finished, with partial "
+				"output. Call interrupt() in a node or a tool instead."
+			)
 		self.graph = graph
 		self.config = dict(config or {})
 		self.durability = durability
+		self._resumes: dict[str, int] = {}  # per suspended agent
 
 	def _config(self, agent: Agent) -> dict:
 		config = {**self.config, **(agent.config or {})}
@@ -94,23 +122,45 @@ class GraphRunner:
 		config["configurable"] = configurable
 		return config
 
+	def _limit(self, config: dict) -> int:
+		limit = config.get("recursion_limit")
+		if limit is None:  # the graph's own, from with_config, or LangGraph's
+			limit = (getattr(self.graph, "config", None) or {}).get("recursion_limit")
+		return _DEFAULT_LIMIT if limit is None else limit
+
 	async def start(self, agent: Agent) -> Step:
-		return await self._run(agent.input, agent)
+		self._resumes.pop(agent.id, None)
+		return await self._run(agent.input, agent, self._config(agent))
 
 	async def resume(self, agent: Agent, done: dict[str, Any]) -> Step:
-		return await self._run(Command(resume=done), agent)
+		config = self._config(agent)
+		limit = self._limit(config)
+		resumes = self._resumes.get(agent.id, 0) + 1
+		if resumes > limit:
+			self._resumes.pop(agent.id, None)
+			raise GraphRecursionError(
+				f"Agent {agent.id!r} suspended more than {limit} times, its "
+				"recursion_limit. Each resume runs at least one step; raise "
+				"recursion_limit in the run's config if the agent should go on."
+			)
+		self._resumes[agent.id] = resumes
+		return await self._run(Command(resume=done), agent, config)
 
-	async def _run(self, value: Any, agent: Agent) -> Step:
+	async def _run(self, value: Any, agent: Agent, config: dict) -> Step:
 		raised: list[BaseException] = []
 		token = _raised.set(raised)
 		try:
-			out = await self.graph.ainvoke(
-				value, self._config(agent), durability=self.durability
-			)
+			out = await self.graph.ainvoke(value, config, durability=self.durability)
+		except BaseException:
+			self._resumes.pop(agent.id, None)
+			raise
 		finally:
 			_raised.reset(token)
 			_free(raised)
-		return _step(out)
+		step = _step(out)
+		if not isinstance(step, Suspended):
+			self._resumes.pop(agent.id, None)
+		return step
 
 
 def _step(out: Any) -> Step:
@@ -126,25 +176,12 @@ def _step(out: Any) -> Step:
 	return Suspended(tuple(waits))
 
 
-def tool_call_router(
-	tools_node: str = "tools", messages_key: str = "messages"
-) -> Callable[[Any], Any]:
-	"""A conditional edge that sends each tool call of the last message to
-	``tools_node`` as its own task, or ends the graph when there is none."""
-
-	def route(state: Any) -> Any:
-		messages = (
-			state[messages_key]
-			if isinstance(state, dict)
-			else getattr(state, messages_key)
-		)
-		calls = getattr(messages[-1], "tool_calls", None) if messages else None
-		if not calls:
-			return END
-		return [Send(tools_node, [call]) for call in calls]
-
-	return route
-
-
-route_tool_calls = tool_call_router()
-"""``tool_call_router()`` for a node named ``tools`` and a ``messages`` key."""
+def route_tool_calls(state: Any) -> Any:
+	"""A conditional edge after the model node: sends each tool call of the
+	last message in the state's ``messages`` to the node named ``tools``, each
+	as its own task, or ends the graph when there is none."""
+	messages = state["messages"] if isinstance(state, dict) else state.messages
+	calls = getattr(messages[-1], "tool_calls", None) if messages else None
+	if not calls:
+		return END
+	return [Send("tools", [call]) for call in calls]

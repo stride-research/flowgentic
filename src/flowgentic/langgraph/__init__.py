@@ -25,7 +25,6 @@ try:
 		GraphRunner,
 		record_interrupt,
 		route_tool_calls,
-		tool_call_router,
 	)
 	from flowgentic.langgraph.checkpoint import KeyValueSaver
 	from flowgentic.langgraph.tools import bind_tools
@@ -54,7 +53,6 @@ __all__ = [
 	"bind_tools",
 	"record_interrupt",
 	"route_tool_calls",
-	"tool_call_router",
 ]
 
 _ASYNCFLOW_PATH = {
