@@ -128,9 +128,21 @@ async def test_agents_after_the_first_wave_are_not_staggered():
     assert t[-1] - t[1] < 0.2
 
 
+def nothing_left_frozen() -> bool:
+    """Whether, after a full collection, nothing is frozen but what CPython
+    moves there itself: 3.12 parks some of its own objects in the permanent
+    generation at each full collection."""
+    gc.collect()
+    frozen = gc.get_freeze_count()
+    gc.unfreeze()
+    gc.collect()
+    return frozen == gc.get_freeze_count()
+
+
 async def test_collector_is_tuned_during_a_run_and_restored():
     before = gc.get_threshold()
-    frozen_before = gc.get_freeze_count()  # CPython 3.12 freezes some at startup
+    gc.collect()  # as the host does: CPython 3.12 then has some objects frozen
+    frozen_before = gc.get_freeze_count()
     seen = {}
 
     class Probe(FakeRunner):
@@ -146,21 +158,19 @@ async def test_collector_is_tuned_during_a_run_and_restored():
     assert freeze.keys() == {"at_s", "call_s", "frozen_before", "frozen"}
     assert freeze["frozen_before"] == frozen_before and freeze["frozen"] > frozen_before
     assert gc.get_threshold() == before
-    # An empty permanent generation is restored; one that was not is left frozen.
-    # (Frozen objects still die when their last reference goes, so counts drift.)
-    assert bool(gc.get_freeze_count()) == bool(frozen_before)
+    # Everything is thawed, what was frozen before the host included.
+    assert nothing_left_frozen()
 
 
 async def test_collector_is_restored_when_a_run_is_cancelled():
     before = gc.get_threshold()
-    already_frozen = bool(gc.get_freeze_count())
     host = AgentHost(FakeRunner(sleep=10), stagger=FAST)
     task = asyncio.create_task(host.run([Agent("a", None)]))
     await asyncio.sleep(0.05)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    assert gc.get_threshold() == before and bool(gc.get_freeze_count()) == already_frozen
+    assert gc.get_threshold() == before and nothing_left_frozen()
 
 
 async def test_suspend_failure_and_foreign_interrupt():
@@ -424,7 +434,6 @@ async def test_one_agent_task_cancelled_from_outside_leaves_the_host_running():
 
 async def test_overlapping_hosts_restore_process_collector():
     before = gc.get_threshold()
-    already_frozen = bool(gc.get_freeze_count())
     first, second = asyncio.Event(), asyncio.Event()
 
     class Waiting:
@@ -448,28 +457,42 @@ async def test_overlapping_hosts_restore_process_collector():
     finally:
         second.set()
         await b
-    assert gc.get_threshold() == before and bool(gc.get_freeze_count()) == already_frozen
+    assert gc.get_threshold() == before and nothing_left_frozen()
 
 
-def test_host_freezes_over_a_frozen_generation_and_leaves_it_frozen():
-    # In a fresh interpreter, so that what the host leaves frozen ends with it.
+def test_host_freezes_over_a_frozen_generation_and_thaws_it_all():
+    # In a fresh interpreter whose permanent generation is not empty when the
+    # host starts, as on CPython 3.12: cycles the host froze must not leak.
     code = """
-import asyncio, gc
+import asyncio, gc, weakref
 from flowgentic.host import Agent, AgentHost, Finished
+
+class Node:
+    pass
+
+cycles = []
 
 class Runner:
     async def start(self, agent):
+        a, b = Node(), Node()  # a reference cycle, alive when the host freezes
+        a.other, b.other = b, a
+        cycles.append(weakref.ref(a))
+        await asyncio.sleep(0.05)
         return Finished(None)
 
 gc.freeze()
 before = gc.get_freeze_count()
-report = asyncio.run(AgentHost(Runner()).run([Agent("a", None)]))
+report = asyncio.run(AgentHost(Runner()).run([Agent(str(i), None) for i in range(10)]))
 freeze = report.collector["freeze"]
 assert freeze["frozen_before"] == before > 0, freeze
 assert freeze["frozen"] > before, freeze
-assert gc.get_freeze_count() > 0, "the host thawed objects it did not freeze"
+assert gc.get_freeze_count() < before, gc.get_freeze_count()
+gc.collect()
+alive = sum(ref() is not None for ref in cycles)
+assert alive == 0, f"{alive} of 10 cycles the host froze were never collected"
 """
-    subprocess.run([sys.executable, "-c", code], check=True)
+    run = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr[-3000:]
 
 
 def test_pending_seconds_start_when_the_agent_is_added(monkeypatch):
