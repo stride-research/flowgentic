@@ -365,7 +365,7 @@ class _Loads(Sequence):
 	def __len__(self) -> int:
 		return len(self._gates)
 
-	def __getitem__(self, i: Any) -> Any:
+	def __getitem__(self, i: int | slice) -> ReplicaLoad | list[ReplicaLoad]:
 		if isinstance(i, slice):
 			return [self[j] for j in range(*i.indices(len(self)))]
 		load = self._read[i]
