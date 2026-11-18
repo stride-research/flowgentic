@@ -403,12 +403,14 @@ class Recovery:
 	server serves again, a new one if its endpoint or key changed, or ``None``
 	while it is down. The first call that fails on a replica starts one watch,
 	which calls ``check`` every ``poll_s`` seconds until the replica serves or
-	``outage_s`` has passed; later calls wait on the same watch. A check that
-	raises, or does not answer within ``check_timeout_s``, counts as the replica
-	still being down. The watch serves every call on the replica, so it runs in
-	a context of its own, not in the first failing call's. A call that fails
-	again after its replica came back waits ``poll_s`` before it is sent again,
-	and fails ``outage_s`` after its first failure.
+	``outage_s`` has passed; later calls wait on the same watch. A call whose
+	watch gives up before the call's own ``outage_s`` has passed starts a new
+	one. A check that raises, or does not answer within ``check_timeout_s``,
+	counts as the replica still being down. The watch serves every call on the
+	replica, so it runs in a context of its own, not in the first failing
+	call's. A call that fails again after its replica came back waits
+	``poll_s`` before it is sent again, and fails ``outage_s`` after its first
+	failure.
 	"""
 
 	def __init__(
@@ -437,20 +439,37 @@ class Recovery:
 
 	async def wait(self, i: int, timeout: float | None = None) -> Any | None:
 		"""Replica ``i``'s model once it serves again, or ``None`` after
-		``outage_s``, or after ``timeout`` seconds for this caller."""
-		future = self._watches.get(i)
-		if future is None:
-			future = self._watches[i] = asyncio.get_running_loop().create_future()
-			# No agent, span or run config of the call that happened to fail first.
-			task = asyncio.create_task(
-				self._watch(i, future), context=contextvars.Context()
-			)
-			self._tasks.add(task)
-			task.add_done_callback(self._tasks.discard)
-		# asyncio.wait leaves the watch running when this caller times out or
-		# is cancelled.
-		done, _ = await asyncio.wait({future}, timeout=timeout)
-		return future.result() if done else None
+		``outage_s``, or after ``timeout`` seconds for this caller.
+
+		A caller with a ``timeout`` waits it out: if the watch it joined gives
+		up first, having started earlier for another call, it starts a new
+		watch."""
+		loop = asyncio.get_running_loop()
+		end = None if timeout is None else loop.time() + timeout
+		while True:
+			future = self._watches.get(i)
+			if future is None:
+				future = self._watches[i] = loop.create_future()
+				# No agent, span or run config of the call that happened to fail
+				# first.
+				task = asyncio.create_task(
+					self._watch(i, future), context=contextvars.Context()
+				)
+				self._tasks.add(task)
+				task.add_done_callback(self._tasks.discard)
+			left = None if end is None else end - loop.time()
+			if left is not None and left <= 0:
+				return None
+			# asyncio.wait leaves the watch running when this caller times out
+			# or is cancelled.
+			done, _ = await asyncio.wait({future}, timeout=left)
+			if not done:
+				return None
+			model = future.result()
+			if model is not None or end is None or loop.time() >= end:
+				return model
+			# The watch gave up: poll again, as it would have, in a new one.
+			await asyncio.sleep(min(self.poll_s, end - loop.time()))
 
 	async def _watch(self, i: int, future: asyncio.Future) -> None:
 		t0 = time.monotonic()

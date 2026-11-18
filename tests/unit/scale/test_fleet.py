@@ -482,6 +482,44 @@ async def test_a_check_that_hangs_once_does_not_stop_recovery():
     assert recovery.stats()["check_failures"] == {0: 1}
 
 
+async def test_a_call_that_joins_a_watch_near_its_end_waits_out_its_own_outage():
+    server = {"up": False}
+    model = Down(server)
+
+    async def check(i):
+        return model if server["up"] else None
+
+    fleet = Fleet([model], recovery=Recovery(check, outage_s=1.0, poll_s=0.02))
+    first = asyncio.create_task(fleet.ainvoke("a", [HumanMessage("hi")]))
+    await asyncio.sleep(0.7)
+    late = asyncio.create_task(fleet.ainvoke("b", [HumanMessage("hi")]))  # fails at 0.7
+    await asyncio.sleep(0.6)  # the first call's outage_s has passed
+    assert first.done() and isinstance(first.exception(), APIConnectionError)
+    assert not late.done()  # its own outage_s has not
+    server["up"] = True
+    assert (await asyncio.wait_for(late, 5)).content == "DONE v1"
+    assert fleet.stats()["recovery"]["gave_up"] == {0: 1}
+
+
+async def test_a_call_that_joins_a_watch_whose_check_hangs_gets_a_new_watch():
+    server = {"up": True, "tag": "v2"}  # already back, elsewhere
+    new = Down(server, "v2")
+    probes = []
+
+    async def check(i):
+        probes.append(i)
+        if len(probes) == 1:
+            await asyncio.Event().wait()  # a probe to the old node, which never answers
+        return new
+
+    # The first probe outlives the first call's outage_s.
+    fleet = Fleet([Down(server, "v1")], recovery=Recovery(check, outage_s=0.3, poll_s=0.02))
+    with pytest.raises(APIConnectionError):
+        await asyncio.wait_for(fleet.ainvoke("a", [HumanMessage("hi")]), 5)
+    reply = await asyncio.wait_for(fleet.ainvoke("b", [HumanMessage("hi")]), 5)
+    assert reply.content == "DONE v2" and len(probes) == 2
+
+
 async def test_a_check_that_raises_counts_as_down():
     server = {"up": False}
     model = Down(server)
