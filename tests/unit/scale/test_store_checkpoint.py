@@ -541,3 +541,134 @@ def test_a_strict_msgpack_graph_counts_on_the_saver():
 	)
 	assert result.returncode == 0, result.stderr
 	assert int(result.stdout.strip()) > 0
+
+
+# --- subgraph namespaces ----------------------------------------------------------
+
+
+def supervisor(saver, turns: int, nested: bool = False):
+	"""A graph that runs a subgraph which suspends, ``turns`` times in a loop,
+	as a supervisor does; with ``nested``, the suspension is one level deeper."""
+
+	def work(state: MessagesState):
+		value = interrupt({"wait": len(state["messages"])})
+		return {"messages": [("ai", f"{'x' * 200} {value}")]}
+
+	sub = StateGraph(MessagesState)
+	sub.add_node("work", work)
+	sub.add_edge(START, "work")
+	sub.add_edge("work", END)
+	sub = sub.compile()
+	if nested:
+		mid = StateGraph(MessagesState)
+		mid.add_node("inner", sub)
+		mid.add_edge(START, "inner")
+		mid.add_edge("inner", END)
+		sub = mid.compile()
+	g = StateGraph(MessagesState)
+	g.add_node("sub", sub)
+	g.add_edge(START, "sub")
+	g.add_conditional_edges(
+		"sub", lambda s: "sub" if len(s["messages"]) <= turns else END, ["sub", END]
+	)
+	return g.compile(checkpointer=saver)
+
+
+async def run_supervisor(saver, turns, nested, durability, config=None):
+	g = supervisor(saver, turns, nested)
+	config = config or {"configurable": {"thread_id": "t"}}
+	out = await g.ainvoke({"messages": [("human", "go")]}, config, durability=durability)
+	resumes = 0
+	while "__interrupt__" in out:
+		resumes += 1
+		out = await g.ainvoke(Command(resume=resumes), config, durability=durability)
+	return [m.content for m in out["messages"]], resumes
+
+
+@pytest.mark.parametrize("nested", [False, True], ids=["subgraph", "nested"])
+@pytest.mark.parametrize("durability", ["exit", "async", "sync"])
+async def test_a_supervisor_loop_keeps_only_its_live_subgraphs(durability, nested):
+	"""Each pass of a subgraph has its own namespace. Once the parent has moved
+	past the step that ran it, its checkpoints are dropped, so the store holds a
+	few namespaces however long the loop runs, and the graph runs as on
+	LangGraph's own saver."""
+	from langgraph.checkpoint.memory import InMemorySaver
+
+	kept = {}
+	for turns in (5, 20):
+		store = MemoryStore()
+		out, resumes = await run_supervisor(KeyValueSaver(store), turns, nested, durability)
+		assert resumes == turns
+		reference, _ = await run_supervisor(InMemorySaver(), turns, nested, durability)
+		assert out == reference
+		registered = store.get("lg/t/namespaces")
+		heads = {k.split("/")[2] for k in store.keys() if k.endswith("/head")}
+		assert heads - {""} <= {_key_part(ns) for ns in registered}
+		kept[turns] = (len(registered), len(store.keys()))
+	assert kept[20] == kept[5]  # no more for a longer loop
+	assert kept[20][0] <= (4 if nested else 2)
+
+
+def _key_part(ns: str) -> str:
+	return ns.replace("%", "%25").replace("/", "%2F")
+
+
+def put_in(saver, ns: str, checkpoint_id: str, parents: dict[str, str] | None = None):
+	configurable = {"thread_id": "t", "checkpoint_ns": ns}
+	if parents is not None:
+		configurable["checkpoint_map"] = parents
+	cp = empty_checkpoint()
+	cp["id"] = checkpoint_id
+	return saver.put({"configurable": configurable}, cp, {"step": 0}, {})
+
+
+def namespaces(saver) -> list[str]:
+	return [ns for ns in saver._namespaces("t") if ns]
+
+
+def test_a_subgraph_goes_once_its_parent_checkpoint_is_replaced():
+	"""A subgraph's namespace is kept while the parent's stored checkpoint is
+	the one it ran under, or a newer one has not been saved yet, as when a
+	process stops between the child's save and the parent's."""
+	saver = KeyValueSaver(MemoryStore())
+	checkpoint(saver, "c1")
+	put_in(saver, "sub:a", "s1", {"": "c1"})
+	put_in(saver, "sub:a|inner:z", "i1", {"": "c1", "sub:a": "s1"})
+	put_in(saver, "sub:b", "s2", {"": "c2"})  # the parent's c2 is not saved yet
+	assert namespaces(saver) == ["sub:a", "sub:a|inner:z", "sub:b"]
+	checkpoint(saver, "c2", parent="c1")
+	put_in(saver, "sub:c", "s3", {"": "c3"})
+	assert namespaces(saver) == ["sub:b", "sub:c"]  # sub:a and its child gone
+	assert saver.get_tuple(
+		{"configurable": {"thread_id": "t", "checkpoint_ns": "sub:a|inner:z"}}
+	) is None
+	assert saver.get_tuple(
+		{"configurable": {"thread_id": "t", "checkpoint_ns": "sub:b"}}
+	).checkpoint["id"] == "s2"
+
+
+def test_subgraphs_of_retained_checkpoints_stay_with_keep_last():
+	saver = KeyValueSaver(MemoryStore(), keep_last=2)
+	checkpoint(saver, "c1")
+	put_in(saver, "sub:a", "s1", {"": "c1"})
+	checkpoint(saver, "c2", parent="c1")
+	put_in(saver, "sub:b", "s2", {"": "c2"})
+	assert namespaces(saver) == ["sub:a", "sub:b"]  # c1 is still retained
+	checkpoint(saver, "c3", parent="c2")
+	put_in(saver, "sub:c", "s3", {"": "c3"})
+	assert namespaces(saver) == ["sub:b", "sub:c"]
+
+
+def test_a_namespace_without_its_parents_checkpoint_id_is_kept():
+	"""A namespace saved without LangGraph's map of parent checkpoints, or
+	registered by 0.5.0 as a set, is dropped only with its thread."""
+	store = MemoryStore()
+	saver = KeyValueSaver(store)
+	checkpoint(saver, "c1")
+	put_in(saver, "sub:old", "s0")
+	store.put("lg/t/namespaces", {"sub:old"} | set(store.get("lg/t/namespaces")))
+	checkpoint(saver, "c2", parent="c1")
+	put_in(saver, "sub:new", "s1", {"": "c3"})
+	assert namespaces(saver) == ["sub:new", "sub:old"]
+	saver.delete_thread("t")
+	assert store.keys() == []

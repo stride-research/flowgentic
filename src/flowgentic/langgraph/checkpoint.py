@@ -9,7 +9,8 @@ in tests. Keys, for thread ``t`` and namespace ``ns``::
     lg/{t}/{ns}/w                  pending writes grouped by checkpoint id
     lg/{t}/{ns}/c/{checkpoint_id}  an older retained checkpoint, with its writes
     lg/{t}/{ns}/index              the older retained ids, oldest first
-    lg/{t}/namespaces              the thread's namespaces other than the root
+    lg/{t}/namespaces              the thread's namespaces other than the root,
+                                   each with its parent's checkpoint id
 
 Each store call is a round trip that blocks the event loop, and a RaDEX client
 grows with each, so the layout keeps them few. With the default ``keep_last=1``
@@ -24,6 +25,16 @@ ordinary channels. Delta channels also read their parent to retain its replay da
 checkpoint holds the agent's whole history, so keeping all of them grows with
 the square of a run's length. With ``keep_last`` above one, each checkpoint
 also moves the previous newest one, with its writes, under ``c/``.
+
+A subgraph runs in a namespace of its own, one per task that runs it, so a graph
+that runs a suspending subgraph in a loop, as a supervisor does, would leave a
+namespace behind on every turn. Each namespace is registered with the id of the
+parent's checkpoint it ran under. When a new namespace registers, its siblings
+whose parent checkpoint is older than every checkpoint the parent keeps are
+dropped, with their own subgraphs: the parent has moved past the step that ran
+them, and cannot go back to it. A sibling of a parent checkpoint not saved yet
+is kept. This costs one read of the parent's head (and of its index, above
+``keep_last=1``) when a namespace registers, and nothing in the root namespace.
 
 One process owns each thread's writes. Within a process, the saver serializes
 updates for a thread and reads the persisted head and pending writes before
@@ -78,6 +89,24 @@ def _thread_lock(thread_id: str):
 
 def _key_part(value: str) -> str:
 	return str(value).replace("%", "%25").replace("/", "%2F")
+
+
+# LangGraph's separator of a subgraph's namespace from its parent's.
+_NS_SEP = "|"
+
+
+def _parent_ns(ns: str) -> str:
+	return ns.rpartition(_NS_SEP)[0]
+
+
+def _parent_checkpoint_id(config: RunnableConfig, metadata: Any, ns: str) -> Any:
+	"""The id of the parent's checkpoint that a subgraph in ``ns`` runs under:
+	in LangGraph's map of the parents' checkpoints, or the metadata's."""
+	parent = _parent_ns(ns)
+	found = (config["configurable"].get("checkpoint_map") or {}).get(parent)
+	if found is None and metadata:
+		found = (metadata.get("parents") or {}).get(parent)
+	return found
 
 
 class _Counts:
@@ -277,18 +306,62 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 			history[ch] = entry
 		return (*typed, self.serde.dumps_typed(history))
 
-	def _register_namespace(self, thread_id: str, ns: str) -> None:
-		if ns:
-			namespaces = self.store.get(f"lg/{_key_part(thread_id)}/namespaces", set())
-			if ns not in namespaces:
-				namespaces.add(ns)
-				self.store.put(f"lg/{_key_part(thread_id)}/namespaces", namespaces)
+	def _registry(self, thread_id: str) -> dict[str, str | None]:
+		"""The thread's namespaces, each with the id of the parent's checkpoint
+		it ran under, if known. 0.5.0 kept a set of namespaces alone."""
+		saved = self.store.get(f"lg/{_key_part(thread_id)}/namespaces", {})
+		return saved if isinstance(saved, dict) else dict.fromkeys(saved)
+
+	def _register_namespace(
+		self, thread_id: str, ns: str, parent_id: str | None
+	) -> None:
+		if not ns:
+			return
+		namespaces = self._registry(thread_id)
+		if ns in namespaces:
+			return
+		self._drop_stale(thread_id, namespaces, _parent_ns(ns))
+		namespaces[ns] = parent_id
+		self.store.put(f"lg/{_key_part(thread_id)}/namespaces", namespaces)
+
+	def _drop_stale(
+		self, thread_id: str, namespaces: dict[str, str | None], parent: str
+	) -> None:
+		"""Drop, from the store and from ``namespaces``, the subgraphs of
+		``parent`` that ran under a checkpoint it no longer keeps, with their
+		own subgraphs."""
+		siblings = [
+			(ns, parent_id)
+			for ns, parent_id in namespaces.items()
+			if parent_id is not None and _parent_ns(ns) == parent
+		]
+		if not siblings:
+			return
+		prefix = self._prefix(thread_id, parent)
+		head = self.store.get(f"{prefix}/head", None)
+		if head is None:
+			return
+		kept = [head[0]]
+		if self.keep_last > 1:
+			kept += self.store.get(f"{prefix}/index", [])
+		oldest = min(kept)
+		for ns, parent_id in siblings:
+			if parent_id < oldest:
+				for old in [
+					n for n in namespaces if n == ns or n.startswith(ns + _NS_SEP)
+				]:
+					self._delete_namespace(thread_id, old)
+					del namespaces[old]
+
+	def _delete_namespace(self, thread_id: str, ns: str) -> None:
+		prefix = self._prefix(thread_id, ns)
+		for checkpoint_id in self.store.get(f"{prefix}/index", []):
+			self.store.delete(f"{prefix}/c/{_key_part(checkpoint_id)}")
+		for key in ("head", "w", "index"):
+			self.store.delete(f"{prefix}/{key}")
 
 	def _namespaces(self, thread_id: str) -> list[str]:
-		return [
-			"",
-			*sorted(self.store.get(f"lg/{_key_part(thread_id)}/namespaces", set())),
-		]
+		return ["", *sorted(self._registry(thread_id))]
 
 	def list(
 		self,
@@ -384,7 +457,9 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 			parent_id = config["configurable"].get("checkpoint_id")
 			if self.keep_last > 1:
 				self._keep_previous(prefix, checkpoint_id)
-			self._register_namespace(thread_id, ns)
+			self._register_namespace(
+				thread_id, ns, _parent_checkpoint_id(config, metadata, ns)
+			)
 			self.store.put(
 				f"{prefix}/head",
 				(checkpoint_id, typed_checkpoint, typed_metadata, parent_id),
@@ -406,7 +481,9 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 			prefix = self._prefix(thread_id, ns)
 			head = self.store.get(f"{prefix}/head", None)
 			if head is None:
-				self._register_namespace(thread_id, ns)
+				self._register_namespace(
+					thread_id, ns, _parent_checkpoint_id(config, None, ns)
+				)
 			older = None
 			if head is not None and checkpoint_id < head[0]:
 				if self.keep_last == 1:
@@ -455,11 +532,7 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 	def delete_thread(self, thread_id: str) -> None:
 		with _thread_lock(thread_id):
 			for ns in self._namespaces(thread_id):
-				prefix = self._prefix(thread_id, ns)
-				for checkpoint_id in self.store.get(f"{prefix}/index", []):
-					self.store.delete(f"{prefix}/c/{_key_part(checkpoint_id)}")
-				for key in ("head", "w", "index"):
-					self.store.delete(f"{prefix}/{key}")
+				self._delete_namespace(thread_id, ns)
 			self.store.delete(f"lg/{_key_part(thread_id)}/namespaces")
 
 	def get_next_version(self, current: str | None, channel: None) -> str:

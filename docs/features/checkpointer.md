@@ -50,7 +50,7 @@ calls few. For thread `t` and checkpoint namespace `ns`:
 | `lg/{t}/{ns}/w` | pending writes grouped by checkpoint id |
 | `lg/{t}/{ns}/c/{id}` | an older checkpoint, with its writes, when `keep_last` > 1 |
 | `lg/{t}/{ns}/index` | the older checkpoints' ids, oldest first |
-| `lg/{t}/namespaces` | the thread's namespaces other than the root |
+| `lg/{t}/namespaces` | the thread's namespaces other than the root, each with its parent's checkpoint id |
 
 - **It keeps the newest checkpoint only, by default.** Each checkpoint holds
   the agent's whole history, so keeping every one grows with the square of a
@@ -70,6 +70,16 @@ calls few. For thread `t` and checkpoint namespace `ns`:
   saver reads, changes and writes back the pending writes. That is safe
   because one process owns the thread, and updates in that process take a
   lock shared by savers for the thread.
+- **A subgraph's checkpoints go once its parent has moved on.** Each run of a
+  subgraph has a namespace of its own, so a graph that runs a suspending
+  subgraph in a loop, as a supervisor does, would leave one behind on every
+  turn. When a subgraph's namespace is first saved, the saver drops its
+  siblings that ran under a checkpoint of the parent's older than every one
+  the parent keeps, with their own subgraphs. The parent can no longer resume
+  them. A loop then keeps the subgraphs of its last step or two, however long
+  it runs. This costs a read of the parent's newest checkpoint (and of its
+  index, above `keep_last=1`) when a subgraph's namespace is first saved, and
+  nothing in the root namespace.
 - **`list` needs a thread id**, because RaDEX cannot list its keys.
 - **A finished agent's thread leaves the store** when the agent host's
   `GraphRunner` runs it: the runner deletes the thread once the agent

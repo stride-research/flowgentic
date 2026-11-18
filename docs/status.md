@@ -104,10 +104,6 @@ Agents at scale:
   source with its C++ core.
 - An agent resumes only in the process that suspended it, because that
   process awaits the agent's tasks.
-- Checkpoints:
-    - A subgraph that suspends leaves its checkpoint behind each time it
-      runs, so a graph that runs a suspending subgraph in a loop, such as a
-      supervisor, stores more with every turn.
 - Tools:
     - A repeated task or MCP call is recognized by the agent's id and the tool
       call's id alone. A model server that reuses tool-call ids within a
