@@ -248,6 +248,25 @@ async def test_repeat_safety_and_retention():
         ToolRuntime(session, retained=0)
 
 
+@pytest.mark.parametrize("fn", [simulate, broken], ids=["ok", "failed"])
+async def test_a_task_description_keeps_no_payload_once_read(fn):
+    """RHAPSODY's session keeps every task's description for its life, with the
+    task's arguments, its result and the backend's copies of it. Once Flowgentic
+    has read the outcome, the description keeps none of them."""
+    session = await thread_session()
+    runtime = ToolRuntime(session)
+    job = runtime.submit(task_tool(fn), "a", "c1", {"x": 1.5})
+    await asyncio.wait([job])
+    description = session._tasks[runtime.uid("a/c1")]
+    await session.close()
+    if fn is simulate:
+        assert job.result() == {"y": 3.0}
+    else:
+        assert "no convergence at 1.5" in str(job.exception())
+    assert description["return_value"] is None and description["exception"] is None
+    assert not description["args"] and not description["stdout"] and not description["stderr"]
+
+
 async def test_a_resumed_agent_finds_its_task_after_the_runtime_dropped_it():
     """``retained`` bounds the ended tasks the runtime keeps, but an agent finds
     the tasks it asked for until it ends: with room for one ended task, agents

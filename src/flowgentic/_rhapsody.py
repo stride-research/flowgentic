@@ -63,7 +63,12 @@ async def run_function(
 ) -> Any:
 	"""Run ``func(**kwargs)`` as one RHAPSODY function task named ``uid``, and
 	return its value. A failure raises the task's exception. ``task`` adds
-	fields to the task's description, such as resources or a backend's name."""
+	fields to the task's description, such as resources or a backend's name.
+
+	A RHAPSODY session keeps each task's description for its life, and the
+	description holds the task's arguments, its result, the backend's text of
+	it and its exception. Once the task has ended and its outcome is read, they
+	are dropped from the description: the caller has them."""
 	description = _compute_task()(
 		function=_call_in_context,
 		args=(func, _telemetry.inject_context(), kwargs),
@@ -71,5 +76,11 @@ async def run_function(
 		**task,
 	)
 	(future,) = await session.submit_tasks([description])
-	done = await future
-	return done["return_value"]
+	try:
+		done = await future
+		return done["return_value"]
+	finally:
+		if future.done() and not future.cancelled():
+			description.update(
+				args=(), return_value=None, stdout=None, stderr=None, exception=None
+			)

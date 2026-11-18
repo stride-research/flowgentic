@@ -115,9 +115,10 @@ Agents at scale:
       supervisor, stores more with every turn.
 - Tools:
     - `ToolRuntime(retained=...)` bounds what Flowgentic keeps of ended tasks,
-      not what RHAPSODY keeps. RHAPSODY 0.7 keeps each task's description and
-      result for the life of its session, so a process's memory grows with the
-      tasks it runs.
+      not what RHAPSODY keeps. Flowgentic drops a task's arguments and result
+      from its description once it has read them, but RHAPSODY 0.7 still keeps
+      each task's description for the life of its session, so a process's
+      memory still grows with the tasks it runs, by a few kilobytes a task.
 - The fleet:
     - Model admission is shared among agent processes in static, equal shares
       (`Fleet(share=...)`): a process with fewer agents leaves part of its
