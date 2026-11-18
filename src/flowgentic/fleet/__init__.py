@@ -46,12 +46,14 @@ thinking.
 
 ``fleet.ainvoke(agent_id, messages)`` is the direct path, for a graph's own
 model node. ``fleet.chat_model()`` is a LangChain chat model for prebuilt
-agents, which reads the agent's id from the run config's ``thread_id``; it
-costs a LangChain call's overhead more per call. Both take, per call, settings
-for the replica (``extra_body``, ``max_tokens``, ...), which reach the replica
-for that call only, a ``reserve`` of tokens beyond the usual reply, such as a
-thinking budget, and a ``meta`` that the call's record carries. Which settings
-make a model think is the model's business, not the fleet's.
+agents, which reads the agent's id from the run config's ``thread_id``: the
+config passed to it, or else the LangGraph run it is called in. It opens no
+LangChain run of its own: it hands the caller's config to the replica, whose
+run is the call's only one. Both take, per call, settings for the replica
+(``extra_body``, ``max_tokens``, ...), which reach the replica for that call
+only, a ``reserve`` of tokens beyond the usual reply, such as a thinking
+budget, and a ``meta`` that the call's record carries. Which settings make a
+model think is the model's business, not the fleet's.
 """
 
 from __future__ import annotations
@@ -68,9 +70,10 @@ from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 try:
-	from langchain_core.language_models import BaseChatModel
+	from langchain_core.language_models import BaseChatModel, LanguageModelInput
 	from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
-	from langchain_core.outputs import ChatGeneration, ChatResult
+	from langchain_core.outputs import ChatResult
+	from langchain_core.runnables import RunnableConfig
 	from langchain_core.runnables.config import ensure_config
 except ModuleNotFoundError as exc:
 	if exc.name != "langchain_core":
@@ -662,10 +665,10 @@ class Fleet:
 	) -> AIMessage:
 		"""Send an agent's call to its replica, through admission.
 
-		``kwargs`` go to the replica's ``ainvoke`` for this call only.
-		``reserve`` adds tokens to the call's admission estimate, for a reply
-		longer than usual, such as one that may think. ``meta`` goes into the
-		call's ``CallRecord``.
+		``kwargs`` go to the replica's ``ainvoke`` for this call only, a
+		``config`` included. ``reserve`` adds tokens to the call's admission
+		estimate, for a reply longer than usual, such as one that may think.
+		``meta`` goes into the call's ``CallRecord``.
 		"""
 		if reserve < 0:
 			raise ValueError("reserve must not be negative")
@@ -842,8 +845,16 @@ class Fleet:
 
 
 class FleetChatModel(BaseChatModel):
-	"""A fleet as a LangChain chat model. The agent is the run config's
-	``thread_id``, as LangGraph sets it for each thread."""
+	"""A fleet as a LangChain chat model.
+
+	The agent is the run config's ``thread_id``, as LangGraph sets it for each
+	thread: from the config passed to ``ainvoke``, or else from the LangGraph
+	run the model is called in; without one, the agent host's current agent.
+	The model opens no LangChain run of its own. It hands the caller's config
+	to the replica, so callbacks, tracers and LangGraph's streaming see one
+	model call, the replica's. ``reserve`` and ``meta`` are the fleet's; other
+	keywords go to the replica, as with ``Fleet.ainvoke``.
+	"""
 
 	fleet: Any
 
@@ -854,6 +865,27 @@ class FleetChatModel(BaseChatModel):
 	def bind_tools(self, tools: Sequence[Any], **kwargs: Any) -> FleetChatModel:
 		return FleetChatModel(fleet=self.fleet.bind_tools(tools, **kwargs))
 
+	async def ainvoke(
+		self,
+		input: LanguageModelInput,
+		config: RunnableConfig | None = None,
+		*,
+		stop: list[str] | None = None,
+		**kwargs: Any,
+	) -> AIMessage:
+		config = ensure_config(config)
+		agent = config.get("configurable", {}).get("thread_id")
+		agent = agent or _agents.current_agent()
+		if not agent:
+			raise ValueError(
+				"the fleet routes by agent: pass a thread_id in the config, or run "
+				"it in a LangGraph thread or an agent host"
+			)
+		if stop is not None:
+			kwargs["stop"] = stop
+		messages = self._convert_input(input).to_messages()
+		return await self.fleet.ainvoke(str(agent), messages, config=config, **kwargs)
+
 	def _generate(
 		self,
 		messages: list[BaseMessage],
@@ -862,26 +894,6 @@ class FleetChatModel(BaseChatModel):
 		**kwargs: Any,
 	) -> ChatResult:
 		raise NotImplementedError("the fleet is asynchronous: use ainvoke")
-
-	async def _agenerate(
-		self,
-		messages: list[BaseMessage],
-		stop: Any = None,
-		run_manager: Any = None,
-		**kwargs: Any,
-	) -> ChatResult:
-		agent = (ensure_config().get("configurable") or {}).get("thread_id")
-		agent = agent or _agents.current_agent()
-		if not agent:
-			raise ValueError(
-				"the fleet routes by agent: run it in a LangGraph thread (a thread_id "
-				"in the config) or in an agent host"
-			)
-		if stop is not None:
-			kwargs["stop"] = stop
-		# reserve and meta are the fleet's; the rest go to the replica
-		reply = await self.fleet.ainvoke(str(agent), messages, **kwargs)
-		return ChatResult(generations=[ChatGeneration(message=reply)])
 
 
 def _loads(kind: str) -> dict[tuple[str, int], int]:

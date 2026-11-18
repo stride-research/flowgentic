@@ -545,6 +545,155 @@ async def test_the_chat_model_passes_settings_reserve_and_meta_per_call():
     assert records[0].estimate == records[1].estimate + 256
 
 
+# --- the chat model ----------------------------------------------------------------
+
+
+async def test_the_chat_model_takes_the_agent_from_the_config_it_is_given():
+    fleet = Fleet([Recording() for _ in range(4)])
+    records = []
+    fleet.add_listener(lambda record, reply: records.append(record))
+    chat = fleet.chat_model()
+    # outside a graph, with settings for the fleet
+    await chat.ainvoke([HumanMessage("hi")], config=thread("alone"), reserve=64, meta="alone")
+
+    async def supervisor(state: MessagesState):
+        for sub in ("sub-a", "sub-b"):  # two sub-agents, each its own thread
+            await chat.ainvoke(state["messages"], config=thread(sub))
+        return {}
+
+    await one_node(supervisor).ainvoke({"messages": [HumanMessage("hi")]}, thread("outer"))
+    assert [r.agent_id for r in records] == ["alone", "sub-a", "sub-b"]
+    assert records[0].meta == "alone"
+
+
+class ModelStarts(AsyncCallbackHandler):
+    """The chat-model runs a call opens: their names and tags."""
+
+    def __init__(self):
+        self.runs = []
+
+    async def on_chat_model_start(self, serialized, messages, **kwargs):
+        self.runs.append(((serialized or {}).get("name") or kwargs.get("name"), kwargs.get("tags")))
+
+
+def fake_replica():
+    usage = {"input_tokens": 100, "output_tokens": 7, "total_tokens": 107}
+    reply = AIMessage("DONE", usage_metadata=usage, response_metadata={"model_name": "m"})
+    return FakeMessagesListChatModel(responses=[reply] * 4)
+
+
+async def test_the_chat_model_opens_no_model_run_of_its_own():
+    chat = Fleet([fake_replica()]).chat_model()
+    starts = ModelStarts()
+
+    async def node(state: MessagesState):
+        return {"messages": [await chat.ainvoke(state["messages"])]}
+
+    with get_usage_metadata_callback() as usage:
+        await one_node(node).ainvoke(
+            {"messages": [HumanMessage("hi")]}, {**thread("t-1"), "callbacks": [starts]}
+        )
+    assert usage.usage_metadata["m"]["input_tokens"] == 100  # counted once
+    assert [name for name, _ in starts.runs] == ["FakeMessagesListChatModel"]
+    # the caller's config reaches the replica: its callbacks and tags
+    starts.runs.clear()
+    config = {**thread("t-2"), "callbacks": [starts], "tags": ["mine"]}
+    await chat.ainvoke([HumanMessage("hi")], config=config)
+    ((name, tags),) = starts.runs
+    assert name == "FakeMessagesListChatModel" and "mine" in tags
+
+
+async def test_the_chat_model_streams_the_replicas_tokens_in_a_graph():
+    fleet = Fleet([GenericFakeChatModel(messages=itertools.repeat(AIMessage("DONE now")))])
+    records = []
+    fleet.add_listener(lambda record, reply: records.append(record))
+    chat = fleet.chat_model()
+
+    async def node(state: MessagesState):
+        return {"messages": [await chat.ainvoke(state["messages"])]}
+
+    chunks = [
+        message
+        async for message, _ in one_node(node).astream(
+            {"messages": [HumanMessage("hi")]}, thread("t-1"), stream_mode="messages"
+        )
+    ]
+    assert len(chunks) > 1 and all(isinstance(c, AIMessageChunk) for c in chunks)
+    assert "".join(c.content for c in chunks) == "DONE now"
+    assert [r.agent_id for r in records] == ["t-1"]
+
+
+def scripted_openai(replies):
+    """A ChatOpenAI whose endpoint answers with ``replies``' messages in turn."""
+    script = itertools.cycle(replies)
+
+    def answer(request):
+        return httpx.Response(
+            200,
+            json={
+                "id": "gen-1",
+                "object": "chat.completion",
+                "model": "m",
+                "choices": [{"index": 0, "message": next(script), "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 100, "completion_tokens": 7, "total_tokens": 107},
+            },
+        )
+
+    return ChatOpenAI(
+        model="m",
+        api_key="x",
+        base_url="http://scripted.invalid/v1",
+        http_async_client=httpx.AsyncClient(transport=httpx.MockTransport(answer)),
+    )
+
+
+def tool_call(name, args):
+    function = {"name": name, "arguments": json.dumps(args)}
+    return {"role": "assistant", "content": None, "tool_calls": [{"id": "c1", "type": "function", "function": function}]}
+
+
+class Answer(BaseModel):
+    x: int
+
+
+async def test_the_chat_model_gives_structured_output():
+    fleet = Fleet([scripted_openai([tool_call("Answer", {"x": 3})])])
+    records = []
+    fleet.add_listener(lambda record, reply: records.append(record))
+    structured = fleet.chat_model().with_structured_output(Answer)
+    assert await structured.ainvoke([HumanMessage("hi")], config=thread("t")) == Answer(x=3)
+    assert [r.agent_id for r in records] == ["t"]
+
+
+@tool
+def add(a: int, b: int) -> int:
+    """Add two numbers."""
+    return a + b
+
+
+async def test_prebuilt_agents_send_each_call_to_the_agents_replica():
+    from langchain.agents import create_agent
+    from langgraph.prebuilt import create_react_agent
+
+    for make in (create_agent, create_react_agent):
+        replies = [tool_call("add", {"a": 1, "b": 2}), {"role": "assistant", "content": "3"}]
+        fleet = Fleet([scripted_openai(replies), scripted_openai(replies)])
+        records = []
+        fleet.add_listener(lambda record, reply: records.append(record))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)  # create_react_agent
+            agent = make(fleet.chat_model(), [add])
+        out = await agent.ainvoke({"messages": [HumanMessage("1+2?")]}, thread("t-7"))
+        assert out["messages"][-1].content == "3"
+        assert [r.agent_id for r in records] == ["t-7", "t-7"]
+        assert records[0].replica == records[1].replica
+
+
+def test_the_chat_model_is_asynchronous_only():
+    with pytest.raises(NotImplementedError, match="ainvoke"):
+        Fleet([Recording()]).chat_model().invoke([HumanMessage("hi")], config=thread("t"))
+
+
 # --- metrics -----------------------------------------------------------------------
 
 
@@ -581,3 +730,19 @@ async def test_the_fleet_records_admission_and_each_replicas_load(metric_reader)
     (service,) = points(metric_reader, "flowgentic.fleet.request.duration", "metrics")
     assert wait.count == 3 and wait.max > 0
     assert service.count == 3 and service.min > 0
+
+
+# --- spans: last, as the instrumentation stays on for the rest of the module ------
+
+
+@pytest.mark.usefixtures("genai_instrumentation")
+async def test_one_call_through_the_chat_model_is_one_inference_span(span_exporter):
+    chat = Fleet([scripted_openai([{"role": "assistant", "content": "DONE"}])]).chat_model()
+
+    async def node(state: MessagesState):
+        return {"messages": [await chat.ainvoke(state["messages"])]}
+
+    await one_node(node).ainvoke({"messages": [HumanMessage("hi")]}, thread("t-1"))
+    (span,) = [s for s in span_exporter.get_finished_spans() if s.attributes.get("gen_ai.operation.name") == "chat"]
+    assert span.attributes["gen_ai.usage.input_tokens"] == 100
+    assert span.attributes["server.address"] == "scripted.invalid"
