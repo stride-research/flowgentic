@@ -764,6 +764,8 @@ class Fleet:
 			raise ValueError("a fleet needs at least one replica")
 		if not 0 < share <= 1:
 			raise ValueError("share must be in (0, 1]")
+		if reply_reserve < 0:
+			raise ValueError("reply_reserve must not be negative")
 		self._core = _Core(
 			list(replicas),
 			admission,

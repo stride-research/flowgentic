@@ -144,6 +144,62 @@ async def test_a_request_above_the_token_cap_is_counted_and_warned_of_once(caplo
     assert RequestAdmission(3).gate(share=1.0).stats()["oversize"] == 0
 
 
+class Hanging(Slow):
+    """A server that takes its time, until it is told to hurry."""
+
+    hang = True
+
+    async def ainvoke(self, messages, config=None):
+        self.now += 1
+        try:
+            await asyncio.sleep(30 if self.hang else 0)
+        finally:
+            self.now -= 1
+        return AIMessage("DONE")
+
+
+async def test_cancelling_a_call_at_its_replica_gives_back_its_place():
+    model = Hanging()
+    fleet = Fleet([model], admission=TokenAdmission(1000, 1))
+    states = AgentStates(["agent-1"])
+
+    async def one():
+        _agents.set_current_agent("agent-1", states)
+        states.enter("agent-1", AgentState.WORKING)
+        await fleet.ainvoke("agent-1", [HumanMessage("x" * 400)])
+
+    call = asyncio.create_task(one())
+    await asyncio.sleep(0.02)
+    assert model.now == 1 and states.state("agent-1") == AgentState.MODEL_REQUEST
+    call.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await call
+    assert fleet.load() == [ReplicaLoad(0, 0, 0)] and fleet._core.in_flight == 0
+    assert model.now == 0 and states.state("agent-1") == AgentState.WORKING
+    model.hang = False
+    await asyncio.wait_for(fleet.ainvoke("agent-2", [HumanMessage("hi")]), 1)  # admitted at once
+
+
+async def test_cancelling_a_call_that_waits_out_an_outage_gives_back_its_place():
+    async def check(i):
+        return None
+
+    fleet = Fleet([Down({"up": False})], admission=RequestAdmission(1), recovery=Recovery(check, poll_s=0.02))
+    call = asyncio.create_task(fleet.ainvoke("a", [HumanMessage("hi")]))
+    await asyncio.sleep(0.05)
+    assert fleet._core.recovery._watches  # the call failed and waits
+    call.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await call
+    assert fleet.load() == [ReplicaLoad(0, 0, 0)] and fleet._core.in_flight == 0
+
+
+def test_a_negative_reply_reserve_is_refused():
+    with pytest.raises(ValueError, match="reply_reserve"):
+        Fleet([Slow()], reply_reserve=-1)
+    Fleet([Slow()], reply_reserve=0)
+
+
 def test_share_scales_the_caps():
     gate = TokenAdmission(tokens=1000, requests=10).gate(share=0.25)
     assert (gate.cap_tokens, gate.cap_requests) == (250, 2)
