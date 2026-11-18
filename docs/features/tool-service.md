@@ -26,6 +26,33 @@ Then a call that lost its connection is sent again, and a failure that left its
 outcome unknown can be retried. Leave it out for a tool with side effects, such
 as one that writes or submits: the service then never sends it twice.
 
+A call's arguments travel as JSON values, as MCP takes them. The client
+converts pydantic models, enums and other values that have a JSON form before
+it sends them, so the service process never needs the agent's own classes.
+Arguments with no JSON form fail their own call at once, with
+`ToolServiceError`.
+
+## When the service is gone
+
+If the service process dies, for example killed for using too much memory,
+its answers never come. So every call has a deadline: `ToolServiceClient`'s
+`timeout`, 150 s by default, the service's default `call_timeout` (120 s) plus
+a margin for the queues. A call with no answer by then fails with
+`ToolServiceError`, and the agent reads that its tool failed. Keep `timeout`
+above the `call_timeout` the service runs with, or slow calls will fail at the
+client while the service still runs them. Asking again with the same uid sends
+the request again, and a service that is still running answers from its kept
+answer.
+
+To fail sooner, pass `alive`, a function that tells whether the service is
+still running, such as its process's `is_alive`. The client asks it about once
+a second while no answer arrives, from its reader thread. Once it returns
+false, the client fails every waiting call and stops.
+
+```python
+client = ToolServiceClient(requests, replies[i], index=i, alive=service_process.is_alive)
+```
+
 The queues are the caller's: anything with `put(bytes)`, `get(timeout=...)`
 and `get(block=False)` that raises `queue.Empty`, such as Dragon's queues,
 `multiprocessing.Queue` or `queue.Queue`. Flowgentic imports nothing from
@@ -47,14 +74,37 @@ MCP client. `flowgentic.tools.mcp` needs the `mcp` extra.
   calls the tool again. That covers a call that never left the queue (no server
   reachable, the pool closing, its timeout spent waiting), and an idempotent
   call that lost its connection or timed out.
+- **One process's answers cannot hold up another's.** A request from a
+  process index with no reply queue is refused on arrival, with no tool call
+  made for it. If a reply queue fails, the answers for that process are lost,
+  and every other process still gets its own, and the message that the service
+  has stopped.
 - **It reports.** `serve` returns how many requests it received, how many
-  calls it made, the repeats, the failures it did not keep (`retryable`), and
-  the outcomes per tool.
+  calls it made, the repeats, the failures it did not keep (`retryable`), the
+  requests it refused (`unknown_sources`), the answers it could not deliver
+  (`undelivered`), and the outcomes per tool.
   `listener(uid, tool, received, called, answered, ok)` receives each call's
   times, for whoever keeps them.
 
 Requests and answers are pickled. That is safe only because both ends are
 processes of the same job: the queues must not be reachable from outside it.
+A message the service cannot unpickle is skipped, and its callers fail at their
+deadline.
+
+## What a call returns
+
+The service turns each MCP result into the value the caller gets:
+
+- the structured content, if the result has some: its `result` field when
+  that is all there is, as a server sends for a tool annotated to return a
+  list or a string;
+- otherwise the text: each text block parsed as JSON, or `{"text": text}` if
+  it is not JSON, and a list of them if there are several;
+- `None` for a success with no content, or only empty text: the tool ran and
+  returned nothing, which is not a failure;
+- `ToolServiceError` with the server's text for a result marked as an error,
+  and for a success whose only content the agent could not read, such as an
+  image.
 
 ## The supervised MCP pool
 

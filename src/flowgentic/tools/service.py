@@ -50,6 +50,8 @@ from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable, MutableMapping
 from typing import TYPE_CHECKING, Any
 
+from pydantic_core import to_jsonable_python
+
 if TYPE_CHECKING:  # the agent processes' side needs no MCP client
 	from flowgentic.tools.mcp import SupervisedMcpPool
 
@@ -76,15 +78,22 @@ class ToolServiceError(Exception):
 
 
 def mcp_data(result: Any) -> tuple[bool, Any]:
-	"""``(ok, data)`` from an MCP ``CallToolResult``: its structured content or
-	its text."""
+	"""``(ok, data)`` from an MCP ``CallToolResult``.
+
+	The data is the structured content, if the result has some. Otherwise it
+	is the text: each text block parsed as JSON, or ``{"text": text}`` if it is
+	not JSON, and a list of them if there are several. A success with no
+	content, or only empty text, is ``(True, None)``: the tool ran and returned
+	nothing. A success whose only content is not text, such as an image, is a
+	failure, since the agent would get nothing it can read.
+	"""
 	is_error = getattr(result, "is_error", None)
 	if is_error is None:
 		is_error = getattr(result, "isError", False)
-	texts = [getattr(b, "text", None) for b in (getattr(result, "content", None) or [])]
-	texts = [t for t in texts if t]
+	blocks = getattr(result, "content", None) or []
+	texts = [getattr(b, "text", None) for b in blocks]
 	if is_error:
-		return False, " ".join(texts)[:500] or "the tool failed"
+		return False, " ".join(t for t in texts if t)[:500] or "the tool failed"
 	structured = getattr(result, "structured_content", None)
 	if structured is None:
 		structured = getattr(result, "structuredContent", None)
@@ -92,12 +101,19 @@ def mcp_data(result: Any) -> tuple[bool, Any]:
 		if set(structured) == {"result"}:
 			return True, structured["result"]
 		return True, structured
-	for text in texts:
-		try:
-			return True, json.loads(text)
-		except ValueError:
-			return True, {"text": text}
-	return False, f"no data in MCP result {result!r}"[:300]
+	values = [_text_data(t) for t in texts if isinstance(t, str) and t]
+	if values:
+		return True, values[0] if len(values) == 1 else values
+	if all(isinstance(t, str) for t in texts):
+		return True, None
+	return False, f"no text or structured content in MCP result {result!r}"[:300]
+
+
+def _text_data(text: str) -> Any:
+	try:
+		return json.loads(text)
+	except ValueError:
+		return {"text": text}
 
 
 class _QueueReader(threading.Thread):
@@ -107,7 +123,9 @@ class _QueueReader(threading.Thread):
 	reader after ``on_stop`` runs on the loop. A message that cannot be
 	unpickled is logged and skipped. If the reader fails anyway, ``on_stop``
 	still runs, so that the loop's side stops and settles its callers.
-	``stop()`` stops it within a second, without ``on_stop``.
+	``alive``, if given, is asked about once a second while nothing arrives;
+	once it says the writer is gone, the reader stops, sets ``gone`` and runs
+	``on_stop``. ``stop()`` stops it within a second, without ``on_stop``.
 	"""
 
 	def __init__(
@@ -118,6 +136,7 @@ class _QueueReader(threading.Thread):
 		on_stop: Callable[[], None] | None = None,
 		name: str = "flowgentic-queue-reader",
 		max_messages: int = 256,
+		alive: Callable[[], bool] | None = None,
 	) -> None:
 		super().__init__(name=name, daemon=True)
 		self.q = q
@@ -125,6 +144,8 @@ class _QueueReader(threading.Thread):
 		self.handler = handler
 		self.on_stop = on_stop
 		self.max_messages = max_messages
+		self.alive = alive
+		self.gone = False
 		self.passes = 0
 		self.skipped = 0  # messages that could not be unpickled
 		self._halt = threading.Event()
@@ -150,6 +171,10 @@ class _QueueReader(threading.Thread):
 			try:
 				raw = self.q.get(timeout=1.0)
 			except queue.Empty:
+				if self.alive is not None and not self._writer_alive():
+					self.gone = True
+					log.error("%s: the process that answers is not running", self.name)
+					return False  # not ended by a message: run() calls on_stop
 				continue
 			except Exception as exc:  # a queue error must not end the reader silently
 				log.warning("%s: get failed: %r", self.name, exc)
@@ -190,6 +215,13 @@ class _QueueReader(threading.Thread):
 				return True
 		return True
 
+	def _writer_alive(self) -> bool:
+		try:
+			return bool(self.alive())  # type: ignore[misc]
+		except Exception:  # a broken check must not end the reader
+			log.warning("%s: the liveness check failed", self.name, exc_info=True)
+			return True
+
 
 class _Call:
 	__slots__ = ("t_recv", "waiters")
@@ -228,6 +260,7 @@ class ToolService:
 		self.repeats_running = 0
 		self.repeats_done = 0
 		self.retryable = 0  # failures answered but not kept
+		self.undelivered = 0  # answers whose process could not be reached
 		self.ok: Counter[str] = Counter()
 		self.failed: Counter[str] = Counter()
 		self.failures: list[str] = []
@@ -323,7 +356,16 @@ class ToolService:
 		self._flush_scheduled = False
 		outbox, self.outbox = self.outbox, defaultdict(list)
 		for src, items in outbox.items():
-			self.out(src, items)
+			# One process's answers that cannot be delivered lose no other's.
+			try:
+				self.out(src, items)
+			except Exception:
+				self.undelivered += len(items)
+				log.exception(
+					"tool service: could not answer process %s; %d answers lost",
+					src,
+					len(items),
+				)
 
 	async def drain(self, timeout: float) -> None:
 		end = time.monotonic() + timeout
@@ -332,14 +374,15 @@ class ToolService:
 		self.flush()
 
 	def stats(self) -> dict:
-		"""Requests received, calls made, repeats, failures not kept, and
-		outcomes per tool."""
+		"""Requests received, calls made, repeats, failures not kept, answers
+		that could not be delivered, and outcomes per tool."""
 		return {
 			"received": self.received,
 			"unique": self.unique,
 			"repeats_running": self.repeats_running,
 			"repeats_done": self.repeats_done,
 			"retryable": self.retryable,
+			"undelivered": self.undelivered,
 			"ok": dict(self.ok),
 			"failed": dict(self.failed),
 			"failures": self.failures,
@@ -368,26 +411,45 @@ async def serve(
 	"""
 	loop = asyncio.get_running_loop()
 	messages = [0]
+	unknown = [0]  # requests from a process index with no reply queue
 
 	def out(src: int, items: list) -> None:
 		for i in range(0, len(items), CHUNK):
 			replies[src].put(_pack(items[i : i + CHUNK]))
 			messages[0] += 1
 
+	def on_requests(requests: list, t_recv: float) -> None:
+		# A request whose answer could not be delivered is refused on arrival:
+		# no tool runs for nobody.
+		known = []
+		for request in requests:
+			src = (
+				request[3] if isinstance(request, tuple) and len(request) > 3 else None
+			)
+			if type(src) is int and 0 <= src < len(replies):
+				known.append(request)
+			else:
+				unknown[0] += 1
+				log.error(
+					"tool service: refused a request from process %r, which has "
+					"no reply queue",
+					src,
+				)
+		service.on_requests(known, t_recv)
+
 	try:
 		await pool.start(
 			wait=len(pool.servers), timeout=connect_timeout, all_servers=True
 		)
 	except BaseException:
-		for reply in replies:
-			reply.put(_pack(None))
+		_stop_all(replies)
 		raise
 	service = ToolService(pool, out, call_timeout, listener, answer_store=answer_store)
 	stopped = asyncio.Event()
 	reader = _QueueReader(
 		requests,
 		loop,
-		service.on_requests,
+		on_requests,
 		on_stop=stopped.set,
 		name="flowgentic-requests",
 	)
@@ -408,10 +470,10 @@ async def serve(
 				task.cancel()
 			await asyncio.gather(*service._tasks, return_exceptions=True)
 		service.flush()
-		for reply in replies:
-			reply.put(_pack(None))
+		_stop_all(replies)
 		stats = service.stats()
 		stats.update(
+			unknown_sources=unknown[0],
 			reply_messages=messages[0],
 			reader_passes=reader.passes,
 			skipped_messages=reader.skipped,
@@ -419,6 +481,18 @@ async def serve(
 			up_s=round(time.time() - t_ready, 1),
 		)
 	return stats
+
+
+def _stop_all(replies: list) -> None:
+	"""Tell every agent process that the service has stopped. A reply queue
+	that fails does not keep the others from being told."""
+	for src, reply in enumerate(replies):
+		try:
+			reply.put(_pack(None))
+		except Exception:
+			log.exception(
+				"tool service: could not tell process %s that it stopped", src
+			)
 
 
 class ToolServiceClient:
@@ -429,9 +503,25 @@ class ToolServiceClient:
 	Pass ``idempotent=True`` only for a tool that can safely run twice, such as
 	a lookup. Requests made in one pass of the event loop go out together. A
 	second call with a uid still in flight shares the first call's answer.
-	``listener(uid, total_s, at_service_s)`` is called
-	once per answer: the time from asking to the answer, and of that, the time
-	the service held the call.
+
+	``args`` travel as JSON values, as MCP takes them: pydantic models, enums
+	and other values with a JSON form are converted before they are sent, so
+	the service never needs the agent's classes. Arguments with no JSON form
+	fail their own call at once.
+
+	A call with no answer within ``timeout`` seconds fails, so an agent does
+	not wait forever on a service that is gone. The default, 150 s, is the
+	service's default ``call_timeout`` (120 s) and a margin for the queues;
+	keep it above the ``call_timeout`` the service runs with. Asking again
+	with the same uid sends the request again. ``alive``, if given, tells
+	whether the service is still running, such as its process's ``is_alive``;
+	the client asks it from its reader thread, about once a second while no
+	answer arrives, and once it returns false, fails every waiting call and
+	stops.
+
+	``listener(uid, total_s, at_service_s)`` is called once per answer: the
+	time from asking to the answer, and of that, the time the service held the
+	call.
 	"""
 
 	def __init__(
@@ -441,11 +531,17 @@ class ToolServiceClient:
 		index: int,
 		*,
 		listener: Callable[[str, float, float], None] | None = None,
+		timeout: float = 150.0,
+		alive: Callable[[], bool] | None = None,
 	) -> None:
+		if not timeout > 0:
+			raise ValueError("timeout must be positive")
 		self.requests = requests
 		self.replies = replies
 		self.index = index
 		self.listener = listener
+		self.timeout = timeout
+		self.alive = alive
 		self.pending: dict[str, asyncio.Future] = {}
 		self.outbox: list = []
 		self._flush_scheduled = False
@@ -453,9 +549,11 @@ class ToolServiceClient:
 		self._loop: asyncio.AbstractEventLoop | None = None
 		self._stopped = False
 		self._asked: dict[str, float] = {}
+		self._deadlines: dict[str, asyncio.TimerHandle] = {}
 		self.sent = 0
 		self.answered = 0
 		self.errors = 0
+		self.expired = 0
 		self.messages = 0
 
 	def start(self) -> None:
@@ -467,22 +565,35 @@ class ToolServiceClient:
 			self.replies,
 			self._loop,
 			self._on_answers,
-			on_stop=self.stop,
+			on_stop=self._on_service_stop,
 			name=f"flowgentic-replies-{self.index}",
+			alive=self.alive,
 		)
 		self._reader.start()
 
 	def stop(self) -> None:
 		"""Stop reading answers, within a second, and fail the calls still
 		waiting. It runs on its own once the service has stopped."""
+		self._halt("tool service client stopped")
+
+	def _on_service_stop(self) -> None:
+		if self._reader is not None and self._reader.gone:
+			self._halt("tool service client stopped: the tool service is not running")
+		else:
+			self._halt("tool service client stopped")
+
+	def _halt(self, reason: str) -> None:
 		if self._reader is not None:
 			self._reader.stop()
 		self._stopped = True
 		self._loop = None
 		self.outbox.clear()
+		for handle in self._deadlines.values():
+			handle.cancel()
+		self._deadlines.clear()
 		for future in self.pending.values():
 			if not future.done():
-				future.set_exception(ToolServiceError("tool service client stopped"))
+				future.set_exception(ToolServiceError(reason))
 		self.pending.clear()
 		self._asked.clear()
 
@@ -495,7 +606,16 @@ class ToolServiceClient:
 			raise RuntimeError("ToolServiceClient.start() was not called")
 		future = self.pending.get(uid)
 		if future is None:
+			try:
+				args = to_jsonable_python(args)
+			except Exception as exc:
+				raise ToolServiceError(
+					f"could not send request: its arguments are not JSON: {exc}"
+				) from None
 			future = self.pending[uid] = self._loop.create_future()
+			self._deadlines[uid] = self._loop.call_later(
+				self.timeout, self._expire, uid
+			)
 			now = time.time()
 			self._asked[uid] = now
 			self.outbox.append((uid, tool, args, self.index, now, idempotent))
@@ -504,6 +624,25 @@ class ToolServiceClient:
 				self._flush_scheduled = True
 				self._loop.call_soon(self._flush)
 		return await asyncio.shield(future)
+
+	def _settle(self, uid: str) -> tuple[asyncio.Future | None, float | None]:
+		"""Forget a call: its future and when it was asked."""
+		handle = self._deadlines.pop(uid, None)
+		if handle is not None:
+			handle.cancel()
+		return self.pending.pop(uid, None), self._asked.pop(uid, None)
+
+	def _expire(self, uid: str) -> None:
+		self._deadlines.pop(uid, None)
+		future, _ = self._settle(uid)
+		if future is None or future.done():
+			return
+		self.expired += 1
+		future.set_exception(
+			ToolServiceError(
+				f"no answer from the tool service within {self.timeout:g} s"
+			)
+		)
 
 	def _flush(self) -> None:
 		self._flush_scheduled = False
@@ -525,18 +664,19 @@ class ToolServiceClient:
 			self.requests.put(message)
 		except Exception as exc:
 			for uid, *_ in batch:
-				future = self.pending.pop(uid)
-				self._asked.pop(uid)
-				future.set_exception(ToolServiceError(f"could not send request: {exc}"))
+				future, _ = self._settle(uid)
+				if future is not None and not future.done():
+					future.set_exception(
+						ToolServiceError(f"could not send request: {exc}")
+					)
 		else:
 			self.messages += 1
 
 	def _on_answers(self, items: list, t: float) -> None:
 		for uid, ok, payload, (t_recv, _t_call, t_done) in items:
-			future = self.pending.pop(uid, None)
-			asked = self._asked.pop(uid, None)
+			future, asked = self._settle(uid)
 			if future is None or future.done():
-				continue
+				continue  # answered after its deadline, or after a stop
 			self.answered += 1
 			if self.listener is not None and asked is not None:
 				try:
@@ -550,11 +690,13 @@ class ToolServiceClient:
 				future.set_exception(ToolServiceError(str(payload)))
 
 	def stats(self) -> dict:
-		"""Requests sent and answered, errors, and calls still unanswered."""
+		"""Requests sent and answered, errors, calls that reached their
+		deadline, and calls still unanswered."""
 		return {
 			"sent": self.sent,
 			"answered": self.answered,
 			"errors": self.errors,
+			"expired": self.expired,
 			"unanswered": len(self.pending),
 			"request_messages": self.messages,
 		}

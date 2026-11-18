@@ -406,3 +406,277 @@ async def test_a_failed_reader_stops_the_service_and_settles_callers():
     with pytest.raises(ToolServiceError, match="stopped"):
         await asyncio.wait_for(waiting, 2)
     assert stats["failed"] == {"lookup": 1}
+
+
+# --- a service that is gone ----------------------------------------------------------
+
+
+async def test_a_call_with_no_answer_fails_at_its_deadline():
+    """Nobody answers, as when the service's process was killed: the call
+    fails at its deadline, and an answer that comes later is dropped."""
+    requests, replies = queue.Queue(), queue.Queue()
+    client = ToolServiceClient(requests, replies, 0, timeout=0.2)
+    client.start()
+    try:
+        t = time.monotonic()
+        with pytest.raises(ToolServiceError, match="no answer from the tool service within 0.2 s"):
+            await asyncio.wait_for(client.call("a/c1", "lookup", {"key": 1}), 2)
+        assert time.monotonic() - t < 1
+        assert client.stats()["unanswered"] == 0 and client.stats()["expired"] == 1
+        replies.put(pickle.dumps([("a/c1", True, {"late": 1}, (0, 0, 0))]))
+        await asyncio.sleep(0.05)
+        assert client.stats()["answered"] == 0
+    finally:
+        client.stop()
+
+
+def test_a_deadline_must_be_positive():
+    with pytest.raises(ValueError, match="timeout"):
+        ToolServiceClient(queue.Queue(), queue.Queue(), 0, timeout=0)
+
+
+async def test_a_failed_liveness_check_fails_every_waiting_call():
+    requests, replies = queue.Queue(), queue.Queue()
+    alive = [True]
+    client = ToolServiceClient(requests, replies, 0, alive=lambda: alive[0])
+    client.start()
+    calls = [asyncio.create_task(client.call(f"a/c{i}", "lookup", {"key": i})) for i in range(3)]
+    await asyncio.sleep(0.05)
+    alive[0] = False
+    out = await asyncio.wait_for(asyncio.gather(*calls, return_exceptions=True), 3)
+    assert all(isinstance(e, ToolServiceError) and "not running" in str(e) for e in out)
+    with pytest.raises(ToolServiceError, match="stopped"):
+        await client.call("a/c9", "lookup", {"key": 9})
+
+
+async def test_a_killed_service_fails_waiting_calls():
+    """The service's process is killed, as by the out-of-memory killer, with a
+    call in flight from each of two agent processes: one client checks that the
+    service is alive, the other has only its deadline. Neither waits forever."""
+    import multiprocessing
+    import os
+    import signal
+
+    from service_process import serve_hanging
+
+    ctx = multiprocessing.get_context("spawn")
+    requests, replies = ctx.Queue(), [ctx.Queue(), ctx.Queue()]
+    proc = ctx.Process(target=serve_hanging, args=(requests, replies), daemon=True)
+    proc.start()
+    watched = ToolServiceClient(requests, replies[0], 0, alive=proc.is_alive)
+    deadline = ToolServiceClient(requests, replies[1], 1, timeout=4.0)
+    watched.start()
+    deadline.start()
+    try:
+        first = asyncio.create_task(watched.call("a/c1", "lookup", {"key": 1}))
+        second = asyncio.create_task(deadline.call("b/c1", "lookup", {"key": 2}))
+        await asyncio.sleep(1.0)
+        os.kill(proc.pid, signal.SIGKILL)
+        proc.join(5)
+        t = time.monotonic()
+        with pytest.raises(ToolServiceError, match="not running"):
+            await asyncio.wait_for(first, 3)
+        assert time.monotonic() - t < 2.5
+        with pytest.raises(ToolServiceError, match="no answer"):
+            await asyncio.wait_for(second, 5)
+    finally:
+        watched.stop()
+        deadline.stop()
+
+
+# --- arguments travel as JSON ---------------------------------------------------------
+
+
+async def test_arguments_travel_as_json_so_no_batch_is_lost():
+    """A request whose arguments hold an object of a class that only the agent
+    processes import goes out as JSON, so the service reads it and the other
+    requests sent with it."""
+    import enum
+    import sys
+    import types
+
+    module = types.ModuleType("agent_only_schemas")
+    exec(
+        "import enum\nfrom pydantic import BaseModel\n"
+        "class Range(BaseModel):\n    lo: float\n    hi: float\n"
+        "class Unit(str, enum.Enum):\n    K = 'K'\n",
+        module.__dict__,
+    )
+    sys.modules["agent_only_schemas"] = module
+    requests, replies = queue.Queue(), queue.Queue()
+    client = ToolServiceClient(requests, replies, 0)
+    client.start()
+    pool = FakePool()
+    try:
+        calls = [asyncio.create_task(client.call(f"agent-{i}/c1", "lookup", {"key": i})) for i in range(5)]
+        args = {"key": "x", "t": module.Range(lo=1, hi=2), "unit": module.Unit.K}
+        calls.append(asyncio.create_task(client.call("agent-9/c1", "lookup", args)))
+        await asyncio.sleep(0.05)  # one loop pass: all six went out in one message
+        assert requests.qsize() == 1
+    finally:
+        del sys.modules["agent_only_schemas"]  # the service process does not have it
+    service = asyncio.create_task(serve(requests, [replies], pool))
+    try:
+        done, _ = await asyncio.wait(calls, timeout=3)
+        assert len(done) == 6
+        assert pool.calls[-1] == ("lookup", {"key": "x", "t": {"lo": 1.0, "hi": 2.0}, "unit": "K"})
+        assert type(pool.calls[-1][1]["unit"]) is str
+        # Arguments that have no JSON form fail their own call, at once.
+        with pytest.raises(ToolServiceError, match="not JSON"):
+            await asyncio.wait_for(client.call("agent-10/c1", "lookup", {"key": enum}), 1)
+        assert not client.pending
+    finally:
+        requests.put(None)
+        await asyncio.wait_for(service, 2)
+        client.stop()
+
+
+# --- one reply that cannot be delivered ------------------------------------------------
+
+
+async def test_a_request_from_an_unknown_process_is_refused_on_arrival():
+    """A client whose index has no reply queue, here one past the end, gets no
+    tool call made for it, and the other clients' answers still go out."""
+    requests, replies = queue.Queue(), [queue.Queue(), queue.Queue()]
+    pool = FakePool()
+    service = asyncio.create_task(serve(requests, replies, pool))
+    stray = ToolServiceClient(requests, queue.Queue(), index=2)
+    good = ToolServiceClient(requests, replies[0], index=0)
+    stray.start()
+    good.start()
+    try:
+        lost = asyncio.create_task(stray.call("x/1", "lookup", {"key": "b"}))
+        assert await asyncio.wait_for(good.call("y/1", "lookup", {"key": "g"}), 2) == {"echo": "g"}
+        assert not lost.done()
+        stray.stop()
+        with pytest.raises(ToolServiceError, match="stopped"):
+            await lost
+    finally:
+        requests.put(None)
+        stats = await asyncio.wait_for(service, 2)
+        stray.stop()
+        good.stop()
+    assert pool.calls == [("lookup", {"key": "g"})]
+    assert stats["unknown_sources"] == 1
+
+
+async def test_an_answer_that_cannot_be_delivered_loses_no_other():
+    from flowgentic.tools.service import ToolService
+
+    delivered = {}
+
+    def out(src, items):
+        if src == 0:
+            raise OSError("reply queue closed")
+        delivered[src] = items
+
+    service = ToolService(FakePool(), out)
+    service.on_requests(
+        [(f"agent-{src}/c1", "lookup", {"key": src}, src, 0) for src in range(3)], 0
+    )
+    await asyncio.gather(*service._tasks)
+    service.flush()
+    assert sorted(delivered) == [1, 2]
+    assert service.stats()["undelivered"] == 1
+
+
+async def test_one_unwritable_reply_queue_does_not_stop_the_others():
+    class Unwritable(queue.Queue):
+        def put(self, item, block=True, timeout=None):
+            raise OSError("reply queue closed")
+
+    requests, replies = queue.Queue(), [Unwritable(), queue.Queue()]
+    service = asyncio.create_task(serve(requests, replies, FakePool()))
+    gone = ToolServiceClient(requests, queue.Queue(), index=0)
+    good = ToolServiceClient(requests, replies[1], index=1)
+    gone.start()
+    good.start()
+    try:
+        lost = asyncio.create_task(gone.call("x/1", "lookup", {"key": "b"}))
+        assert await asyncio.wait_for(good.call("y/1", "lookup", {"key": "g"}), 2) == {"echo": "g"}
+        gone.stop()
+        with pytest.raises(ToolServiceError):
+            await lost
+        requests.put(None)
+        stats = await asyncio.wait_for(service, 2)
+        await until(lambda: good._stopped)  # the stop still reached the good client
+    finally:
+        gone.stop()
+        good.stop()
+    assert stats["undelivered"] == 1
+
+
+# --- what an MCP result carries ------------------------------------------------------
+
+
+async def test_mcp_data_reads_every_result_shape_of_the_sdk():
+    from mcp import Client
+    from mcp.server.mcpserver import MCPServer
+
+    from flowgentic.tools.service import mcp_data
+
+    mcp = MCPServer("local")
+
+    @mcp.tool()
+    def returns_none(key: str) -> None:
+        return None
+
+    @mcp.tool()
+    def returns_nothing_unannotated(key: str):
+        return None
+
+    @mcp.tool()
+    def returns_text(key: str) -> str:
+        return "00123"
+
+    @mcp.tool()
+    def returns_list_unannotated(key: str):
+        return ["a", '{"b": 1}', "c"]
+
+    @mcp.tool()
+    def returns_list(key: str) -> list[str]:
+        return ["a", "b"]
+
+    @mcp.tool()
+    def fails(key: str) -> str:
+        raise ValueError("no such key")
+
+    async with Client(mcp) as client:
+        results = {
+            name: mcp_data(await client.call_tool(name, {"key": "k"}))
+            for name in [
+                "returns_none",
+                "returns_nothing_unannotated",
+                "returns_text",
+                "returns_list_unannotated",
+                "returns_list",
+                "fails",
+            ]
+        }
+    assert results["returns_none"] == (True, None)
+    assert results["returns_nothing_unannotated"] == (True, None)  # success, with no data
+    assert results["returns_text"] == (True, "00123")
+    assert results["returns_list_unannotated"] == (True, [{"text": "a"}, {"b": 1}, {"text": "c"}])
+    assert results["returns_list"] == (True, ["a", "b"])
+    ok, message = results["fails"]
+    assert not ok and "Error executing tool fails" in message
+
+
+def test_mcp_data_without_structured_content():
+    from flowgentic.tools.service import mcp_data
+
+    def text(t):
+        return SimpleNamespace(type="text", text=t)
+
+    def result(*blocks, is_error=False):
+        return SimpleNamespace(is_error=is_error, content=list(blocks), structured_content=None)
+
+    assert mcp_data(result()) == (True, None)
+    assert mcp_data(result(text(""))) == (True, None)
+    assert mcp_data(result(text('{"y": 2}'))) == (True, {"y": 2})
+    assert mcp_data(result(text("plain"))) == (True, {"text": "plain"})
+    assert mcp_data(result(text("1"), text("two"))) == (True, [1, {"text": "two"}])
+    assert mcp_data(result(text("bad"), text("worse"), is_error=True)) == (False, "bad worse")
+    image = SimpleNamespace(type="image", data="...", mime_type="image/png")
+    ok, message = mcp_data(result(image))
+    assert not ok and "no text" in message
