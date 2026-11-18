@@ -50,7 +50,7 @@ uv run --extra dev pytest -q
 dragon tests/dragon_pytest.py -m dragon tests
 ```
 
-  On a Slurm allocation of one node, `dragon -s` starts a single-node runtime.
+  On a batch allocation of one node, `dragon -s` starts a single-node runtime.
   A change to a part with a Dragon-only path (`RadexStore`, the tool service's
   queues, the example's `--dragon` path) says in its PR which Dragon, RHAPSODY
   and RaDEX versions the suite passed under.
