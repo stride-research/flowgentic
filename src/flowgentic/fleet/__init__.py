@@ -43,7 +43,9 @@ since, at the tokens per character the server's counts give, plus a reserve
 for the reply and the call's own ``reserve``. The size leaves out the previous
 reply's reasoning tokens, when the server reports them
 (``output_token_details.reasoning``): the conversation does not keep a model's
-thinking.
+thinking. An agent's first call is estimated from the sizes the server counted
+for earlier first calls, as a fixed part, such as tool schemas and a template
+that the messages do not show, plus tokens per character.
 
 ``fleet.ainvoke(agent_id, messages)`` is the direct path, for a graph's own
 model node. ``fleet.chat_model()`` is a LangChain chat model for prebuilt
@@ -535,6 +537,46 @@ def _message_chars(messages: Sequence[BaseMessage]) -> int:
 	return n
 
 
+class _FirstCalls:
+	"""What servers count for agents' first calls: a fixed part, such as tool
+	schemas and a template that the messages do not show, plus tokens per
+	character. An exponentially weighted least-squares fit of the prompt's
+	tokens on its characters; until there are ``1 / alpha`` of them, the calls
+	weigh equally.
+
+	While the first calls' lengths barely vary, they cannot tell the two
+	apart: the ratio is then the one learned from the characters later calls
+	add, and the fixed part is the rest."""
+
+	__slots__ = ("alpha", "n", "x", "y", "xx", "xy")
+
+	MIN_RATIO = 0.05
+	MAX_RATIO = 2.0
+
+	def __init__(self, alpha: float) -> None:
+		self.alpha = alpha
+		self.n = 0
+		self.x = self.y = self.xx = self.xy = 0.0
+
+	def add(self, chars: int, tokens: int) -> None:
+		self.n += 1
+		w = max(self.alpha, 1 / self.n)
+		self.x += w * (chars - self.x)
+		self.y += w * (tokens - self.y)
+		self.xx += w * (chars * chars - self.xx)
+		self.xy += w * (chars * tokens - self.xy)
+
+	def line(self, fallback: float) -> tuple[float, float]:
+		"""The fixed part, in tokens, and the tokens per character."""
+		var = self.xx - self.x * self.x
+		if var > max((0.1 * self.x) ** 2, 100.0):
+			ratio = (self.xy - self.x * self.y) / var
+		else:
+			ratio = fallback
+		ratio = min(max(ratio, self.MIN_RATIO), self.MAX_RATIO)
+		return max(self.y - ratio * self.x, 0.0), ratio
+
+
 class _Agent:
 	__slots__ = ("chars", "tokens", "last_end", "prev_prompt")
 
@@ -580,9 +622,10 @@ class _Core:
 		self.recovery = recovery
 		self.tracked_agents = tracked_agents
 		self.agents: OrderedDict[str, _Agent] = OrderedDict()
-		self.first_ratio = 0.45
+		self.first_ratio = 0.45  # tokens per character, before any first call
 		self.delta_ratio = 0.3
 		self.alpha = 0.05
+		self.first_calls = _FirstCalls(self.alpha)
 		self.listeners: list[Callable[[CallRecord, AIMessage], None]] = []
 		self.calls = [0] * len(replicas)
 		self.prompt_tokens = 0
@@ -609,9 +652,17 @@ class _Core:
 			self.agents.move_to_end(agent_id)
 		return state
 
+	def first_call_line(self) -> tuple[float | None, float]:
+		"""The fixed part and tokens per character of a first call; no fixed
+		part before any first call was counted."""
+		if not self.first_calls.n:
+			return None, self.first_ratio
+		return self.first_calls.line(self.delta_ratio)
+
 	def estimate(self, state: _Agent, chars: int) -> int:
 		if state.chars < 0:
-			return int(chars * self.first_ratio)
+			base, ratio = self.first_call_line()
+			return int((base or 0.0) + chars * ratio)
 		return state.tokens + int(max(chars - state.chars, 0) * self.delta_ratio)
 
 	def learn(
@@ -622,7 +673,7 @@ class _Core:
 		a = self.alpha
 		if state.chars < 0:
 			if chars > 0:
-				self.first_ratio += a * (prompt / chars - self.first_ratio)
+				self.first_calls.add(chars, prompt)
 		elif chars - state.chars > 50:
 			added = max(prompt - state.tokens, 0) / (chars - state.chars)
 			self.delta_ratio += a * (added - self.delta_ratio)
@@ -868,6 +919,7 @@ class Fleet:
 	def stats(self) -> dict:
 		"""The fleet's counters, with its gates' and its recovery's."""
 		core = self._core
+		base, ratio = core.first_call_line()
 		return {
 			"name": core.name,
 			"replicas": len(core.replicas),
@@ -886,7 +938,8 @@ class Fleet:
 			"in_flight_max": core.in_flight_max,
 			"gates": [g.stats() for g in core.gates],
 			"tokens_per_char": {
-				"first_call": round(core.first_ratio, 4),
+				"first_call": round(ratio, 4),
+				"first_call_base": None if base is None else round(base),
 				"added": round(core.delta_ratio, 4),
 			},
 			"replies_tool_call": core.replies_tool,

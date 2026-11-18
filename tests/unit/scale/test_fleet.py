@@ -292,6 +292,68 @@ async def test_the_estimate_learns_and_tracks_a_bounded_number_of_agents():
     assert second.estimate >= 1010  # the first call's size, as the server counted it
 
 
+class Counting:
+    """A server that counts a prompt as ``base`` tokens, such as tool schemas
+    and a template the messages do not show, plus ``per_char`` per character."""
+
+    def __init__(self, base, per_char=0.25):
+        self.base, self.per_char = base, per_char
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+    async def ainvoke(self, messages, **kwargs):
+        chars = sum(len(m.content) for m in messages)
+        reply = AIMessage("DONE")
+        reply.usage_metadata = {
+            "input_tokens": self.base + int(chars * self.per_char),
+            "output_tokens": 5,
+            "total_tokens": 0,
+        }
+        return reply
+
+
+async def first_call_estimate(server, prompts, long):
+    """The estimate of a first call of ``long`` characters, after first calls
+    of the given lengths; and what the server counted."""
+    fleet = Fleet([server], admission=TokenAdmission(235_000, 96))
+    records = []
+    fleet.add_listener(lambda record, reply: records.append(record))
+    for i, n in enumerate(prompts):
+        await fleet.ainvoke(f"a{i}", [HumanMessage("x" * n)])
+    await fleet.ainvoke("long", [HumanMessage("x" * long)])
+    return records[-1].estimate - fleet.stats()["reply_reserve_tokens"], records[-1].prompt_tokens, fleet
+
+
+async def test_a_long_first_prompt_after_short_ones_is_not_overestimated():
+    # Short first prompts that the server counts as mostly fixed tokens.
+    estimate, counted, fleet = await first_call_estimate(Counting(1000), [41] * 200, 40_000)
+    assert counted == 11_000
+    assert 0.5 * counted <= estimate <= 1.5 * counted
+    per_char = fleet.stats()["tokens_per_char"]
+    assert 900 <= per_char["first_call_base"] <= 1_100
+
+
+async def test_the_first_call_estimate_learns_a_fixed_part_and_a_ratio():
+    lengths = [100 + 37 * (i % 50) * (i % 7) for i in range(300)]  # 100 to 11,000 characters
+    estimate, counted, fleet = await first_call_estimate(Counting(2000, 0.5), lengths, 40_000)
+    assert counted == 22_000
+    assert 0.9 * counted <= estimate <= 1.1 * counted
+    per_char = fleet.stats()["tokens_per_char"]
+    assert abs(per_char["first_call"] - 0.5) < 0.05
+    assert abs(per_char["first_call_base"] - 2000) < 200
+
+
+async def test_the_first_call_estimate_starts_from_a_ratio_alone():
+    fleet = Fleet([Counting(0)], admission=TokenAdmission(235_000, 96))
+    records = []
+    fleet.add_listener(lambda record, reply: records.append(record))
+    assert fleet.stats()["tokens_per_char"]["first_call_base"] is None
+    await fleet.ainvoke("a", [HumanMessage("x" * 1000)])
+    assert records[0].estimate == int(1000 * 0.45) + 64  # nothing learned yet
+    assert fleet.stats()["tokens_per_char"]["first_call_base"] is not None
+
+
 class APIConnectionError(Exception):
     """Named as the OpenAI client's: transient() goes by the class names."""
 
