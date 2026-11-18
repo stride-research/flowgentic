@@ -15,6 +15,9 @@ fleet decides, for each call, which replica takes it and when:
   point and lets the other agents wait. ``RequestAdmission`` counts requests
   only. Admission is first come, first served, so a long context is never
   overtaken forever. Without admission (``None``), every call goes at once.
+  Another policy is an ``Admission`` whose gates follow the ``Gate`` protocol:
+  a gate sees whose call it admits, and hears when an agent ends
+  (``Fleet.agent_done``).
 - **Sharing across processes.** Each agent process gets ``share`` of every
   replica's caps. This holds because every process routes by the same hash.
   It is a static split.
@@ -62,7 +65,7 @@ import zlib
 from collections import Counter, OrderedDict, deque
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 try:
 	from langchain_core.language_models import BaseChatModel
@@ -88,6 +91,7 @@ __all__ = [
 	"CallRecord",
 	"Fleet",
 	"FleetChatModel",
+	"Gate",
 	"LeastLoaded",
 	"Recovery",
 	"ReplicaLoad",
@@ -117,11 +121,41 @@ class ReplicaLoad:
 	waiting: int
 
 
+@runtime_checkable
+class Gate(Protocol):
+	"""One replica's admission, in one process.
+
+	Before the fleet sends an agent's call to the replica, it awaits
+	``acquire(n, agent_id)``, where ``n`` is the call's estimated tokens of live
+	context, or 0 when the admission does not count tokens. Once the call is
+	over, whether it succeeded, failed or was cancelled, the fleet calls
+	``release(n, agent_id)`` with the same arguments. A call that waits out a
+	recovery releases before it waits and acquires again before it is sent
+	again. If ``acquire`` is cancelled, it must leave the gate as it found it,
+	even when it had admitted the call before the cancellation reached it.
+
+	``agent_done(agent_id)`` says that an agent ended (``Fleet.agent_done``), so
+	a gate that keeps something per agent can drop it; a call of that agent may
+	still be in flight. ``load()`` and ``stats()`` feed the fleet's ``load()``,
+	``stats()`` and metrics.
+	"""
+
+	async def acquire(self, n: int, agent_id: str) -> None: ...
+
+	def release(self, n: int, agent_id: str) -> None: ...
+
+	def agent_done(self, agent_id: str) -> None: ...
+
+	def load(self) -> ReplicaLoad: ...
+
+	def stats(self) -> dict: ...
+
+
 class AdmissionGate:
 	"""Admits requests to one replica while the tokens of live context and the
 	requests in flight stay under their caps. ``tokens=None`` counts requests
-	only. First come, first served; a request larger than the token cap is
-	admitted alone."""
+	only. First come, first served, whatever the agent; a request larger than
+	the token cap is admitted alone. A ``Gate``."""
 
 	def __init__(self, tokens: int | None, requests: int) -> None:
 		if (tokens is not None and tokens < 1) or requests < 1:
@@ -152,7 +186,7 @@ class AdmissionGate:
 		self.tokens_max = max(self.tokens_max, self.tokens)
 		self.requests_max = max(self.requests_max, self.requests)
 
-	async def acquire(self, n: int) -> None:
+	async def acquire(self, n: int, agent_id: str) -> None:
 		"""Wait until a request of ``n`` tokens is admitted."""
 		if not self._waiters and self._fits(n):
 			self._take(n)
@@ -167,7 +201,7 @@ class AdmissionGate:
 			await future
 		except asyncio.CancelledError:
 			if future.done() and not future.cancelled():
-				self.release(n)  # admitted, then cancelled before it ran
+				self.release(n, agent_id)  # admitted, then cancelled before it ran
 			else:
 				try:
 					self._waiters.remove(entry)
@@ -176,11 +210,14 @@ class AdmissionGate:
 				self._wake()
 			raise
 
-	def release(self, n: int) -> None:
+	def release(self, n: int, agent_id: str) -> None:
 		"""Release an admitted request of ``n`` tokens."""
 		self.tokens -= n
 		self.requests -= 1
 		self._wake()
+
+	def agent_done(self, agent_id: str) -> None:
+		"""Nothing to drop: the gate keeps nothing per agent."""
 
 	def _wake(self) -> None:
 		while self._waiters and self._fits(self._waiters[0][0]):
@@ -218,11 +255,14 @@ class _Open:
 
 	tokens = requests = 0
 
-	async def acquire(self, n: int) -> None:
+	async def acquire(self, n: int, agent_id: str) -> None:
 		self.requests += 1
 
-	def release(self, n: int) -> None:
+	def release(self, n: int, agent_id: str) -> None:
 		self.requests -= 1
+
+	def agent_done(self, agent_id: str) -> None:
+		pass
 
 	def load(self) -> ReplicaLoad:
 		return ReplicaLoad(0, self.requests, 0)
@@ -232,11 +272,13 @@ class _Open:
 
 
 class Admission(Protocol):
-	"""Makes one gate per replica, for a process's ``share`` of its caps."""
+	"""Makes one gate per replica, for a process's ``share`` of its caps.
+	``counts_tokens`` says whether its gates are given each call's estimated
+	tokens, or 0."""
 
 	counts_tokens: bool
 
-	def gate(self, share: float) -> AdmissionGate: ...
+	def gate(self, share: float) -> Gate: ...
 
 
 def _share(cap: int, share: float) -> int:
@@ -465,10 +507,16 @@ class _Core:
 		self.generation = [0] * len(replicas)
 		self.admission = admission
 		self.counts_tokens = bool(admission is not None and admission.counts_tokens)
-		self.gates = [
-			admission.gate(share) if admission is not None else _Open()
-			for _ in replicas
-		]
+		self.gates: list[Gate] = []
+		for _ in replicas:
+			gate = admission.gate(share) if admission is not None else _Open()
+			if not isinstance(gate, Gate):
+				raise TypeError(
+					f"{type(admission).__name__}.gate() made a "
+					f"{type(gate).__name__}, which is not a Gate: a gate needs "
+					"acquire, release, agent_done, load and stats"
+				)
+			self.gates.append(gate)
 		self.routing = routing
 		self.share = share
 		self.reply_reserve = reply_reserve
@@ -594,6 +642,15 @@ class Fleet:
 		"""Each replica's load in this process."""
 		return [g.load() for g in self._core.gates]
 
+	def agent_done(self, agent_id: str) -> None:
+		"""Say that an agent ended: every gate hears it, and the fleet forgets
+		the agent's size. Call it once the agent makes no more calls, for
+		example from the agent host's ``on_done``."""
+		core = self._core
+		core.agents.pop(agent_id, None)
+		for gate in core.gates:
+			gate.agent_done(agent_id)
+
 	async def ainvoke(
 		self,
 		agent_id: str,
@@ -627,7 +684,7 @@ class Fleet:
 		failing_since: float | None = None
 		with _agents.activity(AgentState.MODEL_QUEUED):
 			while True:
-				await gate.acquire(weight)
+				await gate.acquire(weight, agent_id)
 				failed: BaseException | None = None
 				try:
 					got = time.monotonic()
@@ -647,7 +704,7 @@ class Fleet:
 						core.in_flight -= 1
 					done = time.monotonic()
 				finally:
-					gate.release(weight)
+					gate.release(weight, agent_id)
 				if failed is None:
 					break
 				# outage_s bounds the call, not only one watch: a call that fails
