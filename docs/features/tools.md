@@ -28,6 +28,12 @@ tools = bind_tools(runtime, [
 | Task | `task_tool(fn)` | as a RHAPSODY function task in the process's session | compute the agent waits for |
 | Service | `mcp_tool(name, ...)` | in the tool service, through its MCP pool | tools on MCP servers |
 
+A task tool's function must be importable by the workers: a top-level
+function. It may be `async def`; the worker then runs it on an event loop of
+its own, until it ends, as RHAPSODY does with a coroutine function. A service
+tool's arguments reach the tool service as JSON values, so the service needs
+none of the agent's classes.
+
 `flowgentic.tools` needs no extra to import. Task tools need the `rhapsody`
 extra when they run, MCP tools need the [tool service](tool-service.md), and
 `bind_tools` needs the `langgraph` extra. Flowgentic never creates a RHAPSODY

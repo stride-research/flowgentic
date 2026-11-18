@@ -1,7 +1,7 @@
 import sys
 from typing import Dict
 
-from flowgentic.langgraph.main import LangraphIntegration
+from flowgentic.langgraph.main import LangGraphIntegration
 from ..utils.schemas import WorkflowState, AgentOutput
 from .utils.actions_registry import ActionsRegistry
 
@@ -24,7 +24,7 @@ class WorkflowNodes:
 	"""Contains all workflow nodes with access to agents_manager and tools."""
 
 	def __init__(
-		self, agents_manager: LangraphIntegration, tools_registry: ActionsRegistry
+		self, agents_manager: LangGraphIntegration, tools_registry: ActionsRegistry
 	) -> None:
 		self.agents_manager = agents_manager
 		self.tools_registry = tools_registry

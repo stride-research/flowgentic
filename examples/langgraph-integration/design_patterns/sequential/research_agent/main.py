@@ -1,6 +1,6 @@
 from radical.asyncflow import LocalExecutionBackend
 from concurrent.futures import ThreadPoolExecutor
-from flowgentic.langgraph.main import LangraphIntegration
+from flowgentic.langgraph.main import LangGraphIntegration
 from .components.builder import WorkflowBuilder
 from .utils.schemas import WorkflowState
 import asyncio
@@ -11,7 +11,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 async def start_app():
 	backend = await LocalExecutionBackend(ThreadPoolExecutor())
 
-	async with LangraphIntegration(backend=backend) as agents_manager:
+	async with LangGraphIntegration(backend=backend) as agents_manager:
 		# Build workflow
 		workflow_builder = WorkflowBuilder(agents_manager)
 		workflow = workflow_builder.build_workflow()

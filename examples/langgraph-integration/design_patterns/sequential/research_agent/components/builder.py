@@ -1,4 +1,4 @@
-from flowgentic.langgraph.main import LangraphIntegration
+from flowgentic.langgraph.main import LangGraphIntegration
 from ..utils.schemas import WorkflowState
 from langgraph.graph import END, StateGraph
 from .utils.actions_registry import ActionsRegistry
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class WorkflowBuilder:
 	"""Builds and configures the complete workflow graph."""
 
-	def __init__(self, agents_manager: LangraphIntegration):
+	def __init__(self, agents_manager: LangGraphIntegration):
 		self.agents_manager = agents_manager
 		self.tools_registry = ActionsRegistry(agents_manager)
 		self.nodes = WorkflowNodes(agents_manager, self.tools_registry)

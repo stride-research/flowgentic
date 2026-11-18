@@ -15,6 +15,9 @@ fleet decides, for each call, which replica takes it and when:
   point and lets the other agents wait. ``RequestAdmission`` counts requests
   only. Admission is first come, first served, so a long context is never
   overtaken forever. Without admission (``None``), every call goes at once.
+  Another policy is an ``Admission`` whose gates follow the ``Gate`` protocol:
+  a gate sees whose call it admits, and hears when an agent ends
+  (``Fleet.agent_done``).
 - **Sharing across processes.** Each agent process gets ``share`` of every
   replica's caps. This holds because every process routes by the same hash.
   It is a static split.
@@ -22,6 +25,7 @@ fleet decides, for each call, which replica takes it and when:
   error, a timeout, a 5xx, a 401 after a new key) releases its place, waits for
   the replica to come back, and is sent again; ``outage_s`` after its first
   failure it fails, even if the replica came back and the call kept failing.
+  A check that raises or hangs counts as the replica still being down.
 - **Accounting.** One ``CallRecord`` per call goes to the listeners: the wait
   for admission, the time at the server, the tokens, the prompt tokens the
   server found in its prefix cache and the reply's reasoning tokens when the
@@ -43,31 +47,36 @@ thinking.
 
 ``fleet.ainvoke(agent_id, messages)`` is the direct path, for a graph's own
 model node. ``fleet.chat_model()`` is a LangChain chat model for prebuilt
-agents, which reads the agent's id from the run config's ``thread_id``; it
-costs a LangChain call's overhead more per call. Both take, per call, settings
-for the replica (``extra_body``, ``max_tokens``, ...), which reach the replica
-for that call only, a ``reserve`` of tokens beyond the usual reply, such as a
-thinking budget, and a ``meta`` that the call's record carries. Which settings
-make a model think is the model's business, not the fleet's.
+agents, which reads the agent's id from the run config's ``thread_id``: the
+config passed to it, or else the LangGraph run it is called in. It opens no
+LangChain run of its own: it hands the caller's config to the replica, whose
+run is the call's only one. Both take, per call, settings for the replica
+(``extra_body``, ``max_tokens``, ...), which reach the replica for that call
+only, a ``reserve`` of tokens beyond the usual reply, such as a thinking
+budget, and a ``meta`` that the call's record carries. Which settings make a
+model think is the model's business, not the fleet's.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import itertools
 import json
+import logging
 import time
 import weakref
 import zlib
 from collections import Counter, OrderedDict, deque
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 try:
-	from langchain_core.language_models import BaseChatModel
+	from langchain_core.language_models import BaseChatModel, LanguageModelInput
 	from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
-	from langchain_core.outputs import ChatGeneration, ChatResult
+	from langchain_core.outputs import ChatResult
+	from langchain_core.runnables import RunnableConfig
 	from langchain_core.runnables.config import ensure_config
 except ModuleNotFoundError as exc:
 	if exc.name != "langchain_core":
@@ -78,16 +87,17 @@ except ModuleNotFoundError as exc:
 	) from exc
 
 from flowgentic import _agents, _telemetry
-from flowgentic._agents import AgentState
+
+log = logging.getLogger(__name__)
 
 __all__ = [
-	"TRANSIENT",
 	"Admission",
 	"AdmissionGate",
 	"AgentAffinity",
 	"CallRecord",
 	"Fleet",
 	"FleetChatModel",
+	"Gate",
 	"LeastLoaded",
 	"Recovery",
 	"ReplicaLoad",
@@ -95,12 +105,10 @@ __all__ = [
 	"RoundRobin",
 	"Routing",
 	"TokenAdmission",
-	"stable_hash",
-	"transient",
 ]
 
 
-def stable_hash(key: str) -> int:
+def _stable_hash(key: str) -> int:
 	"""The same in every process, unlike ``hash()``."""
 	return zlib.crc32(key.encode())
 
@@ -117,11 +125,41 @@ class ReplicaLoad:
 	waiting: int
 
 
+@runtime_checkable
+class Gate(Protocol):
+	"""One replica's admission, in one process.
+
+	Before the fleet sends an agent's call to the replica, it awaits
+	``acquire(n, agent_id)``, where ``n`` is the call's estimated tokens of live
+	context, or 0 when the admission does not count tokens. Once the call is
+	over, whether it succeeded, failed or was cancelled, the fleet calls
+	``release(n, agent_id)`` with the same arguments. A call that waits out a
+	recovery releases before it waits and acquires again before it is sent
+	again. If ``acquire`` is cancelled, it must leave the gate as it found it,
+	even when it had admitted the call before the cancellation reached it.
+
+	``agent_done(agent_id)`` says that an agent ended (``Fleet.agent_done``), so
+	a gate that keeps something per agent can drop it; a call of that agent may
+	still be in flight. ``load()`` and ``stats()`` feed the fleet's ``load()``,
+	``stats()`` and metrics.
+	"""
+
+	async def acquire(self, n: int, agent_id: str) -> None: ...
+
+	def release(self, n: int, agent_id: str) -> None: ...
+
+	def agent_done(self, agent_id: str) -> None: ...
+
+	def load(self) -> ReplicaLoad: ...
+
+	def stats(self) -> dict: ...
+
+
 class AdmissionGate:
 	"""Admits requests to one replica while the tokens of live context and the
 	requests in flight stay under their caps. ``tokens=None`` counts requests
-	only. First come, first served; a request larger than the token cap is
-	admitted alone."""
+	only. First come, first served, whatever the agent; a request larger than
+	the token cap is admitted alone. A ``Gate``."""
 
 	def __init__(self, tokens: int | None, requests: int) -> None:
 		if (tokens is not None and tokens < 1) or requests < 1:
@@ -152,7 +190,7 @@ class AdmissionGate:
 		self.tokens_max = max(self.tokens_max, self.tokens)
 		self.requests_max = max(self.requests_max, self.requests)
 
-	async def acquire(self, n: int) -> None:
+	async def acquire(self, n: int, agent_id: str) -> None:
 		"""Wait until a request of ``n`` tokens is admitted."""
 		if not self._waiters and self._fits(n):
 			self._take(n)
@@ -167,7 +205,7 @@ class AdmissionGate:
 			await future
 		except asyncio.CancelledError:
 			if future.done() and not future.cancelled():
-				self.release(n)  # admitted, then cancelled before it ran
+				self.release(n, agent_id)  # admitted, then cancelled before it ran
 			else:
 				try:
 					self._waiters.remove(entry)
@@ -176,11 +214,14 @@ class AdmissionGate:
 				self._wake()
 			raise
 
-	def release(self, n: int) -> None:
+	def release(self, n: int, agent_id: str) -> None:
 		"""Release an admitted request of ``n`` tokens."""
 		self.tokens -= n
 		self.requests -= 1
 		self._wake()
+
+	def agent_done(self, agent_id: str) -> None:
+		"""Nothing to drop: the gate keeps nothing per agent."""
 
 	def _wake(self) -> None:
 		while self._waiters and self._fits(self._waiters[0][0]):
@@ -218,11 +259,14 @@ class _Open:
 
 	tokens = requests = 0
 
-	async def acquire(self, n: int) -> None:
+	async def acquire(self, n: int, agent_id: str) -> None:
 		self.requests += 1
 
-	def release(self, n: int) -> None:
+	def release(self, n: int, agent_id: str) -> None:
 		self.requests -= 1
+
+	def agent_done(self, agent_id: str) -> None:
+		pass
 
 	def load(self) -> ReplicaLoad:
 		return ReplicaLoad(0, self.requests, 0)
@@ -232,11 +276,13 @@ class _Open:
 
 
 class Admission(Protocol):
-	"""Makes one gate per replica, for a process's ``share`` of its caps."""
+	"""Makes one gate per replica, for a process's ``share`` of its caps.
+	``counts_tokens`` says whether its gates are given each call's estimated
+	tokens, or 0."""
 
 	counts_tokens: bool
 
-	def gate(self, share: float) -> AdmissionGate: ...
+	def gate(self, share: float) -> Gate: ...
 
 
 def _share(cap: int, share: float) -> int:
@@ -284,7 +330,7 @@ class AgentAffinity:
 	"""Each agent always to the same replica, by a stable hash of its id."""
 
 	def choose(self, agent_id: str, loads: Sequence[ReplicaLoad]) -> int:
-		return stable_hash(agent_id) % len(loads)
+		return _stable_hash(agent_id) % len(loads)
 
 
 class RoundRobin:
@@ -309,7 +355,7 @@ class LeastLoaded:
 
 # --- recovery ----------------------------------------------------------------------
 
-TRANSIENT = frozenset(
+_TRANSIENT = frozenset(
 	{
 		"APIConnectionError",
 		"APITimeoutError",
@@ -322,20 +368,24 @@ with a new key, by the OpenAI client's class names. Matched along the class's
 MRO, so langchain-openai's own wrappers of them match too."""
 
 
-def transient(exc: BaseException) -> bool:
+def _transient(exc: BaseException) -> bool:
 	"""Whether ``exc`` is a server's that is down, restarting or overloaded."""
-	return any(c.__name__ in TRANSIENT for c in type(exc).__mro__)
+	return any(c.__name__ in _TRANSIENT for c in type(exc).__mro__)
 
 
 class Recovery:
 	"""Waits out a replica whose server went away, for at most ``outage_s``.
 
-	``check(i)`` returns replica ``i``'s chat model once its server serves
-	again, a new one if its endpoint or key changed, or ``None`` while it is
-	down. The first call that fails on a replica starts one watch, which calls
-	``check`` every ``poll_s`` seconds; later calls wait on the same watch. A
-	call that fails again after its replica came back waits ``poll_s`` before
-	it is sent again, and fails ``outage_s`` after its first failure.
+	``check(i)``, an ``async def``, returns replica ``i``'s chat model once its
+	server serves again, a new one if its endpoint or key changed, or ``None``
+	while it is down. The first call that fails on a replica starts one watch,
+	which calls ``check`` every ``poll_s`` seconds until the replica serves or
+	``outage_s`` has passed; later calls wait on the same watch. A check that
+	raises, or does not answer within ``check_timeout_s``, counts as the replica
+	still being down. The watch serves every call on the replica, so it runs in
+	a context of its own, not in the first failing call's. A call that fails
+	again after its replica came back waits ``poll_s`` before it is sent again,
+	and fails ``outage_s`` after its first failure.
 	"""
 
 	def __init__(
@@ -344,13 +394,21 @@ class Recovery:
 		*,
 		outage_s: float = 1_800.0,
 		poll_s: float = 5.0,
+		check_timeout_s: float = 30.0,
 	) -> None:
+		if outage_s < 0 or poll_s <= 0 or check_timeout_s <= 0:
+			raise ValueError(
+				"outage_s must not be negative, and poll_s and check_timeout_s "
+				"must be more than 0"
+			)
 		self.check = check
 		self.outage_s = outage_s
 		self.poll_s = poll_s
+		self.check_timeout_s = check_timeout_s
 		self.outages: Counter[int] = Counter()
 		self.gave_up: Counter[int] = Counter()
 		self.down_s: Counter[int] = Counter()
+		self.check_failures: Counter[int] = Counter()
 		self._watches: dict[int, asyncio.Future] = {}
 		self._tasks: set[asyncio.Task] = set()
 
@@ -360,7 +418,10 @@ class Recovery:
 		future = self._watches.get(i)
 		if future is None:
 			future = self._watches[i] = asyncio.get_running_loop().create_future()
-			task = asyncio.create_task(self._watch(i, future))
+			# No agent, span or run config of the call that happened to fail first.
+			task = asyncio.create_task(
+				self._watch(i, future), context=contextvars.Context()
+			)
 			self._tasks.add(task)
 			task.add_done_callback(self._tasks.discard)
 		# asyncio.wait leaves the watch running when this caller times out or
@@ -370,33 +431,50 @@ class Recovery:
 
 	async def _watch(self, i: int, future: asyncio.Future) -> None:
 		t0 = time.monotonic()
+		failures = 0
 		try:
 			while True:
-				model = await self.check(i)
+				left = self.outage_s - (time.monotonic() - t0)
+				if left <= 0:
+					self.gave_up[i] += 1
+					self.down_s[i] += time.monotonic() - t0
+					future.set_result(None)
+					return
+				try:
+					timeout = min(self.check_timeout_s, left)
+					model = await asyncio.wait_for(self.check(i), timeout)
+				except Exception as exc:  # a timeout too: still down
+					model = None
+					failures += 1
+					self.check_failures[i] += 1
+					log.log(
+						logging.WARNING if failures == 1 else logging.DEBUG,
+						"replica %d: its check failed (%s: %s); still down",
+						i,
+						type(exc).__name__,
+						exc,
+					)
 				if model is not None:
 					self.outages[i] += 1
 					self.down_s[i] += time.monotonic() - t0
 					future.set_result(model)
 					return
-				if time.monotonic() - t0 >= self.outage_s:
-					self.gave_up[i] += 1
-					self.down_s[i] += time.monotonic() - t0
-					future.set_result(None)
-					return
 				await asyncio.sleep(self.poll_s)
-		except Exception as exc:  # a broken watch fails its calls, not the process
-			if not future.done():
-				future.set_exception(exc)
 		finally:
-			self._watches.pop(i, None)
+			if not future.done():  # the watch was cancelled: its calls fail as they are
+				future.set_result(None)
+			if self._watches.get(i) is future:
+				del self._watches[i]
 
 	def stats(self) -> dict:
-		"""Outages per replica: waited out, their time down, and given up."""
+		"""Outages per replica: waited out, their time down, given up, and the
+		checks that raised or timed out."""
 		return {
 			"outage_s": self.outage_s,
 			"outages": dict(self.outages),
 			"down_s": {i: round(s, 1) for i, s in self.down_s.items()},
 			"gave_up": dict(self.gave_up),
+			"check_failures": dict(self.check_failures),
 		}
 
 
@@ -425,7 +503,7 @@ class CallRecord:
 	"""What the caller passed with the call."""
 
 
-def message_chars(messages: Sequence[BaseMessage]) -> int:
+def _message_chars(messages: Sequence[BaseMessage]) -> int:
 	"""Characters of a conversation: contents and tool calls."""
 	n = 0
 	for m in messages:
@@ -465,10 +543,16 @@ class _Core:
 		self.generation = [0] * len(replicas)
 		self.admission = admission
 		self.counts_tokens = bool(admission is not None and admission.counts_tokens)
-		self.gates = [
-			admission.gate(share) if admission is not None else _Open()
-			for _ in replicas
-		]
+		self.gates: list[Gate] = []
+		for _ in replicas:
+			gate = admission.gate(share) if admission is not None else _Open()
+			if not isinstance(gate, Gate):
+				raise TypeError(
+					f"{type(admission).__name__}.gate() made a "
+					f"{type(gate).__name__}, which is not a Gate: a gate needs "
+					"acquire, release, agent_done, load and stats"
+				)
+			self.gates.append(gate)
 		self.routing = routing
 		self.share = share
 		self.reply_reserve = reply_reserve
@@ -594,6 +678,15 @@ class Fleet:
 		"""Each replica's load in this process."""
 		return [g.load() for g in self._core.gates]
 
+	def agent_done(self, agent_id: str) -> None:
+		"""Say that an agent ended: every gate hears it, and the fleet forgets
+		the agent's size. Call it once the agent makes no more calls, for
+		example from the agent host's ``on_done``."""
+		core = self._core
+		core.agents.pop(agent_id, None)
+		for gate in core.gates:
+			gate.agent_done(agent_id)
+
 	async def ainvoke(
 		self,
 		agent_id: str,
@@ -605,10 +698,10 @@ class Fleet:
 	) -> AIMessage:
 		"""Send an agent's call to its replica, through admission.
 
-		``kwargs`` go to the replica's ``ainvoke`` for this call only.
-		``reserve`` adds tokens to the call's admission estimate, for a reply
-		longer than usual, such as one that may think. ``meta`` goes into the
-		call's ``CallRecord``.
+		``kwargs`` go to the replica's ``ainvoke`` for this call only, a
+		``config`` included. ``reserve`` adds tokens to the call's admission
+		estimate, for a reply longer than usual, such as one that may think.
+		``meta`` goes into the call's ``CallRecord``.
 		"""
 		if reserve < 0:
 			raise ValueError("reserve must not be negative")
@@ -616,7 +709,7 @@ class Fleet:
 		i = core.routing.choose(agent_id, [g.load() for g in core.gates])
 		gate = core.gates[i]
 		state = core.agent(agent_id)
-		chars = message_chars(messages)
+		chars = _message_chars(messages)
 		estimate = core.estimate(state, chars) + core.reply_reserve + reserve
 		weight = estimate if core.counts_tokens else 0
 		last = messages[-1] if messages else None
@@ -625,29 +718,29 @@ class Fleet:
 		asked = time.monotonic()
 		attrs = {_telemetry.FLEET_NAME: core.name, _telemetry.FLEET_REPLICA: i}
 		failing_since: float | None = None
-		with _agents.activity(AgentState.MODEL_QUEUED):
+		with _agents.activity(_agents.AgentState.MODEL_QUEUED):
 			while True:
-				await gate.acquire(weight)
+				await gate.acquire(weight, agent_id)
 				failed: BaseException | None = None
 				try:
 					got = time.monotonic()
 					core.in_flight += 1
 					core.in_flight_max = max(core.in_flight_max, core.in_flight)
 					try:
-						with _agents.activity(AgentState.MODEL_REQUEST):
+						with _agents.activity(_agents.AgentState.MODEL_REQUEST):
 							reply = await self._model(i).ainvoke(
 								list(messages), **kwargs
 							)
 					except Exception as exc:
 						core.errors[type(exc).__name__] += 1
-						if core.recovery is None or not transient(exc):
+						if core.recovery is None or not _transient(exc):
 							raise
 						failed = exc
 					finally:
 						core.in_flight -= 1
 					done = time.monotonic()
 				finally:
-					gate.release(weight)
+					gate.release(weight, agent_id)
 				if failed is None:
 					break
 				# outage_s bounds the call, not only one watch: a call that fails
@@ -734,7 +827,7 @@ class Fleet:
 		)
 		# The conversation keeps the reply but not its thinking.
 		kept = completion - (reasoning or 0)
-		core.learn(state, chars, message_chars([reply]), prompt, kept)
+		core.learn(state, chars, _message_chars([reply]), prompt, kept)
 		state.last_end = t_end
 		state.prev_prompt = prompt
 		if reply.tool_calls:
@@ -785,8 +878,16 @@ class Fleet:
 
 
 class FleetChatModel(BaseChatModel):
-	"""A fleet as a LangChain chat model. The agent is the run config's
-	``thread_id``, as LangGraph sets it for each thread."""
+	"""A fleet as a LangChain chat model.
+
+	The agent is the run config's ``thread_id``, as LangGraph sets it for each
+	thread: from the config passed to ``ainvoke``, or else from the LangGraph
+	run the model is called in; without one, the agent host's current agent.
+	The model opens no LangChain run of its own. It hands the caller's config
+	to the replica, so callbacks, tracers and LangGraph's streaming see one
+	model call, the replica's. ``reserve`` and ``meta`` are the fleet's; other
+	keywords go to the replica, as with ``Fleet.ainvoke``.
+	"""
 
 	fleet: Any
 
@@ -797,6 +898,27 @@ class FleetChatModel(BaseChatModel):
 	def bind_tools(self, tools: Sequence[Any], **kwargs: Any) -> FleetChatModel:
 		return FleetChatModel(fleet=self.fleet.bind_tools(tools, **kwargs))
 
+	async def ainvoke(
+		self,
+		input: LanguageModelInput,
+		config: RunnableConfig | None = None,
+		*,
+		stop: list[str] | None = None,
+		**kwargs: Any,
+	) -> AIMessage:
+		config = ensure_config(config)
+		agent = config.get("configurable", {}).get("thread_id")
+		agent = agent or _agents.current_agent()
+		if not agent:
+			raise ValueError(
+				"the fleet routes by agent: pass a thread_id in the config, or run "
+				"it in a LangGraph thread or an agent host"
+			)
+		if stop is not None:
+			kwargs["stop"] = stop
+		messages = self._convert_input(input).to_messages()
+		return await self.fleet.ainvoke(str(agent), messages, config=config, **kwargs)
+
 	def _generate(
 		self,
 		messages: list[BaseMessage],
@@ -805,26 +927,6 @@ class FleetChatModel(BaseChatModel):
 		**kwargs: Any,
 	) -> ChatResult:
 		raise NotImplementedError("the fleet is asynchronous: use ainvoke")
-
-	async def _agenerate(
-		self,
-		messages: list[BaseMessage],
-		stop: Any = None,
-		run_manager: Any = None,
-		**kwargs: Any,
-	) -> ChatResult:
-		agent = (ensure_config().get("configurable") or {}).get("thread_id")
-		agent = agent or _agents.current_agent()
-		if not agent:
-			raise ValueError(
-				"the fleet routes by agent: run it in a LangGraph thread (a thread_id "
-				"in the config) or in an agent host"
-			)
-		if stop is not None:
-			kwargs["stop"] = stop
-		# reserve and meta are the fleet's; the rest go to the replica
-		reply = await self.fleet.ainvoke(str(agent), messages, **kwargs)
-		return ChatResult(generations=[ChatGeneration(message=reply)])
 
 
 def _loads(kind: str) -> dict[tuple[str, int], int]:

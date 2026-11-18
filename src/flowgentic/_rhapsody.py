@@ -15,6 +15,8 @@ that submission raises an error that names the extra to install.
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 from collections.abc import Callable
 from typing import Any
 
@@ -24,10 +26,16 @@ from flowgentic import _telemetry
 def _call_in_context(
 	func: Callable[..., Any], carrier: dict[str, str], kwargs: dict[str, Any]
 ) -> Any:
-	"""Run ``func`` in the caller's trace context; runs in a RHAPSODY worker."""
+	"""Run ``func`` in the caller's trace context; runs in a RHAPSODY worker.
+
+	An ``async def`` function's coroutine is run to its end here, as RHAPSODY's
+	backends run one: they see only this wrapper, which is not async."""
 	token = _telemetry.attach_context(carrier)
 	try:
-		return func(**kwargs)
+		value = func(**kwargs)
+		if inspect.iscoroutine(value):
+			value = asyncio.run(value)
+		return value
 	finally:
 		_telemetry.detach_context(token)
 

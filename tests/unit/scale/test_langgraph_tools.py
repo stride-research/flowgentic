@@ -5,6 +5,7 @@ import asyncio
 import gc
 import traceback
 import weakref
+from types import SimpleNamespace
 
 import pytest
 from _support import RUNS, Scripted, broken, calls_then_answer, react_graph, simulate, thread_session
@@ -525,7 +526,7 @@ async def test_task_and_service_calls_are_spans_and_metrics(span_exporter, metri
     assert task_span.attributes["error.type"] == "ValueError"
     assert service_span.attributes["flowgentic.tool.kind"] == "service"
     assert service_span.attributes["flowgentic.tool.outcome"] == "ok"
-    agent_span = spans["invoke_agent tel-0"]
+    agent_span = spans["invoke_agent"]
     assert task_span.parent.span_id == agent_span.context.span_id  # inside the agent's trace
     assert task_span.context.trace_id == agent_span.context.trace_id
 
@@ -556,3 +557,164 @@ async def test_many_agents_in_one_host():
 def test_a_tool_that_is_not_a_tool_is_refused():
     with pytest.raises(TypeError, match="not a tool"):
         bind_tools(ToolRuntime(), [object()])
+
+
+async def simulate_async(x: float) -> dict:
+    """Run a simulation of x, asynchronously."""
+    from opentelemetry import trace
+
+    await asyncio.sleep(0)
+    TRACES.append(trace.get_current_span().get_span_context().trace_id)
+    RUNS["simulate_async"] = RUNS.get("simulate_async", 0) + 1
+    return {"y": 2 * x}
+
+
+TRACES: list[int] = []
+
+
+async def test_an_async_task_tool_returns_its_value(span_exporter):
+    """RHAPSODY's backends run an async function's coroutine; Flowgentic's
+    wrapper around it must do the same, rather than hand back the coroutine."""
+    TRACES.clear()
+    session = await thread_session()
+    runtime = ToolRuntime(session)
+    graph = react_graph(
+        Scripted(script=sim_then_answer(sim="simulate_async", note=False)),
+        bind_tools(runtime, [task_tool(simulate_async, suspend=True)]),
+        KeyValueSaver(MemoryStore()),
+    )
+    outputs = {}
+    report = await AgentHost(
+        GraphRunner(graph), stagger=FAST, on_done=lambda r, o: outputs.__setitem__(r.id, o)
+    ).run(inputs(1, "async"))
+    await session.close()
+    assert report.finished == 1 and report.agents[0].suspensions == 1
+    assert outputs["async-0"]["messages"][-1].content == '{"y": 3.0}'
+    assert RUNS == {"simulate_async": 1}
+    # the coroutine ran in the caller's trace context
+    (task_span,) = [s for s in span_exporter.get_finished_spans() if s.name == "execute_tool simulate_async"]
+    assert TRACES == [task_span.context.trace_id]
+
+
+async def test_mcp_arguments_reach_the_service_as_json():
+    """LangChain hands a tool the arguments parsed by its schema: a nested
+    model and an enum arrive as instances of the application's classes. The
+    service process may not import those classes, and MCP takes JSON."""
+    import enum
+    import queue
+
+    from flowgentic.tools.service import serve
+
+    class Unit(str, enum.Enum):
+        K = "K"
+
+    class Range(BaseModel):
+        lo: float
+        hi: float
+
+    class Args(BaseModel):
+        material: str
+        temperature: Range
+        unit: Unit
+
+    seen = []
+
+    class Pool:
+        servers = ["fake"]
+
+        async def start(self, *args, **kwargs):
+            pass
+
+        async def call(self, tool, args, *, timeout=None, idempotent=False):
+            seen.append(args)
+            return SimpleNamespace(is_error=False, structured_content={"ok": True}, content=[])
+
+        def stats(self):
+            return {}
+
+        async def close(self, timeout=10.0):
+            pass
+
+    requests, replies = queue.Queue(), queue.Queue()
+    service = asyncio.create_task(serve(requests, [replies], Pool()))
+    client = ToolServiceClient(requests, replies, 0)
+    client.start()
+    try:
+        (lookup,) = bind_tools(
+            ToolRuntime(service=client), [mcp_tool("lookup", description="Look up.", args_schema=Args)]
+        )
+        call = {
+            "name": "lookup",
+            "type": "tool_call",
+            "id": "c1",
+            "args": {"material": "Fe", "temperature": {"lo": 1, "hi": 2}, "unit": "K"},
+        }
+        out = await asyncio.wait_for(lookup.ainvoke(call, {"configurable": {"thread_id": "a"}}), 5)
+    finally:
+        requests.put(None)
+        await asyncio.wait_for(service, 5)
+        client.stop()
+    assert out.content == '{"ok": true}'
+    assert seen == [{"material": "Fe", "temperature": {"lo": 1.0, "hi": 2.0}, "unit": "K"}]
+    assert type(seen[0]["temperature"]) is dict and type(seen[0]["unit"]) is str
+
+
+def simulate_forever(messages):
+    """A model that calls a tool on every turn, never answering."""
+    turn = sum(1 for m in messages if m.type == "ai")
+    return AIMessage("", tool_calls=[{"name": "simulate", "args": {"x": 1.0}, "id": f"c{turn}"}])
+
+
+def simulate_times(n: int):
+    """A model that calls a tool ``n`` times, one call per turn, then answers."""
+
+    def script(messages):
+        done = sum(1 for m in messages if m.type == "tool")
+        if done < n:
+            return AIMessage("", tool_calls=[{"name": "simulate", "args": {"x": 1.0}, "id": f"c{done}"}])
+        return AIMessage("done")
+
+    return script
+
+
+@pytest.mark.parametrize("suspend", [False, True], ids=["in-memory", "suspended"])
+async def test_the_recursion_limit_holds_across_suspensions(suspend):
+    """Each resume is a new LangGraph run, which counts its steps afresh: on its
+    own, the limit would never stop an agent that suspends on every turn."""
+    session = await thread_session()
+    runtime = ToolRuntime(session)
+    graph = react_graph(
+        Scripted(script=simulate_forever),
+        bind_tools(runtime, [task_tool(simulate, suspend=suspend)]),
+        KeyValueSaver(MemoryStore()),
+    )
+    host = AgentHost(GraphRunner(graph, config={"recursion_limit": 25}), stagger=FAST)
+    try:
+        report = await asyncio.wait_for(host.run(inputs(1)), 10)
+    finally:
+        await session.close()
+    (agent,) = report.agents
+    assert agent.status == "failed" and agent.error.startswith("GraphRecursionError")
+    assert RUNS["simulate"] <= 2 * 25  # bounded, not run until the walltime
+
+
+@pytest.mark.parametrize("suspend", [False, True], ids=["in-memory", "suspended"])
+@pytest.mark.parametrize("limit, status", [(4, "failed"), (12, "done")])
+async def test_a_limit_that_lets_an_agent_finish_in_memory_lets_it_finish_suspended(
+    suspend, limit, status
+):
+    session = await thread_session()
+    runtime = ToolRuntime(session)
+    graph = react_graph(
+        Scripted(script=simulate_times(5)),
+        bind_tools(runtime, [task_tool(simulate, suspend=suspend)]),
+        KeyValueSaver(MemoryStore()),
+    )
+    runner = GraphRunner(graph, config={"recursion_limit": limit})
+    report = await AgentHost(runner, stagger=FAST).run(inputs(1))
+    await session.close()
+    (agent,) = report.agents
+    assert agent.status == status, agent.error
+    if status == "done":
+        assert agent.suspensions == (5 if suspend else 0)
+    assert not runner._resumes  # nothing kept for an agent that has ended

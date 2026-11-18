@@ -22,8 +22,8 @@ chat = fleet.chat_model().bind_tools(tools)              # a LangChain chat mode
 ```
 
 `flowgentic.fleet` needs the `langgraph` extra, for LangChain. The replicas
-are LangChain chat models: anything with `ainvoke(messages)` that returns an
-`AIMessage`, and `bind_tools` if the agents call tools.
+are LangChain chat models: anything with `ainvoke(messages, **kwargs)` that
+returns an `AIMessage`, and `bind_tools` if the agents call tools.
 
 ## What the fleet does
 
@@ -39,20 +39,43 @@ are LangChain chat models: anything with `ainvoke(messages)` that returns an
   tokens of live context in flight and one on the requests in flight, and
   lets other calls wait. `RequestAdmission(requests)` caps requests only.
   Calls are admitted first come, first served, so a long context is never
-  overtaken forever. Without admission, every call goes at once.
+  overtaken forever. Without admission, every call goes at once. Other
+  policies plug in through the same argument (see
+  [Other admission policies](#other-admission-policies)).
 - **It shares the caps among agent processes.** Each process takes `share`
   of every replica's caps. This holds because every process routes the same
   agents to the same replicas.
 - **It waits out a server that went away.** With `Recovery(check)`, a call
   that fails because its server is down, restarting or overloaded (a
   connection error, a timeout, a 5xx, or a 401 after a new key) gives up its
-  place, waits for the replica to come back, and is sent again.
-  `check(i)` returns replica `i`'s model once its server serves again (a new
-  one if its address or key changed), or `None` while it is down. A call that
-  fails again once its replica is back waits `poll_s` before it is sent
-  again. `outage_s` after its first failure, the call fails with its last
-  error, even if the replica came back and the call kept failing, or `check`
-  did not answer. Other errors fail at once.
+  place, waits for the replica to come back, and is sent again. Other errors
+  fail at once.
+
+  `check` is an `async def`: `check(i)` returns replica `i`'s model once its
+  server serves again (a new one if its address or key changed), or `None`
+  while it is down. The first failing call on a replica starts one watch,
+  which calls `check(i)` every `poll_s` seconds until the replica serves
+  again or `outage_s` has passed; later failing calls wait on the same watch.
+  A check that raises, or does not answer within `check_timeout_s` (30 s by
+  default), counts as the replica still being down: the watch logs it, counts
+  it in `fleet.stats()["recovery"]["check_failures"]`, and keeps polling. The watch runs in a
+  context of its own, not in the context of the agent whose call failed
+  first.
+
+  A call that fails again once its replica is back waits `poll_s` before it
+  is sent again. `outage_s` after its first failure, the call fails with its
+  last error, even if the replica came back and the call kept failing, or
+  `check` did not answer.
+
+```python
+async def check(i: int):
+    url, key = read_endpoint(i)            # the application's: where replica i serves now
+    if not await healthy(url):             # for example, GET /health with its own timeout
+        return None
+    return ChatOpenAI(model=model, base_url=url, api_key=key)
+
+fleet = Fleet(replicas, recovery=Recovery(check, outage_s=1_800, poll_s=5))
+```
 
 A call's live context is estimated before it is sent: the agent's size after
 its previous call, as the server counted it, plus the characters added since,
@@ -79,11 +102,73 @@ reply = await chat.ainvoke(messages, reserve=512, meta={"budget": 512}, extra_bo
 
 The keywords reach the replica's `ainvoke` for that call only, through a
 `bind_tools` view too, and again if `Recovery` rebuilt the replica's model.
+The chat model takes them wherever it can tell the agent (see below), and
+also bound in advance, as in `chat.bind(reserve=512)`.
 Which settings make a model think is the model's business: the fleet passes
 them on. When the server reports a reply's reasoning tokens
 (`usage_metadata["output_token_details"]["reasoning"]`), the call's record
 carries them, and the agent's size leaves them out: the conversation keeps the
 reply, not the thinking.
+
+## The chat model
+
+`fleet.chat_model()` is the fleet as a LangChain chat model, for prebuilt
+agents such as LangChain's `create_agent` and LangGraph's
+`create_react_agent`, and for graphs that expect one. Its `bind_tools` and
+`with_structured_output` work as a chat model's do.
+
+It routes each call by the run config's `thread_id`: the one in the config
+passed to `ainvoke`, or else the one of the LangGraph run it is called in.
+So a node can call it for a sub-agent with the sub-agent's own thread:
+
+```python
+await chat.ainvoke(messages, config={"configurable": {"thread_id": sub_agent}})
+```
+
+Without a `thread_id`, it uses the agent the [agent host](agent-host.md) is
+running, and without either it raises `ValueError`.
+
+The chat model opens no LangChain run of its own. It hands the caller's
+config to the replica, so the replica's run is the call's only one:
+callbacks, LangSmith and OpenTelemetry's GenAI instrumentation see one model
+call with the replica's usage, and LangGraph's `stream_mode="messages"`
+streams the replica's tokens. It is asynchronous only: call `ainvoke`. Its
+cost per call, a LangChain call more than `fleet.ainvoke`, is why a graph's
+own model node should call the fleet directly.
+
+## Other admission policies
+
+`admission=` takes any `Admission`: an object with `counts_tokens` and a
+`gate(share)` method that makes one gate per replica, for this process's
+`share` of the replica's caps. A gate follows the `Gate` protocol:
+
+```python
+class Gate(Protocol):
+    async def acquire(self, n: int, agent_id: str) -> None: ...
+    def release(self, n: int, agent_id: str) -> None: ...
+    def agent_done(self, agent_id: str) -> None: ...
+    def load(self) -> ReplicaLoad: ...
+    def stats(self) -> dict: ...
+```
+
+Before it sends an agent's call to the replica, the fleet awaits
+`acquire(n, agent_id)`, where `n` is the call's estimated tokens of live
+context, or 0 if `counts_tokens` is false. Once the call is over, whether it
+succeeded, failed or was cancelled, the fleet calls `release` with the same
+arguments. A call that waits out a recovery releases first and acquires again
+before it is sent again. If `acquire` is cancelled, it must leave the gate as
+it found it. `load()` gives the replica's tokens and requests in flight and
+its requests waiting, for `fleet.load()`, the routing and the metrics, and
+`stats()` goes into `fleet.stats()["gates"]`. `TokenAdmission` and
+`RequestAdmission` make `AdmissionGate`s, which admit first come, first
+served, whatever the agent. A gate that is not a `Gate` is refused when the
+fleet is built.
+
+A policy that keeps something per agent, such as the agents whose contexts
+it holds in a replica's cache, needs to hear when an agent ends.
+`fleet.agent_done(agent_id)` tells every gate (`agent_done`) and drops the
+agent's size from the fleet's estimates. Call it once the agent makes no more
+calls; a call of that agent may still be in flight.
 
 ## What it reports
 
@@ -113,4 +198,9 @@ In an [agent host](agent-host.md), the fleet counts each agent as
 `MODEL_QUEUED` while its call waits for admission and as `MODEL_REQUEST` while
 the call is at the server. The chat model reads the agent's id from the run
 config's `thread_id`, which `GraphRunner` sets to the agent's id, or else from
-the host.
+the host. The host's `on_done` is the place to tell the fleet that an agent
+ended:
+
+```python
+host = AgentHost(runner, on_done=lambda result, output: fleet.agent_done(result.id))
+```

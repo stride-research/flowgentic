@@ -27,6 +27,9 @@ active development; the AsyncFlow path stays in maintenance mode.
   needs both, `bind_agent` needs `asyncflow`, and
   `flowgentic[langgraph,asyncflow]` installs what 0.4 installed.
 - `flowgentic.langGraph` is renamed `flowgentic.langgraph`. Change the imports.
+- `LangraphIntegration` and `ExecutionWrappersLangraph` are renamed
+  `LangGraphIntegration` and `ExecutionWrappersLangGraph`, with no alias.
+  Change the imports.
 
 ### Added
 
@@ -41,13 +44,23 @@ active development; the AsyncFlow path stays in maintenance mode.
 - `flowgentic.host`: an agent host that runs many agents in one process,
   through a runner per framework. While it runs it raises the cyclic
   collector's first threshold and freezes the objects alive once agents have
-  started; it caps the agents live at once, staggers the first wave's starts,
-  resumes agents that wait on tasks, and counts agents by state, in three
-  categories: working, waiting, and making a model request. Its report gives
-  each agent's outcome, the agent-seconds by state, the event loop's lag and
-  the collector's pauses. Each agent's run is an `invoke_agent` span, and the
-  agents by state, the loop lag and the collector's pauses are OpenTelemetry
-  metrics.
+  started, and when the last host that froze ends it unfreezes every frozen
+  object, so no reference cycle stays frozen; it caps the agents live at
+  once, staggers the first wave's starts, resumes agents that wait on tasks,
+  and counts agents by state, in three categories: working, waiting, and
+  making a model request. Its report gives each agent's outcome, the
+  agent-seconds by state, the event loop's lag and the collector's pauses.
+  Each agent's run is an `invoke_agent` span, with status ERROR and the
+  exception when the agent fails, and the agents by state, the loop lag and
+  the collector's pauses are OpenTelemetry metrics. Hosts that run at the
+  same time record each lag sample and each pause once, and the pauses are
+  recorded from the event loop, never inside a collection, where an SDK's
+  locks could deadlock the process.
+- Flowgentic's histograms, all in seconds, advise the SDK of bucket
+  boundaries sized for what each measures, from the collector's pauses to
+  tool calls of an hour, in place of the SDK's default boundaries, which suit
+  milliseconds. The Telemetry page lists every metric and shows how to
+  configure a meter provider.
 - `AgentHost.run_indexed(indices, input_for, id_prefix=...)` runs a range of
   agents named by a prefix and an integer, and builds each agent's input as a
   slot opens, so a process's memory does not grow with the campaign's size.
@@ -61,6 +74,12 @@ active development; the AsyncFlow path stays in maintenance mode.
   and `route_tool_calls`, which sends each tool call to the tool node as its
   own task, so that an agent resuming from a suspension runs no other tool
   call again. A suspended run is freed as soon as it stops.
+- `GraphRunner` lets one agent resume at most `recursion_limit` times, and
+  fails it with `GraphRecursionError` after that: each resume is a new
+  LangGraph run, which counts its steps afresh, so the limit alone would never
+  stop an agent that suspends on every turn. It refuses a graph compiled with
+  `interrupt_before` or `interrupt_after`, whose static breakpoints would end
+  an agent as finished, with partial output.
 - `flowgentic.langgraph.KeyValueSaver`, a LangGraph checkpointer that keeps
   agents' state in a key-value store, and `flowgentic.store` with two stores:
   RaDEX on a Dragon distributed dictionary, and a dictionary in the process.
@@ -78,6 +97,15 @@ active development; the AsyncFlow path stays in maintenance mode.
   again only when the caller passes `idempotent=True`, as a lookup can. A
   failure that left the call safe to repeat is not kept, so asking again with
   the same uid calls the tool again.
+- A tool service call has a deadline: with no answer within the client's
+  `timeout` (150 s by default) it fails with `ToolServiceError`, and with
+  `alive`, a check that the service still runs (such as a test of its pid),
+  every waiting call fails as soon as the service has stopped. A call's arguments travel as JSON values,
+  so the service needs none of the agents' classes, and arguments with no JSON
+  form fail their own call. The service refuses a request from a process with
+  no reply queue, and a reply queue that fails loses no other process's
+  answers. An MCP success with no content is a success with no data, and a
+  result with several text blocks returns all of them.
 - Tool placement, `flowgentic.tools`: a tool runs inline, as a RHAPSODY task
   (`task_tool`) or through the tool service (`mcp_tool`), and
   `flowgentic.langgraph.bind_tools` turns these into LangChain tools. A task
@@ -87,16 +115,25 @@ active development; the AsyncFlow path stays in maintenance mode.
   or refuses them. Each task or service call is an `execute_tool` span and a
   point of the `flowgentic.tool.duration` histogram. Task tools need the new
   `rhapsody` extra.
+- A task tool's function may be `async def`: the worker runs it to its end,
+  as RHAPSODY does with a coroutine function.
 - `flowgentic.fleet`: a client for a fleet of model replicas. It keeps each
   agent on one replica, so the agent's prompt stays in that replica's prefix
   cache; admits calls under caps on each replica's tokens of live context and
   requests in flight, shared among agent processes; waits out a replica whose
-  server went away, for at most `outage_s` per call; and records each call. Per call it passes settings to the
+  server went away, for at most `outage_s` per call, treating a health check
+  that raises or does not answer within `check_timeout_s` as the replica
+  still being down; and records each call. Per call it passes settings to the
   replica, adds a `reserve` to the admission estimate, such as a thinking
   budget, and carries the caller's `meta` into the call's record; reasoning
-  tokens are recorded and left out of the agent's size. The admission wait,
-  the time at the replica and each replica's load are OpenTelemetry metrics.
-  It needs the `langgraph` extra.
+  tokens are recorded and left out of the agent's size. Other admission
+  policies plug in as an `Admission` whose gates follow the `Gate` protocol:
+  a gate is told which agent's call it admits, and `Fleet.agent_done` tells it
+  that an agent ended. `Fleet.chat_model()`, for prebuilt agents, routes by the
+  `thread_id` of the config it is given or of the LangGraph run it is called
+  in, and opens no LangChain run of its own, so callbacks and tracers count
+  each call once. The admission wait, the time at the replica and each
+  replica's load are OpenTelemetry metrics. It needs the `langgraph` extra.
 
 ### Changed
 
