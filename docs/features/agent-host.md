@@ -29,10 +29,11 @@ print(report.finished, report.states["share_by_category"], report.loop_lag)
   started, moves the objects then alive out of the collector's reach
   (`gc.freeze()`). It restores both when `run` returns, and also when `run` is
   cancelled. Overlapping runs share the collector tuning until the last user
-  releases it. If objects were already frozen when the host froze (CPython
-  3.12 freezes some at startup, and an application may freeze its own), the
-  host still freezes and leaves everything frozen when it ends, since
-  unfreezing would also thaw the others' objects. `collector=None` leaves the
+  releases it. When the last host that froze ends, it unfreezes every frozen
+  object, those frozen before it included (CPython 3.12 parks some of its own
+  objects there): CPython cannot unfreeze only part, and reference cycles
+  left frozen would never be freed. An application that keeps objects of its
+  own frozen passes `Collector(freeze=False)`; `collector=None` leaves the
   collector alone.
 - **It caps the agents live at once.** At most `max_live_agents` (5,000 by
   default) are live, suspended ones included. More are accepted, and each
@@ -125,13 +126,17 @@ graph = builder.compile(checkpointer=checkpointer)
 Through the OpenTelemetry API, and only once the application configures an
 SDK:
 
-- each agent's run is an `invoke_agent {agent id}` span, with
-  `gen_ai.agent.id`, and a `flowgentic.agent.suspend` event per suspension;
+- each agent's run is an `invoke_agent` span, with the agent's id in
+  `gen_ai.agent.id`, and a `flowgentic.agent.suspend` event per suspension; a
+  failed agent's span has status ERROR, `error.type` and the exception;
 - `flowgentic.agents` counts agents by `flowgentic.agent.state`, and
   `flowgentic.agent.time` adds up agent-seconds by state and
   `flowgentic.agent.category`, both read when the SDK collects;
 - `flowgentic.host.loop.lag` and `flowgentic.host.gc.pause` record the event
-  loop's lag and the collector's pauses.
+  loop's lag and the collector's pauses, once each however many hosts run.
+
+[Telemetry](telemetry.md#metrics) lists every metric, with its unit and
+buckets, and shows how to configure a meter provider.
 
 ## Campaigns with millions of agent IDs
 

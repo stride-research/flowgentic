@@ -5,10 +5,12 @@ OpenTelemetry's
 [GenAI semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai).
 An agent's decision, the AsyncFlow task it runs in, the model call it makes,
 the checks its output passed or failed, and the simulations the run launches
-form one trace.
+form one trace. Agents run at scale, by an [agent host](agent-host.md), are
+also counted, in [metrics](#metrics): what the agents are doing, the host's
+own health, the tools' durations and the model fleet's load.
 
 Flowgentic depends on `opentelemetry-api` only. Until the application
-configures the OpenTelemetry SDK, every span and event is a no-op.
+configures the OpenTelemetry SDK, every span, event and metric is a no-op.
 
 ## What records what
 
@@ -19,6 +21,7 @@ LangChain instrumentation; see the end of this section.
 | Spans and events | Recorded by |
 | --- | --- |
 | `invoke_agent <identity>`, one per call of an agent bound with `bind_agent` | Flowgentic |
+| `invoke_agent`, one per agent an agent host runs, with a `flowgentic.agent.suspend` event per suspension; see [the agent host's spans](#the-agent-hosts-spans) | Flowgentic |
 | `execute_tool <tool>`, one per call of a task or MCP tool from `flowgentic.tools`; see [Tool placement](tools.md#what-it-reports) | Flowgentic |
 | `accept <name>`, one per call of `accept`, with an `accept.attempt <name>` span per attempt and a `gen_ai.evaluation.result` event per check that ran; see [Acceptance](acceptance.md) | Flowgentic |
 | `chat <model>`, `execute_tool <tool>`, `invoke_workflow <graph>` | OpenTelemetry's GenAI instrumentation for LangChain, with its OpenAI instrumentation |
@@ -49,6 +52,109 @@ the task suspends its agent), and Flowgentic's, with the same
 failed one), and the call's whole duration, from submission through the order
 policy's wait and the agent's suspension to the result, with the spans of the
 task's function under it.
+
+### The agent host's spans
+
+An [agent host](agent-host.md) records each agent's run as one
+`invoke_agent` span, from the agent's start to its end, suspensions included.
+The span's name carries no agent id, which would make as many span names as
+agents; the id is an attribute:
+
+| Attribute | Value |
+| --- | --- |
+| `gen_ai.operation.name` | `invoke_agent` |
+| `gen_ai.agent.id` | The agent's id, its thread id for LangGraph |
+| `error.type` | The exception's class if the agent failed, `CancelledError` if it was cancelled; the span's status is then ERROR |
+
+A failed agent's span also records its exception, as an `exception` event,
+and its status description is the error. An interrupted agent's span, such as
+one that asks a human, is not an error. Each suspension is a
+`flowgentic.agent.suspend` event, emitted while the span is current, with
+`gen_ai.agent.id` and `flowgentic.agent.suspend.waits`, the number of tasks
+the agent waits on. The spans of the agent's model calls and tools nest under
+its `invoke_agent` span.
+
+## Metrics
+
+Flowgentic's metrics describe agents run at scale. Their names are
+Flowgentic's own, under `flowgentic.`: the GenAI conventions have none for
+agents' states or an agent process's health. Every duration is in seconds.
+
+| Metric | Instrument | Unit | Attributes | What it measures |
+| --- | --- | --- | --- | --- |
+| `flowgentic.agents` | Gauge, read at collection | `{agent}` | `flowgentic.agent.state` | Agents in each state, summed over the process's agent hosts |
+| `flowgentic.agent.time` | Gauge, read at collection | `s` | `flowgentic.agent.state`, `flowgentic.agent.category` | Agent-seconds spent in each state, summed over the hosts, each since its latest run began |
+| `flowgentic.host.loop.lag` | Histogram | `s` | | How late the event loop woke a 100 ms timer, sampled every 100 ms while a host runs on it |
+| `flowgentic.host.gc.pause` | Histogram | `s` | `flowgentic.gc.generation` | Each pause of the cyclic garbage collector while a host runs |
+| `flowgentic.tool.duration` | Histogram | `s` | `gen_ai.tool.name`, `flowgentic.tool.kind`, `flowgentic.tool.outcome` | Time from a task or service call's submission to its result; see [Tool placement](tools.md#what-it-reports) |
+| `flowgentic.fleet.admission.wait` | Histogram | `s` | `flowgentic.fleet.name`, `flowgentic.fleet.replica` | Time a model request waited for its replica's admission |
+| `flowgentic.fleet.request.duration` | Histogram | `s` | `flowgentic.fleet.name`, `flowgentic.fleet.replica` | Time a model request spent at its replica, after admission |
+| `flowgentic.fleet.tokens.active` | Gauge, read at collection | `{token}` | `flowgentic.fleet.name`, `flowgentic.fleet.replica` | Tokens of live context in flight at each replica, as admitted |
+| `flowgentic.fleet.requests.active` | Gauge, read at collection | `{request}` | `flowgentic.fleet.name`, `flowgentic.fleet.replica` | Requests in flight at each replica |
+| `flowgentic.fleet.requests.waiting` | Gauge, read at collection | `{request}` | `flowgentic.fleet.name`, `flowgentic.fleet.replica` | Requests waiting for each replica's admission |
+
+`flowgentic.agent.state` is one of `pending`, `working`, `tool_call`,
+`model_queued`, `model_request`, `tool_wait` and `done`, the
+[agent host's states](agent-host.md#what-it-reports) in lower case.
+`flowgentic.agent.category` is `working`, `waiting`, `model_request`, or
+`none` for `pending` and `done`. The gauges cost nothing while agents run:
+the SDK reads the counts when it collects.
+
+Hosts that run at the same time in a process share one collector callback
+and, on each event loop, one lag timer, so each pause and each lag sample is
+recorded once. The collector's pauses are recorded from the event loop, at
+the next lag sample or when a host stops, never inside a collection: a
+collection can start while the SDK holds a histogram's lock, and recording
+there would wait for ever.
+
+Each histogram advises the SDK of bucket boundaries in seconds, sized for what
+it measures. The SDK's default boundaries, from 0 to 10,000, suit
+milliseconds.
+
+| Histogram | Boundaries, in seconds |
+| --- | --- |
+| `flowgentic.host.loop.lag` | 0.001 to 10: 1, 2.5 and 5 in each decade |
+| `flowgentic.host.gc.pause` | 0.0001 to 10: 1, 2.5 and 5 in each decade |
+| `flowgentic.tool.duration` | 0.001 to 10 as above, then 30, 60, 120, 300, 600, 1800, 3600 and 7200 |
+| `flowgentic.fleet.admission.wait` | 0.001 to 10 as above, then 30, 60, 120, 300 and 600 |
+| `flowgentic.fleet.request.duration` | 0.01, doubling to 655.36: the GenAI conventions' boundaries for a model call's duration, three doublings further |
+
+A view the application configures for a histogram replaces its boundaries.
+
+### Configure a meter provider
+
+The application configures metrics as it configures traces: it installs
+`opentelemetry-sdk` and sets a meter provider with a reader, once per
+process, before or after it imports Flowgentic. This writes every metric to
+a file every 10 seconds, one JSON object per export:
+
+```python
+from opentelemetry import metrics
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import (
+    ConsoleMetricExporter,
+    PeriodicExportingMetricReader,
+)
+
+out = open("metrics.jsonl", "w")
+exporter = ConsoleMetricExporter(
+    out=out, formatter=lambda data: data.to_json(indent=None) + "\n"
+)
+reader = PeriodicExportingMetricReader(exporter, export_interval_millis=10_000)
+provider = MeterProvider(metric_readers=[reader])
+metrics.set_meter_provider(provider)
+
+...  # run the agent hosts
+
+provider.shutdown()  # exports what is left
+out.close()
+```
+
+To send metrics to a collector instead, use `OTLPMetricExporter`, from the
+`opentelemetry-exporter-otlp` package, in place of the console exporter. In
+a campaign of several agent processes, each exports its own metrics: give
+each provider a `Resource` with a `service.instance.id` of its own, so that a
+backend can tell the processes apart.
 
 ## Set it up
 
