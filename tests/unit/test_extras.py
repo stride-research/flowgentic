@@ -103,6 +103,31 @@ def test_the_graph_runner_needs_langgraph_only() -> None:
 	assert result.returncode == 0, result.stderr
 
 
+def test_a_star_import_of_the_langgraph_parts_needs_langgraph_only() -> None:
+	"""``import *`` brings what the installed extras provide: the agent host's
+	parts without AsyncFlow, and the AsyncFlow integration too with it."""
+	result = run_without(
+		ASYNCFLOW,
+		"""
+		from flowgentic.langgraph import *
+		print(sorted(n for n in dir() if not n.startswith("_")))
+		""",
+	)
+	assert result.returncode == 0, result.stderr
+	names = result.stdout.strip()
+	assert "GraphRunner" in names and "KeyValueSaver" in names
+	assert "LangGraphIntegration" not in names
+	result = run_without(
+		[],
+		"""
+		from flowgentic.langgraph import *
+		print(LangGraphIntegration.__name__, GraphRunner.__name__)
+		""",
+	)
+	assert result.returncode == 0, result.stderr
+	assert result.stdout.split() == ["LangGraphIntegration", "GraphRunner"]
+
+
 def test_the_checkpointer_names_its_extras() -> None:
 	result = run_without(LANGGRAPH, "from flowgentic.langgraph import KeyValueSaver")
 	assert result.returncode != 0
