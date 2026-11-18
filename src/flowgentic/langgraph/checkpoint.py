@@ -80,6 +80,25 @@ def _key_part(value: str) -> str:
 	return str(value).replace("%", "%25").replace("/", "%2F")
 
 
+class _Counts:
+	"""What a saver has put and read. LangGraph runs a graph on a shallow copy
+	of its saver when strict msgpack is on (``with_allowlist``): every copy
+	shares this one object, so the saver the application holds counts too."""
+
+	__slots__ = (
+		"checkpoints_put",
+		"writes_put",
+		"checkpoints_read",
+		"checkpoint_bytes",
+	)
+
+	def __init__(self) -> None:
+		self.checkpoints_put = 0
+		self.writes_put = 0
+		self.checkpoints_read = 0
+		self.checkpoint_bytes = 0
+
+
 class KeyValueSaver(BaseCheckpointSaver[str]):
 	"""Checkpoints in a ``KeyValueStore``; see the module's docstring."""
 
@@ -91,10 +110,27 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 			raise ValueError("keep_last must be at least 1")
 		self.store = store
 		self.keep_last = keep_last
-		self.checkpoints_put = 0
-		self.writes_put = 0
-		self.checkpoints_read = 0
-		self.checkpoint_bytes = 0
+		self._counts = _Counts()
+
+	@property
+	def checkpoints_put(self) -> int:
+		"""Checkpoints put, by this saver and its copies."""
+		return self._counts.checkpoints_put
+
+	@property
+	def writes_put(self) -> int:
+		"""Batches of pending writes put."""
+		return self._counts.writes_put
+
+	@property
+	def checkpoints_read(self) -> int:
+		"""Checkpoints read back."""
+		return self._counts.checkpoints_read
+
+	@property
+	def checkpoint_bytes(self) -> int:
+		"""Bytes of the checkpoints put."""
+		return self._counts.checkpoint_bytes
 
 	@staticmethod
 	def _prefix(thread_id: str, ns: str) -> str:
@@ -128,7 +164,7 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 		writes: list,
 		config: RunnableConfig | None = None,
 	) -> CheckpointTuple:
-		self.checkpoints_read += 1
+		self._counts.checkpoints_read += 1
 		checkpoint, metadata, parent_id = saved
 		writes = sorted(writes, key=lambda w: writes_sort_key(w[3], w[0], w[4]))
 		return CheckpointTuple(
@@ -340,9 +376,11 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 			typed_metadata = self.serde.dumps_typed(
 				get_checkpoint_metadata(config, metadata)
 			)
-			self.checkpoint_bytes += len(typed_checkpoint[1]) + len(typed_metadata[1])
+			self._counts.checkpoint_bytes += len(typed_checkpoint[1]) + len(
+				typed_metadata[1]
+			)
 			if len(typed_checkpoint) == 3:
-				self.checkpoint_bytes += len(typed_checkpoint[2][1])
+				self._counts.checkpoint_bytes += len(typed_checkpoint[2][1])
 			parent_id = config["configurable"].get("checkpoint_id")
 			if self.keep_last > 1:
 				self._keep_previous(prefix, checkpoint_id)
@@ -351,7 +389,7 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 				f"{prefix}/head",
 				(checkpoint_id, typed_checkpoint, typed_metadata, parent_id),
 			)
-			self.checkpoints_put += 1
+			self._counts.checkpoints_put += 1
 			return self._config(thread_id, ns, checkpoint_id)
 
 	def put_writes(
@@ -412,7 +450,7 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 				)
 			else:
 				self.store.put(f"{prefix}/w", batches)
-			self.writes_put += 1
+			self._counts.writes_put += 1
 
 	def delete_thread(self, thread_id: str) -> None:
 		with _thread_lock(thread_id):

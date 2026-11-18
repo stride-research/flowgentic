@@ -492,3 +492,52 @@ def test_delete_removes_early_writes_from_child_namespace():
 	saver.put_writes(config, [("early", 1)], "task")
 	saver.delete_thread("t")
 	assert not store.keys()
+
+
+def test_a_clone_with_an_allowlist_counts_on_the_saver():
+	"""With LANGGRAPH_STRICT_MSGPACK set, a compiled graph works on a shallow
+	clone of its saver, with a stricter serializer: the saver the application
+	holds must still count what the clone puts and reads."""
+	from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+	strict = JsonPlusSerializer(allowed_msgpack_modules=None)
+	saver = KeyValueSaver(MemoryStore(), serde=strict)
+	clone = saver.with_allowlist([("flowgentic.tests", "Nothing")])
+	assert clone is not saver
+	config = checkpoint(clone, "c1")
+	clone.put_writes(config, [("x", 1)], "task")
+	assert clone.get_tuple(config) is not None
+	stats = saver.stats()
+	assert stats["checkpoints_put"] == 1
+	assert stats["writes_put"] == 1
+	assert stats["checkpoints_read"] == 1
+	assert stats["checkpoint_bytes_mean"] > 0
+	assert clone.stats() == stats
+
+
+def test_a_strict_msgpack_graph_counts_on_the_saver():
+	"""The same, end to end, in an interpreter with LANGGRAPH_STRICT_MSGPACK."""
+	import subprocess
+	import textwrap
+
+	code = textwrap.dedent("""
+		import asyncio
+		from langgraph.graph import START, MessagesState, StateGraph
+		from flowgentic.langgraph import KeyValueSaver
+		from flowgentic.store import MemoryStore
+
+		saver = KeyValueSaver(MemoryStore())
+		g = StateGraph(MessagesState)
+		g.add_node("a", lambda s: {"messages": [("ai", "a")]})
+		g.add_edge(START, "a")
+		graph = g.compile(checkpointer=saver)
+		config = {"configurable": {"thread_id": "t"}}
+		asyncio.run(graph.ainvoke({"messages": [("human", "go")]}, config))
+		print(saver.stats()["checkpoints_put"])
+	""")
+	env = {**os.environ, "LANGGRAPH_STRICT_MSGPACK": "true"}
+	result = subprocess.run(
+		[sys.executable, "-c", code], capture_output=True, text=True, env=env, check=False
+	)
+	assert result.returncode == 0, result.stderr
+	assert int(result.stdout.strip()) > 0
