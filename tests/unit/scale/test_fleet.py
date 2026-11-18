@@ -520,6 +520,43 @@ async def test_a_call_that_joins_a_watch_whose_check_hangs_gets_a_new_watch():
     assert reply.content == "DONE v2" and len(probes) == 2
 
 
+class SlowDown(Down):
+    """A server that takes 50 ms to answer, or to fail while it is down."""
+
+    async def ainvoke(self, messages):
+        await asyncio.sleep(0.05)
+        return await super().ainvoke(messages)
+
+
+async def test_a_records_wait_is_for_admission_and_its_outage_is_apart():
+    server = {"up": False}
+    model = SlowDown(server)
+
+    async def check(i):
+        return model if server["up"] else None
+
+    fleet = Fleet([model], recovery=Recovery(check, poll_s=0.02))  # no admission
+    records = []
+    fleet.add_listener(lambda record, reply: records.append(record))
+
+    async def back():
+        await asyncio.sleep(0.4)
+        server["up"] = True
+
+    asyncio.create_task(back())
+    t = asyncio.get_running_loop().time()
+    await fleet.ainvoke("a", [HumanMessage("hi")])
+    total = asyncio.get_running_loop().time() - t
+    (record,) = records
+    assert record.wait_s < 0.02  # nothing to wait for: no admission
+    assert 0.04 <= record.service_s < 0.1  # the try that succeeded
+    assert record.recovery_s >= 0.35  # the failed try and the outage
+    assert abs(record.wait_s + record.service_s + record.recovery_s - total) < 0.02
+
+    await fleet.ainvoke("a", [HumanMessage("hi")])
+    assert records[-1].recovery_s == 0.0
+
+
 async def test_a_check_that_raises_counts_as_down():
     server = {"up": False}
     model = Down(server)
@@ -939,6 +976,38 @@ async def test_the_fleet_records_admission_and_each_replicas_load(metric_reader)
     (service,) = points(metric_reader, "flowgentic.fleet.request.duration", "metrics")
     assert wait.count == 3 and wait.max > 0
     assert service.count == 3 and service.min > 0
+
+
+async def test_every_try_is_recorded_and_a_failed_one_with_its_error(metric_reader):
+    server = {"up": False}
+    model = Down(server)
+
+    async def check(i):
+        server["up"] = True  # back at the first check
+        return model
+
+    fleet = Fleet([model], admission=RequestAdmission(4), recovery=Recovery(check, poll_s=0.02), name="tries")
+    await fleet.ainvoke("a", [HumanMessage("hi")])  # fails once, then succeeds
+
+    class Bad(Down):
+        async def ainvoke(self, messages):
+            raise ValueError("400 bad request")
+
+    failing = Fleet([Bad(server)], name="refused")
+    with pytest.raises(ValueError):
+        await failing.ainvoke("a", [HumanMessage("hi")])
+
+    (wait,) = points(metric_reader, "flowgentic.fleet.admission.wait", "tries")
+    assert wait.count == 2  # one admission per try
+    service = {
+        p.attributes.get("error.type"): p.count
+        for p in points(metric_reader, "flowgentic.fleet.request.duration", "tries")
+    }
+    assert service == {"APIConnectionError": 1, None: 1}
+    (wait,) = points(metric_reader, "flowgentic.fleet.admission.wait", "refused")
+    (service,) = points(metric_reader, "flowgentic.fleet.request.duration", "refused")
+    assert wait.count == 1 and service.count == 1
+    assert service.attributes["error.type"] == "ValueError"
 
 
 # --- spans: last, as the instrumentation stays on for the rest of the module ------

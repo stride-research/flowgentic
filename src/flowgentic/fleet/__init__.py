@@ -27,15 +27,16 @@ fleet decides, for each call, which replica takes it and when:
   failure it fails, even if the replica came back and the call kept failing.
   A check that raises or hangs counts as the replica still being down.
 - **Accounting.** One ``CallRecord`` per call goes to the listeners: the wait
-  for admission, the time at the server, the tokens, the prompt tokens the
-  server found in its prefix cache and the reply's reasoning tokens when the
-  server reports them, the gap since the agent's previous call, the tool whose
-  result came just before, and the caller's ``meta``. The fleet itself keeps
-  counters.
+  for admission, the time at the server, the time spent waiting out an
+  outage, the tokens, the prompt tokens the server found in its prefix cache
+  and the reply's reasoning tokens when the server reports them, the gap since
+  the agent's previous call, the tool whose result came just before, and the
+  caller's ``meta``. The fleet itself keeps counters.
 - **Metrics.** The wait for admission and the time at the replica are
-  OpenTelemetry histograms; each replica's tokens and requests in flight, and
-  its requests waiting, are gauges. They carry the fleet's ``name``, so the
-  fleets of several models in one process stay apart, and the replica's index.
+  OpenTelemetry histograms, recorded for each try, a failed one with its
+  ``error.type``; each replica's tokens and requests in flight, and its
+  requests waiting, are gauges. They carry the fleet's ``name``, so the fleets
+  of several models in one process stay apart, and the replica's index.
 
 A request's live context is estimated before it is sent: the agent's size
 after its previous call, as the server counted it, plus the characters added
@@ -525,7 +526,13 @@ class Recovery:
 
 @dataclass(frozen=True, slots=True)
 class CallRecord:
-	"""One model call."""
+	"""One model call.
+
+	``wait_s`` is the time the call waited for admission, over all its tries;
+	``service_s`` the time the try that succeeded spent at the replica; and
+	``recovery_s`` the rest, when ``Recovery`` waited out an outage: the tries
+	that failed, and the wait for the replica to come back. The three add up to
+	the call's time."""
 
 	agent_id: str
 	replica: int
@@ -543,6 +550,8 @@ class CallRecord:
 	"""The reply's thinking, if the server reports it."""
 	meta: Any = None
 	"""What the caller passed with the call."""
+	recovery_s: float = 0.0
+	"""The tries that failed and the wait for the replica to come back."""
 
 
 def _message_chars(messages: Sequence[BaseMessage]) -> int:
@@ -809,12 +818,16 @@ class Fleet:
 		asked = time.monotonic()
 		attrs = {_telemetry.FLEET_NAME: core.name, _telemetry.FLEET_REPLICA: i}
 		failing_since: float | None = None
+		wait_s = 0.0  # for admission, over every try
 		with _agents.activity(_agents.AgentState.MODEL_QUEUED):
 			while True:
+				queued = time.monotonic()
 				await gate.acquire(weight, agent_id)
 				failed: BaseException | None = None
 				try:
 					got = time.monotonic()
+					wait_s += got - queued
+					_telemetry.ADMISSION_WAIT.record(got - queued, attrs)
 					core.in_flight += 1
 					core.in_flight_max = max(core.in_flight_max, core.in_flight)
 					try:
@@ -824,6 +837,10 @@ class Fleet:
 							)
 					except Exception as exc:
 						core.errors[type(exc).__name__] += 1
+						_telemetry.MODEL_SERVICE.record(
+							time.monotonic() - got,
+							{**attrs, _telemetry.ERROR_TYPE: type(exc).__qualname__},
+						)
 						if core.recovery is None or not _transient(exc):
 							raise
 						failed = exc
@@ -850,7 +867,6 @@ class Fleet:
 					core.replicas[i] = model
 					core.generation[i] += 1
 				core.retried += 1
-		_telemetry.ADMISSION_WAIT.record(got - asked, attrs)
 		_telemetry.MODEL_SERVICE.record(done - got, attrs)
 		return self._account(
 			core,
@@ -860,9 +876,9 @@ class Fleet:
 			chars,
 			reply,
 			asked_at,
-			asked,
-			got,
-			done,
+			wait_s,
+			done - got,
+			0.0 if failing_since is None else max(got - asked - wait_s, 0.0),
 			estimate,
 			after_tool,
 			meta,
@@ -877,9 +893,9 @@ class Fleet:
 		chars: int,
 		reply: AIMessage,
 		asked_at: float,
-		asked: float,
-		got: float,
-		done: float,
+		wait_s: float,
+		service_s: float,
+		recovery_s: float,
 		estimate: int,
 		after_tool: str | None,
 		meta: Any,
@@ -904,8 +920,8 @@ class Fleet:
 			agent_id=agent_id,
 			replica=i,
 			t_end=t_end,
-			wait_s=got - asked,
-			service_s=done - got,
+			wait_s=wait_s,
+			service_s=service_s,
 			prompt_tokens=prompt,
 			cached_tokens=None if cached is None else int(cached),
 			completion_tokens=completion,
@@ -915,6 +931,7 @@ class Fleet:
 			prev_prompt_tokens=state.prev_prompt,
 			reasoning_tokens=reasoning,
 			meta=meta,
+			recovery_s=recovery_s,
 		)
 		# The conversation keeps the reply but not its thinking.
 		kept = completion - (reasoning or 0)
