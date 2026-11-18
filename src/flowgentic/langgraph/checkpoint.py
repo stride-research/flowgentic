@@ -99,7 +99,9 @@ def _parent_ns(ns: str) -> str:
 	return ns.rpartition(_NS_SEP)[0]
 
 
-def _parent_checkpoint_id(config: RunnableConfig, metadata: Any, ns: str) -> Any:
+def _parent_checkpoint_id(
+	config: RunnableConfig, metadata: CheckpointMetadata | None, ns: str
+) -> str | None:
 	"""The id of the parent's checkpoint that a subgraph in ``ns`` runs under:
 	in LangGraph's map of the parents' checkpoints, or the metadata's."""
 	parent = _parent_ns(ns)
