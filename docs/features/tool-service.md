@@ -45,13 +45,31 @@ the request again, and a service that is still running answers from its kept
 answer.
 
 To fail sooner, pass `alive`, a function that tells whether the service is
-still running, such as its process's `is_alive`. The client asks it about once
-a second while no answer arrives, from its reader thread. Once it returns
-false, the client fails every waiting call and stops.
+still running. The client asks it in the agent process, from its reader
+thread, about once a second while no answer arrives. Once it returns false,
+the client fails every waiting call and stops. For a service on the same node,
+test its pid, which the launcher can pass to each agent process:
 
 ```python
-client = ToolServiceClient(requests, replies[i], index=i, alive=service_process.is_alive)
+import os
+
+def service_running() -> bool:
+    try:
+        os.kill(service_pid, 0)   # signal 0 only checks that the process exists
+    except ProcessLookupError:
+        return False
+    return True
+
+client = ToolServiceClient(requests, replies[i], index=i, alive=service_running)
 ```
+
+A killed process keeps its pid until its parent reaps it, as
+`multiprocessing` does when the launcher joins it or calls `is_alive`; until
+then the check says it runs, and the deadline still applies. A
+`multiprocessing.Process`'s `is_alive` works only in the process that started
+the service, so it is no check for an agent process. A check that raises counts
+as the service running: the first failure is logged as a warning, with its
+traceback, and later ones at debug level.
 
 The queues are the caller's: anything with `put(bytes)`, `get(timeout=...)`
 and `get(block=False)` that raises `queue.Empty`, such as Dragon's queues,

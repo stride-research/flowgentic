@@ -73,8 +73,8 @@ predate this changelog, so their changes are not listed here.
   the same uid calls the tool again.
 - A tool service call has a deadline: with no answer within the client's
   `timeout` (150 s by default) it fails with `ToolServiceError`, and with
-  `alive`, a check that the service still runs, every waiting call fails as
-  soon as the service has stopped. A call's arguments travel as JSON values,
+  `alive`, a check that the service still runs (such as a test of its pid),
+  every waiting call fails as soon as the service has stopped. A call's arguments travel as JSON values,
   so the service needs none of the agents' classes, and arguments with no JSON
   form fail their own call. The service refuses a request from a process with
   no reply queue, and a reply queue that fails loses no other process's

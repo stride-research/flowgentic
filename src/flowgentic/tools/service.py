@@ -123,10 +123,14 @@ class _QueueReader(threading.Thread):
 	reader after ``on_stop`` runs on the loop. A message that cannot be
 	unpickled is logged and skipped. If the reader fails anyway, ``on_stop``
 	still runs, so that the loop's side stops and settles its callers.
-	``alive``, if given, is asked about once a second while nothing arrives;
-	once it says the writer is gone, the reader stops, sets ``gone`` and runs
-	``on_stop``. ``stop()`` stops it within a second, without ``on_stop``.
+	``alive``, if given, is asked every ``poll_s`` seconds while nothing
+	arrives; once it says the writer is gone, the reader stops, sets ``gone``
+	and runs ``on_stop``. A check that raises counts as the writer running: the
+	first failure is logged as a warning, with its traceback, and later ones at
+	debug level. ``stop()`` stops it within ``poll_s``, without ``on_stop``.
 	"""
+
+	poll_s = 1.0  # how long one wait on the queue lasts
 
 	def __init__(
 		self,
@@ -146,6 +150,7 @@ class _QueueReader(threading.Thread):
 		self.max_messages = max_messages
 		self.alive = alive
 		self.gone = False
+		self.check_failures = 0
 		self.passes = 0
 		self.skipped = 0  # messages that could not be unpickled
 		self._halt = threading.Event()
@@ -169,7 +174,7 @@ class _QueueReader(threading.Thread):
 	def _read(self) -> bool:
 		while not self._halt.is_set():
 			try:
-				raw = self.q.get(timeout=1.0)
+				raw = self.q.get(timeout=self.poll_s)
 			except queue.Empty:
 				if self.alive is not None and not self._writer_alive():
 					self.gone = True
@@ -218,8 +223,17 @@ class _QueueReader(threading.Thread):
 	def _writer_alive(self) -> bool:
 		try:
 			return bool(self.alive())  # type: ignore[misc]
-		except Exception:  # a broken check must not end the reader
-			log.warning("%s: the liveness check failed", self.name, exc_info=True)
+		except Exception as exc:  # a broken check must not end the reader
+			self.check_failures += 1
+			first = self.check_failures == 1
+			log.log(
+				logging.WARNING if first else logging.DEBUG,
+				"%s: the liveness check failed (%s: %s); taken as still running",
+				self.name,
+				type(exc).__name__,
+				exc,
+				exc_info=first,
+			)
 			return True
 
 
@@ -513,11 +527,17 @@ class ToolServiceClient:
 	not wait forever on a service that is gone. The default, 150 s, is the
 	service's default ``call_timeout`` (120 s) and a margin for the queues;
 	keep it above the ``call_timeout`` the service runs with. Asking again
-	with the same uid sends the request again. ``alive``, if given, tells
-	whether the service is still running, such as its process's ``is_alive``;
-	the client asks it from its reader thread, about once a second while no
-	answer arrives, and once it returns false, fails every waiting call and
-	stops.
+	with the same uid sends the request again.
+
+	``alive``, if given, tells whether the service is still running. The
+	client asks it from its reader thread, in the agent process, about once a
+	second while no answer arrives; once it returns false, the client fails
+	every waiting call and stops. For a service on the same node, test its
+	pid: ``os.kill(pid, 0)`` raises ``ProcessLookupError`` once the process is
+	gone and its parent has reaped it. A ``multiprocessing.Process``'s
+	``is_alive`` works only in the process that started the service. A check
+	that raises counts as the service running, and is logged once as a
+	warning.
 
 	``listener(uid, total_s, at_service_s)`` is called once per answer: the
 	time from asking to the answer, and of that, the time the service held the

@@ -449,10 +449,23 @@ async def test_a_failed_liveness_check_fails_every_waiting_call():
         await client.call("a/c9", "lookup", {"key": 9})
 
 
+def running(pid: int) -> bool:
+    """Whether process ``pid`` exists: the check an agent process can make of
+    a service on its node, since a ``Process``'s ``is_alive`` works only in the
+    process that started it."""
+    import os
+
+    try:
+        os.kill(pid, 0)  # signal 0 only checks that the process exists
+    except ProcessLookupError:
+        return False
+    return True
+
+
 async def test_a_killed_service_fails_waiting_calls():
     """The service's process is killed, as by the out-of-memory killer, with a
-    call in flight from each of two agent processes: one client checks that the
-    service is alive, the other has only its deadline. Neither waits forever."""
+    call in flight from each of two agent processes: one client tests the
+    service's pid, the other has only its deadline. Neither waits forever."""
     import multiprocessing
     import os
     import signal
@@ -463,7 +476,8 @@ async def test_a_killed_service_fails_waiting_calls():
     requests, replies = ctx.Queue(), [ctx.Queue(), ctx.Queue()]
     proc = ctx.Process(target=serve_hanging, args=(requests, replies), daemon=True)
     proc.start()
-    watched = ToolServiceClient(requests, replies[0], 0, alive=proc.is_alive)
+    pid = proc.pid
+    watched = ToolServiceClient(requests, replies[0], 0, alive=lambda: running(pid))
     deadline = ToolServiceClient(requests, replies[1], 1, timeout=4.0)
     watched.start()
     deadline.start()
@@ -471,8 +485,9 @@ async def test_a_killed_service_fails_waiting_calls():
         first = asyncio.create_task(watched.call("a/c1", "lookup", {"key": 1}))
         second = asyncio.create_task(deadline.call("b/c1", "lookup", {"key": 2}))
         await asyncio.sleep(1.0)
-        os.kill(proc.pid, signal.SIGKILL)
-        proc.join(5)
+        assert running(pid) and not first.done()
+        os.kill(pid, signal.SIGKILL)
+        proc.join(5)  # reaped by its parent: until then, its pid still exists
         t = time.monotonic()
         with pytest.raises(ToolServiceError, match="not running"):
             await asyncio.wait_for(first, 3)
@@ -482,6 +497,39 @@ async def test_a_killed_service_fails_waiting_calls():
     finally:
         watched.stop()
         deadline.stop()
+
+
+async def test_a_failing_liveness_check_is_logged_once_and_ignored(caplog, monkeypatch):
+    """A check that cannot run where the client is, such as ``is_alive`` of a
+    ``Process`` the agent process did not start, raises every time it is asked.
+    The client warns once, with the traceback, and keeps waiting for its answer;
+    later failures go to DEBUG, not a warning a second."""
+    import logging
+
+    from flowgentic.tools import service as service_module
+
+    monkeypatch.setattr(service_module._QueueReader, "poll_s", 0.02)  # a check every 20 ms
+    caplog.set_level(logging.DEBUG, logger="flowgentic.tools.service")
+    asked = []
+
+    def broken():
+        asked.append(1)
+        raise AssertionError("can only test a child process")
+
+    requests, replies = queue.Queue(), queue.Queue()
+    client = ToolServiceClient(requests, replies, 0, alive=broken)
+    client.start()
+    try:
+        call = asyncio.create_task(client.call("a/c1", "lookup", {"key": 1}))
+        await until(lambda: len(asked) >= 10)
+        replies.put(pickle.dumps([("a/c1", True, {"echo": 1}, (0, 0, 0))]))
+        assert await asyncio.wait_for(call, 2) == {"echo": 1}
+    finally:
+        client.stop()
+    failed = [r for r in caplog.records if "liveness check failed" in r.getMessage()]
+    assert [r.levelno for r in failed if r.levelno >= logging.WARNING] == [logging.WARNING]
+    assert failed[0].levelno == logging.WARNING and failed[0].exc_info is not None
+    assert len(failed) >= 10 and all(r.levelno == logging.DEBUG for r in failed[1:])
 
 
 # --- arguments travel as JSON ---------------------------------------------------------
