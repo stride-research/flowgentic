@@ -159,7 +159,13 @@ class AdmissionGate:
 	"""Admits requests to one replica while the tokens of live context and the
 	requests in flight stay under their caps. ``tokens=None`` counts requests
 	only. First come, first served, whatever the agent; a request larger than
-	the token cap is admitted alone. A ``Gate``."""
+	the token cap is admitted alone.
+
+	A gate holds one process's share of a replica's caps, and cannot see the
+	other processes' requests. A request admitted alone above the share's token
+	cap may therefore take the replica past its cap, if other processes do the
+	same: such requests are counted (``oversize`` in ``stats()``), and the
+	first is logged as a warning. A ``Gate``."""
 
 	def __init__(self, tokens: int | None, requests: int) -> None:
 		if (tokens is not None and tokens < 1) or requests < 1:
@@ -172,6 +178,7 @@ class AdmissionGate:
 		self.requests_max = 0
 		self.admitted = 0
 		self.queued = 0
+		self.oversize = 0
 		self.blocked_s = 0.0
 		self._blocked_since: float | None = None
 		self._waiters: deque[tuple[int, asyncio.Future]] = deque()
@@ -184,6 +191,18 @@ class AdmissionGate:
 		return self.cap_tokens is None or self.tokens + n <= self.cap_tokens
 
 	def _take(self, n: int) -> None:
+		if self.cap_tokens is not None and n > self.cap_tokens:
+			self.oversize += 1
+			if self.oversize == 1:
+				log.warning(
+					"a model request of %d tokens is larger than this process's "
+					"token cap at its replica, %d, so it runs alone; requests like "
+					"it from several processes can take the replica past its cap. "
+					"Raise the cap or this process's share so that the largest "
+					"context fits in one share",
+					n,
+					self.cap_tokens,
+				)
 		self.tokens += n
 		self.requests += 1
 		self.admitted += 1
@@ -239,7 +258,8 @@ class AdmissionGate:
 		return ReplicaLoad(self.tokens, self.requests, len(self._waiters))
 
 	def stats(self) -> dict:
-		"""Caps, counts, peaks, and the time some request waited."""
+		"""Caps, counts, peaks, and the time some request waited.
+		``oversize`` counts the requests admitted alone above the token cap."""
 		blocked = self.blocked_s
 		if self._blocked_since is not None:
 			blocked += time.monotonic() - self._blocked_since
@@ -248,6 +268,7 @@ class AdmissionGate:
 			"cap_requests": self.cap_requests,
 			"admitted": self.admitted,
 			"queued": self.queued,
+			"oversize": self.oversize,
 			"tokens_in_flight_max": self.tokens_max,
 			"requests_in_flight_max": self.requests_max,
 			"blocked_s": round(blocked, 3),

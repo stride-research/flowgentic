@@ -130,6 +130,20 @@ async def test_a_request_admitted_then_cancelled_releases_what_it_took():
     assert waiting.cancelled() and gate.load() == ReplicaLoad(0, 0, 0)
 
 
+async def test_a_request_above_the_token_cap_is_counted_and_warned_of_once(caplog):
+    gate = TokenAdmission(tokens=1000, requests=10).gate(share=0.25)  # 250 tokens here
+    with caplog.at_level("WARNING", logger="flowgentic.fleet"):
+        await gate.acquire(100, "a")
+        gate.release(100, "a")
+        for n in (400, 600):  # each larger than this process's share: admitted alone
+            await gate.acquire(n, "b")
+            gate.release(n, "b")
+    assert gate.stats()["oversize"] == 2
+    (warning,) = [r for r in caplog.records if r.name == "flowgentic.fleet"]
+    assert "400" in warning.getMessage() and "250" in warning.getMessage()
+    assert RequestAdmission(3).gate(share=1.0).stats()["oversize"] == 0
+
+
 def test_share_scales_the_caps():
     gate = TokenAdmission(tokens=1000, requests=10).gate(share=0.25)
     assert (gate.cap_tokens, gate.cap_requests) == (250, 2)
