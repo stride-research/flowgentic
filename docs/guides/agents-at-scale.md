@@ -3,10 +3,22 @@
 This guide is for campaigns of many LangGraph agents, thousands to hundreds of
 thousands, on an HPC allocation. Each agent's tools run as HPC tasks, its model
 is served on the allocation, and its state lives in the allocation's memory.
-Install the path's extras:
+
+Flowgentic is not published on PyPI. Install it from a clone, with this path's
+extras:
 
 ```bash
-uv pip install "flowgentic[langgraph,rhapsody,mcp]"
+git clone https://github.com/stride-research/flowgentic.git
+cd flowgentic
+uv sync --locked --extra langgraph --extra rhapsody --extra mcp
+```
+
+Or install a wheel, attached to a
+[release](https://github.com/stride-research/flowgentic/releases) or built
+from a clone with `uv build`, into your own environment:
+
+```bash
+uv pip install "dist/flowgentic-0.5.0-py3-none-any.whl[langgraph,rhapsody,mcp]"
 ```
 
 RaDEX, which keeps agents' state in a Dragon distributed dictionary, is built
@@ -202,9 +214,9 @@ on Dragon's resources:
   chat model of one server.
 
 Flowgentic imports nothing from Dragon: the application passes in the queues,
-the session and the store. CI runs the example without Dragon; the parts'
-behaviour under Dragon is checked by hand, as
-[Project status](../status.md#known-limitations) says.
+the session and the store. CI runs the example without Dragon, and
+Flowgentic's own tests do not yet run under Dragon; see
+[Project status](../status.md#known-limitations).
 
 ## Telemetry
 
