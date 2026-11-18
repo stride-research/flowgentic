@@ -1,7 +1,7 @@
 """Substitution experiment: the agentic demo with and without Flowgentic (R5).
 
 Both versions run the same LangGraph application on AsyncFlow. The Flowgentic
-version goes through ``LangraphIntegration`` and its decorators; the direct
+version goes through ``LangGraphIntegration`` and its decorators; the direct
 version calls AsyncFlow itself. ``docs/evaluation/substitution.md`` cites these
 tests as the evidence for each criterion. The last tests (R5b) drive LLM tool
 selection and a supervisor handoff with a scripted chat model.
@@ -421,9 +421,9 @@ async def open_engine(integration: str) -> AsyncIterator[tuple[Any, Any]]:
     """Yield an AsyncFlow engine and, for Flowgentic, its integration."""
     backends = await demo("campaign_common").create_local_backends(4)
     if integration == "flowgentic":
-        from flowgentic.langgraph.main import LangraphIntegration
+        from flowgentic.langgraph.main import LangGraphIntegration
 
-        async with LangraphIntegration(backend=backends) as adapter:
+        async with LangGraphIntegration(backend=backends) as adapter:
             yield adapter.flow, adapter
         return
 

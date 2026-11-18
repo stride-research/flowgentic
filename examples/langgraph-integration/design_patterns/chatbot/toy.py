@@ -23,7 +23,7 @@ from radical.asyncflow import LocalExecutionBackend, WorkflowEngine
 
 from flowgentic.langgraph.execution_wrappers import AsyncFlowType
 from flowgentic.utils.llm_providers import ChatLLMProvider
-from flowgentic.langgraph.main import LangraphIntegration
+from flowgentic.langgraph.main import LangGraphIntegration
 
 from dotenv import load_dotenv
 
@@ -47,7 +47,7 @@ A wrapper that returns a task future output, but registers it first
 async def start_app():
 	backend = await LocalExecutionBackend(ThreadPoolExecutor())
 
-	async with LangraphIntegration(backend=backend) as agents_manager:
+	async with LangGraphIntegration(backend=backend) as agents_manager:
 		llm = ChatLLMProvider(provider="OpenRouter", model="google/gemini-2.5-flash")
 
 		@agents_manager.execution_wrappers.asyncflow(

@@ -155,6 +155,15 @@ def test_route_tool_calls_is_the_only_router():
     assert "tool_call_router" not in lg.__all__ and not hasattr(lg, "tool_call_router")
 
 
+def test_the_asyncflow_integration_spells_langgraph():
+    import flowgentic.langgraph as lg
+
+    assert {"LangGraphIntegration", "ExecutionWrappersLangGraph"} <= set(lg.__all__)
+    assert not {"LangraphIntegration", "ExecutionWrappersLangraph"} & set(lg.__all__)
+    assert lg.LangGraphIntegration.__name__ == "LangGraphIntegration"
+    assert lg.ExecutionWrappersLangGraph.__name__ == "ExecutionWrappersLangGraph"
+
+
 def left_by(run_objects: tuple) -> list:
     return [type(o).__name__ for o in gc.get_objects() if isinstance(o, run_objects)]
 

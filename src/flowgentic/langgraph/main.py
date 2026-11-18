@@ -38,12 +38,12 @@ from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel, Field
 
 from flowgentic import _asyncflow
-from flowgentic.langgraph.execution_wrappers import ExecutionWrappersLangraph
+from flowgentic.langgraph.execution_wrappers import ExecutionWrappersLangGraph
 
 logger = logging.getLogger(__name__)
 
 
-class LangraphIntegration:
+class LangGraphIntegration:
 	"""Enhanced integration between AsyncFlow WorkflowEngine and LangChain tools.
 
 	Supports both traditional workflow patterns and React agent orchestration
@@ -64,8 +64,8 @@ class LangraphIntegration:
 
 	async def __aenter__(self):
 		self.flow = await _asyncflow.open_engine(self.backend)
-		self.execution_wrappers: ExecutionWrappersLangraph = ExecutionWrappersLangraph(
-			flow=self.flow
+		self.execution_wrappers: ExecutionWrappersLangGraph = (
+			ExecutionWrappersLangGraph(flow=self.flow)
 		)
 
 		logger.info("Started the LangGraph integration's WorkflowEngine")

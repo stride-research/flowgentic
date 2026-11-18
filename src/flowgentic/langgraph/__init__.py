@@ -10,7 +10,7 @@ Two paths:
   ``KeyValueSaver`` is a checkpointer that keeps agents' state in a
   ``flowgentic.store`` key-value store.
 - **Graphs on AsyncFlow** (the ``langgraph`` and ``asyncflow`` extras):
-  ``LangraphIntegration`` runs a graph's tools, services, tasks and nodes as
+  ``LangGraphIntegration`` runs a graph's tools, services, tasks and nodes as
   AsyncFlow tasks. It is imported when first used.
 
 Without the extras a path needs, using it raises an error that names them.
@@ -39,25 +39,25 @@ except ModuleNotFoundError as exc:
 		raise
 	raise ModuleNotFoundError(
 		"flowgentic.langgraph needs LangGraph: install flowgentic[langgraph], "
-		"with flowgentic[asyncflow] too for LangraphIntegration",
+		"with flowgentic[asyncflow] too for LangGraphIntegration",
 		name=exc.name,
 	) from exc
 
 __all__ = [
 	"PENDING_KEY",
 	"BaseLLMAgentState",
-	"ExecutionWrappersLangraph",
+	"ExecutionWrappersLangGraph",
 	"GraphRunner",
 	"KeyValueSaver",
-	"LangraphIntegration",
+	"LangGraphIntegration",
 	"bind_tools",
 	"record_interrupt",
 	"route_tool_calls",
 ]
 
 _ASYNCFLOW_PATH = {
-	"LangraphIntegration": "flowgentic.langgraph.main",
-	"ExecutionWrappersLangraph": "flowgentic.langgraph.execution_wrappers",
+	"LangGraphIntegration": "flowgentic.langgraph.main",
+	"ExecutionWrappersLangGraph": "flowgentic.langgraph.execution_wrappers",
 	"BaseLLMAgentState": "flowgentic.langgraph.execution_wrappers",
 }
 
