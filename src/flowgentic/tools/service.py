@@ -63,6 +63,10 @@ AnswerStore = MutableMapping[str, tuple[bool, Any]]
 
 CHUNK = 512  # requests or answers per queue message
 
+# How much longer than the service's call_timeout a client waits for an answer:
+# the time a request and its answer spend in the queues and the readers.
+_QUEUE_MARGIN_S = 30.0
+
 
 def _pack(obj: Any) -> bytes:
 	return pickle.dumps(obj, protocol=5)
@@ -524,10 +528,13 @@ class ToolServiceClient:
 	fail their own call at once.
 
 	A call with no answer within ``timeout`` seconds fails, so an agent does
-	not wait forever on a service that is gone. The default, 150 s, is the
-	service's default ``call_timeout`` (120 s) and a margin for the queues;
-	keep it above the ``call_timeout`` the service runs with. Asking again
-	with the same uid sends the request again.
+	not wait forever on a service that is gone. Pass ``call_timeout``, the one
+	``serve`` runs with (120 s by default), and leave ``timeout`` out: it is then
+	``call_timeout`` and 30 s for the queues, 150 s by default. The service
+	ends every call within its ``call_timeout``, resends included, so a client
+	that waits longer never gives up on a call the service still makes; a
+	``timeout`` not above ``call_timeout`` is refused. Asking again with the
+	same uid sends the request again.
 
 	``alive``, if given, tells whether the service is still running. The
 	client asks it from its reader thread, in the agent process, about once a
@@ -551,11 +558,22 @@ class ToolServiceClient:
 		index: int,
 		*,
 		listener: Callable[[str, float, float], None] | None = None,
-		timeout: float = 150.0,
+		timeout: float | None = None,
+		call_timeout: float = 120.0,
 		alive: Callable[[], bool] | None = None,
 	) -> None:
-		if not timeout > 0:
+		if not call_timeout > 0:
+			raise ValueError("call_timeout must be positive")
+		if timeout is None:
+			timeout = call_timeout + _QUEUE_MARGIN_S
+		elif not timeout > 0:
 			raise ValueError("timeout must be positive")
+		elif not timeout > call_timeout:
+			raise ValueError(
+				f"timeout ({timeout:g} s) must be above call_timeout "
+				f"({call_timeout:g} s), the service's limit on a call: the client "
+				"would give up on calls the service still makes"
+			)
 		self.requests = requests
 		self.replies = replies
 		self.index = index

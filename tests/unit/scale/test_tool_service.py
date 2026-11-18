@@ -415,7 +415,7 @@ async def test_a_call_with_no_answer_fails_at_its_deadline():
     """Nobody answers, as when the service's process was killed: the call
     fails at its deadline, and an answer that comes later is dropped."""
     requests, replies = queue.Queue(), queue.Queue()
-    client = ToolServiceClient(requests, replies, 0, timeout=0.2)
+    client = ToolServiceClient(requests, replies, 0, call_timeout=0.1, timeout=0.2)
     client.start()
     try:
         t = time.monotonic()
@@ -433,6 +433,24 @@ async def test_a_call_with_no_answer_fails_at_its_deadline():
 def test_a_deadline_must_be_positive():
     with pytest.raises(ValueError, match="timeout"):
         ToolServiceClient(queue.Queue(), queue.Queue(), 0, timeout=0)
+    with pytest.raises(ValueError, match="call_timeout"):
+        ToolServiceClient(queue.Queue(), queue.Queue(), 0, call_timeout=0)
+
+
+def test_the_deadline_follows_the_services_call_timeout():
+    """The client's deadline is the service's call_timeout and a margin for the
+    queues, so a client never gives up on a call the service still makes."""
+
+    def client(**kwargs):
+        return ToolServiceClient(queue.Queue(), queue.Queue(), 0, **kwargs)
+
+    assert client().timeout == 150.0  # serve's default call_timeout, 120 s, + 30 s
+    assert client(call_timeout=300).timeout == 330.0
+    assert client(timeout=200).timeout == 200.0
+    assert client(call_timeout=300, timeout=400).timeout == 400.0
+    for timeout, call_timeout in ((100, 120), (120, 120), (300, 300)):
+        with pytest.raises(ValueError, match="above call_timeout"):
+            client(timeout=timeout, call_timeout=call_timeout)
 
 
 async def test_a_failed_liveness_check_fails_every_waiting_call():
@@ -478,7 +496,7 @@ async def test_a_killed_service_fails_waiting_calls():
     proc.start()
     pid = proc.pid
     watched = ToolServiceClient(requests, replies[0], 0, alive=lambda: running(pid))
-    deadline = ToolServiceClient(requests, replies[1], 1, timeout=4.0)
+    deadline = ToolServiceClient(requests, replies[1], 1, call_timeout=3.0, timeout=4.0)
     watched.start()
     deadline.start()
     try:
