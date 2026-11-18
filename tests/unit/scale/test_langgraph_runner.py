@@ -286,10 +286,16 @@ async def test_interrupted_and_failed_agents_keep_their_threads(delete_finished)
     assert out["messages"][-1].content == "done"
 
 
-async def test_a_thread_that_cannot_be_deleted_leaves_the_agent_finished(caplog):
+@pytest.mark.parametrize("error", [ConnectionError, NotImplementedError])
+async def test_a_thread_that_cannot_be_deleted_leaves_the_agent_finished(caplog, error):
+    """A store that fails is logged once as a warning, and each failure counted;
+    a saver that cannot delete threads is reported once and not asked again."""
+    asked = []
+
     class Undeletable(InMemorySaver):
         async def adelete_thread(self, thread_id):
-            raise ConnectionError("store unreachable")
+            asked.append(thread_id)
+            raise error("store unreachable")
 
     model = Scripted(script=calls_then_answer(("note", {"text": "hi"})))
     runner = GraphRunner(react_graph(model, [note], Undeletable()))
@@ -297,7 +303,13 @@ async def test_a_thread_that_cannot_be_deleted_leaves_the_agent_finished(caplog)
         report = await AgentHost(runner, stagger=FAST).run(inputs(3))
     assert report.finished == 3
     warnings = [r for r in caplog.records if r.levelname == "WARNING"]
-    assert len(warnings) == 1 and "store unreachable" in warnings[0].getMessage()
+    assert len(warnings) == 1
+    if error is NotImplementedError:
+        assert "cannot delete threads" in warnings[0].getMessage()
+        assert len(asked) == 1 and runner.delete_failures == 0
+    else:
+        assert "store unreachable" in warnings[0].getMessage()
+        assert len(asked) == 3 and runner.delete_failures == 3
 
 
 @pytest.mark.filterwarnings("ignore:`durability` has no effect")
