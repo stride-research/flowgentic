@@ -94,7 +94,9 @@ Agents at scale:
   `dragon` runs them on Dragon by hand: the store's contract on RaDEX, agents
   suspended by one Dragon process and resumed by another, the tool service in
   a Dragon process with two agent processes over Dragon's queues, and the
-  example with `--dragon`. It passed under TODO-DRAGON-VERSIONS.
+  example with `--dragon`. It passed under Dragon 0.15.0 on Python 3.12, with
+  RHAPSODY at commit `2523ead`, whose native Dragon backend is not in a
+  release yet, and RaDEX at commit `9f9b0df`.
 - RaDEX has no package: `RadexStore` needs RaDEX's Python client built from
   source with its C++ core.
 - An agent resumes only in the process that suspended it, because that

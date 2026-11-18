@@ -218,7 +218,10 @@ backend, `DragonNativeExecutionBackend`. RHAPSODY sends a task's function to
 its workers with cloudpickle, which sends a function by name when its module
 looks importable; the workers cannot import the example, so the example has
 cloudpickle send its functions by value. An application whose task functions
-live in an installed package needs nothing of the kind.
+live in an installed package needs nothing of the kind. The example also sets
+`DRAGON_PATCH_MP` again after importing RHAPSODY's backends: the import loads
+Dragon's LLM engine, which clears it, and processes started through Dragon's
+`multiprocessing` need it.
 
 CI runs the example without Dragon; the parts' behaviour under Dragon is
 checked by hand, as [Project status](../status.md#known-limitations) says.
