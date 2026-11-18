@@ -387,6 +387,83 @@ async def test_a_call_fails_after_outage_s_while_the_check_hangs():
         answer.set()
 
 
+async def test_a_check_that_hangs_once_does_not_stop_recovery():
+    server = {"up": True, "tag": "v2"}  # already back, elsewhere
+    new = Down(server, "v2")
+    probes = []
+
+    async def check(i):
+        probes.append(i)
+        if len(probes) == 1:
+            await asyncio.Event().wait()  # a probe to the old node, which never answers
+        return new
+
+    recovery = Recovery(check, outage_s=5, poll_s=0.02, check_timeout_s=0.05)
+    fleet = Fleet([Down(server, "v1")], recovery=recovery)
+    reply = await asyncio.wait_for(fleet.ainvoke("a", [HumanMessage("hi")]), 5)
+    assert reply.content == "DONE v2" and len(probes) == 2
+    assert recovery.stats()["check_failures"] == {0: 1}
+
+
+async def test_a_check_that_raises_counts_as_down():
+    server = {"up": False}
+    model = Down(server)
+
+    async def check(i):
+        if not server["up"]:
+            raise ConnectionRefusedError("the health probe was refused")
+        return model
+
+    recovery = Recovery(check, outage_s=5, poll_s=0.02)
+    fleet = Fleet([model], recovery=recovery)
+    call = asyncio.create_task(fleet.ainvoke("a", [HumanMessage("hi")]))
+    await asyncio.sleep(0.1)
+    server["up"] = True
+    assert (await asyncio.wait_for(call, 5)).content == "DONE v1"
+    assert recovery.stats()["check_failures"][0] >= 2
+
+    async def refused(i):
+        raise ConnectionRefusedError("the health probe was refused")
+
+    fleet = Fleet([Down({"up": False})], recovery=Recovery(refused, outage_s=0.1, poll_s=0.02))
+    with pytest.raises(APIConnectionError):  # the call's own error, not the check's
+        await asyncio.wait_for(fleet.ainvoke("a", [HumanMessage("hi")]), 5)
+
+
+async def test_the_watch_runs_outside_the_callers_context():
+    server = {"up": False}
+    model = Down(server)
+    seen = set()
+
+    async def check(i):
+        seen.add(_agents.current_agent())
+        return model if server["up"] else None
+
+    fleet = Fleet([model], recovery=Recovery(check, poll_s=0.02))
+    states = AgentStates(["agent-1", "agent-2"])
+
+    async def one(agent):
+        _agents.set_current_agent(agent, states)
+        await fleet.ainvoke(agent, [HumanMessage("hi")])
+
+    calls = [asyncio.create_task(one("agent-1"))]
+    await asyncio.sleep(0.05)
+    calls.append(asyncio.create_task(one("agent-2")))
+    await asyncio.sleep(0.1)
+    server["up"] = True
+    await asyncio.wait_for(asyncio.gather(*calls), 5)
+    assert seen == {None}
+
+
+@pytest.mark.parametrize("bad", [{"outage_s": -1}, {"poll_s": 0}, {"check_timeout_s": 0}])
+def test_recovery_refuses_a_negative_outage_and_zero_intervals(bad):
+    async def check(i):
+        return None
+
+    with pytest.raises(ValueError):
+        Recovery(check, **bad)
+
+
 def test_which_errors_of_langchain_openai_are_transient():
     import openai
     from langchain_openai.chat_models import base

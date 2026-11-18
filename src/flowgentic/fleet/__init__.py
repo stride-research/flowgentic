@@ -25,6 +25,7 @@ fleet decides, for each call, which replica takes it and when:
   error, a timeout, a 5xx, a 401 after a new key) releases its place, waits for
   the replica to come back, and is sent again; ``outage_s`` after its first
   failure it fails, even if the replica came back and the call kept failing.
+  A check that raises or hangs counts as the replica still being down.
 - **Accounting.** One ``CallRecord`` per call goes to the listeners: the wait
   for admission, the time at the server, the tokens, the prompt tokens the
   server found in its prefix cache and the reply's reasoning tokens when the
@@ -59,8 +60,10 @@ model think is the model's business, not the fleet's.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import itertools
 import json
+import logging
 import time
 import weakref
 import zlib
@@ -85,6 +88,8 @@ except ModuleNotFoundError as exc:
 
 from flowgentic import _agents, _telemetry
 from flowgentic._agents import AgentState
+
+log = logging.getLogger(__name__)
 
 __all__ = [
 	"TRANSIENT",
@@ -375,12 +380,16 @@ def transient(exc: BaseException) -> bool:
 class Recovery:
 	"""Waits out a replica whose server went away, for at most ``outage_s``.
 
-	``check(i)`` returns replica ``i``'s chat model once its server serves
-	again, a new one if its endpoint or key changed, or ``None`` while it is
-	down. The first call that fails on a replica starts one watch, which calls
-	``check`` every ``poll_s`` seconds; later calls wait on the same watch. A
-	call that fails again after its replica came back waits ``poll_s`` before
-	it is sent again, and fails ``outage_s`` after its first failure.
+	``check(i)``, an ``async def``, returns replica ``i``'s chat model once its
+	server serves again, a new one if its endpoint or key changed, or ``None``
+	while it is down. The first call that fails on a replica starts one watch,
+	which calls ``check`` every ``poll_s`` seconds until the replica serves or
+	``outage_s`` has passed; later calls wait on the same watch. A check that
+	raises, or does not answer within ``check_timeout_s``, counts as the replica
+	still being down. The watch serves every call on the replica, so it runs in
+	a context of its own, not in the first failing call's. A call that fails
+	again after its replica came back waits ``poll_s`` before it is sent again,
+	and fails ``outage_s`` after its first failure.
 	"""
 
 	def __init__(
@@ -389,13 +398,21 @@ class Recovery:
 		*,
 		outage_s: float = 1_800.0,
 		poll_s: float = 5.0,
+		check_timeout_s: float = 30.0,
 	) -> None:
+		if outage_s < 0 or poll_s <= 0 or check_timeout_s <= 0:
+			raise ValueError(
+				"outage_s must not be negative, and poll_s and check_timeout_s "
+				"must be more than 0"
+			)
 		self.check = check
 		self.outage_s = outage_s
 		self.poll_s = poll_s
+		self.check_timeout_s = check_timeout_s
 		self.outages: Counter[int] = Counter()
 		self.gave_up: Counter[int] = Counter()
 		self.down_s: Counter[int] = Counter()
+		self.check_failures: Counter[int] = Counter()
 		self._watches: dict[int, asyncio.Future] = {}
 		self._tasks: set[asyncio.Task] = set()
 
@@ -405,7 +422,10 @@ class Recovery:
 		future = self._watches.get(i)
 		if future is None:
 			future = self._watches[i] = asyncio.get_running_loop().create_future()
-			task = asyncio.create_task(self._watch(i, future))
+			# No agent, span or run config of the call that happened to fail first.
+			task = asyncio.create_task(
+				self._watch(i, future), context=contextvars.Context()
+			)
 			self._tasks.add(task)
 			task.add_done_callback(self._tasks.discard)
 		# asyncio.wait leaves the watch running when this caller times out or
@@ -415,33 +435,50 @@ class Recovery:
 
 	async def _watch(self, i: int, future: asyncio.Future) -> None:
 		t0 = time.monotonic()
+		failures = 0
 		try:
 			while True:
-				model = await self.check(i)
+				left = self.outage_s - (time.monotonic() - t0)
+				if left <= 0:
+					self.gave_up[i] += 1
+					self.down_s[i] += time.monotonic() - t0
+					future.set_result(None)
+					return
+				try:
+					timeout = min(self.check_timeout_s, left)
+					model = await asyncio.wait_for(self.check(i), timeout)
+				except Exception as exc:  # a timeout too: still down
+					model = None
+					failures += 1
+					self.check_failures[i] += 1
+					log.log(
+						logging.WARNING if failures == 1 else logging.DEBUG,
+						"replica %d: its check failed (%s: %s); still down",
+						i,
+						type(exc).__name__,
+						exc,
+					)
 				if model is not None:
 					self.outages[i] += 1
 					self.down_s[i] += time.monotonic() - t0
 					future.set_result(model)
 					return
-				if time.monotonic() - t0 >= self.outage_s:
-					self.gave_up[i] += 1
-					self.down_s[i] += time.monotonic() - t0
-					future.set_result(None)
-					return
 				await asyncio.sleep(self.poll_s)
-		except Exception as exc:  # a broken watch fails its calls, not the process
-			if not future.done():
-				future.set_exception(exc)
 		finally:
-			self._watches.pop(i, None)
+			if not future.done():  # the watch was cancelled: its calls fail as they are
+				future.set_result(None)
+			if self._watches.get(i) is future:
+				del self._watches[i]
 
 	def stats(self) -> dict:
-		"""Outages per replica: waited out, their time down, and given up."""
+		"""Outages per replica: waited out, their time down, given up, and the
+		checks that raised or timed out."""
 		return {
 			"outage_s": self.outage_s,
 			"outages": dict(self.outages),
 			"down_s": {i: round(s, 1) for i, s in self.down_s.items()},
 			"gave_up": dict(self.gave_up),
+			"check_failures": dict(self.check_failures),
 		}
 
 
