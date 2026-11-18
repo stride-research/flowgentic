@@ -7,6 +7,45 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
+## [Unreleased]
+
+### Added
+
+- `flowgentic.fleet`: an `AdmissionGate` counts the calls it admits alone
+  above its token cap (`oversize` in its stats) and logs the first as a
+  warning. A gate holds one process's share of a replica's caps, so such
+  calls from several processes can take the replica past its cap.
+
+### Changed
+
+- `flowgentic.fleet`: a `CallRecord`'s times add up to the call's.
+  `wait_s` is the wait for admission alone, summed over the call's tries;
+  before, it ran from the call's start to its last admission, so it counted
+  an outage that `Recovery` waited out. The new `recovery_s` holds that
+  outage: the tries that failed and the wait for the replica to come back.
+  `service_s` is unchanged.
+- `flowgentic.fleet`: the admission-wait and request-duration histograms are
+  recorded for each try, so a retried call records one of each per try. A
+  try that fails, also one that ends the call, records its time at the
+  replica with `error.type`; before, a failed call recorded nothing.
+- `flowgentic.fleet`: a routing reads a replica's load only when it asks for
+  it. Under `AgentAffinity` and `RoundRobin` a call no longer reads every
+  replica's load: with 256 replicas, a call costs what it costs with one.
+
+### Fixed
+
+- `flowgentic.fleet`: an agent's first call is estimated as a fixed part,
+  such as tool schemas the messages do not show, plus tokens per character,
+  both learned from earlier first calls. With tokens per character alone,
+  short first prompts taught a ratio that made a later long first prompt's
+  estimate many times too large, and its call waited to run alone.
+  `stats()["tokens_per_char"]` gains `first_call_base`, the fixed part.
+- `flowgentic.fleet`: a call that joined a recovery watch started for an
+  earlier call failed when that watch gave up, before its own `outage_s`
+  had passed. It now waits out its own `outage_s`, in a new watch.
+- `Fleet` refuses a negative `reply_reserve`, which took tokens off every
+  call's admission estimate.
+
 ## [0.5.0] - 2026-11-18
 
 Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as
