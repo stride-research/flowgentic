@@ -97,6 +97,40 @@ class FakeRunner:
         return Finished({"agent": agent.id, "resumed": True})
 
 
+async def test_a_registration_outside_an_agent_lasts_while_its_future_is_held():
+    # No host releases it: the registry must not keep the future, and with it
+    # the task's result, for the life of the process.
+    future = asyncio.get_running_loop().create_future()
+    register_pending("outside/1", future)
+    assert _agents.pending("outside/1") is future
+    future.set_result(bytes(1000))
+    del future
+    gc.collect()
+    assert _agents.pending("outside/1") is None
+
+
+async def test_an_agents_registration_lasts_until_the_agent_ends():
+    seen = {}
+
+    class Registers(FakeRunner):
+        async def start(self, agent):
+            future = asyncio.get_running_loop().create_future()
+            future.set_result(None)
+            register_pending(f"task-{agent.id}", future)
+            del future
+            gc.collect()
+            seen[agent.id] = _agents.pending(f"task-{agent.id}") is not None
+            return Finished(None)
+
+    # Registered earlier under the same key outside an agent, and still held:
+    # the agent's own registration replaces it.
+    earlier = asyncio.get_running_loop().create_future()
+    register_pending("task-a", earlier)
+    await AgentHost(Registers(), stagger=FAST, collector=None).run([Agent("a", None)])
+    assert seen == {"a": True}
+    assert _agents.pending("task-a") is None
+
+
 async def test_live_agents_stay_under_the_cap():
     runner = FakeRunner()
     host = AgentHost(runner, max_live_agents=10, stagger=FAST, collector=None)

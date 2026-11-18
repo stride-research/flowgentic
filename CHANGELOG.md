@@ -15,6 +15,11 @@ predate this changelog, so their changes are not listed here.
   of 0 to turn automatic collection off, so `Collector(threshold=0)` stopped
   the cyclic collector for as long as the host ran; below 0 it collected at
   nearly every allocation.
+- `register_pending` called outside an agent's task no longer keeps the future
+  for the life of the process. No host releases such a registration, so the
+  registry now holds it only while something else holds the future, as the
+  code that submitted the task does. A registration made in an agent's task
+  lasts until the agent ends, as before.
 
 ## [0.5.0] - 2026-11-18
 

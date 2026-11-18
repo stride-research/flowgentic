@@ -276,15 +276,28 @@ def _enter_task_context(
 	otel_context.attach(trace_context)
 
 
+# Registrations made in an agent's task, held until the host releases them when
+# the agent ends. One made outside an agent has no host to release it, so the
+# registry holds it only as long as something else holds its future.
 _pending: dict[str, asyncio.Future] = {}
+_unowned: weakref.WeakValueDictionary[str, asyncio.Future] = (
+	weakref.WeakValueDictionary()
+)
 
 
 def register_pending(key: str, future: asyncio.Future) -> None:
-	"""Record the future of a submitted task under its key."""
-	_pending[key] = future
+	"""Record the future of a submitted task under its key.
+
+	In an agent's task, the registration lasts until the host ends the agent.
+	Outside one, no host will release it, so it lasts only while the future is
+	held elsewhere, as by whatever submitted the task."""
 	agent = _current.get()
-	if agent is not None:
-		agent.registered[key] = future
+	if agent is None:
+		_unowned[key] = future
+		return
+	_unowned.pop(key, None)  # an agent's registration replaces another's
+	_pending[key] = future
+	agent.registered[key] = future
 
 
 def release_pending() -> None:
@@ -298,16 +311,10 @@ def release_pending() -> None:
 		agent.registered.clear()
 
 
-def forget_pending(key: str) -> None:
-	_pending.pop(key, None)
-	agent = _current.get()
-	if agent is not None:
-		agent.registered.pop(key, None)
-
-
 def pending(key: str) -> asyncio.Future | None:
 	"""The future of the task submitted under ``key`` in this process."""
-	return _pending.get(key)
+	future = _pending.get(key)
+	return _unowned.get(key) if future is None else future
 
 
 def registered(key: str) -> asyncio.Future | None:

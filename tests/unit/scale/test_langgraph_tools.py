@@ -269,12 +269,12 @@ async def test_only_the_asking_agents_own_registrations_are_found():
     session = await thread_session()
     runtime = ToolRuntime(session)
     stale = asyncio.get_running_loop().create_future()
-    _agents.register_pending("a/c1", stale)
+    _agents.register_pending("a/c1", stale)  # held while this test holds it
     try:
         job = runtime.submit(task_tool(simulate), "a", "c1", {"x": 1.0})
         assert job is not stale and await job == {"y": 2.0}
     finally:
-        _agents.forget_pending("a/c1")
+        del stale
         await session.close()
     assert RUNS == {"simulate": 1}
 
