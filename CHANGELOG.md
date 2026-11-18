@@ -7,7 +7,7 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
-## [0.5.0] - 2026-11-17
+## [0.5.0] - 2026-11-18
 
 Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as
 AsyncFlow workflow tasks, and, from this release, as LangGraph agents at scale
@@ -109,10 +109,11 @@ active development; the AsyncFlow path stays in maintenance mode.
   `alive`, a check that the service still runs (such as a test of its pid),
   every waiting call fails as soon as the service has stopped. A call's
   arguments travel as JSON values, so the service needs none of the agents'
-  classes, and arguments with no JSON form fail their own call. The service refuses a request from a process with
-  no reply queue, and a reply queue that fails loses no other process's
-  answers. An MCP success with no content is a success with no data, and a
-  result with several text blocks returns all of them.
+  classes, and arguments with no JSON form fail their own call. The service
+  refuses a request from a process with no reply queue, and a reply queue that
+  fails loses no other process's answers. An MCP success with no content is a
+  success with no data, and a result with several text blocks returns all of
+  them.
 - Tool placement, `flowgentic.tools`: a tool runs inline, as a RHAPSODY task
   (`task_tool`) or through the tool service (`mcp_tool`), and
   `flowgentic.langgraph.bind_tools` turns these into LangChain tools. A task

@@ -255,7 +255,7 @@ def test_an_agent_suspended_by_one_dragon_process_resumes_in_another(dragon_desc
 	second = start(resume_agents, dragon_descriptor, agents, out)
 	(resumed,) = take(out, 1)
 	join(second)
-	assert suspended["pid"] != resumed["pid"] != os.getpid()
+	assert len({suspended["pid"], resumed["pid"], os.getpid()}) == 3
 	assert suspended["suspended"] == agents
 	assert resumed["waiting_at"] == [("b",)]
 	assert resumed["answers"] == [["hi " + str(i), "a", f"b done {i}"] for i in range(agents)]
