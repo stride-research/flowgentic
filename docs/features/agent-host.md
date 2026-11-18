@@ -142,9 +142,10 @@ SDK:
 - each agent's run is an `invoke_agent` span, with the agent's id in
   `gen_ai.agent.id`, and a `flowgentic.agent.suspend` event per suspension; a
   failed agent's span has status ERROR, `error.type` and the exception;
-- `flowgentic.agents` counts agents by `flowgentic.agent.state`, and
-  `flowgentic.agent.time` adds up agent-seconds by state and
-  `flowgentic.agent.category`, both read when the SDK collects;
+- `flowgentic.agents` counts the agents of runs in progress by
+  `flowgentic.agent.state`, and the counter `flowgentic.agent.time` adds up
+  agent-seconds by state and `flowgentic.agent.category` over every run in
+  the process, both read when the SDK collects;
 - `flowgentic.host.loop.lag` and `flowgentic.host.gc.pause` record the event
   loop's lag and the collector's pauses, once each however many hosts run.
 

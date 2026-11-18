@@ -270,6 +270,78 @@ def points(reader, name: str) -> list:
     return out
 
 
+def metric_data(reader, name: str):
+    """The data of metric ``name`` in a new collection, or ``None``."""
+    data = reader.get_metrics_data()
+    for resource in data.resource_metrics if data else []:
+        for scope in resource.scope_metrics:
+            for metric in scope.metrics:
+                if metric.name == name:
+                    return metric.data
+    return None
+
+
+def by_state(data) -> dict[str, float]:
+    return {
+        p.attributes["flowgentic.agent.state"]: p.value
+        for p in (data.data_points if data else [])
+    }
+
+
+class Sleeps:
+    def __init__(self, sleep: float):
+        self.sleep = sleep
+
+    async def start(self, agent):
+        await asyncio.sleep(self.sleep)
+        return Finished(None)
+
+
+async def test_the_agents_gauge_counts_only_live_runs(metric_reader):
+    def agents():
+        return by_state(metric_data(metric_reader, "flowgentic.agents"))
+
+    gc.collect()  # forget the states of earlier tests' hosts
+    before = agents()
+    slow = AgentHost(Sleeps(10), max_live_agents=10, stagger=FAST, collector=None)
+    run = asyncio.create_task(slow.run_indexed(range(1_000), lambda i: None))
+    await asyncio.sleep(0.05)
+    during = agents()
+    run.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await run
+    quick = AgentHost(Sleeps(0), stagger=FAST, collector=None)
+    await quick.run([Agent(str(i), None) for i in range(50)])
+    after = agents()
+
+    assert during["pending"] - before.get("pending", 0) == 990
+    assert during["working"] - before.get("working", 0) == 10
+    # Both runs have ended: neither host's agents are counted any more.
+    for state in ("pending", "working", "done"):
+        assert after.get(state, 0) == before.get(state, 0), state
+
+
+async def test_agent_time_is_a_counter_that_grows_across_runs(metric_reader):
+    def working():
+        data = metric_data(metric_reader, "flowgentic.agent.time")
+        assert type(data).__name__ == "Sum" and data.is_monotonic
+        return by_state(data).get("working", 0.0)
+
+    host = AgentHost(Sleeps(0.1), stagger=FAST, collector=None)
+    before = working()
+    await host.run([Agent("a", None), Agent("b", None)])
+    first = working()
+    await host.run([Agent("c", None)])  # a new run does not reset the total
+    second = working()
+    del host
+    gc.collect()  # nor does a host that is gone
+    last = working()
+
+    assert first - before >= 0.18
+    assert second - first >= 0.09
+    assert last >= second
+
+
 def agent_spans(exporter) -> dict:
     """The host's ``invoke_agent`` spans, by agent id."""
     return {
@@ -423,7 +495,10 @@ async def test_the_host_records_agents_spans_and_its_own_health(
 ):
     runner = FakeRunner(sleep=0.25)  # long enough for a few 100 ms lag samples
     host = AgentHost(runner, stagger=FAST)
-    await host.run([Agent("s1", None), Agent("a1", None)])
+    run = asyncio.create_task(host.run([Agent("s1", None), Agent("a1", None)]))
+    await asyncio.sleep(0.1)
+    working = by_state(metric_data(metric_reader, "flowgentic.agents"))["working"]
+    await run
 
     spans = agent_spans(span_exporter)
     assert spans.keys() == {"s1", "a1"}
@@ -434,8 +509,7 @@ async def test_the_host_records_agents_spans_and_its_own_health(
     assert [e.attributes["gen_ai.agent.id"] for e in suspends] == ["s1"]
     assert suspends[0].attributes["flowgentic.agent.suspend.waits"] == 1
 
-    done = [p for p in points(metric_reader, "flowgentic.agents") if p.attributes["flowgentic.agent.state"] == "done"]
-    assert done and done[0].value >= 2
+    assert working >= 2  # read while the run was live
     time_by_state = {
         p.attributes["flowgentic.agent.state"]: p for p in points(metric_reader, "flowgentic.agent.time")
     }

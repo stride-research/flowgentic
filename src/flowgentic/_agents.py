@@ -71,6 +71,13 @@ _N = len(AgentState)
 # Every AgentStates in the process, for the telemetry's observable gauges.
 _all_states: weakref.WeakSet[AgentStates] = weakref.WeakSet()
 
+# Agent-seconds in each state, added up over every AgentStates the process has
+# had, for the telemetry's counter: unlike a run's own, they only grow, through
+# new runs and after a host is gone.
+_process_lock = threading.Lock()
+_process_seconds = [0.0] * _N
+_process_has_states = False  # no agent metrics in a process that never had any
+
 
 class AgentStates:
 	"""How many agents are in each state, and the agent-seconds spent in each.
@@ -89,12 +96,15 @@ class AgentStates:
 		self._running = False
 		for agent in agents:
 			self.add(agent)
+		global _process_has_states
+		_process_has_states = True
 		_all_states.add(self)
 
 	def _begin_run(self, ids: Iterable[str], *, pending: int | None = None) -> None:
 		with self._lock:
 			if self._running:
 				raise RuntimeError("these agent states already track an active run")
+			self._advance(time.monotonic())  # the process's total, before the reset
 			self._state = dict.fromkeys(ids, AgentState.PENDING)
 			self._counts = [0] * _N
 			self._counts[AgentState.PENDING] = (
@@ -106,7 +116,7 @@ class AgentStates:
 
 	def _end_run(self) -> None:
 		# Agents that never started, in a run that failed or was cancelled,
-		# stay pending.
+		# stay pending in the run's report. The telemetry stops counting them.
 		with self._lock:
 			self._advance(time.monotonic())
 			self._t = None
@@ -149,10 +159,19 @@ class AgentStates:
 			return
 		dt = now - self._t
 		if dt > 0:
-			for s, c in enumerate(self._counts):
-				if c:
-					self._seconds[s] += c * dt
+			with _process_lock:
+				for s, c in enumerate(self._counts):
+					if c:
+						self._seconds[s] += c * dt
+						_process_seconds[s] += c * dt
 			self._t = now
+
+	def _live_counts(self) -> list[int] | None:
+		"""Agents in each state now, by the state's value, or ``None`` once a
+		host's run on these states has ended: the telemetry counts live agents
+		only."""
+		with self._lock:
+			return None if self._t is None else list(self._counts)
 
 	def counts(self) -> dict[AgentState, int]:
 		"""Agents in each state now."""
@@ -189,6 +208,18 @@ class AgentStates:
 				for k, v in categories.items()
 			},
 		}
+
+
+def process_agent_seconds() -> dict[AgentState, float]:
+	"""Agent-seconds spent in each state by every agent the process has had,
+	through every run, up to now; empty in a process that never counted agents."""
+	if not _process_has_states:
+		return {}
+	for states in list(_all_states):
+		with states._lock:
+			states._advance(time.monotonic())
+	with _process_lock:
+		return {AgentState(s): v for s, v in enumerate(_process_seconds)}
 
 
 class _Agent:
