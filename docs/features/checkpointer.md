@@ -71,6 +71,11 @@ calls few. For thread `t` and checkpoint namespace `ns`:
   because one process owns the thread, and updates in that process take a
   lock shared by savers for the thread.
 - **`list` needs a thread id**, because RaDEX cannot list its keys.
+- **A finished agent's thread leaves the store** when the agent host's
+  `GraphRunner` runs it: the runner deletes the thread once the agent
+  finishes. The store then grows with the agents live at once, not with the
+  campaign. `delete_thread` removes a thread, its namespaces included; it
+  takes a few store calls per namespace.
 
 `saver.stats()` returns how many checkpoints and writes the saver has put, how
 many checkpoints it has read, and their mean size in bytes.

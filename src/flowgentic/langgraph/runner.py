@@ -6,6 +6,12 @@ interrupts raised by Flowgentic's task tools is a suspension, which the host
 resolves by awaiting the tasks and resuming the graph with ``Command(resume=...)``.
 Any other interrupt ends the agent as interrupted.
 
+When an agent finishes, the runner deletes its thread from the graph's
+checkpointer, so the store holds the agents still running, not every agent of
+the campaign. An interrupted agent's thread is kept, for a human-in-the-loop
+interrupt resumes from it, and so is a failed or cancelled agent's, to debug
+or retry it. ``delete_finished=False`` keeps finished agents' threads too.
+
 ``route_tool_calls`` sends each tool call of the model's last message to the
 tool node as its own task (LangGraph's ``Send``). LangGraph saves the result of
 each finished call with the checkpoint, so when an agent resumes from a
@@ -40,11 +46,13 @@ that one's frames are left to the collector.
 from __future__ import annotations
 
 import asyncio
+import logging
 import traceback
 from contextvars import ContextVar
 from functools import partial
 from typing import Any, Literal
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.errors import GraphRecursionError
 from langgraph.graph import END
 from langgraph.types import Command, Send
@@ -57,6 +65,8 @@ except ImportError:  # pragma: no cover - a LangGraph that moved it
 	_DEFAULT_LIMIT = 10_000
 
 __all__ = ["GraphRunner", "PENDING_KEY", "record_interrupt", "route_tool_calls"]
+
+log = logging.getLogger(__name__)
 
 PENDING_KEY = "flowgentic_pending"
 """The key of the interrupt value a task tool raises: the task's key."""
@@ -94,6 +104,11 @@ class GraphRunner:
 	``exit``, the default, saves a checkpoint only when a run ends or suspends.
 	An agent resumes at most as many times as its run's ``recursion_limit``;
 	one more resume fails it with ``GraphRecursionError``.
+
+	With ``delete_finished``, the default, a finished agent's thread is deleted
+	from the graph's checkpointer once its run ends, before the host hands its
+	output to ``on_done``. A thread that cannot be deleted is logged, and the
+	agent still finishes; ``delete_failures`` counts them.
 	"""
 
 	def __init__(
@@ -102,6 +117,7 @@ class GraphRunner:
 		*,
 		config: dict | None = None,
 		durability: Durability = "exit",
+		delete_finished: bool = True,
 	) -> None:
 		if getattr(graph, "interrupt_before_nodes", None) or getattr(
 			graph, "interrupt_after_nodes", None
@@ -115,6 +131,9 @@ class GraphRunner:
 		self.graph = graph
 		self.config = dict(config or {})
 		self.durability = durability
+		self.delete_finished = delete_finished
+		self.delete_failures = 0
+		self._cannot_delete = False
 		# Resumes per suspended agent, each in a cell of its own, so that a
 		# count dropped and made again for the same id is not dropped twice.
 		self._resumes: dict[str, list[int]] = {}
@@ -182,7 +201,36 @@ class GraphRunner:
 		step = _step(out)
 		if not isinstance(step, Suspended):
 			self._resumes.pop(agent.id, None)
+		if isinstance(step, Finished) and self.delete_finished:
+			await self._delete(agent.id)
 		return step
+
+	async def _delete(self, thread_id: str) -> None:
+		saver = getattr(self.graph, "checkpointer", None)
+		if not isinstance(saver, BaseCheckpointSaver) or self._cannot_delete:
+			return
+		try:
+			await saver.adelete_thread(thread_id)
+		except NotImplementedError:
+			# A saver that cannot delete never will: say so once, and stop asking.
+			self._cannot_delete = True
+			log.warning(
+				"%s cannot delete threads: finished agents' checkpoints stay in "
+				"it. Pass delete_finished=False to keep them without this warning.",
+				type(saver).__name__,
+			)
+		except Exception as exc:
+			# The agent finished, and its output stands; only its thread stays.
+			self.delete_failures += 1
+			log.log(
+				logging.WARNING if self.delete_failures == 1 else logging.DEBUG,
+				"could not delete finished agent %s's thread (%s: %s); its "
+				"checkpoint stays in the store",
+				thread_id,
+				type(exc).__name__,
+				exc,
+				exc_info=self.delete_failures == 1,
+			)
 
 
 def _step(out: Any) -> Step:

@@ -213,6 +213,100 @@ async def test_an_agent_that_ends_while_suspended_leaves_no_resume_count(ending)
     assert not runner._resumes
 
 
+@tool
+def fail(text: str) -> str:
+    """A tool that raises."""
+    raise RuntimeError(f"no {text}")
+
+
+def threads_in(store) -> set[str]:
+    return {key.split("/")[1] for key in store.keys()}
+
+
+async def test_a_finished_agents_thread_leaves_the_store():
+    """Each finished agent's last checkpoint and pending writes are deleted, so
+    the store holds the agents still running, not the campaign's."""
+    from flowgentic.langgraph import KeyValueSaver
+    from flowgentic.store import MemoryStore
+
+    store = MemoryStore()
+    model = Scripted(script=calls_then_answer(("slow_task", {"x": 1.5})))
+    outputs = {}
+    runner = GraphRunner(react_graph(model, [slow_task], KeyValueSaver(store)))
+    host = AgentHost(runner, stagger=FAST, on_done=lambda r, out: outputs.__setitem__(r.id, out))
+    report = await host.run(inputs(20))
+    assert report.finished == 20 and all(a.suspensions == 1 for a in report.agents)
+    assert "result 3.0" in outputs["agent-7"]["messages"][-1].content
+    assert store.keys() == []
+
+
+@pytest.mark.parametrize("delete_finished", [True, False])
+async def test_interrupted_and_failed_agents_keep_their_threads(delete_finished):
+    """A human-in-the-loop interrupt resumes from the thread, and a failed
+    agent's thread is kept to debug or retry it. With delete_finished=False,
+    a finished agent's is kept too."""
+    from langgraph.types import Command
+
+    from flowgentic.langgraph import KeyValueSaver
+    from flowgentic.store import MemoryStore
+
+    store = MemoryStore()
+    saver = KeyValueSaver(store)
+
+    calls = {
+        "ask": ("ask_a_human", {"question": "go?"}),
+        "fail": ("fail", {"text": "x"}),
+        "wait": ("slow_task", {"x": 1.0}),
+    }
+
+    def script(messages):
+        text = messages[0].content
+        if text == "done" or any(m.type == "tool" for m in messages):
+            return AIMessage("done")
+        name, args = calls[text]
+        return AIMessage("", tool_calls=[{"name": name, "args": args, "id": "c0"}])
+
+    graph = react_graph(
+        Scripted(script=script), [ask_a_human, fail, slow_task], saver, handle_tool_errors=None
+    )
+    runner = GraphRunner(graph, delete_finished=delete_finished)
+    agents = [Agent(text, {"messages": [HumanMessage(text)]}) for text in ("ask", "fail", "wait", "done")]
+    report = await AgentHost(runner, stagger=FAST).run(agents)
+    assert {a.id: a.status for a in report.agents} == {
+        "ask": "interrupted",
+        "fail": "failed",
+        "wait": "done",
+        "done": "done",
+    }
+    kept = {"ask", "fail"} | (set() if delete_finished else {"wait", "done"})
+    assert threads_in(store) == kept
+    # The interrupted agent still resumes from its thread.
+    config = {"configurable": {"thread_id": "ask"}}
+    out = await graph.ainvoke(Command(resume="yes"), config)
+    assert out["messages"][-1].content == "done"
+
+
+async def test_a_thread_that_cannot_be_deleted_leaves_the_agent_finished(caplog):
+    class Undeletable(InMemorySaver):
+        async def adelete_thread(self, thread_id):
+            raise ConnectionError("store unreachable")
+
+    model = Scripted(script=calls_then_answer(("note", {"text": "hi"})))
+    runner = GraphRunner(react_graph(model, [note], Undeletable()))
+    with caplog.at_level("DEBUG", logger="flowgentic.langgraph.runner"):
+        report = await AgentHost(runner, stagger=FAST).run(inputs(3))
+    assert report.finished == 3
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1 and "store unreachable" in warnings[0].getMessage()
+
+
+@pytest.mark.filterwarnings("ignore:`durability` has no effect")
+async def test_a_graph_without_a_checkpointer_runs_to_its_end():
+    model = Scripted(script=calls_then_answer(("note", {"text": "hi"})))
+    runner = GraphRunner(react_graph(model, [note]))
+    assert (await AgentHost(runner, stagger=FAST).run(inputs(2))).finished == 2
+
+
 def left_by(run_objects: tuple) -> list:
     return [type(o).__name__ for o in gc.get_objects() if isinstance(o, run_objects)]
 

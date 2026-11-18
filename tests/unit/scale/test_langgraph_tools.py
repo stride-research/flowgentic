@@ -54,7 +54,7 @@ async def test_a_suspended_agent_resumes_and_nothing_runs_twice():
     graph = react_graph(Scripted(script=sim_then_answer()), tools, saver)
     outputs = {}
     host = AgentHost(
-        GraphRunner(graph),
+        GraphRunner(graph, delete_finished=False),  # to count what each keeps
         stagger=FAST,
         on_done=lambda r, out: outputs.__setitem__(r.id, out),
     )

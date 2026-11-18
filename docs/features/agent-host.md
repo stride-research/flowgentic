@@ -102,11 +102,23 @@ finishes. The tool records the interrupt with `record_interrupt`, so
 the runner frees the run's frames as soon as it stops. Any other interrupt,
 such as a question for a human, ends the agent as `interrupted`.
 
+When an agent finishes, `GraphRunner` deletes its thread from the graph's
+checkpointer, before the host passes the output to `on_done`. The store then
+holds the agents that are running, not every agent of the campaign. An
+interrupted agent keeps its thread, so it can resume once a human answers, and
+so does a failed or cancelled one, to debug or retry it. Pass
+`GraphRunner(graph, delete_finished=False)` to keep finished agents' threads
+too. If a thread cannot be deleted, the runner logs it and counts it in
+`delete_failures`, and the agent still finishes.
+
 Each resume is a new LangGraph run, which counts its steps against
 `recursion_limit` afresh. So `GraphRunner` also lets one agent resume at most
 `recursion_limit` times, and fails it with `GraphRecursionError` after that.
 Each resume runs at least one step, so an agent that would finish within the
-limit without suspending is never stopped by this. `GraphRunner` refuses a
+limit without suspending is never stopped by this. The count lasts until the
+agent ends, or until the asyncio task that resumed it ends, as when the host
+cancels an agent while it waits; the host runs each agent in one task.
+`GraphRunner` refuses a
 graph compiled with `interrupt_before` or `interrupt_after`: a static
 breakpoint stops a run without an interrupt, and the agent would end as
 finished, with partial output.
