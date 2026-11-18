@@ -25,7 +25,8 @@ print(report.finished, report.states["share_by_category"], report.loop_lag)
   collector runs every few hundred allocations and scans every young object.
   With thousands of agents in a process, each holding its conversation, that
   scanning takes most of the process's time. The host raises the collector's
-  first threshold (`Collector(threshold=100_000)`) and, once agents have
+  first threshold (`Collector(threshold=100_000)`; it must be at least 1,
+  since 0 would turn automatic collection off) and, once agents have
   started, moves the objects then alive out of the collector's reach
   (`gc.freeze()`). It restores both when `run` returns, and also when `run` is
   cancelled. Overlapping runs share the collector tuning until the last user

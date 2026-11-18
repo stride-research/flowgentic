@@ -125,11 +125,17 @@ class Collector:
 	some of its own objects there): CPython cannot thaw only part of them, and
 	reference cycles left frozen would never be freed. An application that
 	keeps objects of its own frozen passes ``freeze=False``. The defaults were
-	measured on CPython 3.12.
+	measured on CPython 3.12. ``threshold`` must be at least 1: CPython takes 0
+	to turn automatic collection off, and collects at nearly every allocation
+	below 0.
 	"""
 
 	threshold: int = 100_000
 	freeze: bool = True
+
+	def __post_init__(self) -> None:
+		if self.threshold < 1:
+			raise ValueError("a collector's threshold must be at least 1")
 
 
 @dataclass(frozen=True, slots=True)

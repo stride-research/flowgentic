@@ -7,6 +7,15 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
+## [Unreleased]
+
+### Fixed
+
+- `Collector` refuses a `threshold` below 1. CPython takes a first threshold
+  of 0 to turn automatic collection off, so `Collector(threshold=0)` stopped
+  the cyclic collector for as long as the host ran; below 0 it collected at
+  nearly every allocation.
+
 ## [0.5.0] - 2026-11-18
 
 Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as

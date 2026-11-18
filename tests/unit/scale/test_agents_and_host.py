@@ -164,6 +164,14 @@ async def test_collector_is_tuned_during_a_run_and_restored():
     assert nothing_left_frozen()
 
 
+@pytest.mark.parametrize("threshold", [0, -1])
+def test_a_collector_threshold_below_one_is_refused(threshold):
+    # 0 would turn automatic collection off; below 0, CPython collects at
+    # nearly every allocation.
+    with pytest.raises(ValueError, match="threshold"):
+        Collector(threshold=threshold)
+
+
 async def test_collector_is_restored_when_a_run_is_cancelled():
     before = gc.get_threshold()
     host = AgentHost(FakeRunner(sleep=10), stagger=FAST)
