@@ -40,7 +40,14 @@ active development; the AsyncFlow path stays in maintenance mode.
   processes that share one tool service. The guide
   [LangGraph agents at scale](https://stride-research.github.io/flowgentic/guides/agents-at-scale/)
   walks through it, and through choosing a process's limits from the host's
-  report.
+  report. With `--dragon`, under `dragon`, the same campaign runs on Dragon:
+  the agents' state in RaDEX, the simulations on RHAPSODY's native Dragon
+  backend, and the tool service and each agent process in a Dragon process.
+- A Dragon suite: tests marked `dragon` run the store's contract on RaDEX,
+  agents suspended by one Dragon process and resumed by another, the tool
+  service in a Dragon process with two agent processes over Dragon's queues,
+  and the example with `--dragon`. CI skips them; they run by hand under
+  `dragon` (see CONTRIBUTING.md).
 - `flowgentic.host`: an agent host that runs many agents in one process,
   through a runner per framework. While it runs it raises the cyclic
   collector's first threshold and freezes the objects alive once agents have

@@ -728,3 +728,85 @@ def test_mcp_data_without_structured_content():
     image = SimpleNamespace(type="image", data="...", mime_type="image/png")
     ok, message = mcp_data(result(image))
     assert not ok and "no text" in message
+
+
+# --- under Dragon: the service in a Dragon process, two agent processes -------
+
+
+def dragon_service(url, requests, replies, out):
+    """A Dragon process: the tool service, over a live MCP server."""
+    from flowgentic.tools.mcp import SupervisedMcpPool
+
+    async def run():
+        pool = SupervisedMcpPool(url, clients=2, per_client=8)
+        return await serve(requests, replies, pool, on_ready=lambda state: out.put("ready"))
+
+    out.put(asyncio.run(run()))
+
+
+def dragon_agents(index, calls, requests, reply, out):
+    """A Dragon agent process: ``calls`` lookups at once, one asked again, one
+    that fails."""
+
+    async def run():
+        client = ToolServiceClient(requests, reply, index)
+        client.start()
+        try:
+            uids = [f"p{index}/call-{i}" for i in range(calls)]
+            answers = await asyncio.gather(
+                *(client.call(uid, "echo", {"key": uid}, idempotent=True) for uid in uids)
+            )
+            again = await client.call(uids[0], "echo", {"key": uids[0]}, idempotent=True)
+            try:
+                await client.call(f"p{index}/bad", "fail", {"key": "x"})
+                error = None
+            except ToolServiceError as exc:
+                error = str(exc)
+            return {
+                "index": index,
+                "answers": [a["echo"] for a in answers],
+                "server_pids": sorted({a["pid"] for a in answers}),
+                "again": again,
+                "first": answers[0],
+                "error": error,
+                "client": client.stats(),
+            }
+        finally:
+            client.stop()
+
+    out.put(asyncio.run(run()))
+
+
+@pytest.mark.dragon
+def test_a_dragon_service_answers_two_dragon_agent_processes():
+    """The service in a Dragon process, two agent processes, Dragon queues, and
+    a live MCP server on 127.0.0.1."""
+    from _dragon import dragon_queue, join, mcp_server, start, take
+
+    calls = 200
+    with mcp_server() as url:
+        requests = dragon_queue()
+        replies = [dragon_queue(), dragon_queue()]
+        status, results = dragon_queue(), dragon_queue()
+        service = start(dragon_service, url, requests, replies, status)
+        assert take(status, 1, timeout=60) == ["ready"]
+        agents = [
+            start(dragon_agents, i, calls, requests, replies[i], results) for i in range(2)
+        ]
+        parts = sorted(take(results, 2), key=lambda part: part["index"])
+        join(*agents)
+        requests.put(None)  # stops the service
+        (stats,) = take(status, 1)
+        join(service)
+    for i, part in enumerate(parts):
+        assert part["answers"] == [f"p{i}/call-{k}" for k in range(calls)]
+        assert part["again"] == part["first"]  # the kept answer, not a new call
+        assert "fail" in part["error"]
+        assert part["client"]["errors"] == 1 and part["client"]["unanswered"] == 0
+    # Each uid called once: the repeats were answered from the kept answers.
+    assert stats["received"] == 2 * (calls + 2)
+    assert stats["unique"] == 2 * (calls + 1)
+    assert stats["repeats_done"] == 2
+    assert stats["ok"] == {"echo": 2 * calls}
+    assert stats["failed"] == {"fail": 2}
+    assert stats["pool"]["clients"] == 2

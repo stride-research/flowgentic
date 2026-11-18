@@ -126,9 +126,11 @@ and sends each tool call to the tool node as its own task:
 --8<-- "examples/agents-at-scale/campaign.py:graph"
 ```
 
-Each agent process builds its parts. On an allocation, the session runs on a
-Dragon backend, the store is `RadexStore.attach(descriptor)`, the replicas are
-chat models of the model servers, and the queues are Dragon's:
+Each agent process builds its parts. With `--dragon` (see
+[Running under Dragon](#running-under-dragon)), the session runs on RHAPSODY's
+native Dragon backend, the store is `RadexStore.attach(descriptor)` and the
+queues are Dragon's; on an allocation the replicas are also chat models of the
+model servers:
 
 ```python
 --8<-- "examples/agents-at-scale/campaign.py:process"
@@ -214,7 +216,26 @@ on Dragon's resources:
   chat model of one server.
 
 Flowgentic imports nothing from Dragon: the application passes in the queues,
-the session and the store. CI runs the example without Dragon. For this
+the session and the store.
+
+The example does all of this with `--dragon`, under `dragon`. Only its model
+stays scripted:
+
+```bash
+dragon examples/agents-at-scale/campaign.py --dragon --agents 1000 --processes 2
+```
+
+It needs Dragon, RaDEX's Python client, and a RHAPSODY with the native Dragon
+backend, `DragonNativeExecutionBackend`. RHAPSODY sends a task's function to
+its workers with cloudpickle, which sends a function by name when its module
+looks importable; the workers cannot import the example, so the example has
+cloudpickle send its functions by value. An application whose task functions
+live in an installed package needs nothing of the kind. The example also sets
+`DRAGON_PATCH_MP` again after importing RHAPSODY's backends: the import loads
+Dragon's LLM engine, which clears it, and processes started through Dragon's
+`multiprocessing` need it.
+
+CI runs the example without Dragon. For this
 release the parts were tested under Dragon by hand: the store's contract on
 RaDEX, an agent suspended by one Dragon process and resumed by another, the
 tool service in a Dragon process serving two agent processes over Dragon's

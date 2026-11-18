@@ -98,6 +98,8 @@ Agents at scale:
   suspension resumed from RaDEX. They passed under Dragon 0.15.0 on Python
   3.12, with RHAPSODY at commit `2523ead`, whose native Dragon backend is not
   in a release yet, and RaDEX at commit `9f9b0df`.
+  The tests marked `dragon` make these checks, the last one with the
+  example's `--dragon` flag; the contributing guide says how to run them.
 - RaDEX has no package: `RadexStore` needs RaDEX's Python client built from
   source with its C++ core.
 - An agent resumes only in the process that suspended it, because that

@@ -22,6 +22,37 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
 
+from _dragon import clear, dictionary, under_dragon
+
+
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
+    """Skip the Dragon suite unless pytest runs under ``dragon``."""
+    if under_dragon():
+        return
+    skip = pytest.mark.skip(
+        reason="needs a Dragon runtime: run by hand under `dragon` (tests/_dragon.py)"
+    )
+    for item in items:
+        if "dragon" in item.keywords:
+            item.add_marker(skip)
+
+
+@pytest.fixture(scope="session")
+def dragon_dictionary() -> Iterator[str]:
+    """One Dragon distributed dictionary for the Dragon suite; its descriptor."""
+    with dictionary() as descriptor:
+        yield descriptor
+
+
+@pytest.fixture
+def dragon_descriptor(dragon_dictionary: str) -> Iterator[str]:
+    """The suite's dictionary, emptied after the test."""
+    yield dragon_dictionary
+    clear(dragon_dictionary)
+
+
 # The global tracer and logger providers can be set once per process, so every
 # test that reads spans or log records shares these exporters and clears them.
 _EXPORTER = InMemorySpanExporter()
