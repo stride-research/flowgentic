@@ -8,6 +8,7 @@ nav:
   - Home: index.md
   - Getting started: getting-started.md
   - Guides:
+      - LangGraph agents at scale: guides/agents-at-scale.md
       - Augment an AsyncFlow application: guides/augment-asyncflow-app.md
       - LangGraph on AsyncFlow with Flowgentic: guides/langgraph-on-asyncflow.md
       - LangGraph on AsyncFlow directly: guides/langgraph-direct.md

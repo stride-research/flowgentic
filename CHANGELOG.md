@@ -7,7 +7,15 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
-## [Unreleased]
+## [0.5.0] - 2026-11-17
+
+Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as
+AsyncFlow workflow tasks, and, from this release, as LangGraph agents at scale
+whose tools run as RHAPSODY tasks and whose state lives in RaDEX. 0.5.0 adds
+that second path: an agent host that runs many thousands of agents per
+process, a checkpointer over a key-value store, tool placement with a shared
+MCP tool service, and a client for a fleet of model servers. The path is in
+active development; the AsyncFlow path stays in maintenance mode.
 
 **Breaking changes.**
 
@@ -25,6 +33,14 @@ predate this changelog, so their changes are not listed here.
 
 ### Added
 
+- `examples/agents-at-scale/`: a campaign of LangGraph agents on a laptop, in
+  one agent process or several, with a scripted model behind a fleet of two
+  replicas, RHAPSODY on a thread pool, the in-memory store, the tool service
+  and an MCP server on 127.0.0.1. CI runs it in one process and in two
+  processes that share one tool service. The guide
+  [LangGraph agents at scale](https://stride-research.github.io/flowgentic/guides/agents-at-scale/)
+  walks through it, and through choosing a process's limits from the host's
+  report.
 - `flowgentic.host`: an agent host that runs many agents in one process,
   through a runner per framework. While it runs it raises the cyclic
   collector's first threshold and freezes the objects alive once agents have
@@ -84,9 +100,9 @@ predate this changelog, so their changes are not listed here.
 - A tool service call has a deadline: with no answer within the client's
   `timeout` (150 s by default) it fails with `ToolServiceError`, and with
   `alive`, a check that the service still runs (such as a test of its pid),
-  every waiting call fails as soon as the service has stopped. A call's arguments travel as JSON values,
-  so the service needs none of the agents' classes, and arguments with no JSON
-  form fail their own call. The service refuses a request from a process with
+  every waiting call fails as soon as the service has stopped. A call's
+  arguments travel as JSON values, so the service needs none of the agents'
+  classes, and arguments with no JSON form fail their own call. The service refuses a request from a process with
   no reply queue, and a reply queue that fails loses no other process's
   answers. An MCP success with no content is a success with no data, and a
   result with several text blocks returns all of them.
@@ -121,14 +137,19 @@ predate this changelog, so their changes are not listed here.
 
 ### Changed
 
+- The status page, home page, README and architecture page describe both
+  paths: agents at scale, in active development, and the AsyncFlow path, in
+  maintenance mode.
 - The `examples` extra moves to RHAPSODY 0.7 (`rhapsody-py[telemetry]>=0.7,<0.8`).
-- `flowgentic.langgraph` imports `LangraphIntegration` when first used, so
+- `flowgentic.langgraph` imports `LangGraphIntegration` when first used, so
   `GraphRunner` needs only the `langgraph` extra.
 - Importing a part whose extra is not installed raises `ModuleNotFoundError`
   with the extra to install.
 - CI runs the test suite on Python 3.11, 3.12 and 3.13, and on 3.11 with the
-  lowest versions the ranges allow. The documentation's cap on
-  `pymdown-extensions`, needed only on Python 3.10, is lifted.
+  lowest versions the ranges allow, and records the tested versions of
+  RHAPSODY, the MCP SDK and LangGraph's checkpointer with the others. The
+  documentation's cap on `pymdown-extensions`, needed only on Python 3.10, is
+  lifted.
 
 ## [0.4.0] - 2026-10-30
 
@@ -507,6 +528,7 @@ on `main`.
   - Each test matrix job runs its own Python with the dev extra.
   - The bandit job runs again.
 
+[0.5.0]: https://github.com/stride-research/flowgentic/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/stride-research/flowgentic/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/stride-research/flowgentic/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/stride-research/flowgentic/compare/0.2.0...v0.3.0
