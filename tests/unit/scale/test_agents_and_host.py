@@ -8,6 +8,7 @@ import sys
 import pytest
 from opentelemetry.trace import StatusCode
 
+import flowgentic.host
 from flowgentic import _agents
 from flowgentic.host import (
     Agent,
@@ -265,6 +266,25 @@ async def test_a_cancelled_agents_span_is_an_error_without_an_exception(span_exp
     assert span.status.status_code is StatusCode.ERROR
     assert span.attributes["error.type"] == "CancelledError"
     assert not span.events
+
+
+def test_the_host_exports_the_names_its_docs_present():
+    assert set(flowgentic.host.__all__) == {
+        "Agent",
+        "AgentHost",
+        "AgentResult",
+        "AgentState",
+        "AgentStates",
+        "Collector",
+        "Finished",
+        "HostReport",
+        "Interrupted",
+        "Runner",
+        "Stagger",
+        "Suspended",
+        "register_pending",
+    }
+    assert not hasattr(flowgentic.host, "CATEGORY")
 
 
 def test_collecting_metrics_while_the_collector_runs_does_not_deadlock():

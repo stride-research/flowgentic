@@ -43,11 +43,10 @@ from typing import Any, Protocol
 from opentelemetry.trace import Status, StatusCode
 
 from flowgentic import _agents, _telemetry
-from flowgentic._agents import CATEGORY, AgentState, AgentStates, register_pending
+from flowgentic._agents import AgentState, AgentStates, register_pending
 from flowgentic.host._probes import CollectorPauses, LoopLag
 
 __all__ = [
-	"CATEGORY",
 	"Agent",
 	"AgentHost",
 	"AgentResult",
