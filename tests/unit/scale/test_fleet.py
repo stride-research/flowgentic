@@ -2,16 +2,29 @@
 metrics."""
 
 import asyncio
+import inspect
+import itertools
+import json
 import subprocess
 import sys
+import warnings
 
+import httpx
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.callbacks import AsyncCallbackHandler, get_usage_metadata_callback
+from langchain_core.language_models.fake_chat_models import (
+    FakeMessagesListChatModel,
+    GenericFakeChatModel,
+)
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
+from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
 from langgraph.graph import START, MessagesState, StateGraph
+from pydantic import BaseModel
 
+import flowgentic.fleet as fleet_module
 from flowgentic import _agents
 from flowgentic.fleet import (
-    TRANSIENT,
     AdmissionGate,
     AgentAffinity,
     Fleet,
@@ -38,7 +51,7 @@ class Slow:
     def bind_tools(self, tools, **kwargs):
         return self
 
-    async def ainvoke(self, messages):
+    async def ainvoke(self, messages, config=None):
         self.now += 1
         self.most = max(self.most, self.now)
         await asyncio.sleep(0.01)
@@ -51,6 +64,18 @@ class Slow:
 
 def agents(n):
     return [f"mat-{i:06d}" for i in range(n)]
+
+
+def one_node(node):
+    """A graph of one node."""
+    g = StateGraph(MessagesState)
+    g.add_node("model", node)
+    g.add_edge(START, "model")
+    return g.compile()
+
+
+def thread(thread_id):
+    return {"configurable": {"thread_id": thread_id}}
 
 
 def test_affinity_is_the_same_in_another_process():
@@ -80,18 +105,29 @@ def test_baseline_routings():
 
 async def test_admission_is_first_come_and_cancellation_releases():
     gate = AdmissionGate(tokens=100, requests=10)
-    await gate.acquire(80)
-    big = asyncio.create_task(gate.acquire(50))  # does not fit: waits
-    small = asyncio.create_task(gate.acquire(10))  # fits, but is behind big
+    await gate.acquire(80, "a")
+    big = asyncio.create_task(gate.acquire(50, "b"))  # does not fit: waits
+    small = asyncio.create_task(gate.acquire(10, "c"))  # fits, but is behind big
     await asyncio.sleep(0.01)
     assert gate.load() == ReplicaLoad(80, 1, 2)
     big.cancel()
     await asyncio.sleep(0.01)
     assert small.done() and gate.load() == ReplicaLoad(90, 2, 0)
-    gate.release(80)
-    gate.release(10)
-    await gate.acquire(500)  # larger than the cap: admitted alone
+    gate.release(80, "a")
+    gate.release(10, "c")
+    await gate.acquire(500, "d")  # larger than the cap: admitted alone
     assert gate.load() == ReplicaLoad(500, 1, 0)
+
+
+async def test_a_request_admitted_then_cancelled_releases_what_it_took():
+    gate = AdmissionGate(tokens=100, requests=1)
+    await gate.acquire(10, "a")
+    waiting = asyncio.create_task(gate.acquire(20, "b"))
+    await asyncio.sleep(0)
+    gate.release(10, "a")  # admits b, which has not run yet
+    waiting.cancel()
+    await asyncio.sleep(0.01)
+    assert waiting.cancelled() and gate.load() == ReplicaLoad(0, 0, 0)
 
 
 def test_share_scales_the_caps():
@@ -107,6 +143,96 @@ def test_share_scales_the_caps():
 def test_a_cap_below_one_is_refused_not_raised_to_one(admission):
     with pytest.raises(ValueError, match="at least 1"):
         Fleet([Slow()], admission=admission)
+
+
+# --- the admission seam ------------------------------------------------------------
+
+
+class Ledger:
+    """A custom gate: it admits every call, and records whose calls it saw."""
+
+    def __init__(self, share):
+        self.share = share
+        self.events = []
+        self.requests = 0
+
+    async def acquire(self, n, agent_id):
+        self.events.append(("acquire", agent_id))
+        self.requests += 1
+
+    def release(self, n, agent_id):
+        self.events.append(("release", agent_id))
+        self.requests -= 1
+
+    def agent_done(self, agent_id):
+        self.events.append(("done", agent_id))
+
+    def load(self):
+        return ReplicaLoad(0, self.requests, 0)
+
+    def stats(self):
+        return {"policy": "ledger", "events": len(self.events)}
+
+
+class LedgerAdmission:
+    counts_tokens = False
+
+    def __init__(self, make=Ledger):
+        self.make = make
+        self.gates = []
+
+    def gate(self, share):
+        gate = self.make(share)
+        self.gates.append(gate)
+        return gate
+
+
+async def test_a_custom_admission_sees_whose_call_it_admits():
+    admission = LedgerAdmission()
+    fleet = Fleet([Recording(), Recording()], admission=admission, share=0.5)
+    records = []
+    fleet.add_listener(lambda record, reply: records.append(record))
+    chat = fleet.chat_model()
+
+    async def node(state: MessagesState):
+        return {"messages": [await chat.ainvoke(state["messages"])]}
+
+    await fleet.ainvoke("a", [HumanMessage("hi")])
+    await one_node(node).ainvoke({"messages": [HumanMessage("hi")]}, thread("t-1"))
+    assert [g.share for g in admission.gates] == [0.5, 0.5]
+    for record in records:
+        gate = admission.gates[record.replica]
+        assert gate.events.count(("acquire", record.agent_id)) == 1
+        assert gate.events.count(("release", record.agent_id)) == 1
+    assert fleet.stats()["gates"] == [g.stats() for g in admission.gates]
+    assert fleet.load() == [ReplicaLoad(0, 0, 0)] * 2
+
+    fleet.agent_done("a")  # every gate hears that the agent ended
+    assert all(g.events[-1] == ("done", "a") for g in admission.gates)
+    await fleet.ainvoke("a", [HumanMessage("hi")])  # and the fleet forgot its size
+    assert records[-1].gap_s is None and records[-1].prev_prompt_tokens is None
+
+
+def test_the_built_in_gates_are_gates_and_a_gate_that_is_not_is_refused():
+    Gate = fleet_module.Gate
+    assert isinstance(TokenAdmission(1000, 10).gate(1.0), Gate)
+    assert isinstance(RequestAdmission(10).gate(1.0), Gate)
+
+    class NoStats:
+        def __init__(self, share):
+            pass
+
+        async def acquire(self, n, agent_id):
+            pass
+
+        def release(self, n, agent_id):
+            pass
+
+        def load(self):
+            return ReplicaLoad(0, 0, 0)
+
+    with pytest.raises(TypeError, match="Gate"):
+        Fleet([Recording()], admission=LedgerAdmission(NoStats))
 
 
 async def test_admission_cap_states_and_records():
@@ -262,10 +388,88 @@ async def test_a_call_fails_after_outage_s_while_the_check_hangs():
         answer.set()
 
 
+async def test_a_check_that_hangs_once_does_not_stop_recovery():
+    server = {"up": True, "tag": "v2"}  # already back, elsewhere
+    new = Down(server, "v2")
+    probes = []
+
+    async def check(i):
+        probes.append(i)
+        if len(probes) == 1:
+            await asyncio.Event().wait()  # a probe to the old node, which never answers
+        return new
+
+    recovery = Recovery(check, outage_s=5, poll_s=0.02, check_timeout_s=0.05)
+    fleet = Fleet([Down(server, "v1")], recovery=recovery)
+    reply = await asyncio.wait_for(fleet.ainvoke("a", [HumanMessage("hi")]), 5)
+    assert reply.content == "DONE v2" and len(probes) == 2
+    assert recovery.stats()["check_failures"] == {0: 1}
+
+
+async def test_a_check_that_raises_counts_as_down():
+    server = {"up": False}
+    model = Down(server)
+
+    async def check(i):
+        if not server["up"]:
+            raise ConnectionRefusedError("the health probe was refused")
+        return model
+
+    recovery = Recovery(check, outage_s=5, poll_s=0.02)
+    fleet = Fleet([model], recovery=recovery)
+    call = asyncio.create_task(fleet.ainvoke("a", [HumanMessage("hi")]))
+    await asyncio.sleep(0.1)
+    server["up"] = True
+    assert (await asyncio.wait_for(call, 5)).content == "DONE v1"
+    assert recovery.stats()["check_failures"][0] >= 2
+
+    async def refused(i):
+        raise ConnectionRefusedError("the health probe was refused")
+
+    fleet = Fleet([Down({"up": False})], recovery=Recovery(refused, outage_s=0.1, poll_s=0.02))
+    with pytest.raises(APIConnectionError):  # the call's own error, not the check's
+        await asyncio.wait_for(fleet.ainvoke("a", [HumanMessage("hi")]), 5)
+
+
+async def test_the_watch_runs_outside_the_callers_context():
+    server = {"up": False}
+    model = Down(server)
+    seen = set()
+
+    async def check(i):
+        seen.add(_agents.current_agent())
+        return model if server["up"] else None
+
+    fleet = Fleet([model], recovery=Recovery(check, poll_s=0.02))
+    states = AgentStates(["agent-1", "agent-2"])
+
+    async def one(agent):
+        _agents.set_current_agent(agent, states)
+        await fleet.ainvoke(agent, [HumanMessage("hi")])
+
+    calls = [asyncio.create_task(one("agent-1"))]
+    await asyncio.sleep(0.05)
+    calls.append(asyncio.create_task(one("agent-2")))
+    await asyncio.sleep(0.1)
+    server["up"] = True
+    await asyncio.wait_for(asyncio.gather(*calls), 5)
+    assert seen == {None}
+
+
+@pytest.mark.parametrize("bad", [{"outage_s": -1}, {"poll_s": 0}, {"check_timeout_s": 0}])
+def test_recovery_refuses_a_negative_outage_and_zero_intervals(bad):
+    async def check(i):
+        return None
+
+    with pytest.raises(ValueError):
+        Recovery(check, **bad)
+
+
 def test_which_errors_of_langchain_openai_are_transient():
     import openai
     from langchain_openai.chat_models import base
 
+    TRANSIENT = fleet_module._TRANSIENT
     for name in TRANSIENT:
         assert issubclass(getattr(openai, name), openai.OpenAIError)
 
@@ -316,12 +520,14 @@ class Recording:
         self.server = server
         self.tag = tag
         self.kwargs = []
+        self.configs = []
 
     def bind_tools(self, tools, **kwargs):
         return self
 
-    async def ainvoke(self, messages, **kwargs):
+    async def ainvoke(self, messages, config=None, **kwargs):
         self.kwargs.append(kwargs)
+        self.configs.append(config)
         if self.server is not None and self.server.get("tag", self.tag) != self.tag:
             raise APIConnectionError("Connection error.")
         reply = AIMessage(f"DONE {self.tag}")
@@ -417,6 +623,172 @@ async def test_the_chat_model_passes_settings_reserve_and_meta_per_call():
     assert records[0].estimate == records[1].estimate + 256
 
 
+# --- the chat model ----------------------------------------------------------------
+
+
+async def test_the_chat_model_takes_the_agent_from_the_config_it_is_given():
+    fleet = Fleet([Recording() for _ in range(4)])
+    records = []
+    fleet.add_listener(lambda record, reply: records.append(record))
+    chat = fleet.chat_model()
+    # outside a graph, with settings for the fleet
+    await chat.ainvoke([HumanMessage("hi")], config=thread("alone"), reserve=64, meta="alone")
+
+    async def supervisor(state: MessagesState):
+        for sub in ("sub-a", "sub-b"):  # two sub-agents, each its own thread
+            await chat.ainvoke(state["messages"], config=thread(sub))
+        return {}
+
+    await one_node(supervisor).ainvoke({"messages": [HumanMessage("hi")]}, thread("outer"))
+    assert [r.agent_id for r in records] == ["alone", "sub-a", "sub-b"]
+    assert records[0].meta == "alone"
+
+
+class ModelStarts(AsyncCallbackHandler):
+    """The chat-model runs a call opens: their names and tags."""
+
+    def __init__(self):
+        self.runs = []
+
+    async def on_chat_model_start(self, serialized, messages, **kwargs):
+        self.runs.append(((serialized or {}).get("name") or kwargs.get("name"), kwargs.get("tags")))
+
+
+def fake_replica():
+    usage = {"input_tokens": 100, "output_tokens": 7, "total_tokens": 107}
+    reply = AIMessage("DONE", usage_metadata=usage, response_metadata={"model_name": "m"})
+    return FakeMessagesListChatModel(responses=[reply] * 4)
+
+
+async def test_the_chat_model_opens_no_model_run_of_its_own():
+    chat = Fleet([fake_replica()]).chat_model()
+    starts = ModelStarts()
+
+    async def node(state: MessagesState):
+        return {"messages": [await chat.ainvoke(state["messages"])]}
+
+    with get_usage_metadata_callback() as usage:
+        await one_node(node).ainvoke(
+            {"messages": [HumanMessage("hi")]}, {**thread("t-1"), "callbacks": [starts]}
+        )
+    assert usage.usage_metadata["m"]["input_tokens"] == 100  # counted once
+    assert [name for name, _ in starts.runs] == ["FakeMessagesListChatModel"]
+    # the caller's config reaches the replica: its callbacks and tags
+    starts.runs.clear()
+    config = {**thread("t-2"), "callbacks": [starts], "tags": ["mine"]}
+    await chat.ainvoke([HumanMessage("hi")], config=config)
+    ((name, tags),) = starts.runs
+    assert name == "FakeMessagesListChatModel" and "mine" in tags
+
+
+async def test_the_chat_model_streams_the_replicas_tokens_in_a_graph():
+    fleet = Fleet([GenericFakeChatModel(messages=itertools.repeat(AIMessage("DONE now")))])
+    records = []
+    fleet.add_listener(lambda record, reply: records.append(record))
+    chat = fleet.chat_model()
+
+    async def node(state: MessagesState):
+        return {"messages": [await chat.ainvoke(state["messages"])]}
+
+    chunks = [
+        message
+        async for message, _ in one_node(node).astream(
+            {"messages": [HumanMessage("hi")]}, thread("t-1"), stream_mode="messages"
+        )
+    ]
+    assert len(chunks) > 1 and all(isinstance(c, AIMessageChunk) for c in chunks)
+    assert "".join(c.content for c in chunks) == "DONE now"
+    assert [r.agent_id for r in records] == ["t-1"]
+
+
+def scripted_openai(replies):
+    """A ChatOpenAI whose endpoint answers with ``replies``' messages in turn."""
+    script = itertools.cycle(replies)
+
+    def answer(request):
+        return httpx.Response(
+            200,
+            json={
+                "id": "gen-1",
+                "object": "chat.completion",
+                "model": "m",
+                "choices": [{"index": 0, "message": next(script), "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 100, "completion_tokens": 7, "total_tokens": 107},
+            },
+        )
+
+    return ChatOpenAI(
+        model="m",
+        api_key="x",
+        base_url="http://scripted.invalid/v1",
+        http_async_client=httpx.AsyncClient(transport=httpx.MockTransport(answer)),
+    )
+
+
+def tool_call(name, args):
+    function = {"name": name, "arguments": json.dumps(args)}
+    return {"role": "assistant", "content": None, "tool_calls": [{"id": "c1", "type": "function", "function": function}]}
+
+
+class Answer(BaseModel):
+    x: int
+
+
+async def test_the_chat_model_gives_structured_output():
+    fleet = Fleet([scripted_openai([tool_call("Answer", {"x": 3})])])
+    records = []
+    fleet.add_listener(lambda record, reply: records.append(record))
+    structured = fleet.chat_model().with_structured_output(Answer)
+    assert await structured.ainvoke([HumanMessage("hi")], config=thread("t")) == Answer(x=3)
+    assert [r.agent_id for r in records] == ["t"]
+
+
+@tool
+def add(a: int, b: int) -> int:
+    """Add two numbers."""
+    return a + b
+
+
+async def test_prebuilt_agents_send_each_call_to_the_agents_replica():
+    from langchain.agents import create_agent
+    from langgraph.prebuilt import create_react_agent
+
+    for make in (create_agent, create_react_agent):
+        replies = [tool_call("add", {"a": 1, "b": 2}), {"role": "assistant", "content": "3"}]
+        fleet = Fleet([scripted_openai(replies), scripted_openai(replies)])
+        records = []
+        fleet.add_listener(lambda record, reply: records.append(record))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)  # create_react_agent
+            agent = make(fleet.chat_model(), [add])
+        out = await agent.ainvoke({"messages": [HumanMessage("1+2?")]}, thread("t-7"))
+        assert out["messages"][-1].content == "3"
+        assert [r.agent_id for r in records] == ["t-7", "t-7"]
+        assert records[0].replica == records[1].replica
+
+
+def test_the_chat_model_is_asynchronous_only():
+    with pytest.raises(NotImplementedError, match="ainvoke"):
+        Fleet([Recording()]).chat_model().invoke([HumanMessage("hi")], config=thread("t"))
+
+
+# --- the module's names ------------------------------------------------------------
+
+
+def test_the_fleet_module_names_only_its_api():
+    for name in ("stable_hash", "transient", "TRANSIENT", "AgentState", "message_chars"):
+        assert not hasattr(fleet_module, name), name
+    defined_here = {
+        name
+        for name, value in vars(fleet_module).items()
+        if not name.startswith("_")
+        and not inspect.ismodule(value)
+        and getattr(value, "__module__", fleet_module.__name__) == fleet_module.__name__
+    }
+    assert defined_here == set(fleet_module.__all__)
+    assert "Gate" in fleet_module.__all__
+
+
 # --- metrics -----------------------------------------------------------------------
 
 
@@ -453,3 +825,19 @@ async def test_the_fleet_records_admission_and_each_replicas_load(metric_reader)
     (service,) = points(metric_reader, "flowgentic.fleet.request.duration", "metrics")
     assert wait.count == 3 and wait.max > 0
     assert service.count == 3 and service.min > 0
+
+
+# --- spans: last, as the instrumentation stays on for the rest of the module ------
+
+
+@pytest.mark.usefixtures("genai_instrumentation")
+async def test_one_call_through_the_chat_model_is_one_inference_span(span_exporter):
+    chat = Fleet([scripted_openai([{"role": "assistant", "content": "DONE"}])]).chat_model()
+
+    async def node(state: MessagesState):
+        return {"messages": [await chat.ainvoke(state["messages"])]}
+
+    await one_node(node).ainvoke({"messages": [HumanMessage("hi")]}, thread("t-1"))
+    (span,) = [s for s in span_exporter.get_finished_spans() if s.attributes.get("gen_ai.operation.name") == "chat"]
+    assert span.attributes["gen_ai.usage.input_tokens"] == 100
+    assert span.attributes["server.address"] == "scripted.invalid"
