@@ -505,6 +505,18 @@ def run_campaign_on_dragon(agents: int, processes: int, workers: int) -> dict:
     """The campaign on Dragon: a dictionary for RaDEX, and the tool service and
     each agent process in a Dragon process, over Dragon's queues."""
     import dragon  # noqa: F401  # adds Dragon's start method to multiprocessing
+
+    # Make "dragon" the start method, as Dragon's processes inherit it. Importing
+    # LangGraph has already fixed the platform's default, hence force.
+    previous = multiprocessing.get_start_method(allow_none=True)
+    multiprocessing.set_start_method("dragon", force=True)
+    try:
+        return _campaign_on_dragon(agents, processes, workers)
+    finally:
+        multiprocessing.set_start_method(previous, force=True)
+
+
+def _campaign_on_dragon(agents: int, processes: int, workers: int) -> dict:
     from rhapsody.backends.data.dragon import DragonDataBackend
 
     ctx = multiprocessing.get_context("dragon")
