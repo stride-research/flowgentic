@@ -18,6 +18,8 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 REPOSITORY = Path(__file__).resolve().parents[2]
 EXAMPLE = REPOSITORY / "examples" / "agents-at-scale" / "campaign.py"
 
@@ -82,4 +84,23 @@ def test_two_agent_processes_share_one_tool_service() -> None:
         assert process["outcomes"] == {"done": 100}
         # Each process sent its own agents' lookups to the shared service.
         assert process["tool_service_client"]["sent"] == 100
+        assert process["tool_service_client"]["answered"] == 100
+
+
+@pytest.mark.dragon
+def test_the_campaign_on_dragon(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``--dragon``: the agents' state in RaDEX on a Dragon dictionary, the
+    simulations on RHAPSODY's native Dragon backend, and the tool service and
+    two agent processes as Dragon processes over Dragon's queues."""
+    # Imported by name, so that Dragon's processes can import it too.
+    monkeypatch.syspath_prepend(str(EXAMPLE.parent))
+    campaign = importlib.import_module("campaign")
+    summary = campaign.run_campaign(agents=200, processes=2, workers=4, dragon=True)
+    check(summary, 200)
+    pids = {process["pid"] for process in summary["per_process"]}
+    assert len(pids) == 2 and os.getpid() not in pids
+    for process in summary["per_process"]:
+        assert process["store"] == "RadexStore"
+        assert process["task_backend"] == "DragonNativeExecutionBackend"
+        assert process["outcomes"] == {"done": 100}
         assert process["tool_service_client"]["answered"] == 100

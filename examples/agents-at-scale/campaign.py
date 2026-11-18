@@ -25,6 +25,15 @@ processes share it over Dragon's queues on an allocation.
 
 It needs the ``langgraph``, ``rhapsody`` and ``mcp`` extras; the ``dev`` extra
 has them all.
+
+With ``--dragon``, under ``dragon``, the same campaign runs on Dragon's
+resources: the agents' state in RaDEX, on a Dragon distributed dictionary from
+RHAPSODY's ``DragonDataBackend``; the simulations on RHAPSODY's native Dragon
+backend; the tool service and each agent process in a Dragon process of its
+own, over Dragon's queues. It also needs Dragon, RaDEX's Python client, and a
+RHAPSODY with ``DragonNativeExecutionBackend``. Only the model stays scripted.
+
+    dragon examples/agents-at-scale/campaign.py --dragon --agents 1000 --processes 2
 """
 
 from __future__ import annotations
@@ -33,6 +42,7 @@ import argparse
 import asyncio
 import json
 import multiprocessing
+import os
 import queue
 import socket
 import subprocess
@@ -60,7 +70,7 @@ from flowgentic.langgraph import (
     bind_tools,
     route_tool_calls,
 )
-from flowgentic.store import MemoryStore
+from flowgentic.store import MemoryStore, RadexStore
 from flowgentic.tools import ToolRuntime, mcp_tool, task_tool
 from flowgentic.tools.mcp import SupervisedMcpPool
 from flowgentic.tools.service import ToolServiceClient, serve
@@ -191,6 +201,47 @@ class ToolService:
         self._thread.join(30)
 
 
+def service_process(url: str, requests: Any, replies: list, status: Any) -> None:
+    """The tool service's process: "ready" on ``status``, then its counters."""
+    pool = SupervisedMcpPool(url, clients=2, per_client=16)
+    try:
+        stats = asyncio.run(
+            serve(requests, replies, pool, on_ready=lambda _: status.put("ready"))
+        )
+    except BaseException as exc:
+        status.put(f"failed: {type(exc).__name__}: {exc}")
+        raise
+    status.put(stats)
+
+
+class ToolServiceProcess:
+    """The tool service in a process of its own, as on an allocation."""
+
+    def __init__(self, ctx: Any, url: str, requests: Any, replies: list) -> None:
+        self.requests = requests
+        self.stats: dict = {}
+        self._status = ctx.Queue()
+        self._proc = ctx.Process(
+            target=service_process,
+            args=(url, requests, replies, self._status),
+            name="tool-service",
+        )
+
+    def __enter__(self) -> ToolServiceProcess:
+        self._proc.start()
+        ready = self._status.get(timeout=60)
+        if ready != "ready":
+            raise RuntimeError(f"the tool service did not start: {ready}")
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.requests.put(None)  # stops the service
+        try:
+            self.stats = self._status.get(timeout=60)
+        finally:
+            self._proc.join(30)
+
+
 # --- a scripted model, standing in for the model servers -----------------------
 
 
@@ -274,6 +325,24 @@ def build_graph(fleet: Fleet, tools: list, saver: KeyValueSaver):
 # --8<-- [end:graph]
 
 
+async def task_backend(workers: int, dragon: bool) -> Any:
+    """RHAPSODY's backend for the task tools: a thread pool, or the native
+    Dragon backend's pool of worker processes."""
+    if not dragon:
+        from rhapsody.backends import ConcurrentExecutionBackend
+
+        return await ConcurrentExecutionBackend(ThreadPoolExecutor(workers))
+    import cloudpickle
+    from rhapsody.backends import DragonNativeExecutionBackend
+
+    # RHAPSODY sends a task's function to its workers with cloudpickle, which
+    # sends a function by name when its module looks importable. The workers
+    # cannot import this script, so its functions go by value.
+    if simulate.__module__ != "__main__":
+        cloudpickle.register_pickle_by_value(sys.modules[simulate.__module__])
+    return await DragonNativeExecutionBackend(workers_per_node=workers)
+
+
 async def run_agents(
     index: int,
     processes: int,
@@ -281,16 +350,18 @@ async def run_agents(
     requests: Any,
     replies: Any,
     workers: int = 8,
+    descriptor: str | None = None,
 ) -> dict:
     """Run agent process ``index``'s share of the campaign: agents ``index``,
-    ``index + processes``, and so on."""
+    ``index + processes``, and so on. With a dictionary's ``descriptor``, on
+    Dragon: the store is RaDEX, the tasks run on the native Dragon backend."""
     from rhapsody import Session
-    from rhapsody.backends import ConcurrentExecutionBackend
 
+    dragon = descriptor is not None
     # --8<-- [start:process]
     client = ToolServiceClient(requests, replies, index=index)
     client.start()
-    backend = await ConcurrentExecutionBackend(ThreadPoolExecutor(workers))
+    backend = await task_backend(workers, dragon)
     session = Session(backends=[backend])
     runtime = ToolRuntime(session, client)
     tools = bind_tools(runtime, TOOLS)
@@ -301,7 +372,9 @@ async def run_agents(
         admission=TokenAdmission(tokens=40_000, requests=64),
         share=1 / processes,
     )
-    saver = KeyValueSaver(MemoryStore())
+    # The agents' state: RaDEX on Dragon, this process's memory on a laptop.
+    store = RadexStore.attach(descriptor) if dragon else MemoryStore()
+    saver = KeyValueSaver(store)
     # --8<-- [end:process]
 
     answers: Counter[str] = Counter()
@@ -338,6 +411,9 @@ async def run_agents(
     fleet_stats = fleet.stats()
     return {
         "index": index,
+        "pid": os.getpid(),
+        "store": type(store).__name__,
+        "task_backend": type(backend).__name__,
         "agents": len(range(index, agents, processes)),
         "outcomes": report.outcomes,
         "errors": report.errors,
@@ -369,10 +445,13 @@ def agent_process(
     replies: Any,
     results: Any,
     workers: int,
+    descriptor: str | None = None,
 ) -> None:
     """An agent process's entry point: its share, reported on ``results``."""
     try:
-        out = asyncio.run(run_agents(index, processes, agents, requests, replies, workers))
+        out = asyncio.run(
+            run_agents(index, processes, agents, requests, replies, workers, descriptor)
+        )
     except BaseException as exc:
         results.put({"index": index, "error": f"{type(exc).__name__}: {exc}"})
         raise
@@ -382,11 +461,16 @@ def agent_process(
 # --- the campaign ---------------------------------------------------------------
 
 
-def run_campaign(agents: int = 200, processes: int = 1, workers: int = 8) -> dict:
+def run_campaign(
+    agents: int = 200, processes: int = 1, workers: int = 8, dragon: bool = False
+) -> dict:
     """Run ``agents`` agents in ``processes`` agent processes against one tool
-    service; return the campaign's summary."""
+    service; return the campaign's summary. ``dragon=True`` runs it on Dragon,
+    under ``dragon``."""
     if agents < 1 or processes < 1:
         raise ValueError("a campaign needs at least one agent and one process")
+    if dragon:
+        return run_campaign_on_dragon(agents, processes, workers)
     t0 = time.monotonic()
     with McpServer() as mcp:
         if processes == 1:
@@ -413,6 +497,46 @@ def run_campaign(agents: int = 200, processes: int = 1, workers: int = 8) -> dic
                 for p in procs:
                     p.start()
                 parts = _collect(results, procs)
+    wall = time.monotonic() - t0
+    return summarize(parts, service.stats, agents, wall)
+
+
+def run_campaign_on_dragon(agents: int, processes: int, workers: int) -> dict:
+    """The campaign on Dragon: a dictionary for RaDEX, and the tool service and
+    each agent process in a Dragon process, over Dragon's queues."""
+    import dragon  # noqa: F401  # adds Dragon's start method to multiprocessing
+    from rhapsody.backends.data.dragon import DragonDataBackend
+
+    ctx = multiprocessing.get_context("dragon")
+    t0 = time.monotonic()
+    # One dictionary for the agents' state: two managers of 1 GiB each.
+    data = DragonDataBackend(
+        name="agents", managers_per_node=2, n_nodes=1, total_mem=2 * 1024**3
+    )
+    asyncio.run(data.start())
+    descriptor = data.endpoints[0].serialize()
+    try:
+        with McpServer() as mcp:
+            requests = ctx.Queue()
+            replies = [ctx.Queue() for _ in range(processes)]
+            with ToolServiceProcess(ctx, mcp.url, requests, replies) as service:
+                results = ctx.Queue()
+                procs = [
+                    ctx.Process(
+                        target=agent_process,
+                        args=(
+                            i, processes, agents, requests, replies[i], results,
+                            workers, descriptor,
+                        ),  # fmt: skip
+                        name=f"agent-process-{i}",
+                    )
+                    for i in range(processes)
+                ]
+                for p in procs:
+                    p.start()
+                parts = _collect(results, procs)
+    finally:
+        asyncio.run(data.shutdown())
     wall = time.monotonic() - t0
     return summarize(parts, service.stats, agents, wall)
 
@@ -519,12 +643,17 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--processes", type=int, default=1)
     p.add_argument("--workers", type=int, default=8, help="RHAPSODY's threads per process")
     p.add_argument("--json", action="store_true", help="print the whole summary as JSON")
+    p.add_argument(
+        "--dragon",
+        action="store_true",
+        help="run on Dragon (RaDEX, the native backend), under `dragon`",
+    )
     p.add_argument("--mcp-server", type=int, metavar="PORT", help=argparse.SUPPRESS)
     a = p.parse_args(argv)
     if a.mcp_server:
         serve_mcp(a.mcp_server)
         return
-    summary = run_campaign(a.agents, a.processes, a.workers)
+    summary = run_campaign(a.agents, a.processes, a.workers, a.dragon)
     print(json.dumps(summary, indent=2) if a.json else report(summary))
 
 

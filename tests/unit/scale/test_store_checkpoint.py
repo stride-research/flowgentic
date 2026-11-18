@@ -1,7 +1,10 @@
 """The key-value stores' contract, RadexStore's mapping of RaDEX, and the
 checkpointer over a store."""
 
+import asyncio
+import os
 import sys
+import time
 import types
 from collections import Counter
 
@@ -77,10 +80,14 @@ class FakeRadex:
 		monkeypatch.setattr(RadexStore, "_clients", {})
 
 
-@pytest.fixture(params=["memory", "radex"])
+@pytest.fixture(
+	params=["memory", "radex", pytest.param("dragon", marks=pytest.mark.dragon)]
+)
 def store(request, monkeypatch):
 	if request.param == "memory":
 		return MemoryStore()
+	if request.param == "dragon":  # RaDEX itself, on a Dragon dictionary
+		return RadexStore.attach(request.getfixturevalue("dragon_descriptor"))
 	fake = FakeRadex()
 	fake.install(monkeypatch)
 	s = RadexStore.attach("descriptor")
@@ -96,12 +103,15 @@ def test_store_contract(store):
 	store.put("k", {"x": [1, 2]})
 	assert store.get("k") == {"x": [1, 2]} and store.contains("k")
 	store.delete("k")
+	t0 = time.monotonic()
 	store.delete("k")  # a missing key is not an error
+	assert time.monotonic() - t0 < 1.0  # nor a wait for RaDEX's timeout
 	assert not store.contains("k")
 	store.put_tensor("t", [1.0, 2.0])
 	assert list(store.get_tensor("t")) == [1.0, 2.0]
 	if isinstance(store, RadexStore):
-		assert store.fake.deletes_of_missing == 0  # checked before deleting
+		if hasattr(store, "fake"):
+			assert store.fake.deletes_of_missing == 0  # checked before deleting
 		with pytest.raises(KeyError):
 			store.get_tensor("missing")
 
@@ -180,6 +190,79 @@ async def test_an_interrupted_graph_resumes_from_the_store(store, stop_inside):
 	out = await fresh.ainvoke(resume, config, durability="exit")
 	assert out["messages"][-1].content == ("b done" if stop_inside else "b")
 	assert saver.checkpoints_put == 1
+
+
+def agent_config(i: int) -> dict:
+	return {"configurable": {"thread_id": f"agent-{i}"}}
+
+
+def suspend_agents(descriptor: str, agents: int, out) -> None:
+	"""A Dragon process: run each agent until it suspends, then exit."""
+
+	async def run():
+		saver = KeyValueSaver(RadexStore.attach(descriptor))
+		g = graph(saver, stop_inside=True)
+		outs = await asyncio.gather(
+			*(
+				g.ainvoke({"messages": [("human", f"hi {i}")]}, agent_config(i), durability="exit")
+				for i in range(agents)
+			)
+		)
+		return {
+			"pid": os.getpid(),
+			"suspended": sum("__interrupt__" in o for o in outs),
+			"checkpoints_put": saver.checkpoints_put,
+		}
+
+	out.put(asyncio.run(run()))
+
+
+def resume_agents(descriptor: str, agents: int, out) -> None:
+	"""A second Dragon process: find each agent suspended in the store, and
+	resume it to its end."""
+
+	async def run():
+		saver = KeyValueSaver(RadexStore.attach(descriptor))
+		g = graph(saver, stop_inside=True)
+		waiting = [(await g.aget_state(agent_config(i))).next for i in range(agents)]
+		outs = await asyncio.gather(
+			*(
+				g.ainvoke(Command(resume=f"done {i}"), agent_config(i), durability="exit")
+				for i in range(agents)
+			)
+		)
+		return {
+			"pid": os.getpid(),
+			"waiting_at": sorted(set(waiting)),
+			"answers": [[m.content for m in o["messages"]] for o in outs],
+			"checkpoints_put": saver.checkpoints_put,
+		}
+
+	out.put(asyncio.run(run()))
+
+
+@pytest.mark.dragon
+def test_an_agent_suspended_by_one_dragon_process_resumes_in_another(dragon_descriptor):
+	"""Agents suspend in one Dragon process, which then exits; a second process
+	finds them in the dictionary and resumes them."""
+	from _dragon import dragon_queue, join, start, take
+
+	agents = 32
+	out = dragon_queue()
+	first = start(suspend_agents, dragon_descriptor, agents, out)
+	(suspended,) = take(out, 1)
+	join(first)  # nothing of the agents is left in a process
+	second = start(resume_agents, dragon_descriptor, agents, out)
+	(resumed,) = take(out, 1)
+	join(second)
+	assert suspended["pid"] != resumed["pid"] != os.getpid()
+	assert suspended["suspended"] == agents
+	assert resumed["waiting_at"] == [("b",)]
+	assert resumed["answers"] == [["hi " + str(i), "a", f"b done {i}"] for i in range(agents)]
+	# With exit durability: one checkpoint at the suspension, one at the end.
+	assert suspended["checkpoints_put"] == resumed["checkpoints_put"] == agents
+	final = KeyValueSaver(RadexStore.attach(dragon_descriptor))
+	assert final.get_tuple(agent_config(0)).checkpoint["channel_values"]["messages"][-1].content == "b done 0"
 
 
 async def test_retention_list_and_delete():
