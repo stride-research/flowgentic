@@ -15,10 +15,13 @@ The declarations are framework-neutral; each framework's adapter turns them
 into its own tools (``flowgentic.langgraph.bind_tools`` for LangGraph).
 
 A ``ToolRuntime`` runs them for one agent process. A task or service call is
-keyed by the agent and the tool call's id, so a call made again with the same
-key, as a framework does when it resumes an agent, gets the first call's
-result and runs nothing. The runtime keeps the outcomes of the last
-``retained`` finished tasks; the tool service keeps its own answers.
+keyed by the agent, the framework's step that made the call (its ``scope``,
+LangGraph's task id) and the tool call's id, so a call made again with the
+same key, as a framework does when it resumes an agent, gets the first call's
+result and runs nothing, while a later step that reuses a call id, as a model
+server that numbers its calls per message does, makes a new call. The runtime
+keeps the outcomes of the last ``retained`` finished tasks; the tool service
+keeps its own answers.
 
 A task may also **suspend** its agent: the agent's state is saved and dropped
 while the task runs, and the agent host resumes it when the task ends.
@@ -59,7 +62,22 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
-_UNSAFE = re.compile(r"[^A-Za-z0-9_.-]")
+# What a task uid keeps as it is; every other character is escaped.
+_ESCAPED = re.compile(r"[^A-Za-z0-9-]")
+
+
+def _escape(match: re.Match) -> str:
+	c = match.group()
+	if c == "/":
+		return "."
+	if c == "_":
+		return "__"
+	return f"_x{ord(c):x}_"
+
+
+def _key_part(value: str) -> str:
+	# A part of a key holds no "/", so the parts of a key are always the same.
+	return str(value).replace("%", "%25").replace("/", "%2F")
 
 
 # --- declarations ------------------------------------------------------------------
@@ -263,25 +281,41 @@ class ToolRuntime:
 		self._listeners.append(listener)
 
 	@staticmethod
-	def key(agent_id: str, call_id: str) -> str:
-		"""The key of one tool call: the agent and the call's id."""
-		return f"{agent_id}/{call_id}"
+	def key(agent_id: str, call_id: str, scope: str = "") -> str:
+		"""The key of one tool call: ``agent/scope/call``, or ``agent/call``
+		without a scope.
+
+		``scope`` names the framework's step that made the call, within which
+		the call's id is unique and which is the same when the step runs again
+		on resume: LangGraph's task id. A ``/`` or ``%`` in a part is written
+		``%2F`` or ``%25``, so different calls never share a key."""
+		parts = (agent_id, scope, call_id) if scope else (agent_id, call_id)
+		return "/".join(_key_part(p) for p in parts)
 
 	@staticmethod
 	def uid(key: str) -> str:
-		"""A RHAPSODY task uid made from a key."""
-		return "flowgentic." + _UNSAFE.sub("_", key.replace("/", "."))
+		"""The RHAPSODY task uid of a key: ``flowgentic.`` and the key, with
+		``/`` written ``.``, ``_`` written ``__`` and any character other than
+		a letter, a digit or ``-`` written ``_x<hex>_``. Different keys never
+		share a uid."""
+		return "flowgentic." + _ESCAPED.sub(_escape, key)
 
 	def submit(
-		self, tool: TaskTool, agent_id: str, call_id: str, args: dict[str, Any]
+		self,
+		tool: TaskTool,
+		agent_id: str,
+		call_id: str,
+		args: dict[str, Any],
+		*,
+		scope: str = "",
 	) -> asyncio.Future:
 		"""The future of the task for this call: a new task, or the one already
-		submitted under the same key.
+		submitted under the same key. ``scope``: see ``key``.
 
 		A failed task keeps its exception for as long as it is kept. Read it
 		with ``exception()`` rather than raise it in a framework's code, whose
 		frames its traceback would then keep."""
-		key = self.key(agent_id, call_id)
+		key = self.key(agent_id, call_id, scope)
 		job = self._jobs.get(key)
 		if job is None:
 			# Dropped from the runtime's ended tasks, but still registered by the
@@ -396,11 +430,18 @@ class ToolRuntime:
 			self._jobs.pop(old, None)
 
 	async def call_service(
-		self, tool: McpTool, agent_id: str, call_id: str, args: dict[str, Any]
+		self,
+		tool: McpTool,
+		agent_id: str,
+		call_id: str,
+		args: dict[str, Any],
+		*,
+		scope: str = "",
 	) -> Any:
-		"""Call an MCP tool through the tool service; a repeated key gets the
-		service's kept answer. ``RuntimeError`` means the runtime is set up
-		wrong: no service client, or one not started."""
+		"""Call an MCP tool through the tool service, with the call's key as its
+		uid; a repeated key gets the service's kept answer. ``scope``: see
+		``key``. ``RuntimeError`` means the runtime is set up wrong: no service
+		client, or one not started."""
 		if self.service is None:
 			raise RuntimeError(
 				"MCP tools need a ToolRuntime with a tool service client"
@@ -418,7 +459,7 @@ class ToolRuntime:
 		) as span:
 			try:
 				value = await self.service.call(
-					self.key(agent_id, call_id),
+					self.key(agent_id, call_id, scope),
 					tool.name,
 					args,
 					idempotent=tool.idempotent,

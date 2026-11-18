@@ -62,12 +62,23 @@ def bind_tools(runtime: ToolRuntime, tools: Iterable[Any]) -> list[BaseTool]:
 	return out
 
 
-def _agent_id() -> str:
-	agent = (ensure_config().get("configurable") or {}).get("thread_id")
-	agent = agent or _agents.current_agent()
+def _agent_and_scope() -> tuple[str, str]:
+	"""The agent's id, and the LangGraph task that runs the tool call.
+
+	A model server may number its tool calls per message, so a later turn can
+	reuse an earlier turn's call id. The task's id tells the two apart: each
+	step's tasks have their own, and a task that runs again on resume has the
+	same. It is the last part of the run's ``checkpoint_ns``, whose id is
+	derived from the namespaces above it, so a tool in a subgraph has one too.
+	Outside a LangGraph task there is none, and the call id alone keys the
+	call."""
+	configurable = ensure_config().get("configurable") or {}
+	agent = configurable.get("thread_id") or _agents.current_agent()
 	if not agent:
 		raise ToolException("a task or MCP tool needs the agent's thread_id")
-	return str(agent)
+	ns = configurable.get("checkpoint_ns") or ""
+	_, sep, task = ns.rpartition("|")[2].partition(":")
+	return str(agent), task if sep else ""
 
 
 def _with_call_id(schema: Any) -> Any:
@@ -103,11 +114,11 @@ async def _settled(job: asyncio.Future) -> None:
 def _task_tool(runtime: ToolRuntime, tool: TaskTool) -> BaseTool:
 	async def run(**kwargs: Any) -> str:
 		call_id = kwargs.pop(_CALL_ID)
-		agent = _agent_id()
-		job = runtime.submit(tool, agent, call_id, kwargs)
+		agent, scope = _agent_and_scope()
+		job = runtime.submit(tool, agent, call_id, kwargs, scope=scope)
 		if tool.suspends(agent, kwargs):
 			try:
-				interrupt({PENDING_KEY: runtime.key(agent, call_id)})
+				interrupt({PENDING_KEY: runtime.key(agent, call_id, scope)})
 			except GraphInterrupt as exc:
 				record_interrupt(exc)  # freed when the run stops
 				raise
@@ -136,10 +147,12 @@ def _task_tool(runtime: ToolRuntime, tool: TaskTool) -> BaseTool:
 def _mcp_tool(runtime: ToolRuntime, tool: McpTool) -> BaseTool:
 	async def run(**kwargs: Any) -> str:
 		call_id = kwargs.pop(_CALL_ID)
-		agent = _agent_id()
+		agent, scope = _agent_and_scope()
 		with _agents.activity(AgentState.TOOL_CALL):
 			try:
-				value = await runtime.call_service(tool, agent, call_id, kwargs)
+				value = await runtime.call_service(
+					tool, agent, call_id, kwargs, scope=scope
+				)
 			except RuntimeError:
 				# Set up wrong: no service client, or one not started. As with
 				# a task tool, the agent fails rather than tell its model.

@@ -72,7 +72,8 @@ async def test_a_suspended_agent_resumes_and_nothing_runs_twice():
     assert '{"y": 3.0}' in final and "noted hi" in final
     assert host.states.agent_seconds()[AgentState.TOOL_WAIT] > 0
     # the host holds no task of an agent that has ended
-    assert all(_agents.pending(f"agent-{i}/call-0") is None for i in range(20))
+    assert len(runtime._jobs) == 20
+    assert all(_agents.pending(key) is None for key in runtime._jobs)
 
 
 def left_by(run_objects: tuple) -> list:
@@ -169,7 +170,7 @@ async def test_after_a_run_nothing_keeps_the_agents_messages(fn, suspend):
         assert [m() for m in kept] == [None, None, None]
     finally:
         gc.enable()
-    job = runtime._jobs["agent-0/call-0"]
+    (job,) = runtime._jobs.values()
     error = job.exception()
     assert (error is None) == (fn is simulate)
     if error is not None:  # no frame of the tool that waited on the task
@@ -240,7 +241,7 @@ async def test_repeat_safety_and_retention():
     await runtime.submit(sim, "a", "c1", {"x": 1.0})
     await session.close()
     assert RUNS["simulate"] == 5
-    assert runtime.uid("a b/c:1") == "flowgentic.a_b.c_1"
+    assert runtime.uid("a b/c:1") == "flowgentic.a_x20_b.c_x3a_1"
     with pytest.raises(ValueError, match="at least 1"):
         ToolRuntime(session, retained=0)
 
@@ -718,3 +719,179 @@ async def test_a_limit_that_lets_an_agent_finish_in_memory_lets_it_finish_suspen
     if status == "done":
         assert agent.suspensions == (5 if suspend else 0)
     assert not runner._resumes  # nothing kept for an agent that has ended
+
+
+# --- keys of tool calls ---------------------------------------------------------
+
+
+def numbered_per_message(turns: int, parallel: int = 1):
+    """A model whose server numbers tool-call ids per message, as some do: each
+    turn's calls are ``call-0``, ``call-1``, ..., with new arguments each turn.
+    After ``turns`` turns it answers with every result, in order."""
+
+    def script(messages):
+        results = [m for m in messages if m.type == "tool"]
+        turn = len(results) // parallel
+        if turn < turns:
+            return AIMessage(
+                "",
+                tool_calls=[
+                    {"name": "simulate", "args": {"x": float(10 * turn + i)}, "id": f"call-{i}"}
+                    for i in range(parallel)
+                ],
+            )
+        return AIMessage(" | ".join(str(m.content) for m in results))
+
+    return script
+
+
+def expected_answer(turns: int, parallel: int = 1) -> str:
+    return " | ".join(
+        f'{{"y": {2.0 * (10 * turn + i)}}}' for turn in range(turns) for i in range(parallel)
+    )
+
+
+def tool_node_graph(model, tools, saver):
+    """model -> one ToolNode task for all of a message's calls -> model."""
+    from langgraph.graph import START, MessagesState, StateGraph
+    from langgraph.prebuilt import ToolNode, tools_condition
+
+    async def call_model(state: MessagesState):
+        return {"messages": [await model.ainvoke(state["messages"])]}
+
+    g = StateGraph(MessagesState)
+    g.add_node("model", call_model)
+    g.add_node("tools", ToolNode(tools, handle_tool_errors=True))
+    g.add_edge(START, "model")
+    g.add_conditional_edges("model", tools_condition)
+    g.add_edge("tools", "model")
+    return g.compile(checkpointer=saver)
+
+
+def in_a_subgraph(model, tools, saver):
+    """The react graph as a node of an outer graph, which checkpoints both."""
+    from langgraph.graph import START, MessagesState, StateGraph
+
+    g = StateGraph(MessagesState)
+    g.add_node("agent", react_graph(model, tools))
+    g.add_edge(START, "agent")
+    return g.compile(checkpointer=saver)
+
+
+@pytest.mark.parametrize("suspend", [False, True], ids=["in-memory", "suspended"])
+@pytest.mark.parametrize(
+    "shape, parallel",
+    [("send", 1), ("send", 2), ("tool-node", 2), ("subgraph", 2)],
+)
+async def test_a_call_id_used_again_on_a_later_turn_is_a_new_call(suspend, shape, parallel):
+    """A model server may number its tool calls per message, so a later turn
+    reuses an earlier turn's ids. Each turn's calls run, once each, and each
+    returns its own result; repeats on resume still run nothing again."""
+    turns = 3
+    session = await thread_session()
+    runtime = ToolRuntime(session)
+    tools = bind_tools(runtime, [task_tool(simulate, suspend=suspend)])
+    model = Scripted(script=numbered_per_message(turns, parallel))
+    build = {"send": react_graph, "tool-node": tool_node_graph, "subgraph": in_a_subgraph}[shape]
+    graph = build(model, tools, KeyValueSaver(MemoryStore()))
+    outputs = {}
+    report = await AgentHost(
+        GraphRunner(graph), stagger=FAST, on_done=lambda r, o: outputs.__setitem__(r.id, o)
+    ).run(inputs(2))
+    await session.close()
+    assert report.finished == 2, [a.error for a in report.agents]
+    for agent in report.agents:
+        assert outputs[agent.id]["messages"][-1].content == expected_answer(turns, parallel)
+        if not suspend:
+            assert agent.suspensions == 0
+        elif shape == "tool-node":  # one task for both calls: resumed once per call
+            assert turns <= agent.suspensions <= turns * parallel
+        else:
+            assert agent.suspensions == turns
+    assert RUNS == {"simulate": 2 * turns * parallel}
+    assert runtime.stats()["submitted"] == 2 * turns * parallel
+
+
+async def test_mcp_calls_with_a_reused_call_id_reach_the_service_as_new_calls():
+    service = FakeService()
+    runtime = ToolRuntime(service=service)
+    lookup = mcp_tool("lookup", description="Look a material up.", args_schema=LookupArgs)
+
+    def script(messages):
+        done = sum(1 for m in messages if m.type == "tool")
+        if done < 2:
+            material = ["Fe", "Cu"][done]
+            return AIMessage(
+                "", tool_calls=[{"name": "lookup", "args": {"material": material}, "id": "call-0"}]
+            )
+        return AIMessage(" | ".join(str(m.content) for m in messages if m.type == "tool"))
+
+    graph = react_graph(Scripted(script=script), bind_tools(runtime, [lookup]), KeyValueSaver(MemoryStore()))
+    outputs = {}
+    await AgentHost(
+        GraphRunner(graph), stagger=FAST, on_done=lambda r, o: outputs.__setitem__(r.id, o)
+    ).run(inputs(1))
+    uids = [uid for uid, *_ in service.calls]
+    assert [args["material"] for _, _, args, _ in service.calls] == ["Fe", "Cu"]
+    assert len(set(uids)) == 2
+    assert all(u.startswith("agent-0/") and u.endswith("/call-0") for u in uids)
+    answer = outputs["agent-0"]["messages"][-1].content
+    assert '"Fe"' in answer and '"Cu"' in answer
+
+
+def decode_uid(uid: str) -> str:
+    """The key a task uid was made from: the uid's encoding read back."""
+    s = uid.removeprefix("flowgentic.")
+    out, i = [], 0
+    while i < len(s):
+        c = s[i]
+        if c == ".":
+            out.append("/")
+            i += 1
+        elif c == "_" and s[i + 1] == "_":
+            out.append("_")
+            i += 2
+        elif c == "_":
+            assert s[i + 1] == "x", uid
+            end = s.index("_", i + 2)
+            out.append(chr(int(s[i + 2 : end], 16)))
+            i = end + 1
+        else:
+            assert c.isascii() and (c.isalnum() or c == "-"), uid
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+def test_task_uids_are_one_to_one_and_readable():
+    import random
+    import re
+
+    key = ToolRuntime.key
+    pairs = [
+        (key("a.b", "c"), key("a", "b.c")),
+        (key("u 1", "c"), key("u_1", "c")),
+        (key("a", "b/c"), key("a/b", "c")),
+        (key("a", "c", "t"), key("a", "t/c")),
+        (key("a", "c", "t"), key("a/t", "c")),
+    ]
+    for one, other in pairs:
+        assert one != other
+        assert ToolRuntime.uid(one) != ToolRuntime.uid(other)
+    rng = random.Random(7)
+    alphabet = "ab0-_./ %:|é"
+    keys = {
+        key(*("".join(rng.choices(alphabet, k=rng.randint(1, 6))) for _ in range(3)))
+        for _ in range(5000)
+    }
+    uids = {ToolRuntime.uid(k) for k in keys}
+    assert len(uids) == len(keys)
+    for k in keys:
+        uid = ToolRuntime.uid(k)
+        assert re.fullmatch(r"flowgentic\.[A-Za-z0-9_.-]+", uid)
+        assert decode_uid(uid) == k
+    # Ordinary ids stay readable.
+    assert key("agent-7", "call_ab12") == "agent-7/call_ab12"
+    assert key("agent-7", "call-0", "1f0e-77aa") == "agent-7/1f0e-77aa/call-0"
+    assert ToolRuntime.uid("agent-7/1f0e-77aa/call-0") == "flowgentic.agent-7.1f0e-77aa.call-0"
+    assert ToolRuntime.uid("agent-7/call_ab12") == "flowgentic.agent-7.call__ab12"

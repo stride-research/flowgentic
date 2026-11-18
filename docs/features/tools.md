@@ -57,12 +57,20 @@ the agent's other tool calls do not run again either.
 
 ## Repeat safety
 
-A task or service call is keyed by its agent and the tool call's id. A call
-made again with the same key, as a framework does when it resumes an agent,
-gets the first call's result and runs nothing. The runtime keeps the last
-`retained` ended tasks (100,000 by default), and an agent in a host finds the
-tasks it asked for until it ends, however many have ended since. The tool
-service keeps its own answers.
+A task or service call is keyed by its agent, the LangGraph task that runs
+the tool, and the tool call's id: `agent/task/call`. A call made again with the
+same key, as a framework does when it resumes an agent, gets the first call's
+result and runs nothing: LangGraph gives a task the same id when it runs again.
+A later turn that reuses a call id, as a model server that numbers its tool
+calls per message does, runs in a new task, so it makes a new call. Outside a
+LangGraph run the key is `agent/call`. The runtime keeps the last `retained`
+ended tasks (100,000 by default), and an agent in a host finds the tasks it
+asked for until it ends, however many have ended since. The tool service keeps
+its own answers, by the same key.
+
+A task's RHAPSODY uid is `flowgentic.` and its key, with `/` written `.`, `_`
+written `__`, and any character other than a letter, a digit or `-` written
+`_x<hex>_`, so different calls never share a uid.
 
 An MCP call that lost its connection may or may not have run on the server. It
 is sent again only for a tool declared `idempotent=True`, such as a lookup.
@@ -78,7 +86,10 @@ A task tool's arguments for the model can differ from its function's:
 - `output(value)` turns the function's result into what the model reads.
 
 `prepare` runs once per task, when the task is submitted: an agent that
-resumes finds its task and does not call it again. A failed, refused or lost
+resumes finds its task and does not call it again. A model server that numbers
+its tool calls per message reuses call ids on later turns, so a `prepare` that
+names a file after the call should not use `call_id` alone; a random part,
+such as a `uuid4()`, is safe, since `prepare` runs once. A failed, refused or lost
 call reaches the model as the tool's error, so the agent can read it and
 decide what to do. A runtime set up wrong, without the RHAPSODY session or the
 started service client a tool needs, raises `RuntimeError` instead: with
