@@ -525,7 +525,7 @@ async def test_task_and_service_calls_are_spans_and_metrics(span_exporter, metri
     assert task_span.attributes["error.type"] == "ValueError"
     assert service_span.attributes["flowgentic.tool.kind"] == "service"
     assert service_span.attributes["flowgentic.tool.outcome"] == "ok"
-    agent_span = spans["invoke_agent tel-0"]
+    agent_span = spans["invoke_agent"]
     assert task_span.parent.span_id == agent_span.context.span_id  # inside the agent's trace
     assert task_span.context.trace_id == agent_span.context.trace_id
 

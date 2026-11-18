@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 import pytest
+from opentelemetry.trace import StatusCode
 
 from flowgentic import _agents
 from flowgentic.host import (
@@ -226,6 +227,46 @@ def points(reader, name: str) -> list:
     return out
 
 
+def agent_spans(exporter) -> dict:
+    """The host's ``invoke_agent`` spans, by agent id."""
+    return {
+        s.attributes["gen_ai.agent.id"]: s
+        for s in exporter.get_finished_spans()
+        if s.name == "invoke_agent"
+    }
+
+
+async def test_a_failed_agents_span_is_an_error_with_its_exception(span_exporter):
+    await AgentHost(FakeRunner(), stagger=FAST, collector=None).run(
+        [Agent("x1", None), Agent("a1", None)]
+    )
+    spans = agent_spans(span_exporter)
+    failed, done = spans["x1"], spans["a1"]
+    assert failed.status.status_code is StatusCode.ERROR
+    assert failed.status.description == "ValueError: bad agent"
+    assert failed.attributes["error.type"] == "ValueError"
+    (event,) = failed.events
+    assert event.name == "exception"
+    assert event.attributes["exception.type"] == "ValueError"
+    assert done.status.status_code is StatusCode.UNSET and not done.events
+    assert "error.type" not in done.attributes
+
+
+async def test_a_cancelled_agents_span_is_an_error_without_an_exception(span_exporter):
+    class Runner:
+        async def start(self, agent):
+            await asyncio.sleep(10)
+
+    host = AgentHost(Runner(), stagger=FAST, collector=None)
+    with pytest.raises(TimeoutError):
+        async with asyncio.timeout(0.1):
+            await host.run([Agent("c1", None)])
+    span = agent_spans(span_exporter)["c1"]
+    assert span.status.status_code is StatusCode.ERROR
+    assert span.attributes["error.type"] == "CancelledError"
+    assert not span.events
+
+
 def test_collecting_metrics_while_the_collector_runs_does_not_deadlock():
     # An SDK's reader holds an instrument's lock while it builds a data point,
     # and may allocate there; a collection that starts then must not record
@@ -322,10 +363,10 @@ async def test_the_host_records_agents_spans_and_its_own_health(
     host = AgentHost(runner, stagger=FAST)
     await host.run([Agent("s1", None), Agent("a1", None)])
 
-    spans = {s.name: s for s in span_exporter.get_finished_spans()}
-    assert {"invoke_agent s1", "invoke_agent a1"} <= set(spans)
-    assert spans["invoke_agent s1"].attributes["gen_ai.agent.id"] == "s1"
-    assert spans["invoke_agent s1"].attributes["gen_ai.operation.name"] == "invoke_agent"
+    spans = agent_spans(span_exporter)
+    assert spans.keys() == {"s1", "a1"}
+    assert spans["s1"].attributes["gen_ai.operation.name"] == "invoke_agent"
+    assert spans["s1"].status.status_code is StatusCode.UNSET
     events = [r.log_record for r in log_exporter.get_finished_logs()]
     suspends = [e for e in events if e.event_name == "flowgentic.agent.suspend"]
     assert [e.attributes["gen_ai.agent.id"] for e in suspends] == ["s1"]

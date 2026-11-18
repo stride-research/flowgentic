@@ -40,6 +40,8 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from opentelemetry.trace import Status, StatusCode
+
 from flowgentic import _agents, _telemetry
 from flowgentic._agents import CATEGORY, AgentState, AgentStates, register_pending
 from flowgentic.host._probes import CollectorPauses, LoopLag
@@ -337,8 +339,10 @@ class AgentHost:
 		states.enter(agent.id, AgentState.WORKING)
 		output: Any = None
 		cancelled: asyncio.CancelledError | None = None
+		# Named for the operation only: the agent's id is in gen_ai.agent.id, and
+		# a name per agent would make as many span names as agents.
 		with _telemetry.tracer.start_as_current_span(
-			f"{_telemetry.INVOKE_AGENT} {agent.id}",
+			_telemetry.INVOKE_AGENT,
 			attributes={
 				_telemetry.GEN_AI_OPERATION_NAME: _telemetry.INVOKE_AGENT,
 				_telemetry.GEN_AI_AGENT_ID: agent.id,
@@ -363,12 +367,15 @@ class AgentHost:
 					# end the agent here, then let the task end cancelled.
 					result.status = "cancelled"
 					cancelled = exc
+					span.set_status(Status(StatusCode.ERROR, "cancelled"))
 				else:
 					# Any other error, a CancelledError raised inside the runner
 					# included, ends this agent only.
 					result.status = "failed"
 					result.error = f"{type(exc).__name__}: {exc}"[:500]
 					log.debug("agent %s failed", agent.id, exc_info=True)
+					span.record_exception(exc)
+					span.set_status(Status(StatusCode.ERROR, result.error))
 				span.set_attribute(_telemetry.ERROR_TYPE, type(exc).__qualname__)
 			finally:
 				result.t_end = time.time()
