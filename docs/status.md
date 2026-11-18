@@ -90,7 +90,11 @@ Agents at scale:
 
 - CI runs no part under Dragon. `RadexStore` is tested against a stand-in for
   RaDEX's client, task tools run on RHAPSODY's thread-pool backend, and the
-  tool service's queues are the standard library's.
+  tool service's queues are the standard library's. A suite of tests marked
+  `dragon` runs them on Dragon by hand: the store's contract on RaDEX, agents
+  suspended by one Dragon process and resumed by another, the tool service in
+  a Dragon process with two agent processes over Dragon's queues, and the
+  example with `--dragon`. It passed under TODO-DRAGON-VERSIONS.
 - RaDEX has no package: `RadexStore` needs RaDEX's Python client built from
   source with its C++ core.
 - An agent resumes only in the process that suspended it, because that

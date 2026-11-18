@@ -76,10 +76,16 @@ def dragon_queue(maxsize: int = 1024) -> Any:
 
 
 def start(target: Callable[..., Any], *args: Any) -> Any:
-    """Start ``target(*args)`` in a Dragon process of its own."""
+    """Start ``target(*args)`` in a Dragon process of its own.
+
+    Dragon sends the target by name, with cloudpickle, and the new process
+    imports its module. pytest put the test modules' directories on this
+    process's ``sys.path``, so the new process gets the same path.
+    """
     from dragon.native.process import Process
 
-    p = Process(target, args=args)
+    path = os.pathsep.join(p for p in sys.path if p)
+    p = Process(target, args=args, env={**os.environ, "PYTHONPATH": path})
     p.start()
     return p
 

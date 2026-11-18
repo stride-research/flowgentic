@@ -40,6 +40,20 @@ uv run --extra dev pytest -q
 
 - Unit tests live under `tests/`.
 - Add tests that demonstrate the new behavior and prevent regressions.
+- Tests marked `dragon` run the agents-at-scale parts on a real Dragon runtime:
+  RaDEX on a Dragon distributed dictionary, Dragon processes and queues, and
+  RHAPSODY's native Dragon backend. CI skips them, since Dragon, RaDEX and that
+  backend come from no package index. Run them by hand on a Linux machine
+  where all three are installed, under `dragon`:
+
+```bash
+dragon tests/dragon_pytest.py -m dragon tests
+```
+
+  On a Slurm allocation of one node, `dragon -s` starts a single-node runtime.
+  A change to a part with a Dragon-only path (`RadexStore`, the tool service's
+  queues, the example's `--dragon` path) says in its PR which Dragon, RHAPSODY
+  and RaDEX versions the suite passed under.
 
 ---
 
