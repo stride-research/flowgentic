@@ -519,6 +519,9 @@ def run_campaign_on_dragon(agents: int, processes: int, workers: int) -> dict:
 def _campaign_on_dragon(agents: int, processes: int, workers: int) -> dict:
     from rhapsody.backends.data.dragon import DragonDataBackend
 
+    # Importing RHAPSODY's backends loads Dragon's LLM engine, which clears
+    # DRAGON_PATCH_MP. Dragon's processes need it to find their start method.
+    os.environ["DRAGON_PATCH_MP"] = "True"
     ctx = multiprocessing.get_context("dragon")
     t0 = time.monotonic()
     # One dictionary for the agents' state: two managers of 1 GiB each.
