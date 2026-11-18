@@ -29,10 +29,11 @@ print(report.finished, report.states["share_by_category"], report.loop_lag)
   started, moves the objects then alive out of the collector's reach
   (`gc.freeze()`). It restores both when `run` returns, and also when `run` is
   cancelled. Overlapping runs share the collector tuning until the last user
-  releases it. If objects were already frozen when the host froze (CPython
-  3.12 freezes some at startup, and an application may freeze its own), the
-  host still freezes and leaves everything frozen when it ends, since
-  unfreezing would also thaw the others' objects. `collector=None` leaves the
+  releases it. When the last host that froze ends, it unfreezes every frozen
+  object, those frozen before it included (CPython 3.12 parks some of its own
+  objects there): CPython cannot unfreeze only part, and reference cycles
+  left frozen would never be freed. An application that keeps objects of its
+  own frozen passes `Collector(freeze=False)`; `collector=None` leaves the
   collector alone.
 - **It caps the agents live at once.** At most `max_live_agents` (5,000 by
   default) are live, suspended ones included. More are accepted, and each
@@ -101,8 +102,18 @@ finishes. The tool records the interrupt with `record_interrupt`, so
 the runner frees the run's frames as soon as it stops. Any other interrupt,
 such as a question for a human, ends the agent as `interrupted`.
 
+Each resume is a new LangGraph run, which counts its steps against
+`recursion_limit` afresh. So `GraphRunner` also lets one agent resume at most
+`recursion_limit` times, and fails it with `GraphRecursionError` after that.
+Each resume runs at least one step, so an agent that would finish within the
+limit without suspending is never stopped by this. `GraphRunner` refuses a
+graph compiled with `interrupt_before` or `interrupt_after`: a static
+breakpoint stops a run without an interrupt, and the agent would end as
+finished, with partial output.
+
 `route_tool_calls` is the conditional edge after the model node: it sends
-each tool call to the tool node as its own task (LangGraph's `Send`).
+each tool call of the last message in the state's `messages` to the node named
+`tools`, each as its own task (LangGraph's `Send`).
 LangGraph saves each finished call's result with the checkpoint, so when an
 agent resumes, only the call that suspended runs again.
 
@@ -125,13 +136,17 @@ graph = builder.compile(checkpointer=checkpointer)
 Through the OpenTelemetry API, and only once the application configures an
 SDK:
 
-- each agent's run is an `invoke_agent {agent id}` span, with
-  `gen_ai.agent.id`, and a `flowgentic.agent.suspend` event per suspension;
+- each agent's run is an `invoke_agent` span, with the agent's id in
+  `gen_ai.agent.id`, and a `flowgentic.agent.suspend` event per suspension; a
+  failed agent's span has status ERROR, `error.type` and the exception;
 - `flowgentic.agents` counts agents by `flowgentic.agent.state`, and
   `flowgentic.agent.time` adds up agent-seconds by state and
   `flowgentic.agent.category`, both read when the SDK collects;
 - `flowgentic.host.loop.lag` and `flowgentic.host.gc.pause` record the event
-  loop's lag and the collector's pauses.
+  loop's lag and the collector's pauses, once each however many hosts run.
+
+[Telemetry](telemetry.md#metrics) lists every metric, with its unit and
+buckets, and shows how to configure a meter provider.
 
 ## Campaigns with millions of agent IDs
 

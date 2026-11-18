@@ -6,7 +6,9 @@ import subprocess
 import sys
 
 import pytest
+from opentelemetry.trace import StatusCode
 
+import flowgentic.host
 from flowgentic import _agents
 from flowgentic.host import (
     Agent,
@@ -128,9 +130,21 @@ async def test_agents_after_the_first_wave_are_not_staggered():
     assert t[-1] - t[1] < 0.2
 
 
+def nothing_left_frozen() -> bool:
+    """Whether, after a full collection, nothing is frozen but what CPython
+    moves there itself: 3.12 parks some of its own objects in the permanent
+    generation at each full collection."""
+    gc.collect()
+    frozen = gc.get_freeze_count()
+    gc.unfreeze()
+    gc.collect()
+    return frozen == gc.get_freeze_count()
+
+
 async def test_collector_is_tuned_during_a_run_and_restored():
     before = gc.get_threshold()
-    frozen_before = gc.get_freeze_count()  # CPython 3.12 freezes some at startup
+    gc.collect()  # as the host does: CPython 3.12 then has some objects frozen
+    frozen_before = gc.get_freeze_count()
     seen = {}
 
     class Probe(FakeRunner):
@@ -146,21 +160,19 @@ async def test_collector_is_tuned_during_a_run_and_restored():
     assert freeze.keys() == {"at_s", "call_s", "frozen_before", "frozen"}
     assert freeze["frozen_before"] == frozen_before and freeze["frozen"] > frozen_before
     assert gc.get_threshold() == before
-    # An empty permanent generation is restored; one that was not is left frozen.
-    # (Frozen objects still die when their last reference goes, so counts drift.)
-    assert bool(gc.get_freeze_count()) == bool(frozen_before)
+    # Everything is thawed, what was frozen before the host included.
+    assert nothing_left_frozen()
 
 
 async def test_collector_is_restored_when_a_run_is_cancelled():
     before = gc.get_threshold()
-    already_frozen = bool(gc.get_freeze_count())
     host = AgentHost(FakeRunner(sleep=10), stagger=FAST)
     task = asyncio.create_task(host.run([Agent("a", None)]))
     await asyncio.sleep(0.05)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    assert gc.get_threshold() == before and bool(gc.get_freeze_count()) == already_frozen
+    assert gc.get_threshold() == before and nothing_left_frozen()
 
 
 async def test_suspend_failure_and_foreign_interrupt():
@@ -216,6 +228,154 @@ def points(reader, name: str) -> list:
     return out
 
 
+def agent_spans(exporter) -> dict:
+    """The host's ``invoke_agent`` spans, by agent id."""
+    return {
+        s.attributes["gen_ai.agent.id"]: s
+        for s in exporter.get_finished_spans()
+        if s.name == "invoke_agent"
+    }
+
+
+async def test_a_failed_agents_span_is_an_error_with_its_exception(span_exporter):
+    await AgentHost(FakeRunner(), stagger=FAST, collector=None).run(
+        [Agent("x1", None), Agent("a1", None)]
+    )
+    spans = agent_spans(span_exporter)
+    failed, done = spans["x1"], spans["a1"]
+    assert failed.status.status_code is StatusCode.ERROR
+    assert failed.status.description == "ValueError: bad agent"
+    assert failed.attributes["error.type"] == "ValueError"
+    (event,) = failed.events
+    assert event.name == "exception"
+    assert event.attributes["exception.type"] == "ValueError"
+    assert done.status.status_code is StatusCode.UNSET and not done.events
+    assert "error.type" not in done.attributes
+
+
+async def test_a_cancelled_agents_span_is_an_error_without_an_exception(span_exporter):
+    class Runner:
+        async def start(self, agent):
+            await asyncio.sleep(10)
+
+    host = AgentHost(Runner(), stagger=FAST, collector=None)
+    with pytest.raises(TimeoutError):
+        async with asyncio.timeout(0.1):
+            await host.run([Agent("c1", None)])
+    span = agent_spans(span_exporter)["c1"]
+    assert span.status.status_code is StatusCode.ERROR
+    assert span.attributes["error.type"] == "CancelledError"
+    assert not span.events
+
+
+def test_the_host_exports_the_names_its_docs_present():
+    assert set(flowgentic.host.__all__) == {
+        "Agent",
+        "AgentHost",
+        "AgentResult",
+        "AgentState",
+        "AgentStates",
+        "Collector",
+        "Finished",
+        "HostReport",
+        "Interrupted",
+        "Runner",
+        "Stagger",
+        "Suspended",
+        "register_pending",
+    }
+    assert not hasattr(flowgentic.host, "CATEGORY")
+
+
+def test_collecting_metrics_while_the_collector_runs_does_not_deadlock():
+    # An SDK's reader holds an instrument's lock while it builds a data point,
+    # and may allocate there; a collection that starts then must not record
+    # into that instrument. In a fresh interpreter, with a timeout: a deadlock
+    # wedges the process.
+    code = """
+import asyncio, faulthandler, gc
+from opentelemetry import metrics
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
+faulthandler.dump_traceback_later(20, exit=True)
+reader = InMemoryMetricReader()
+metrics.set_meter_provider(MeterProvider(metric_readers=[reader]))
+from flowgentic.host import Agent, AgentHost, Finished
+
+def pauses():
+    data = reader.get_metrics_data()
+    return sum(
+        p.count
+        for r in data.resource_metrics for s in r.scope_metrics for m in s.metrics
+        if m.name == "flowgentic.host.gc.pause" for p in m.data.data_points
+    )
+
+class Runner:
+    async def start(self, agent):
+        gc.collect(0)
+        await asyncio.sleep(0.25)  # the host records the pause
+        threshold = gc.get_threshold()
+        gc.set_threshold(1)  # a collection at almost every allocation
+        try:
+            return Finished(pauses())
+        finally:
+            gc.set_threshold(*threshold)
+
+seen = []
+host = AgentHost(Runner(), collector=None, on_done=lambda r, out: seen.append(out))
+report = asyncio.run(host.run([Agent("a", None)]))
+assert report.finished == 1, report.agents
+assert seen[0] >= 1, seen
+"""
+    run = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, timeout=60
+    )
+    assert run.returncode == 0, run.stderr[-3000:]
+
+
+async def test_overlapping_hosts_record_each_measurement_once(metric_reader):
+    def count(name):
+        return sum(p.count for p in points(metric_reader, name))
+
+    release = asyncio.Event()
+
+    class Waiting:
+        async def start(self, agent):
+            await release.wait()
+            return Finished(None)
+
+    gc_before = count("flowgentic.host.gc.pause")
+    lag_before = count("flowgentic.host.loop.lag")
+    enabled = gc.isenabled()
+    gc.disable()  # this test's collections only
+    try:
+        runs = [
+            asyncio.create_task(
+                AgentHost(Waiting(), stagger=FAST, collector=None).run([Agent(k, None)])
+            )
+            for k in ("a", "b")
+        ]
+        await asyncio.sleep(0.05)
+        for _ in range(5):
+            gc.collect(0)
+        await asyncio.sleep(0.5)
+        gc.collect(0)  # after the last lag sample, most likely: recorded at the end
+        release.set()
+        a, b = await asyncio.gather(*runs)
+    finally:
+        if enabled:
+            gc.enable()
+
+    # Each host's report has every pause of its run; the metric has each once.
+    assert a.collector["pauses"] == b.collector["pauses"] == 6
+    assert count("flowgentic.host.gc.pause") - gc_before == 6
+    # One timer for the loop: its samples are recorded once, not once per host.
+    lags = a.loop_lag["samples"], b.loop_lag["samples"]
+    assert min(lags) >= 3
+    assert max(lags) <= count("flowgentic.host.loop.lag") - lag_before < sum(lags)
+
+
 async def test_the_host_records_agents_spans_and_its_own_health(
     span_exporter, log_exporter, metric_reader
 ):
@@ -223,10 +383,10 @@ async def test_the_host_records_agents_spans_and_its_own_health(
     host = AgentHost(runner, stagger=FAST)
     await host.run([Agent("s1", None), Agent("a1", None)])
 
-    spans = {s.name: s for s in span_exporter.get_finished_spans()}
-    assert {"invoke_agent s1", "invoke_agent a1"} <= set(spans)
-    assert spans["invoke_agent s1"].attributes["gen_ai.agent.id"] == "s1"
-    assert spans["invoke_agent s1"].attributes["gen_ai.operation.name"] == "invoke_agent"
+    spans = agent_spans(span_exporter)
+    assert spans.keys() == {"s1", "a1"}
+    assert spans["s1"].attributes["gen_ai.operation.name"] == "invoke_agent"
+    assert spans["s1"].status.status_code is StatusCode.UNSET
     events = [r.log_record for r in log_exporter.get_finished_logs()]
     suspends = [e for e in events if e.event_name == "flowgentic.agent.suspend"]
     assert [e.attributes["gen_ai.agent.id"] for e in suspends] == ["s1"]
@@ -335,7 +495,6 @@ async def test_one_agent_task_cancelled_from_outside_leaves_the_host_running():
 
 async def test_overlapping_hosts_restore_process_collector():
     before = gc.get_threshold()
-    already_frozen = bool(gc.get_freeze_count())
     first, second = asyncio.Event(), asyncio.Event()
 
     class Waiting:
@@ -359,28 +518,42 @@ async def test_overlapping_hosts_restore_process_collector():
     finally:
         second.set()
         await b
-    assert gc.get_threshold() == before and bool(gc.get_freeze_count()) == already_frozen
+    assert gc.get_threshold() == before and nothing_left_frozen()
 
 
-def test_host_freezes_over_a_frozen_generation_and_leaves_it_frozen():
-    # In a fresh interpreter, so that what the host leaves frozen ends with it.
+def test_host_freezes_over_a_frozen_generation_and_thaws_it_all():
+    # In a fresh interpreter whose permanent generation is not empty when the
+    # host starts, as on CPython 3.12: cycles the host froze must not leak.
     code = """
-import asyncio, gc
+import asyncio, gc, weakref
 from flowgentic.host import Agent, AgentHost, Finished
+
+class Node:
+    pass
+
+cycles = []
 
 class Runner:
     async def start(self, agent):
+        a, b = Node(), Node()  # a reference cycle, alive when the host freezes
+        a.other, b.other = b, a
+        cycles.append(weakref.ref(a))
+        await asyncio.sleep(0.05)
         return Finished(None)
 
 gc.freeze()
 before = gc.get_freeze_count()
-report = asyncio.run(AgentHost(Runner()).run([Agent("a", None)]))
+report = asyncio.run(AgentHost(Runner()).run([Agent(str(i), None) for i in range(10)]))
 freeze = report.collector["freeze"]
 assert freeze["frozen_before"] == before > 0, freeze
 assert freeze["frozen"] > before, freeze
-assert gc.get_freeze_count() > 0, "the host thawed objects it did not freeze"
+assert gc.get_freeze_count() < before, gc.get_freeze_count()
+gc.collect()
+alive = sum(ref() is not None for ref in cycles)
+assert alive == 0, f"{alive} of 10 cycles the host froze were never collected"
 """
-    subprocess.run([sys.executable, "-c", code], check=True)
+    run = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr[-3000:]
 
 
 def test_pending_seconds_start_when_the_agent_is_added(monkeypatch):

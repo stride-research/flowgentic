@@ -29,7 +29,7 @@ run inline, as RHAPSODY tasks or through a shared MCP tool service, and a
 client for a fleet of model servers.
 
 The AsyncFlow path is in maintenance mode: it gets fixes, not features. The
-LangGraph execution adapter (`LangraphIntegration`) is frozen. New
+LangGraph execution adapter (`LangGraphIntegration`) is frozen. New
 applications can bind agents with `bind_agent`, or run LangGraph on AsyncFlow
 directly.
 
@@ -72,7 +72,7 @@ The AsyncFlow path:
   reasons, within an attempt budget, and falls back to a deterministic value
   when no proposal passes. Each call, attempt and check is recorded in the
   run's trace.
-- **`LangraphIntegration`** (`flowgentic.langgraph`) runs a LangGraph graph's
+- **`LangGraphIntegration`** (`flowgentic.langgraph`) runs a LangGraph graph's
   tools, services, tasks and nodes as AsyncFlow tasks, in their caller's trace.
 
 ## Install

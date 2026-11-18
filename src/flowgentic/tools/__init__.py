@@ -111,7 +111,8 @@ def task_tool(
 ) -> Any:
 	"""Declare ``fn`` a task tool; usable as ``@task_tool`` or
 	``@task_tool(suspend=True)``. ``fn`` must be importable by the workers: a
-	top-level function. See ``TaskTool`` for the options."""
+	top-level function. It may be ``async def``: the worker runs it on an event
+	loop of its own, to its end. See ``TaskTool`` for the options."""
 
 	def make(f: Callable[..., Any]) -> TaskTool:
 		return TaskTool(

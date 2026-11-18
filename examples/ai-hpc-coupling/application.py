@@ -24,11 +24,11 @@ from demo_support import (
 from langgraph.graph import END, START, StateGraph
 
 from flowgentic.langgraph.execution_wrappers import AsyncFlowType
-from flowgentic.langgraph.main import LangraphIntegration
+from flowgentic.langgraph.main import LangGraphIntegration
 
 
 async def build_campaign(
-    integration: LangraphIntegration,
+    integration: LangGraphIntegration,
     settings: CampaignSettings,
 ) -> CampaignApplication:
     """Map the deterministic AI-HPC campaign onto AsyncFlow through Flowgentic."""

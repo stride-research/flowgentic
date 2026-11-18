@@ -25,7 +25,7 @@ agent outputs and one trace across decisions, tasks and model calls. The
 [changelog](changelog.md) lists each change, and what replaces each feature it
 removes.
 
-The LangGraph execution adapter (`LangraphIntegration` and its `asyncflow`
+The LangGraph execution adapter (`LangGraphIntegration` and its `asyncflow`
 decorators) is frozen and gets no new features. The decision follows the
 [substitution experiment](evaluation/substitution.md), which ran the agentic
 demo with and without the adapter. Without it, the demo kept the same
@@ -53,7 +53,7 @@ run, and a graph that should change between runs is built anew as a
 
 | Path | Agent framework | Runs tasks on | Python |
 | --- | --- | --- | --- |
-| Agents at scale | LangGraph 1.x | RHAPSODY 0.7: a thread pool in CI; Dragon on an allocation, not in CI | 3.11, 3.12, 3.13 |
+| Agents at scale | LangGraph 1.x | RHAPSODY 0.7 on a thread pool, in CI; RHAPSODY's native Dragon backend, not yet released, by hand | 3.11, 3.12, 3.13 |
 | AsyncFlow | LangGraph 1.x | RADICAL AsyncFlow 0.6.0, local backends | 3.11, 3.12, 3.13 |
 
 Tested environment, from `uv.lock`: LangGraph 1.2.16, langgraph-checkpoint
@@ -88,22 +88,59 @@ OpenTelemetry's GenAI instrumentation for LangChain and OpenAI (1.3b0, below
 
 Agents at scale:
 
-- CI runs no part under Dragon. `RadexStore` is tested against a stand-in for
+- CI runs no part under Dragon: `RadexStore` is tested against a stand-in for
   RaDEX's client, task tools run on RHAPSODY's thread-pool backend, and the
-  tool service's queues are the standard library's. A suite of tests marked
-  `dragon` runs them on Dragon by hand: the store's contract on RaDEX, agents
+  tool service's queues are the standard library's. For this release the parts
+  were tested under Dragon by hand: the store's contract on RaDEX, an agent
   suspended by one Dragon process and resumed by another, the tool service in
-  a Dragon process with two agent processes over Dragon's queues, and the
-  example with `--dragon`. It passed under Dragon 0.15.0 on Python 3.12, with
-  RHAPSODY at commit `2523ead`, whose native Dragon backend is not in a
-  release yet, and RaDEX at commit `9f9b0df`.
+  a Dragon process serving two agent processes over Dragon's queues, and the
+  worked example adapted to Dragon, with 1,000 agents in two processes, every
+  suspension resumed from RaDEX. They passed under Dragon 0.15.0 on Python
+  3.12, with RHAPSODY at commit `2523ead`, whose native Dragon backend is not
+  in a release yet, and RaDEX at commit `9f9b0df`.
+  The tests marked `dragon` make these checks, the last one with the
+  example's `--dragon` flag; the contributing guide says how to run them.
 - RaDEX has no package: `RadexStore` needs RaDEX's Python client built from
   source with its C++ core.
 - An agent resumes only in the process that suspended it, because that
   process awaits the agent's tasks.
-- Model admission is shared among agent processes in static, equal shares
-  (`Fleet(share=...)`): a process with fewer agents leaves part of its share
-  unused.
+- Checkpoints:
+    - A finished agent's last checkpoint stays in the store, so the store
+      grows with the campaign, not with the agents live at once. On a Dragon
+      dictionary, whose size is fixed when it is created, size it for the
+      campaign, or delete each finished agent's thread from the host's
+      `on_done` with `saver.delete_thread(result.id)`.
+    - A subgraph that suspends leaves its checkpoint behind each time it
+      runs, so a graph that runs a suspending subgraph in a loop, such as a
+      supervisor, stores more with every turn.
+- Tools:
+    - A repeated task or MCP call is recognized by the agent's id and the tool
+      call's id alone. A model server that reuses tool-call ids within a
+      conversation, numbering them per message, gets an earlier call's result
+      for a later, different call. Servers that generate unique ids, as vLLM
+      and OpenAI do, are not affected. Agent and call ids that differ only in
+      characters other than letters, digits, `_`, `.` and `-` can also be
+      taken for the same call.
+    - Cancelling an agent while it waits on a task tool leaves the task
+      running in RHAPSODY, and releases the task's place in its `TaskOrder`
+      before the task ends.
+    - `ToolRuntime(retained=...)` bounds what Flowgentic keeps of ended tasks,
+      not what RHAPSODY keeps. RHAPSODY 0.7 keeps each task's description and
+      result for the life of its session, so a process's memory grows with the
+      tasks it runs.
+- The fleet:
+    - Model admission is shared among agent processes in static, equal shares
+      (`Fleet(share=...)`): a process with fewer agents leaves part of its
+      share unused.
+    - A call whose context is larger than a process's share of a replica's
+      token cap is still admitted, alone, once nothing else from that process
+      is in flight at that replica. With several processes, such calls can
+      together exceed the cap. Choose the cap and `share` so that the largest
+      context fits in one share.
+    - Before an agent's first call, its context is estimated from the tokens
+      per character of earlier first calls, with no fixed term. After short
+      first prompts, a much longer first prompt is overestimated, and its call
+      may wait to run alone. Later calls use the size the server reported.
 - Python 3.14 is not tested. The host's collector settings were measured on
   CPython 3.12, and 3.14 has a new, incremental collector.
 

@@ -3,10 +3,22 @@
 This guide is for campaigns of many LangGraph agents, thousands to hundreds of
 thousands, on an HPC allocation. Each agent's tools run as HPC tasks, its model
 is served on the allocation, and its state lives in the allocation's memory.
-Install the path's extras:
+
+Flowgentic is not published on PyPI. Install it from a clone, with this path's
+extras:
 
 ```bash
-uv pip install "flowgentic[langgraph,rhapsody,mcp]"
+git clone https://github.com/stride-research/flowgentic.git
+cd flowgentic
+uv sync --locked --extra langgraph --extra rhapsody --extra mcp
+```
+
+Or install a wheel, attached to a
+[release](https://github.com/stride-research/flowgentic/releases) or built
+from a clone with `uv build`, into your own environment:
+
+```bash
+uv pip install "dist/flowgentic-0.5.0-py3-none-any.whl[langgraph,rhapsody,mcp]"
 ```
 
 RaDEX, which keeps agents' state in a Dragon distributed dictionary, is built
@@ -223,8 +235,15 @@ live in an installed package needs nothing of the kind. The example also sets
 Dragon's LLM engine, which clears it, and processes started through Dragon's
 `multiprocessing` need it.
 
-CI runs the example without Dragon; the parts' behaviour under Dragon is
-checked by hand, as [Project status](../status.md#known-limitations) says.
+CI runs the example without Dragon. For this
+release the parts were tested under Dragon by hand: the store's contract on
+RaDEX, an agent suspended by one Dragon process and resumed by another, the
+tool service in a Dragon process serving two agent processes over Dragon's
+queues, and the worked example adapted to Dragon, with 1,000 agents in two
+processes, every suspension resumed from RaDEX. They passed under Dragon
+0.15.0 on Python 3.12, with RHAPSODY at commit `2523ead`, whose native Dragon
+backend is not in a release yet, and RaDEX at commit `9f9b0df`.
+See [Project status](../status.md#known-limitations).
 
 ## Telemetry
 

@@ -72,12 +72,12 @@ def test_the_asyncflow_path_names_its_extra() -> None:
 
 def test_the_langgraph_integration_names_its_extras() -> None:
 	result = run_without(
-		ASYNCFLOW, "from flowgentic.langgraph import LangraphIntegration"
+		ASYNCFLOW, "from flowgentic.langgraph import LangGraphIntegration"
 	)
 	assert result.returncode != 0
 	assert "install flowgentic[langgraph,asyncflow]" in result.stderr.splitlines()[-1]
 	result = run_without(
-		LANGGRAPH, "from flowgentic.langgraph import LangraphIntegration"
+		LANGGRAPH, "from flowgentic.langgraph import LangGraphIntegration"
 	)
 	assert result.returncode != 0
 	last = result.stderr.splitlines()[-1]

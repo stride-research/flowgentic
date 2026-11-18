@@ -109,7 +109,7 @@ runner and demo support code; a standalone direct application needs only
 
 | | With Flowgentic | Directly |
 | --- | --- | --- |
-| Engine | Created and shut down by `LangraphIntegration` | Created and shut down by the application |
+| Engine | Created and shut down by `LangGraphIntegration` | Created and shut down by the application |
 | Tools, tasks, services, nodes | `asyncflow` decorator | `flow.function_task`, `flow.block`, `langchain_core.tools.tool` |
 | Retry and timeout | Only what the application writes | Only what the application writes |
 | Handoff tool | `create_task_description_handoff_tool` | About 17 lines |

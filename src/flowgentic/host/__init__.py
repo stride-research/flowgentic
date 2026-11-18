@@ -8,8 +8,8 @@ LangGraph). It owns what makes thousands of agents in one Python process work:
   spends most of a busy agent process's time scanning the agents' live
   objects. The host raises its first threshold while it runs, and freezes the
   objects that exist once agents have started, so later collections skip them.
-  It restores both when ``run`` returns; if objects were already frozen when it
-  started, it leaves everything frozen.
+  It restores the threshold when ``run`` returns, and unfreezes when the last
+  host that froze ends.
 - **A cap on live agents.** At most ``max_live_agents`` agents are live at
   once, suspended ones included; more are accepted, and each starts as soon as
   a live one ends. The cap bounds the event loop's lag and the collector's
@@ -40,12 +40,13 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from opentelemetry.trace import Status, StatusCode
+
 from flowgentic import _agents, _telemetry
-from flowgentic._agents import CATEGORY, AgentState, AgentStates, register_pending
+from flowgentic._agents import AgentState, AgentStates, register_pending
 from flowgentic.host._probes import CollectorPauses, LoopLag
 
 __all__ = [
-	"CATEGORY",
 	"Agent",
 	"AgentHost",
 	"AgentResult",
@@ -119,10 +120,12 @@ class Collector:
 
 	The first threshold rises to ``threshold`` (CPython's default is 700), and
 	with ``freeze`` the objects alive once agents have started are moved out of
-	the collector's reach. They are moved back when the host ends, unless
-	objects were already frozen when it froze: CPython 3.12 freezes some at
-	startup, and an application may freeze its own. The defaults were measured
-	on CPython 3.12.
+	the collector's reach. When the last host that froze ends, every frozen
+	object is moved back, those frozen before it included (CPython 3.12 parks
+	some of its own objects there): CPython cannot thaw only part of them, and
+	reference cycles left frozen would never be freed. An application that
+	keeps objects of its own frozen passes ``freeze=False``. The defaults were
+	measured on CPython 3.12.
 	"""
 
 	threshold: int = 100_000
@@ -184,7 +187,7 @@ _collector_lock = threading.RLock()
 _thresholds: dict[object, int] = {}
 _original_thresholds: tuple[int, int, int]
 _freeze_owners: set[object] = set()
-_frozen_before = 0  # the permanent generation's size before the first owner froze
+_frozen_before = 0  # the permanent generation's size when the first owner froze
 
 
 class AgentHost:
@@ -335,8 +338,10 @@ class AgentHost:
 		states.enter(agent.id, AgentState.WORKING)
 		output: Any = None
 		cancelled: asyncio.CancelledError | None = None
+		# Named for the operation only: the agent's id is in gen_ai.agent.id, and
+		# a name per agent would make as many span names as agents.
 		with _telemetry.tracer.start_as_current_span(
-			f"{_telemetry.INVOKE_AGENT} {agent.id}",
+			_telemetry.INVOKE_AGENT,
 			attributes={
 				_telemetry.GEN_AI_OPERATION_NAME: _telemetry.INVOKE_AGENT,
 				_telemetry.GEN_AI_AGENT_ID: agent.id,
@@ -361,12 +366,15 @@ class AgentHost:
 					# end the agent here, then let the task end cancelled.
 					result.status = "cancelled"
 					cancelled = exc
+					span.set_status(Status(StatusCode.ERROR, "cancelled"))
 				else:
 					# Any other error, a CancelledError raised inside the runner
 					# included, ends this agent only.
 					result.status = "failed"
 					result.error = f"{type(exc).__name__}: {exc}"[:500]
 					log.debug("agent %s failed", agent.id, exc_info=True)
+					span.record_exception(exc)
+					span.set_status(Status(StatusCode.ERROR, result.error))
 				span.set_attribute(_telemetry.ERROR_TYPE, type(exc).__qualname__)
 			finally:
 				result.t_end = time.time()
@@ -426,7 +434,7 @@ class AgentHost:
 			t = time.perf_counter()
 			if not _freeze_owners:
 				# Freezing adds to what is frozen already, such as the objects
-				# CPython 3.12 freezes at startup or the application froze.
+				# CPython 3.12 moves there at each full collection.
 				_frozen_before = gc.get_freeze_count()
 				gc.collect()
 				gc.freeze()
@@ -444,8 +452,10 @@ class AgentHost:
 		with _collector_lock:
 			if token in _freeze_owners:
 				_freeze_owners.remove(token)
-				# Unfreezing would also thaw what others froze: leave it all.
-				if not _freeze_owners and not _frozen_before:
+				# This thaws what was frozen before the host too: CPython cannot
+				# thaw only what the host froze, and leaving it all frozen would
+				# keep the agents' reference cycles for the life of the process.
+				if not _freeze_owners:
 					gc.unfreeze()
 			del _thresholds[token]
 			threshold = next(reversed(_thresholds.values()), _original_thresholds[0])

@@ -2,11 +2,11 @@ from typing import Dict
 from langgraph.graph import END, StateGraph
 from abc import ABC, abstractmethod
 
-from flowgentic.langgraph.main import LangraphIntegration
+from flowgentic.langgraph.main import LangGraphIntegration
 
 
 class BaseToolRegistry(ABC):
-	def __init__(self, agents_manager: LangraphIntegration) -> None:
+	def __init__(self, agents_manager: LangGraphIntegration) -> None:
 		self.agents_manager = agents_manager
 		self.agent_tools = {}
 		self.deterministic_tasks = {}

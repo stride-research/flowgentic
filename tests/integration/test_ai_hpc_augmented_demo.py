@@ -54,7 +54,7 @@ def test_augmented_demo_keeps_application_outside_langgraph(tmp_path: Path) -> N
     application_source = (demo / "augmented_application.py").read_text()
     framework_source = (demo / "augmented_agents.py").read_text()
     assert "langgraph" not in application_source.lower()
-    assert "LangraphIntegration" not in application_source
+    assert "LangGraphIntegration" not in application_source
     assert "from flowgentic.agent import" in application_source
     assert "bind_agent" in application_source
     assert "from langgraph" in framework_source
