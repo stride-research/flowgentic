@@ -2,6 +2,7 @@
 metrics."""
 
 import asyncio
+import inspect
 import itertools
 import json
 import subprocess
@@ -468,7 +469,7 @@ def test_which_errors_of_langchain_openai_are_transient():
     import openai
     from langchain_openai.chat_models import base
 
-    TRANSIENT = fleet_module.TRANSIENT
+    TRANSIENT = fleet_module._TRANSIENT
     for name in TRANSIENT:
         assert issubclass(getattr(openai, name), openai.OpenAIError)
 
@@ -769,6 +770,23 @@ async def test_prebuilt_agents_send_each_call_to_the_agents_replica():
 def test_the_chat_model_is_asynchronous_only():
     with pytest.raises(NotImplementedError, match="ainvoke"):
         Fleet([Recording()]).chat_model().invoke([HumanMessage("hi")], config=thread("t"))
+
+
+# --- the module's names ------------------------------------------------------------
+
+
+def test_the_fleet_module_names_only_its_api():
+    for name in ("stable_hash", "transient", "TRANSIENT", "AgentState", "message_chars"):
+        assert not hasattr(fleet_module, name), name
+    defined_here = {
+        name
+        for name, value in vars(fleet_module).items()
+        if not name.startswith("_")
+        and not inspect.ismodule(value)
+        and getattr(value, "__module__", fleet_module.__name__) == fleet_module.__name__
+    }
+    assert defined_here == set(fleet_module.__all__)
+    assert "Gate" in fleet_module.__all__
 
 
 # --- metrics -----------------------------------------------------------------------

@@ -87,12 +87,10 @@ except ModuleNotFoundError as exc:
 	) from exc
 
 from flowgentic import _agents, _telemetry
-from flowgentic._agents import AgentState
 
 log = logging.getLogger(__name__)
 
 __all__ = [
-	"TRANSIENT",
 	"Admission",
 	"AdmissionGate",
 	"AgentAffinity",
@@ -107,12 +105,10 @@ __all__ = [
 	"RoundRobin",
 	"Routing",
 	"TokenAdmission",
-	"stable_hash",
-	"transient",
 ]
 
 
-def stable_hash(key: str) -> int:
+def _stable_hash(key: str) -> int:
 	"""The same in every process, unlike ``hash()``."""
 	return zlib.crc32(key.encode())
 
@@ -334,7 +330,7 @@ class AgentAffinity:
 	"""Each agent always to the same replica, by a stable hash of its id."""
 
 	def choose(self, agent_id: str, loads: Sequence[ReplicaLoad]) -> int:
-		return stable_hash(agent_id) % len(loads)
+		return _stable_hash(agent_id) % len(loads)
 
 
 class RoundRobin:
@@ -359,7 +355,7 @@ class LeastLoaded:
 
 # --- recovery ----------------------------------------------------------------------
 
-TRANSIENT = frozenset(
+_TRANSIENT = frozenset(
 	{
 		"APIConnectionError",
 		"APITimeoutError",
@@ -372,9 +368,9 @@ with a new key, by the OpenAI client's class names. Matched along the class's
 MRO, so langchain-openai's own wrappers of them match too."""
 
 
-def transient(exc: BaseException) -> bool:
+def _transient(exc: BaseException) -> bool:
 	"""Whether ``exc`` is a server's that is down, restarting or overloaded."""
-	return any(c.__name__ in TRANSIENT for c in type(exc).__mro__)
+	return any(c.__name__ in _TRANSIENT for c in type(exc).__mro__)
 
 
 class Recovery:
@@ -507,7 +503,7 @@ class CallRecord:
 	"""What the caller passed with the call."""
 
 
-def message_chars(messages: Sequence[BaseMessage]) -> int:
+def _message_chars(messages: Sequence[BaseMessage]) -> int:
 	"""Characters of a conversation: contents and tool calls."""
 	n = 0
 	for m in messages:
@@ -713,7 +709,7 @@ class Fleet:
 		i = core.routing.choose(agent_id, [g.load() for g in core.gates])
 		gate = core.gates[i]
 		state = core.agent(agent_id)
-		chars = message_chars(messages)
+		chars = _message_chars(messages)
 		estimate = core.estimate(state, chars) + core.reply_reserve + reserve
 		weight = estimate if core.counts_tokens else 0
 		last = messages[-1] if messages else None
@@ -722,7 +718,7 @@ class Fleet:
 		asked = time.monotonic()
 		attrs = {_telemetry.FLEET_NAME: core.name, _telemetry.FLEET_REPLICA: i}
 		failing_since: float | None = None
-		with _agents.activity(AgentState.MODEL_QUEUED):
+		with _agents.activity(_agents.AgentState.MODEL_QUEUED):
 			while True:
 				await gate.acquire(weight, agent_id)
 				failed: BaseException | None = None
@@ -731,13 +727,13 @@ class Fleet:
 					core.in_flight += 1
 					core.in_flight_max = max(core.in_flight_max, core.in_flight)
 					try:
-						with _agents.activity(AgentState.MODEL_REQUEST):
+						with _agents.activity(_agents.AgentState.MODEL_REQUEST):
 							reply = await self._model(i).ainvoke(
 								list(messages), **kwargs
 							)
 					except Exception as exc:
 						core.errors[type(exc).__name__] += 1
-						if core.recovery is None or not transient(exc):
+						if core.recovery is None or not _transient(exc):
 							raise
 						failed = exc
 					finally:
@@ -831,7 +827,7 @@ class Fleet:
 		)
 		# The conversation keeps the reply but not its thinking.
 		kept = completion - (reasoning or 0)
-		core.learn(state, chars, message_chars([reply]), prompt, kept)
+		core.learn(state, chars, _message_chars([reply]), prompt, kept)
 		state.last_end = t_end
 		state.prev_prompt = prompt
 		if reply.tool_calls:
