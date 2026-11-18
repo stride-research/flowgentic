@@ -7,6 +7,31 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
+## [Unreleased]
+
+### Changed
+
+- `GraphRunner` deletes a finished agent's thread from the graph's
+  checkpointer once its run ends, before the host passes the output to
+  `on_done`, so the store holds the agents still running, not every agent of
+  the campaign. Interrupted, failed and cancelled agents keep their threads.
+  `GraphRunner(graph, delete_finished=False)` keeps finished agents' threads
+  too, as 0.5.0 did. A thread that cannot be deleted is logged and counted in
+  `GraphRunner.delete_failures`, and the agent still finishes.
+
+### Fixed
+
+- `KeyValueSaver` drops a subgraph's checkpoints once its parent has moved past
+  the step that ran it, with the subgraph's own subgraphs. A graph that runs a
+  suspending subgraph in a loop, as a supervisor does, no longer stores more
+  with every turn.
+- `KeyValueSaver.stats()` counts what LangGraph's copies of the saver put and
+  read. With `LANGGRAPH_STRICT_MSGPACK=true`, a graph runs on a copy, and the
+  saver reported zeros.
+- `from flowgentic.langgraph import *` works without the `asyncflow` extra.
+- `GraphRunner` no longer keeps a resume count for an agent that the host
+  cancels or fails while it waits between two resumes.
+
 ## [0.5.0] - 2026-11-18
 
 Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as
@@ -536,6 +561,7 @@ on `main`.
   - Each test matrix job runs its own Python with the dev extra.
   - The bandit job runs again.
 
+[Unreleased]: https://github.com/stride-research/flowgentic/compare/v0.5.0...HEAD
 [0.5.0]: https://github.com/stride-research/flowgentic/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/stride-research/flowgentic/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/stride-research/flowgentic/compare/v0.3.0...v0.3.1
