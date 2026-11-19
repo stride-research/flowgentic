@@ -102,12 +102,12 @@ async def _settled(job: asyncio.Future) -> None:
 	its traceback, and on CPython 3.12 those of the LangGraph run that called
 	the tool, with the agent's whole state.
 
-	Cancelling the wait leaves the task running. The task belongs to every call
-	with its key, such as the same call made again once its agent runs again,
-	and RHAPSODY does not stop a task that has started; so the task keeps its
-	place in its ``TaskOrder`` until it ends."""
-	if not job.done():
-		await asyncio.wait((job,))
+	Cancelling the wait leaves a started task running. The task belongs to
+	every call with its key, such as the same call made again once its agent
+	runs again, and RHAPSODY does not stop a task that has started; so the task
+	keeps its place in its ``TaskOrder`` until it ends. A task its order has
+	not admitted yet is withdrawn once no call waits for it."""
+	await _agents.wait((job,))
 
 
 def _task_tool(runtime: ToolRuntime, tool: TaskTool) -> BaseTool:

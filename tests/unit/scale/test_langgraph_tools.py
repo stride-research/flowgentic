@@ -19,7 +19,7 @@ from flowgentic import _agents
 from flowgentic.host import Agent, AgentHost, AgentState, Finished, Stagger, Suspended
 from flowgentic.langgraph import GraphRunner, KeyValueSaver, bind_tools
 from flowgentic.store import MemoryStore
-from flowgentic.tools import TaskInfo, ToolRuntime, mcp_tool, task_tool
+from flowgentic.tools import TaskCancelled, TaskInfo, ToolRuntime, mcp_tool, task_tool
 from flowgentic.tools.service import ToolServiceClient, ToolServiceError
 
 FAST = Stagger(batch=50, interval_s=0.0)
@@ -346,15 +346,16 @@ async def test_an_order_policy_decides_when_tasks_are_submitted():
     assert [(r.info.key, r.outcome) for r in records] == [("a/c2", "cancelled"), ("a/c1", "ok")]
 
 
-async def test_cancelling_a_tool_that_waits_leaves_its_task_running():
-    """The task is shared by every call with its key: cancelling one waiter,
-    as cancelling its agent does, leaves the task running, and the call made
-    again gets the task's result."""
+async def test_cancelling_a_tool_that_waits_leaves_its_started_task_running():
+    """A started task is shared by every call with its key, and RHAPSODY does
+    not stop it: cancelling the wait, as cancelling its agent does, leaves it
+    running, and the call made again gets the task's result."""
     session = await thread_session()
     order = Held()
+    order.gate.set()
     runtime = ToolRuntime(session, order=order)
-    (tool_,) = bind_tools(runtime, [task_tool(simulate)])
-    call = {"name": "simulate", "args": {"x": 1.0}, "id": "c1", "type": "tool_call"}
+    (tool_,) = bind_tools(runtime, [task_tool(slow_simulate)])
+    call = {"name": "slow_simulate", "args": {"x": 1.0}, "id": "c1", "type": "tool_call"}
     config = {"configurable": {"thread_id": "a"}}
     waiting = asyncio.create_task(tool_.ainvoke(call, config))
     await asyncio.sleep(0.05)
@@ -363,12 +364,142 @@ async def test_cancelling_a_tool_that_waits_leaves_its_task_running():
     with pytest.raises(asyncio.CancelledError):
         await waiting
     assert not job.done()
-    order.gate.set()
     again = await tool_.ainvoke(call, config)
     await session.close()
     assert again.content == '{"y": 2.0}' and again.status == "success"
-    assert not job.cancelled() and RUNS == {"simulate": 1}
+    assert not job.cancelled() and RUNS == {"slow_simulate": 1}
     assert order.admitted == order.ended == ["a/c1"]
+
+
+async def test_a_queued_task_no_call_waits_for_is_withdrawn():
+    """Tasks that their order has not admitted yet, whose agents are all gone,
+    never reach RHAPSODY; the started one runs on. A call made again for a
+    withdrawn task submits it afresh."""
+    session = await thread_session()
+    order = OneAtATime()
+    runtime = ToolRuntime(session, order=order)
+    records = []
+    runtime.add_listener(records.append)
+    (tool_,) = bind_tools(runtime, [task_tool(slow_simulate)])
+
+    def call(i):
+        return (
+            {"name": "slow_simulate", "args": {"x": float(i)}, "id": "c1", "type": "tool_call"},
+            {"configurable": {"thread_id": f"agent-{i}"}},
+        )
+
+    waits = [asyncio.create_task(tool_.ainvoke(*call(i))) for i in range(3)]
+    await until(lambda: len(runtime._jobs) == 3 and order.slot.locked())  # one runs
+    for wait in waits:
+        wait.cancel()
+    await asyncio.gather(*waits, return_exceptions=True)
+    await asyncio.sleep(0.6)  # time for two more tasks, had they been submitted
+    assert RUNS == {"slow_simulate": 1}
+    (ran,) = [r for r in records if r.outcome == "ok"]
+    withdrawn = [r for r in records if r is not ran]
+    assert [(r.outcome, r.t_admit) for r in withdrawn] == [("cancelled", None)] * 2
+    assert list(runtime._jobs) == [ran.info.key]
+    again = await tool_.ainvoke(*call(int(withdrawn[0].info.args["x"])))
+    await session.close()
+    assert again.status == "success" and RUNS == {"slow_simulate": 2}
+
+
+async def test_a_queued_task_stays_while_a_call_still_waits_for_it():
+    """Calls made again with one key share its task: cancelling one of their
+    waits leaves the task to the others."""
+    session = await thread_session()
+    order = Held()
+    runtime = ToolRuntime(session, order=order)
+    (tool_,) = bind_tools(runtime, [task_tool(simulate)])
+    call = {"name": "simulate", "args": {"x": 1.0}, "id": "c1", "type": "tool_call"}
+    config = {"configurable": {"thread_id": "a"}}
+    first = asyncio.create_task(tool_.ainvoke(call, config))
+    second = asyncio.create_task(tool_.ainvoke(call, config))
+    await asyncio.sleep(0.05)
+    first.cancel()
+    await asyncio.gather(first, return_exceptions=True)
+    order.gate.set()
+    out = await second
+    await session.close()
+    assert out.content == '{"y": 2.0}' and RUNS == {"simulate": 1}
+    assert runtime.stats()["submitted"] == 1 and runtime.stats()["repeats"] == 1
+
+
+async def test_a_stopped_host_withdraws_the_queued_tasks_of_its_suspended_agents():
+    session = await thread_session()
+    order = OneAtATime()
+    runtime = ToolRuntime(session, order=order)
+    graph = react_graph(
+        Scripted(script=calls_then_answer(("slow_simulate", {"x": 1.0}))),
+        bind_tools(runtime, [task_tool(slow_simulate, suspend=True)]),
+        KeyValueSaver(MemoryStore()),
+    )
+    host = AgentHost(GraphRunner(graph), stagger=FAST)
+    run = asyncio.create_task(host.run(inputs(3)))
+    # Every agent has suspended, and one task runs.
+    await until(
+        lambda: order.slot.locked()
+        and host.states.counts().get(AgentState.TOOL_WAIT, 0) == 3
+    )
+    run.cancel()
+    await asyncio.gather(run, return_exceptions=True)
+    await asyncio.sleep(0.6)
+    await session.close()
+    assert RUNS == {"slow_simulate": 1}
+
+
+async def test_closing_the_session_ends_its_tasks_and_frees_their_places():
+    """A campaign stops its host, then closes its RHAPSODY session, which drops
+    the tasks it still runs. A task left running by its cancelled wait ends,
+    cancelled, and gives its place in its order back; a task its order admits
+    after the session closed fails at once."""
+    session = await thread_session()
+    order = OneAtATime()
+    runtime = ToolRuntime(session, order=order)
+    records = []
+    runtime.add_listener(records.append)
+    (tool_,) = bind_tools(runtime, [task_tool(slow_simulate)])
+
+    def call(agent):
+        return (
+            {"name": "slow_simulate", "args": {"x": 1.0}, "id": "c1", "type": "tool_call"},
+            {"configurable": {"thread_id": agent}},
+        )
+
+    running = asyncio.create_task(tool_.ainvoke(*call("a")))
+    await until(lambda: order.slot.locked())  # a's task runs
+    queued = asyncio.create_task(tool_.ainvoke(*call("b")))  # b's waits for its turn
+    await until(lambda: len(runtime._jobs) == 2)
+    running.cancel()
+    await asyncio.gather(running, return_exceptions=True)
+    await session.close()
+    out = await asyncio.wait_for(queued, 2)
+    job = runtime._jobs["a/c1"]
+    assert job.done() and isinstance(job.exception(), TaskCancelled)
+    assert out.status == "error" and "TaskCancelled: the RHAPSODY session is closed" in out.content
+    assert [(r.info.agent_id, r.outcome) for r in records] == [("a", "cancelled"), ("b", "cancelled")]
+    assert "the RHAPSODY session closed before the task ended" in records[0].error
+    # The order is free for the next session's tasks.
+    later = await thread_session()
+    again = ToolRuntime(later, order=order).submit(task_tool(simulate), "c", "c1", {"x": 2.0})
+    assert await asyncio.wait_for(again, 2) == {"y": 4.0}
+    await later.close()
+
+
+async def test_a_task_rhapsody_cancels_ends_cancelled():
+    """A task RHAPSODY cancels ends without a value: it is no success."""
+    session = await thread_session()
+    order = OneAtATime()
+    runtime = ToolRuntime(session, order=order)
+    job = runtime.submit(task_tool(slow_simulate), "a", "c1", {"x": 1.0})
+    await asyncio.sleep(0.05)
+    (backend,) = session.backends.values()
+    assert await backend.cancel_task(runtime.uid("a/c1"))
+    await asyncio.wait_for(asyncio.wait([job]), 2)
+    assert isinstance(job.exception(), TaskCancelled)
+    assert "RHAPSODY cancelled the task" in str(job.exception())
+    assert not order.slot.locked()
+    await session.close()
 
 
 async def test_a_call_made_again_after_a_timed_out_wait_gets_the_task():
@@ -419,18 +550,28 @@ async def test_a_cancelled_wait_keeps_its_tasks_place_in_the_order_until_it_ends
 
 
 async def test_a_task_cancelled_by_its_owner_reaches_the_model_as_an_error():
-    """A task future cancelled directly, not through a tool's wait, is a failed
-    call for the model to read, not a CancelledError that would fail its agent."""
+    """A started task's future cancelled directly, not through a tool's wait,
+    is a failed call for the model to read, not a CancelledError that would
+    fail its agent."""
     session = await thread_session()
-    runtime = ToolRuntime(session, order=Held())
-    (tool_,) = bind_tools(runtime, [task_tool(simulate)])
-    call = {"name": "simulate", "args": {"x": 1.0}, "id": "c1", "type": "tool_call"}
+    runtime = ToolRuntime(session)
+    (tool_,) = bind_tools(runtime, [task_tool(slow_simulate)])
+    call = {"name": "slow_simulate", "args": {"x": 1.0}, "id": "c1", "type": "tool_call"}
     config = {"configurable": {"thread_id": "a"}}
-    runtime.submit(task_tool(simulate), "a", "c1", {"x": 1.0}).cancel()
+    job = runtime.submit(task_tool(slow_simulate), "a", "c1", {"x": 1.0})
+    await asyncio.sleep(0.05)
+    job.cancel()
     out = await tool_.ainvoke(call, config)
     await session.close()
-    assert out.status == "error" and "simulate failed: its task was cancelled" in out.content
-    assert RUNS == {}
+    assert out.status == "error" and "slow_simulate failed: its task was cancelled" in out.content
+
+
+async def until(condition, timeout: float = 5.0) -> None:
+    """Wait until ``condition()`` holds, failing after ``timeout`` seconds."""
+    end = time.monotonic() + timeout
+    while not condition():
+        assert time.monotonic() < end, "condition not reached"
+        await asyncio.sleep(0.01)
 
 
 def slow_simulate(x: float) -> dict:

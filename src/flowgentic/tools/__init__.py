@@ -47,10 +47,12 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from flowgentic import _agents, _rhapsody, _telemetry
+from flowgentic._rhapsody import TaskCancelled
 
 __all__ = [
 	"Immediate",
 	"McpTool",
+	"TaskCancelled",
 	"TaskInfo",
 	"TaskOrder",
 	"TaskRecord",
@@ -348,8 +350,21 @@ class ToolRuntime:
 		self._jobs[key] = job
 		if _agents.current_agent() is not None:
 			_agents.register_pending(key, job)  # released when the agent ends
+		# Until its order admits it, a task that no call waits for any more is
+		# withdrawn: it never reaches RHAPSODY.
+		_agents.withdrawable(job, lambda: self._forget(key, job, cancel=True))
 		self.submitted += 1
 		return job
+
+	def _forget(self, key: str, job: asyncio.Future, *, cancel: bool = False) -> None:
+		"""Forget a task that never reached RHAPSODY, so that the call made
+		again submits it afresh; ``cancel`` it too."""
+		if self._jobs.get(key) is job:
+			del self._jobs[key]
+		if _agents.pending(key) is job or _agents.registered(key) is job:
+			_agents.forget_pending(key)
+		if cancel:
+			job.cancel()
 
 	async def _run(self, tool: TaskTool, info: TaskInfo) -> Any:
 		t = time.monotonic()
@@ -375,6 +390,7 @@ class ToolRuntime:
 					self.refused += 1
 					raise
 				t_admit = time.time()
+				_agents.withdrawable(asyncio.current_task(), None)
 				try:
 					value = await _rhapsody.run_function(
 						self.session,
@@ -390,6 +406,12 @@ class ToolRuntime:
 			except asyncio.CancelledError:
 				outcome = "cancelled"
 				error = "CancelledError"
+				if t_admit is None:  # withdrawn, or cancelled before admission
+					self._forget(info.key, asyncio.current_task())
+				raise
+			except TaskCancelled as exc:
+				outcome = "cancelled"
+				error = f"TaskCancelled: {exc}"
 				raise
 			except Exception as exc:
 				if outcome == "error":
@@ -398,8 +420,10 @@ class ToolRuntime:
 				span.set_attribute(_telemetry.ERROR_TYPE, type(exc).__qualname__)
 				raise
 			finally:
+				_agents.withdrawable(asyncio.current_task(), None)
 				span.set_attribute(_telemetry.TOOL_OUTCOME, outcome)
-				self._ended_add(info.key)
+				if t_admit is not None or outcome != "cancelled":
+					self._ended_add(info.key)
 				self._tell(
 					TaskRecord(
 						info, t_submit, t_admit, time.time(), outcome, value, error

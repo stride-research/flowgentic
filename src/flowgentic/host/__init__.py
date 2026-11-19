@@ -406,7 +406,9 @@ class AgentHost:
 				)
 			futures.append(future)
 		try:
-			await asyncio.wait(futures)
+			# A stopped host withdraws the tasks that their order has not
+			# admitted yet, when no other call waits for them.
+			await _agents.wait(futures)
 		finally:
 			self.states.enter(agent.id, AgentState.WORKING)
 		return {rid: {"flowgentic_done": key} for rid, key in step.waits}

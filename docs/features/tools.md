@@ -68,10 +68,18 @@ ended tasks (100,000 by default), and an agent in a host finds the tasks it
 asked for until it ends, however many have ended since. The tool service keeps
 its own answers, by the same key.
 
-Cancelling an agent, or a task tool's wait, leaves the task running: the task
-belongs to every call with its key, and RHAPSODY does not stop a task that has
-started. The task keeps its place in its `TaskOrder` until it ends, and the
-call made again gets its result.
+Cancelling an agent, or a task tool's wait, leaves a task that has started
+running: the task belongs to every call with its key, and RHAPSODY does not
+stop a task that has started. The task keeps its place in its `TaskOrder` until
+it ends, and the call made again gets its result. A task its order has not
+admitted yet is withdrawn once no call waits for it, such as when every agent
+that asked for it is cancelled or its host stops: it never reaches RHAPSODY,
+and the call made again submits it afresh.
+
+A task that RHAPSODY cancels, or whose session closes before it ends, ends with
+`TaskCancelled`: its place in its order is given back, and the model reads that
+the call failed. A task that its order admits after the session has closed
+fails at once, in the same way.
 
 A task's RHAPSODY uid is `flowgentic.` and its key, with `/` written `.`, `_`
 written `__`, and any character other than a letter, a digit or `-` written
@@ -112,7 +120,8 @@ choosing, such as a campaign's priorities, or refuse them, as a budget does.
 
 - `runtime.add_listener(listener)` receives a `TaskRecord` as each task ends:
   its info, when it was asked for, admitted and ended, its outcome (`ok`,
-  `error`, `refused` or `cancelled`), and its value or error.
+  `error`, `refused` or `cancelled`), and its value or error. A withdrawn task
+  is `cancelled` with no admission time.
 - `runtime.stats()` counts the tasks submitted, asked for again, failed and
   refused.
 - Each task or service call is an `execute_tool` span, inside its agent's

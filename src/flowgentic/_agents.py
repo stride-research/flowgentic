@@ -21,7 +21,7 @@ import asyncio
 import threading
 import time
 import weakref
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from contextvars import Context, ContextVar
 from enum import IntEnum
@@ -314,3 +314,44 @@ def registered(key: str) -> asyncio.Future | None:
 	"""The future the current agent registered under ``key``, until it ends."""
 	agent = _current.get()
 	return None if agent is None else agent.registered.get(key)
+
+
+# How many waits each future has, and how to withdraw a future whose maker can
+# still take it back, such as a task its order has not admitted yet.
+_waits: dict[asyncio.Future, int] = {}
+_withdraw: dict[asyncio.Future, Callable[[], None]] = {}
+
+
+def withdrawable(future: asyncio.Future, withdraw: Callable[[], None] | None) -> None:
+	"""Call ``withdraw()`` if every wait on ``future`` is cancelled before it
+	ends; ``None`` says it can no longer be withdrawn."""
+	if withdraw is None:
+		_withdraw.pop(future, None)
+	else:
+		_withdraw[future] = withdraw
+
+
+async def wait(futures: Iterable[asyncio.Future]) -> None:
+	"""Wait for ``futures`` to end, without raising their exceptions.
+
+	Several waits may share a future, as calls made again with one key share
+	their task. A future whose last wait is cancelled before it ends is
+	withdrawn, if it still can be (``withdrawable``); otherwise it runs on."""
+	futures = [f for f in futures if not f.done()]
+	if not futures:
+		return
+	for future in futures:
+		_waits[future] = _waits.get(future, 0) + 1
+	try:
+		await asyncio.wait(futures)
+	finally:
+		for future in futures:
+			left = _waits[future] - 1
+			if left:
+				_waits[future] = left
+				continue
+			del _waits[future]
+			if not future.done():
+				withdraw = _withdraw.pop(future, None)
+				if withdraw is not None:
+					withdraw()

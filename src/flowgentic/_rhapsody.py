@@ -17,10 +17,66 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import weakref
 from collections.abc import Callable
 from typing import Any
 
 from flowgentic import _telemetry
+
+
+class TaskCancelled(Exception):
+	"""RHAPSODY cancelled the task, or its session closed before the task ended."""
+
+
+# A task's state once RHAPSODY has cancelled it, in every backend's mapping.
+_CANCELED = "CANCELED"
+
+
+class _Session:
+	"""What Flowgentic knows of a RHAPSODY session: whether it has closed, and
+	the runs still waiting on its tasks."""
+
+	__slots__ = ("closed", "waits")
+
+	def __init__(self) -> None:
+		self.closed = False
+		self.waits: set[asyncio.Future] = set()
+
+	def wake(self) -> None:
+		self.closed = True
+		for wait in list(self.waits):
+			if not wait.done():
+				wait.set_result(None)
+
+
+_sessions: weakref.WeakKeyDictionary[Any, _Session] = weakref.WeakKeyDictionary()
+
+
+def _session(session: Any) -> _Session:
+	"""The session's record, made on first use.
+
+	A RHAPSODY 0.7 session that closes resolves the futures of the tasks it
+	drops on some backends and not on others, such as the thread-pool one, so a
+	run could wait forever on a task that will never end. The first use of a
+	session wraps its ``close``: once the session has closed, every run still
+	waiting on one of its tasks is told."""
+	try:
+		known = _sessions.get(session)
+	except TypeError:  # a session that cannot be weakly referenced: not watched
+		return _Session()
+	if known is None:
+		known = _sessions[session] = _Session()
+		close = getattr(session, "close", None)
+		if close is not None:
+
+			async def close_and_tell(*args: Any, **kwargs: Any) -> Any:
+				try:
+					return await close(*args, **kwargs)
+				finally:
+					known.wake()
+
+			session.close = close_and_tell
+	return known
 
 
 def _call_in_context(
@@ -65,21 +121,40 @@ async def run_function(
 	return its value. A failure raises the task's exception. ``task`` adds
 	fields to the task's description, such as resources or a backend's name.
 
+	``TaskCancelled`` is raised if RHAPSODY cancels the task, or if the session
+	is closed or closes before the task ends.
+
 	A RHAPSODY session keeps each task's description for its life, and the
 	description holds the task's arguments, its result, the backend's text of
 	it and its exception. Once the task has ended and its outcome is read, they
 	are dropped from the description: the caller has them."""
-	description = _compute_task()(
+	compute_task = _compute_task()
+	known = _session(session)
+	if known.closed:
+		raise TaskCancelled("the RHAPSODY session is closed")
+	description = compute_task(
 		function=_call_in_context,
 		args=(func, _telemetry.inject_context(), kwargs),
 		uid=uid,
 		**task,
 	)
 	(future,) = await session.submit_tasks([description])
+	closed = asyncio.get_running_loop().create_future()
+	known.waits.add(closed)
 	try:
-		done = await future
+		try:
+			await asyncio.wait((future, closed), return_when=asyncio.FIRST_COMPLETED)
+		except asyncio.CancelledError:
+			future.cancel()
+			raise
+		if not future.done():
+			raise TaskCancelled("the RHAPSODY session closed before the task ended")
+		done = future.result()
+		if done.get("state") == _CANCELED:
+			raise TaskCancelled("RHAPSODY cancelled the task")
 		return done["return_value"]
 	finally:
+		known.waits.discard(closed)
 		if future.done() and not future.cancelled():
 			description.update(
 				args=(), return_value=None, stdout=None, stderr=None, exception=None
