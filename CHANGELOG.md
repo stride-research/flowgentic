@@ -7,7 +7,12 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
-## [Unreleased]
+## [0.5.1] - 2026-11-19
+
+A patch release: fixes for most of the known limitations that 0.5.0's
+documentation lists, and for defects found since. The entries under Changed
+change behaviour a caller may rely on. A tool call's key and a task's uid
+differ from 0.5.0's, so upgrade between campaigns, not during one.
 
 ### Added
 
@@ -689,7 +694,7 @@ on `main`.
   - Each test matrix job runs its own Python with the dev extra.
   - The bandit job runs again.
 
-[Unreleased]: https://github.com/stride-research/flowgentic/compare/v0.5.0...HEAD
+[0.5.1]: https://github.com/stride-research/flowgentic/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/stride-research/flowgentic/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/stride-research/flowgentic/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/stride-research/flowgentic/compare/v0.3.0...v0.3.1

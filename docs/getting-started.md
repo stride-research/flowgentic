@@ -31,7 +31,7 @@ new environment, with the extras you use:
 ```bash
 uv build
 uv venv --python 3.11 flowgentic-env
-uv pip install --python flowgentic-env/bin/python "dist/flowgentic-0.5.0-py3-none-any.whl[langgraph,asyncflow]"
+uv pip install --python flowgentic-env/bin/python "dist/flowgentic-0.5.1-py3-none-any.whl[langgraph,asyncflow]"
 ```
 
 ## Run the deterministic demo

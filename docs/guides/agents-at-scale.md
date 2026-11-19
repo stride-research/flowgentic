@@ -18,7 +18,7 @@ Or install a wheel, attached to a
 from a clone with `uv build`, into your own environment:
 
 ```bash
-uv pip install "dist/flowgentic-0.5.0-py3-none-any.whl[langgraph,rhapsody,mcp]"
+uv pip install "dist/flowgentic-0.5.1-py3-none-any.whl[langgraph,rhapsody,mcp]"
 ```
 
 RaDEX, which keeps agents' state in a Dragon distributed dictionary, is built

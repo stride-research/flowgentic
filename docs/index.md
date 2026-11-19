@@ -7,7 +7,7 @@ title: Flowgentic
 Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as
 AsyncFlow workflow tasks, and, from 0.5.0, as LangGraph agents at scale whose
 tools run as RHAPSODY tasks and whose state lives in RaDEX. This
-documentation describes Flowgentic 0.5.0.
+documentation describes Flowgentic 0.5.1.
 
 ## Status
 
@@ -27,7 +27,7 @@ was an implicit retry and timeout on every call and graph node, which re-ran
 scientific work; 0.4.0 removed them. New applications can bind agents with
 `bind_agent`, or run LangGraph on AsyncFlow directly.
 
-0.5.0 requires Python 3.11 or later, and installs each path's dependencies as
+0.5.1 requires Python 3.11 or later, and installs each path's dependencies as
 an extra.
 
 | Path | Agent framework | Runs tasks on | Python |
@@ -91,7 +91,7 @@ in three of them.
 | An external harness (Claude Code, Codex, OpenClaw) steers a run or submits a campaign | ADR, AuCaM | None |
 | A campaign of many agents, each with its tools as RHAPSODY tasks, its model on the allocation and its state in the allocation's memory | The application | `AgentHost` and the parts of agents at scale |
 
-ADR and AuCaM are not released, and Flowgentic 0.5.0 does not support ADR
+ADR and AuCaM are not released, and Flowgentic 0.5.1 does not support ADR
 mode; see [Project status](status.md).
 
 ## Install
@@ -115,7 +115,7 @@ use:
 ```bash
 uv build
 uv venv --python 3.11 flowgentic-env
-uv pip install --python flowgentic-env/bin/python "dist/flowgentic-0.5.0-py3-none-any.whl[langgraph,rhapsody,mcp]"
+uv pip install --python flowgentic-env/bin/python "dist/flowgentic-0.5.1-py3-none-any.whl[langgraph,rhapsody,mcp]"
 ```
 
 [Getting started](getting-started.md) runs the two offline demos of the
