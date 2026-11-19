@@ -26,15 +26,18 @@ checkpoint holds the agent's whole history, so keeping all of them grows with
 the square of a run's length. With ``keep_last`` above one, each checkpoint
 also moves the previous newest one, with its writes, under ``c/``.
 
-A subgraph runs in a namespace of its own, one per task that runs it, so a graph
-that runs a suspending subgraph in a loop, as a supervisor does, would leave a
-namespace behind on every turn. Each namespace is registered with the id of the
-parent's checkpoint it ran under. When a new namespace registers, its siblings
-whose parent checkpoint is older than every checkpoint the parent keeps are
-dropped, with their own subgraphs: the parent has moved past the step that ran
-them, and cannot go back to it. A sibling of a parent checkpoint not saved yet
-is kept. This costs one read of the parent's head (and of its index, above
-``keep_last=1``) when a namespace registers, and nothing in the root namespace.
+A subgraph runs in a namespace of its own, one per task that runs it
+(``node:task_id``), so a graph that runs a suspending subgraph in a loop, as a
+supervisor does, would leave a namespace behind on every turn. Each namespace is
+registered with the id of the parent's checkpoint it ran under. When a new
+namespace registers, its per-task siblings whose parent checkpoint is older than
+every checkpoint the parent keeps are dropped, with their own subgraphs: the
+parent has moved past the step that ran them, and cannot go back to it. A
+sibling of a parent checkpoint not saved yet is kept, and so is a stateful
+subgraph's namespace (``checkpointer=True``), which has no task id and which
+every call reuses. This costs one read of the parent's head (and of its index,
+above ``keep_last=1``) when a namespace registers, and nothing in the root
+namespace.
 
 One process owns each thread's writes. Within a process, the saver serializes
 updates for a thread and reads the persisted head and pending writes before
@@ -91,12 +94,21 @@ def _key_part(value: str) -> str:
 	return str(value).replace("%", "%25").replace("/", "%2F")
 
 
-# LangGraph's separator of a subgraph's namespace from its parent's.
+# LangGraph's separator of a subgraph's namespace from its parent's, and of a
+# node's name from the id of the task that ran it.
 _NS_SEP = "|"
+_NS_END = ":"
 
 
 def _parent_ns(ns: str) -> str:
 	return ns.rpartition(_NS_SEP)[0]
+
+
+def _per_task(ns: str) -> bool:
+	"""Whether ``ns`` is one task's run of a subgraph (``node:task_id``). A
+	stateful subgraph (``checkpointer=True``) saves every call under its node's
+	name alone, so that each call goes on from the last one's state."""
+	return _NS_END in ns.rpartition(_NS_SEP)[2]
 
 
 def _parent_checkpoint_id(
@@ -329,13 +341,13 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 	def _drop_stale(
 		self, thread_id: str, namespaces: dict[str, str | None], parent: str
 	) -> None:
-		"""Drop, from the store and from ``namespaces``, the subgraphs of
-		``parent`` that ran under a checkpoint it no longer keeps, with their
-		own subgraphs."""
+		"""Drop, from the store and from ``namespaces``, the per-task runs of
+		subgraphs of ``parent`` that ran under a checkpoint it no longer keeps,
+		with their own subgraphs. A stateful subgraph's namespace stays."""
 		siblings = [
 			(ns, parent_id)
 			for ns, parent_id in namespaces.items()
-			if parent_id is not None and _parent_ns(ns) == parent
+			if parent_id is not None and _parent_ns(ns) == parent and _per_task(ns)
 		]
 		if not siblings:
 			return

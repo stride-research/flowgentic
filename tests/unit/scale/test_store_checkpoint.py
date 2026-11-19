@@ -2,11 +2,13 @@
 checkpointer over a store."""
 
 import asyncio
+import operator
 import os
 import sys
 import time
 import types
 from collections import Counter
+from typing import Annotated, TypedDict
 
 import pytest
 from langgraph.checkpoint.base import empty_checkpoint
@@ -204,7 +206,11 @@ def suspend_agents(descriptor: str, agents: int, out) -> None:
 		g = graph(saver, stop_inside=True)
 		outs = await asyncio.gather(
 			*(
-				g.ainvoke({"messages": [("human", f"hi {i}")]}, agent_config(i), durability="exit")
+				g.ainvoke(
+					{"messages": [("human", f"hi {i}")]},
+					agent_config(i),
+					durability="exit",
+				)
 				for i in range(agents)
 			)
 		)
@@ -227,7 +233,9 @@ def resume_agents(descriptor: str, agents: int, out) -> None:
 		waiting = [(await g.aget_state(agent_config(i))).next for i in range(agents)]
 		outs = await asyncio.gather(
 			*(
-				g.ainvoke(Command(resume=f"done {i}"), agent_config(i), durability="exit")
+				g.ainvoke(
+					Command(resume=f"done {i}"), agent_config(i), durability="exit"
+				)
 				for i in range(agents)
 			)
 		)
@@ -258,11 +266,18 @@ def test_an_agent_suspended_by_one_dragon_process_resumes_in_another(dragon_desc
 	assert len({suspended["pid"], resumed["pid"], os.getpid()}) == 3
 	assert suspended["suspended"] == agents
 	assert resumed["waiting_at"] == [("b",)]
-	assert resumed["answers"] == [["hi " + str(i), "a", f"b done {i}"] for i in range(agents)]
+	assert resumed["answers"] == [
+		["hi " + str(i), "a", f"b done {i}"] for i in range(agents)
+	]
 	# With exit durability: one checkpoint at the suspension, one at the end.
 	assert suspended["checkpoints_put"] == resumed["checkpoints_put"] == agents
 	final = KeyValueSaver(RadexStore.attach(dragon_descriptor))
-	assert final.get_tuple(agent_config(0)).checkpoint["channel_values"]["messages"][-1].content == "b done 0"
+	assert (
+		final.get_tuple(agent_config(0))
+		.checkpoint["channel_values"]["messages"][-1]
+		.content
+		== "b done 0"
+	)
 
 
 async def test_retention_list_and_delete():
@@ -347,7 +362,10 @@ def test_namespaces_are_listed_and_deleted_with_the_thread():
 		for item in saver.list({"configurable": {"thread_id": "t"}})
 	]
 	assert listed == [("child:1", "s1"), ("", "c1")]
-	assert next(saver.list({"configurable": {"thread_id": "t"}}, limit=1)).checkpoint["id"] == "s1"
+	assert (
+		next(saver.list({"configurable": {"thread_id": "t"}}, limit=1)).checkpoint["id"]
+		== "s1"
+	)
 	saver.delete_thread("t")
 	assert store.keys() == []
 
@@ -435,12 +453,23 @@ def test_writes_can_arrive_before_their_checkpoint():
 def test_thread_and_namespace_separators_cannot_alias():
 	saver = KeyValueSaver(MemoryStore())
 	configs = []
-	for thread, ns, value in [("a/b", "c", "one"), ("a", "b/c", "two"), ("a%2Fb", "c", "three")]:
+	for thread, ns, value in [
+		("a/b", "c", "one"),
+		("a", "b/c", "two"),
+		("a%2Fb", "c", "three"),
+	]:
 		cp = empty_checkpoint()
 		cp["id"] = value
-		configs.append(saver.put({"configurable": {"thread_id": thread, "checkpoint_ns": ns}}, cp, {}, {}))
+		configs.append(
+			saver.put(
+				{"configurable": {"thread_id": thread, "checkpoint_ns": ns}}, cp, {}, {}
+			)
+		)
 	saver.delete_thread("a")
-	assert [saver.get_tuple(c).checkpoint["id"] for c in configs[::2]] == ["one", "three"]
+	assert [saver.get_tuple(c).checkpoint["id"] for c in configs[::2]] == [
+		"one",
+		"three",
+	]
 	assert saver.get_tuple(configs[1]) is None
 
 
@@ -488,7 +517,13 @@ def test_parallel_writes_from_two_savers_are_merged():
 def test_delete_removes_early_writes_from_child_namespace():
 	store = MemoryStore()
 	saver = KeyValueSaver(store)
-	config = {"configurable": {"thread_id": "t", "checkpoint_ns": "child", "checkpoint_id": "c"}}
+	config = {
+		"configurable": {
+			"thread_id": "t",
+			"checkpoint_ns": "child",
+			"checkpoint_id": "c",
+		}
+	}
 	saver.put_writes(config, [("early", 1)], "task")
 	saver.delete_thread("t")
 	assert not store.keys()
@@ -537,7 +572,11 @@ def test_a_strict_msgpack_graph_counts_on_the_saver():
 	""")
 	env = {**os.environ, "LANGGRAPH_STRICT_MSGPACK": "true"}
 	result = subprocess.run(
-		[sys.executable, "-c", code], capture_output=True, text=True, env=env, check=False
+		[sys.executable, "-c", code],
+		capture_output=True,
+		text=True,
+		env=env,
+		check=False,
 	)
 	assert result.returncode == 0, result.stderr
 	assert int(result.stdout.strip()) > 0
@@ -577,7 +616,9 @@ def supervisor(saver, turns: int, nested: bool = False):
 async def run_supervisor(saver, turns, nested, durability, config=None):
 	g = supervisor(saver, turns, nested)
 	config = config or {"configurable": {"thread_id": "t"}}
-	out = await g.ainvoke({"messages": [("human", "go")]}, config, durability=durability)
+	out = await g.ainvoke(
+		{"messages": [("human", "go")]}, config, durability=durability
+	)
 	resumes = 0
 	while "__interrupt__" in out:
 		resumes += 1
@@ -597,7 +638,9 @@ async def test_a_supervisor_loop_keeps_only_its_live_subgraphs(durability, neste
 	kept = {}
 	for turns in (5, 20):
 		store = MemoryStore()
-		out, resumes = await run_supervisor(KeyValueSaver(store), turns, nested, durability)
+		out, resumes = await run_supervisor(
+			KeyValueSaver(store), turns, nested, durability
+		)
 		assert resumes == turns
 		reference, _ = await run_supervisor(InMemorySaver(), turns, nested, durability)
 		assert out == reference
@@ -639,12 +682,18 @@ def test_a_subgraph_goes_once_its_parent_checkpoint_is_replaced():
 	checkpoint(saver, "c2", parent="c1")
 	put_in(saver, "sub:c", "s3", {"": "c3"})
 	assert namespaces(saver) == ["sub:b", "sub:c"]  # sub:a and its child gone
-	assert saver.get_tuple(
-		{"configurable": {"thread_id": "t", "checkpoint_ns": "sub:a|inner:z"}}
-	) is None
-	assert saver.get_tuple(
-		{"configurable": {"thread_id": "t", "checkpoint_ns": "sub:b"}}
-	).checkpoint["id"] == "s2"
+	assert (
+		saver.get_tuple(
+			{"configurable": {"thread_id": "t", "checkpoint_ns": "sub:a|inner:z"}}
+		)
+		is None
+	)
+	assert (
+		saver.get_tuple(
+			{"configurable": {"thread_id": "t", "checkpoint_ns": "sub:b"}}
+		).checkpoint["id"]
+		== "s2"
+	)
 
 
 def test_subgraphs_of_retained_checkpoints_stay_with_keep_last():
@@ -672,3 +721,114 @@ def test_a_namespace_without_its_parents_checkpoint_id_is_kept():
 	assert namespaces(saver) == ["sub:new", "sub:old"]
 	saver.delete_thread("t")
 	assert store.keys() == []
+
+
+class Count(TypedDict):
+	total: Annotated[int, operator.add]
+
+
+class Log(TypedDict):
+	log: Annotated[list, operator.add]
+
+
+def with_memory(saver, turns: int, nested: bool):
+	"""A supervisor loop that calls a stateful subgraph (``checkpointer=True``),
+	which keeps one state across calls under a namespace without a task id,
+	and a subgraph that suspends. With ``nested``, the stateful subgraph is
+	called from inside a subgraph of its own."""
+	mem = StateGraph(Count)
+	mem.add_node("inc", lambda s: {"total": 1})
+	mem.add_edge(START, "inc")
+	mem.add_edge("inc", END)
+	memory = mem.compile(checkpointer=True)
+
+	def remember(state):
+		return {"log": [("total", memory.invoke({"total": 0})["total"])]}
+
+	if nested:
+		inner = StateGraph(Log)
+		inner.add_node("remember", remember)
+		inner.add_edge(START, "remember")
+		inner.add_edge("remember", END)
+		team = inner.compile()
+
+		def remember(state):  # noqa: F811
+			return {"log": team.invoke({"log": []})["log"]}
+
+	sus = StateGraph(Count)
+	sus.add_node("wait", lambda s: {"total": interrupt({"wait": 1})})
+	sus.add_edge(START, "wait")
+	sus.add_edge("wait", END)
+	worker = sus.compile()
+
+	g = StateGraph(Log)
+	g.add_node("remember", remember)
+	g.add_node(
+		"worker", lambda s: {"log": [("worker", worker.invoke({"total": 0})["total"])]}
+	)
+	g.add_edge(START, "remember")
+	g.add_edge("remember", "worker")
+	g.add_conditional_edges(
+		"worker",
+		lambda s: "remember" if len(s["log"]) < 2 * turns else END,
+		["remember", END],
+	)
+	return g.compile(checkpointer=saver)
+
+
+def totals(saver, turns, nested, durability) -> list[int]:
+	g = with_memory(saver, turns, nested)
+	config = {"configurable": {"thread_id": "t"}}
+	out = g.invoke({"log": []}, config, durability=durability)
+	while "__interrupt__" in out:
+		out = g.invoke(Command(resume=1), config, durability=durability)
+	return [value for key, value in out["log"] if key == "total"]
+
+
+@pytest.mark.parametrize("nested", [False, True], ids=["subgraph", "nested"])
+@pytest.mark.parametrize("durability", ["exit", "async", "sync"])
+def test_a_stateful_subgraph_keeps_its_state_next_to_a_supervisor_loop(
+	durability, nested
+):
+	"""A subgraph compiled with ``checkpointer=True`` saves every call under one
+	namespace: dropping the namespaces of finished subgraph runs must never
+	drop it."""
+	from langgraph.checkpoint.memory import InMemorySaver
+
+	got = totals(KeyValueSaver(MemoryStore()), 4, nested, durability)
+	assert got == totals(InMemorySaver(), 4, nested, durability)
+	assert got == [1, 2, 3, 4]
+
+
+def test_only_a_namespace_named_after_its_task_is_dropped():
+	"""A namespace whose last part has no task id (``name``, not ``name:id``)
+	is a stateful subgraph's, reused on every call: it stays, at any depth."""
+	saver = KeyValueSaver(MemoryStore())
+	checkpoint(saver, "c1")
+	put_in(saver, "memory", "m1", {"": "c1"})
+	put_in(saver, "team:a", "s1", {"": "c1"})
+	put_in(saver, "team:a|memory", "m2", {"": "c1", "team:a": "s1"})
+	put_in(saver, "team:a|step:x", "x1", {"": "c1", "team:a": "s1"})
+	saver.put(
+		{
+			"configurable": {
+				"thread_id": "t",
+				"checkpoint_ns": "team:a",
+				"checkpoint_id": "s1",
+			}
+		},
+		{**empty_checkpoint(), "id": "s2"},
+		{"step": 1},
+		{},
+	)
+	put_in(saver, "team:a|step:y", "y1", {"": "c1", "team:a": "s2"})
+	assert namespaces(saver) == ["memory", "team:a", "team:a|memory", "team:a|step:y"]
+	checkpoint(saver, "c2", parent="c1")
+	put_in(saver, "team:b", "s3", {"": "c2"})
+	assert namespaces(saver) == ["memory", "team:b"]  # team:a went with its subgraphs
+	assert (
+		saver.get_tuple(
+			{"configurable": {"thread_id": "t", "checkpoint_ns": "memory"}}
+		).checkpoint["id"]
+		== "m1"
+	)
