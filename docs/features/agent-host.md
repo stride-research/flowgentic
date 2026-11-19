@@ -99,9 +99,12 @@ the agent's id as `thread_id` and LangGraph's `exit` durability by default, so
 a checkpoint is saved only when a run ends or suspends. A tool suspends its
 agent by calling LangGraph's `interrupt({PENDING_KEY: key})` for a task
 registered under `key`. The host releases an agent’s registrations when it
-finishes. A future registered outside an agent's task, where no host will
-release it, stays registered only while something else holds it. The tool
-records the interrupt with `record_interrupt`, so
+finishes. A future registered outside an agent's task, as by code that
+submits tasks before a run, becomes the agent's that first waits on it, and
+is released when that agent finishes. One that no agent takes is released
+when the run ends, or the last of the runs in progress if several overlap;
+one registered when no run follows stays registered for the life of the
+process. The tool records the interrupt with `record_interrupt`, so
 the runner frees the run's frames as soon as it stops. Any other interrupt,
 such as a question for a human, ends the agent as `interrupted`.
 

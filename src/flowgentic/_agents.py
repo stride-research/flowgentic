@@ -307,28 +307,67 @@ def _enter_task_context(
 	otel_context.attach(trace_context)
 
 
-# Registrations made in an agent's task, held until the host releases them when
-# the agent ends. One made outside an agent has no host to release it, so the
-# registry holds it only as long as something else holds its future.
+# Agents' registrations, made in an agent's task or taken by an agent that waits
+# on them, held until the host releases them when the agent ends.
 _pending: dict[str, asyncio.Future] = {}
-_unowned: weakref.WeakValueDictionary[str, asyncio.Future] = (
-	weakref.WeakValueDictionary()
-)
+# Registrations made outside an agent, as before a run, by code that may keep no
+# reference to the future: held until an agent takes one, or until no host run
+# is in progress any more.
+_unowned: dict[str, asyncio.Future] = {}
+_unowned_lock = threading.Lock()
+_host_runs = 0
 
 
 def register_pending(key: str, future: asyncio.Future) -> None:
 	"""Record the future of a submitted task under its key.
 
 	In an agent's task, the registration lasts until the host ends the agent.
-	Outside one, no host will release it, so it lasts only while the future is
-	held elsewhere, as by whatever submitted the task."""
+	Outside one, as before a run, the first agent that waits on it takes it,
+	and it lasts until that agent ends. One that no agent takes is released
+	when a host run ends and no other is in progress. A registration made
+	outside an agent with no host run after it is held for the life of the
+	process."""
 	agent = _current.get()
-	if agent is None:
-		_unowned[key] = future
-		return
-	_unowned.pop(key, None)  # an agent's registration replaces another's
+	with _unowned_lock:
+		if agent is None:
+			_unowned[key] = future
+			return
+		_unowned.pop(key, None)  # an agent's registration replaces another's
 	_pending[key] = future
 	agent.registered[key] = future
+
+
+def take_pending(key: str) -> asyncio.Future | None:
+	"""The future of the task submitted under ``key``, for the current agent to
+	wait on. One registered outside an agent becomes this agent's, released
+	when it ends."""
+	future = _pending.get(key)
+	agent = _current.get()
+	if future is not None or agent is None:
+		return pending(key)
+	with _unowned_lock:
+		future = _unowned.pop(key, None)
+	if future is not None:
+		_pending[key] = future
+		agent.registered[key] = future
+	return future
+
+
+def begin_host_run() -> None:
+	"""Count a host run in progress, for the registrations made outside agents."""
+	global _host_runs
+	with _unowned_lock:
+		_host_runs += 1
+
+
+def end_host_run() -> None:
+	"""Count a host run ended. When none is in progress any more, release the
+	registrations made outside agents that no agent took."""
+	global _host_runs
+	with _unowned_lock:
+		_host_runs -= 1
+		if not _host_runs:
+			_unowned.clear()
 
 
 def release_pending() -> None:

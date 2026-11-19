@@ -225,9 +225,11 @@ class AgentHost:
 		if len({a.id for a in work}) != len(work):
 			raise ValueError("agent ids must be unique within a run")
 		self.states._begin_run(a.id for a in work)
+		_agents.begin_host_run()
 		try:
 			return await self._run(work, len(work), indexed=False)
 		finally:
+			_agents.end_host_run()
 			self.states._end_run()
 
 	async def run_indexed(
@@ -247,10 +249,12 @@ class AgentHost:
 			raise TypeError("indices must be a range")
 		count = len(indices)
 		self.states._begin_run((), pending=count)
+		_agents.begin_host_run()
 		try:
 			agents = (Agent(f"{id_prefix}{i}", input_for(i)) for i in indices)
 			return await self._run(agents, count, indexed=True)
 		finally:
+			_agents.end_host_run()
 			self.states._end_run()
 
 	async def _run(
@@ -404,7 +408,7 @@ class AgentHost:
 		_telemetry.emit_suspend(agent.id, len(step.waits))
 		futures = []
 		for _, key in step.waits:
-			future = _agents.pending(key)
+			future = _agents.take_pending(key)
 			if future is None:
 				raise RuntimeError(
 					f"agent {agent.id} waits on task {key!r}, which this process "

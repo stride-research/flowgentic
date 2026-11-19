@@ -97,16 +97,59 @@ class FakeRunner:
         return Finished({"agent": agent.id, "resumed": True})
 
 
-async def test_a_registration_outside_an_agent_lasts_while_its_future_is_held():
-    # No host releases it: the registry must not keep the future, and with it
-    # the task's result, for the life of the process.
+def done_future(value=None) -> asyncio.Future:
     future = asyncio.get_running_loop().create_future()
-    register_pending("outside/1", future)
-    assert _agents.pending("outside/1") is future
-    future.set_result(bytes(1000))
-    del future
+    future.set_result(value)
+    return future
+
+
+class WaitsOnPre:
+    """Each agent suspends on the task registered for it as ``pre/<id>``."""
+
+    async def start(self, agent):
+        return Suspended((("i1", f"pre/{agent.id}"),))
+
+    async def resume(self, agent, done):
+        return Finished(done)
+
+
+async def test_a_task_registered_before_the_run_is_found_after_it_ends():
+    # Submitted up front, outside any agent, by code that keeps no reference
+    # to the future: the task ends before its agent asks for it.
+    for i in range(3):
+        register_pending(f"pre/a{i}", done_future(i))
     gc.collect()
-    assert _agents.pending("outside/1") is None
+    host = AgentHost(WaitsOnPre(), stagger=FAST, collector=None)
+    report = await host.run([Agent(f"a{i}", None) for i in range(3)])
+    assert report.outcomes == {"done": 3}, report.agents[0].error
+    # Each became its agent's, and was released when the agent ended.
+    assert all(_agents.pending(f"pre/a{i}") is None for i in range(3))
+
+
+async def test_a_registration_no_agent_takes_is_released_when_the_run_ends():
+    future = done_future()
+    register_pending("pre/unused", future)
+    await AgentHost(FakeRunner(), stagger=FAST, collector=None).run([Agent("a1", None)])
+    assert _agents.pending("pre/unused") is None
+
+
+async def test_overlapping_runs_hold_registrations_until_the_last_ends():
+    go = asyncio.Event()
+
+    class Later(WaitsOnPre):
+        async def start(self, agent):
+            await go.wait()
+            return await super().start(agent)
+
+    later = AgentHost(Later(), stagger=FAST, collector=None)
+    b = asyncio.create_task(later.run([Agent("b", None)]))
+    await asyncio.sleep(0.01)
+    register_pending("pre/b", done_future())
+    # Another host's run ends while b's is in progress, before b asks.
+    await AgentHost(FakeRunner(), stagger=FAST, collector=None).run([Agent("a1", None)])
+    go.set()
+    report = await b
+    assert report.outcomes == {"done": 1}, report.agents[0].error
 
 
 async def test_an_agents_registration_lasts_until_the_agent_ends():
