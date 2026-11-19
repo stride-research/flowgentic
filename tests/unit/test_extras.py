@@ -8,6 +8,7 @@ unimportable, as on a machine where they are not installed.
 import subprocess
 import sys
 import textwrap
+from pathlib import Path
 
 import pytest
 
@@ -144,8 +145,8 @@ def test_the_fleet_needs_langchain_only() -> None:
 
 def test_the_agent_loop_needs_langchain_core_only() -> None:
 	"""Flowgentic's own loop runs an agent without LangGraph, LangChain's
-	agents, its providers or any other extra; without langchain-core it names
-	its extra."""
+	agents, its providers or any other extra; without langchain-core, the loop
+	imports, and a runner for a LangChain model names the extra."""
 	result = run_without(
 		["langgraph", "langchain", "langchain_openai", "langchain_ollama"]
 		+ ASYNCFLOW
@@ -165,9 +166,64 @@ def test_the_agent_loop_needs_langchain_core_only() -> None:
 	)
 	assert result.returncode == 0, result.stderr
 	assert result.stdout.strip() == "{'done': 1}"
-	result = run_without(["langchain_core"], "import flowgentic.loop")
+	result = run_without(
+		["langchain_core"],
+		"""
+		from flowgentic.loop import LoopRunner
+		LoopRunner(object())
+		""",
+	)
 	assert result.returncode != 0
 	assert "install flowgentic[langchain-core]" in result.stderr.splitlines()[-1]
+
+
+def test_the_agent_loop_runs_on_its_seams_without_langchain() -> None:
+	"""The loop's core imports no LangChain: with every LangChain and LangGraph
+	module blocked, it runs agents that suspend on a RHAPSODY task through a
+	backend on OpenAI-format dicts (tests/unit/scale/dict_backend.py)."""
+	scale = Path(__file__).resolve().parent / "scale"
+	result = run_without(
+		LANGGRAPH + ASYNCFLOW + MCP,
+		f"""
+		import asyncio, sys
+		from concurrent.futures import ThreadPoolExecutor
+		sys.path.insert(0, {str(scale)!r})
+		from dict_backend import DictBackend, assistant
+		from rhapsody import Session
+		from rhapsody.backends import ConcurrentExecutionBackend
+		from flowgentic.host import Agent, AgentHost
+		from flowgentic.loop import LoopRunner
+		from flowgentic.tools import ToolRuntime, task_tool
+
+		def double(x: float) -> float:
+			return 2 * x
+
+		def script(messages):
+			results = [m for m in messages if m["role"] == "tool"]
+			if not results:
+				return assistant(calls=(("c1", "double", {{"x": 2.0}}),))
+			return assistant(results[0]["content"])
+
+		async def main():
+			session = Session(backends=[await ConcurrentExecutionBackend(ThreadPoolExecutor(2))])
+			answers = []
+			runner = LoopRunner(
+				DictBackend(script),
+				[task_tool(double, suspend=True)],
+				runtime=ToolRuntime(session),
+			)
+			host = AgentHost(runner, on_done=lambda r, out: answers.append(out.messages[-1]["content"]))
+			report = await host.run([Agent(f"a{{i}}", "go") for i in range(3)])
+			await session.close()
+			return report, answers
+
+		report, answers = asyncio.run(main())
+		loaded = sorted(m for m in sys.modules if m.split(".")[0] in {{"langchain_core", "langgraph", "langchain"}})
+		print(report.outcomes, sum(a.suspensions for a in report.agents), answers, loaded)
+		""",
+	)
+	assert result.returncode == 0, result.stderr
+	assert result.stdout.strip() == "{'done': 3} 3 ['4.0', '4.0', '4.0'] []"
 
 
 @pytest.mark.parametrize(

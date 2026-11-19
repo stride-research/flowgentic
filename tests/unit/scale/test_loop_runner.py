@@ -771,3 +771,63 @@ async def test_a_fleet_chat_model_runs_as_its_fleet():
     report = await AgentHost(LoopRunner(fleet.chat_model(), [inline_note]), stagger=FAST).run(inputs(3))
     assert report.finished == 3
     assert fleet.stats()["calls"] == 6
+
+
+# --- the seams ----------------------------------------------------------------------
+
+
+async def test_the_loop_runs_on_openai_format_dicts_through_its_seams():
+    """The loop reads and makes messages, calls the model and runs inline tools
+    only through its backend: one on OpenAI-format dicts, with no LangChain
+    message, runs the same agent, suspension included."""
+    from dict_backend import DictBackend, DictTool, assistant
+
+    session = await thread_session()
+    store = CountingStore()
+    seen = []
+
+    async def note(text: str) -> str:
+        """Take a note."""
+        return f"noted {text}"
+
+    def script(messages):
+        seen.append(messages[0]["role"])
+        results = [m for m in messages if m["role"] == "tool"]
+        if not results:
+            return assistant(
+                calls=(
+                    ("c1", "simulate", {"x": 1.5}),
+                    ("c2", "note", {"text": "hi"}),
+                    ("c3", "note", {"text": 3}),  # refused by its schema
+                    ("c4", "note", "{text: "),  # does not parse
+                )
+            )
+        return assistant(" | ".join(m["content"] for m in results))
+
+    backend = DictBackend(script)
+    outputs = {}
+    runner = LoopRunner(
+        backend,
+        [task_tool(simulate, suspend=True), DictTool(note)],
+        runtime=ToolRuntime(session),
+        store=store,
+        system_prompt="Be brief.",
+    )
+    report = await AgentHost(runner, stagger=FAST, on_done=collect(outputs)).run(
+        [Agent(f"agent-{i}", "go") for i in range(3)]
+    )
+    await session.close()
+
+    assert report.finished == 3 and all(a.suspensions == 1 for a in report.agents)
+    assert store.calls == {"put": 3, "get": 3, "delete": 3}
+    assert [t["function"]["name"] for t in backend.bound] == ["simulate", "note"]
+    assert set(seen) == {"system"}
+    out = outputs["agent-0"]
+    assert all(isinstance(m, dict) for m in out.messages)
+    assert [m["role"] for m in out.messages] == ["user", "assistant"] + ["tool"] * 4 + ["assistant"]
+    assert [m["tool_call_id"] for m in out.messages if m["role"] == "tool"] == ["c1", "c2", "c3", "c4"]
+    final = out.messages[-1]["content"]
+    assert '{"y": 3.0}' in final and "noted hi" in final
+    assert "ValidationError" in final and "invalid JSON" in final
+    assert runner.stats()["tool_errors"] == 6  # two per agent
+    assert sorted(backend.model.done) == ["agent-0", "agent-1", "agent-2"]
