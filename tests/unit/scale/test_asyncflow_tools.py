@@ -17,7 +17,7 @@ from langchain_core.messages import HumanMessage
 
 from flowgentic import _agents, _asyncflow
 from flowgentic.fleet import Fleet
-from flowgentic.host import Agent, AgentHost, Stagger
+from flowgentic.host import Agent, AgentHost, Finished, Stagger
 from flowgentic.langgraph import GraphRunner, KeyValueSaver, bind_tools
 from flowgentic.store import MemoryStore
 from flowgentic.tools import TaskCancelled, ToolRuntime, task_tool
@@ -318,7 +318,11 @@ async def test_cancelling_the_task_cancels_it_on_the_engine():
     assert record.outcome == "cancelled" and record.uid == uid
 
 
-async def test_a_runtime_set_up_wrong_is_refused():
+async def test_a_runtime_set_up_wrong_is_refused_before_any_agent_runs():
+    """A backend the engine or session lacks, or a field an engine cannot take,
+    is refused when the runtime is made or its tools are bound, not told to a
+    model at the tool's first call. A tool submitted unbound fails as a runtime
+    set up wrong does: with ``RuntimeError``, which fails its agent."""
     flow = await open_engine("compute")
     session = await thread_session()
     try:
@@ -326,13 +330,27 @@ async def test_a_runtime_set_up_wrong_is_refused():
             ToolRuntime(session, engine=flow)
         with pytest.raises(ValueError, match="Unknown backend 'gpu'"):
             ToolRuntime(engine=flow, backend="gpu")
+        with pytest.raises(ValueError, match="no backend 'gpu'"):
+            ToolRuntime(session, backend="gpu")
+        with pytest.raises(ValueError, match="telemetry"):
+            ToolRuntime(session, telemetry=object())
         runtime = ToolRuntime(engine=flow)
+        on_session = ToolRuntime(session)
         with pytest.raises(ValueError, match="Unknown backend 'gpu'"):
-            runtime.submit(task_tool(simulate, backend="gpu"), "a", "c1", {"x": 1.0})
+            bind_tools(runtime, [task_tool(simulate, backend="gpu")])
         with pytest.raises(ValueError, match="ranks"):
+            bind_tools(runtime, [task_tool(simulate, ranks=4)])
+        with pytest.raises(ValueError, match="no backend 'gpu'"):
+            bind_tools(on_session, [task_tool(simulate, backend="gpu")])
+        with pytest.raises(RuntimeError, match="Unknown backend 'gpu'"):
+            runtime.submit(task_tool(simulate, backend="gpu"), "a", "c1", {"x": 1.0})
+        with pytest.raises(RuntimeError, match="ranks"):
             runtime.submit(task_tool(simulate, ranks=4), "a", "c2", {"x": 1.0})
+        with pytest.raises(RuntimeError, match="no backend 'gpu'"):
+            on_session.submit(task_tool(simulate, backend="gpu"), "a", "c3", {"x": 1.0})
         # nothing was submitted, so the calls made again would run afresh
         assert runtime._jobs == {} and runtime.stats()["submitted"] == 0
+        assert on_session._jobs == {} and on_session.stats()["submitted"] == 0
     finally:
         await _asyncflow.close_engine(flow)
         await session.close()
@@ -359,13 +377,13 @@ async def test_backend_specific_fields_reach_the_backend():
 # --- the decision record ---------------------------------------------------------
 
 
-async def test_the_record_takes_start_and_end_from_asyncflows_task_events():
+async def test_the_record_takes_its_start_from_the_telemetry_the_application_passes():
     pytest.importorskip("rhapsody.telemetry.manager", reason="AsyncFlow telemetry needs rhapsody-py[telemetry]")
     flow = await open_engine("compute")
     telemetry = await flow.start_telemetry()
     events = {}
     telemetry.subscribe(lambda e: events.setdefault((e.task_id, e.event_type), e))
-    runtime = ToolRuntime(engine=flow)
+    runtime = ToolRuntime(engine=flow, telemetry=telemetry)
     records = []
     runtime.add_listener(records.append)
     try:
@@ -377,27 +395,85 @@ async def test_the_record_takes_start_and_end_from_asyncflows_task_events():
         await _asyncflow.close_engine(flow)
     ok, no = records
     assert ok.t_start == events[(ok.uid, "TaskStarted")].event_time
-    assert ok.t_finish == events[(ok.uid, "TaskCompleted")].event_time
     assert no.t_start == events[(no.uid, "TaskStarted")].event_time
-    assert no.t_finish == events[(no.uid, "TaskFailed")].event_time
+    # the finish is when the agent's process saw AsyncFlow resolve the task:
+    # just after AsyncFlow's own end event
+    assert events[(ok.uid, "TaskCompleted")].event_time <= ok.t_finish
+    assert events[(no.uid, "TaskFailed")].event_time <= no.t_finish
     # the events name the backend the record names
     assert events[(ok.uid, "TaskStarted")].backend == ok.backend == "compute"
     for r in (ok, no):
         assert r.t_commit == r.t_submit <= r.t_admit <= r.t_start <= r.t_finish <= r.t_end
 
 
-async def test_without_telemetry_the_record_has_no_start_or_finish():
+async def test_every_record_has_its_finish_in_a_burst_of_tasks():
+    """A burst of tasks floods the telemetry's queue, which delivers events in
+    batches: an end event can reach the runtime well after the task's record
+    is made. The finish does not depend on it, and a start that came too late
+    for the record is in the telemetry under the record's uid."""
+    pytest.importorskip("rhapsody.telemetry.manager", reason="AsyncFlow telemetry needs rhapsody-py[telemetry]")
+    flow = await open_engine("compute", workers=32)
+    telemetry = await flow.start_telemetry()
+    started, ended = {}, {}
+
+    def seen(event):
+        if event.event_type == "TaskStarted":
+            started.setdefault(event.task_id, event.event_time)
+        elif event.event_type == "TaskCompleted":
+            ended.setdefault(event.task_id, event.event_time)
+
+    telemetry.subscribe(seen)
+    runtime = ToolRuntime(engine=flow, telemetry=telemetry)
+    records = []
+    runtime.add_listener(records.append)
+    try:
+        jobs = [runtime.submit(task_tool(simulate), "a", f"c{i}", {"x": float(i)}) for i in range(1000)]
+        await asyncio.wait(jobs)
+    finally:
+        await telemetry.stop()  # delivers every event still queued
+        await _asyncflow.close_engine(flow)
+    assert len(records) == 1000 and all(r.ok for r in records)
+    assert all(r.t_finish is not None for r in records)
+    for r in records:
+        assert ended[r.uid] <= r.t_finish <= r.t_end
+        assert r.t_start in (None, started[r.uid])
+    assert all(r.t_start is not None or r.uid in started for r in records)
+
+
+async def test_without_the_telemetry_the_record_has_no_start():
+    """The runtime reads only the telemetry the application gives it."""
+    pytest.importorskip("rhapsody.telemetry.manager", reason="AsyncFlow telemetry needs rhapsody-py[telemetry]")
     flow = await open_engine("compute")
+    telemetry = await flow.start_telemetry()  # started, but not given
     runtime = ToolRuntime(engine=flow)
     records = []
     runtime.add_listener(records.append)
     try:
         await runtime.submit(task_tool(simulate), "a", "c1", {"x": 1.0})
     finally:
+        await telemetry.stop()
         await _asyncflow.close_engine(flow)
     (record,) = records
-    assert record.uid.startswith("task.") and record.t_start is None and record.t_finish is None
-    assert record.t_submit <= record.t_admit <= record.t_end
+    assert record.uid.startswith("task.") and record.t_start is None
+    assert record.t_submit <= record.t_admit <= record.t_finish <= record.t_end
+
+
+async def test_t_submit_is_when_the_runtime_got_the_call():
+    flow = await open_engine("compute")
+    runtime = ToolRuntime(engine=flow)
+    records = []
+    runtime.add_listener(records.append)
+    try:
+        before = time.time()
+        job = runtime.submit(task_tool(simulate), "a", "c1", {"x": 1.0})
+        after = time.time()
+        time.sleep(0.05)  # the event loop is busy: the task's coroutine starts later
+        await job
+    finally:
+        await _asyncflow.close_engine(flow)
+    (record,) = records
+    assert before <= record.t_submit <= after
+    assert record.t_commit == record.t_submit and record.t_admit >= after + 0.05
 
 
 async def test_the_commitment_is_the_model_reply_that_made_the_call():
@@ -429,6 +505,40 @@ async def test_the_commitment_is_the_model_reply_that_made_the_call():
         assert record.t_commit == replies[record.info.agent_id]
         assert record.t_commit <= record.t_submit <= record.t_admit <= record.t_end
     assert later.t_commit == later.t_submit  # outside a host: no reply known
+
+
+async def test_a_call_no_fleet_reply_made_commits_when_the_runtime_gets_it():
+    """The fleet notes each reply with its tool calls' ids. A later call that no
+    reply made, as a node that calls a tool itself makes, is not dated by an
+    earlier reply."""
+    flow = await open_engine("compute")
+    runtime = ToolRuntime(engine=flow)
+    records, calls = [], []
+    runtime.add_listener(records.append)
+    fleet = Fleet([Scripted(script=calls_then_answer(("simulate", {"x": 1.5})))])
+    fleet.add_listener(lambda record, reply: calls.append(record))
+    model = fleet.chat_model()
+
+    class Runner:
+        async def start(self, agent):
+            reply = await model.ainvoke([HumanMessage("go")])
+            (call,) = reply.tool_calls
+            await runtime.submit(task_tool(simulate), agent.id, call["id"], call["args"])
+            await runtime.submit(task_tool(simulate), agent.id, "by-hand", {"x": 2.0})
+            return Finished(None)
+
+        async def resume(self, agent, done):
+            raise AssertionError("never suspends")
+
+    try:
+        report = await AgentHost(Runner(), stagger=FAST).run(inputs(1))
+    finally:
+        await _asyncflow.close_engine(flow)
+    assert report.finished == 1
+    (reply,) = calls
+    made, by_hand = records
+    assert made.t_commit == reply.t_end
+    assert by_hand.t_commit == by_hand.t_submit > reply.t_end
 
 
 async def test_a_model_outside_the_fleet_commits_when_the_runtime_gets_the_call():
@@ -470,6 +580,21 @@ async def test_a_refused_task_has_no_uid():
     assert record.backend == "compute" and record.t_commit == record.t_submit
 
 
+async def test_on_a_session_a_task_never_submitted_has_no_uid():
+    session = await thread_session()
+    runtime = ToolRuntime(session)
+    records = []
+    runtime.add_listener(records.append)
+    await runtime.submit(task_tool(simulate), "a", "c1", {"x": 1.0})
+    await session.close()
+    late = runtime.submit(task_tool(simulate), "a", "c2", {"x": 1.0})
+    await asyncio.wait([late])
+    assert isinstance(late.exception(), TaskCancelled)
+    ran, never = records
+    assert ran.uid == runtime.uid("a/c1")
+    assert never.outcome == "cancelled" and never.t_admit is not None and never.uid is None
+
+
 async def test_on_a_session_the_record_names_the_rhapsody_task():
     session = await thread_session()
     runtime = ToolRuntime(session)
@@ -488,31 +613,3 @@ async def test_on_a_session_the_record_names_the_rhapsody_task():
     assert default.t_start is None and default.t_finish is None
     assert default.t_commit == default.t_submit
     assert RUNS == {"simulate": 2}
-
-
-async def test_the_wait_lets_in_an_end_event_that_comes_one_pass_late():
-    """AsyncFlow emits a task's end event as it resolves the task's future; its
-    telemetry delivers the event on a later pass of the event loop. The wait
-    gives it one more pass, so the record still gets the end."""
-    from types import SimpleNamespace
-
-    loop = asyncio.get_running_loop()
-    times = _asyncflow.Times()
-    future = loop.create_future()
-    future.uid = "task.000001"
-    times.add(future.uid)
-    started = SimpleNamespace(task_id=future.uid, event_type="TaskStarted", event_time=1.0)
-    ended = SimpleNamespace(task_id=future.uid, event_type="TaskCompleted", event_time=2.0)
-    times(started)
-
-    def finish():
-        future.set_result("value")
-        # delivered two passes on: after the wait has seen the future end
-        loop.call_soon(loop.call_soon, times, ended)
-
-    loop.call_soon(finish)
-    assert await _asyncflow.result(future, times) == "value"
-    assert times.pop(future.uid) == (1.0, 2.0)
-    # a task the runtime does not watch is ignored
-    times(SimpleNamespace(task_id="task.000002", event_type="TaskStarted", event_time=3.0))
-    assert times.pop("task.000002") == (None, None)
