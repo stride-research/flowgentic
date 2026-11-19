@@ -84,10 +84,18 @@ def inline_note(text: str) -> str:
     return f"noted {text}"
 
 
+RUNNING = {"now": 0, "most": 0}
+
+
 @tool
 async def wait_a_bit(name: str) -> str:
     """Wait for 0.2 s."""
-    await asyncio.sleep(0.2)
+    RUNNING["now"] += 1
+    RUNNING["most"] = max(RUNNING["most"], RUNNING["now"])
+    try:
+        await asyncio.sleep(0.2)
+    finally:
+        RUNNING["now"] -= 1
     return name
 
 
@@ -276,11 +284,11 @@ async def test_the_tool_calls_of_one_reply_run_at_once():
         )
     )
     outputs = {}
-    t = time.perf_counter()
+    RUNNING["most"] = 0
     report = await AgentHost(
         LoopRunner(model, [wait_a_bit]), stagger=FAST, on_done=collect(outputs)
     ).run(inputs(1))
-    assert time.perf_counter() - t < 0.5  # three 0.2 s calls, at once
+    assert RUNNING["most"] == 3  # the three calls ran at once
     assert report.finished == 1
     assert outputs["agent-0"].messages[-1].content == "a | b | c"
 
@@ -699,13 +707,25 @@ async def test_a_failed_mcp_call_or_task_output_reaches_the_model():
     assert by_id["c"] == "Error: KeyError('y')\n Please fix your mistakes."
 
 
+@tool
+async def wait_long(name: str) -> str:
+    """Wait for 10 s."""
+    try:
+        await asyncio.sleep(10)
+    except asyncio.CancelledError:
+        RUNS["wait_long cancelled"] = RUNS.get("wait_long cancelled", 0) + 1
+        raise
+    return name
+
+
 async def test_a_call_that_fails_the_agent_stops_the_others_of_its_reply():
-    model = Scripted(script=calls_then_answer(("wait_a_bit", {"name": "a"}), ("simulate", {"x": 1.0})))
-    runner = LoopRunner(model, [wait_a_bit, task_tool(simulate)], runtime=ToolRuntime())
+    model = Scripted(script=calls_then_answer(("wait_long", {"name": "a"}), ("simulate", {"x": 1.0})))
+    runner = LoopRunner(model, [wait_long, task_tool(simulate)], runtime=ToolRuntime())
     t = time.perf_counter()
     report = await AgentHost(runner, stagger=FAST).run(inputs(1))
-    assert time.perf_counter() - t < 0.15  # did not wait for the 0.2 s call
+    assert time.perf_counter() - t < 5  # did not wait for the 10 s call
     assert report.errors == {"RuntimeError": 1}
+    assert RUNS == {"wait_long cancelled": 1}
 
 
 class UndeletableStore(CountingStore):
