@@ -27,15 +27,16 @@ fleet decides, for each call, which replica takes it and when:
   failure it fails, even if the replica came back and the call kept failing.
   A check that raises or hangs counts as the replica still being down.
 - **Accounting.** One ``CallRecord`` per call goes to the listeners: the wait
-  for admission, the time at the server, the tokens, the prompt tokens the
-  server found in its prefix cache and the reply's reasoning tokens when the
-  server reports them, the gap since the agent's previous call, the tool whose
-  result came just before, and the caller's ``meta``. The fleet itself keeps
-  counters.
+  for admission, the time at the server, the time spent waiting out an
+  outage, the tokens, the prompt tokens the server found in its prefix cache
+  and the reply's reasoning tokens when the server reports them, the gap since
+  the agent's previous call, the tool whose result came just before, and the
+  caller's ``meta``. The fleet itself keeps counters.
 - **Metrics.** The wait for admission and the time at the replica are
-  OpenTelemetry histograms; each replica's tokens and requests in flight, and
-  its requests waiting, are gauges. They carry the fleet's ``name``, so the
-  fleets of several models in one process stay apart, and the replica's index.
+  OpenTelemetry histograms, recorded for each try, a failed one with its
+  ``error.type``; each replica's tokens and requests in flight, and its
+  requests waiting, are gauges. They carry the fleet's ``name``, so the fleets
+  of several models in one process stay apart, and the replica's index.
 
 A request's live context is estimated before it is sent: the agent's size
 after its previous call, as the server counted it, plus the characters added
@@ -43,7 +44,10 @@ since, at the tokens per character the server's counts give, plus a reserve
 for the reply and the call's own ``reserve``. The size leaves out the previous
 reply's reasoning tokens, when the server reports them
 (``output_token_details.reasoning``): the conversation does not keep a model's
-thinking.
+thinking. An agent's first call is estimated from the sizes the server counted
+for earlier first calls, as a fixed part, such as tool schemas and a template
+that the messages do not show, plus tokens per character, never fewer than the
+characters later calls add count.
 
 ``fleet.ainvoke(agent_id, messages)`` is the direct path, for a graph's own
 model node. ``fleet.chat_model()`` is a LangChain chat model for prebuilt
@@ -68,7 +72,7 @@ import time
 import weakref
 import zlib
 from collections import Counter, OrderedDict, deque
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -155,11 +159,46 @@ class Gate(Protocol):
 	def stats(self) -> dict: ...
 
 
+class _OversizeWarning:
+	"""Logs the first request admitted alone above a token cap, once for all
+	the gates that share it: a fleet's gates share one, and a gate built on its
+	own has its own."""
+
+	__slots__ = ("fleet", "logged")
+
+	def __init__(self, fleet: str | None = None) -> None:
+		self.fleet = fleet
+		self.logged = False
+
+	def __call__(self, n: int, cap: int) -> None:
+		if self.logged:
+			return
+		self.logged = True
+		log.warning(
+			"%sa model request of %d tokens is larger than this process's token "
+			"cap at its replica, %d, so it is admitted alone; it takes the "
+			"replica past its cap while the other processes use their shares. "
+			"Raise the cap or this process's share so that the largest context "
+			"fits in one share. Later requests like it are counted in the gates' "
+			"stats (oversize), without a warning",
+			"" if not self.fleet else f"fleet {self.fleet!r}: ",
+			n,
+			cap,
+		)
+
+
 class AdmissionGate:
 	"""Admits requests to one replica while the tokens of live context and the
 	requests in flight stay under their caps. ``tokens=None`` counts requests
 	only. First come, first served, whatever the agent; a request larger than
-	the token cap is admitted alone. A ``Gate``."""
+	the token cap is admitted alone.
+
+	A gate holds one process's share of a replica's caps, and cannot see the
+	other processes' requests. A request admitted alone above the share's token
+	cap therefore takes the replica past its cap while the other processes use
+	their shares: such requests are counted (``oversize`` in ``stats()``), and
+	the first is logged as a warning, once for all the gates of a fleet. A
+	``Gate``."""
 
 	def __init__(self, tokens: int | None, requests: int) -> None:
 		if (tokens is not None and tokens < 1) or requests < 1:
@@ -172,7 +211,9 @@ class AdmissionGate:
 		self.requests_max = 0
 		self.admitted = 0
 		self.queued = 0
+		self.oversize = 0
 		self.blocked_s = 0.0
+		self._warn_oversize = _OversizeWarning()  # a fleet gives its gates one
 		self._blocked_since: float | None = None
 		self._waiters: deque[tuple[int, asyncio.Future]] = deque()
 
@@ -184,6 +225,9 @@ class AdmissionGate:
 		return self.cap_tokens is None or self.tokens + n <= self.cap_tokens
 
 	def _take(self, n: int) -> None:
+		if self.cap_tokens is not None and n > self.cap_tokens:
+			self.oversize += 1
+			self._warn_oversize(n, self.cap_tokens)
 		self.tokens += n
 		self.requests += 1
 		self.admitted += 1
@@ -239,7 +283,8 @@ class AdmissionGate:
 		return ReplicaLoad(self.tokens, self.requests, len(self._waiters))
 
 	def stats(self) -> dict:
-		"""Caps, counts, peaks, and the time some request waited."""
+		"""Caps, counts, peaks, and the time some request waited.
+		``oversize`` counts the requests admitted alone above the token cap."""
 		blocked = self.blocked_s
 		if self._blocked_since is not None:
 			blocked += time.monotonic() - self._blocked_since
@@ -248,6 +293,7 @@ class AdmissionGate:
 			"cap_requests": self.cap_requests,
 			"admitted": self.admitted,
 			"queued": self.queued,
+			"oversize": self.oversize,
 			"tokens_in_flight_max": self.tokens_max,
 			"requests_in_flight_max": self.requests_max,
 			"blocked_s": round(blocked, 3),
@@ -321,9 +367,40 @@ class RequestAdmission:
 
 
 class Routing(Protocol):
-	"""Chooses the replica for an agent's call."""
+	"""Chooses the replica for an agent's call. ``loads`` reads a replica's
+	load from its gate when the routing first asks for it, so a routing that
+	reads none, such as ``AgentAffinity``, costs no reads."""
 
 	def choose(self, agent_id: str, loads: Sequence[ReplicaLoad]) -> int: ...
+
+
+class _Loads(Sequence):
+	"""The replicas' loads for one call, each read from its gate once, when
+	first asked for."""
+
+	__slots__ = ("_gates", "_read")
+
+	def __init__(self, gates: list[Gate]) -> None:
+		self._gates = gates
+		self._read: list[ReplicaLoad | None] = [None] * len(gates)
+
+	def __len__(self) -> int:
+		return len(self._gates)
+
+	def __getitem__(self, i: int | slice) -> ReplicaLoad | list[ReplicaLoad]:
+		if isinstance(i, slice):
+			return [self[j] for j in range(*i.indices(len(self)))]
+		load = self._read[i]
+		if load is None:
+			load = self._read[i] = self._gates[i].load()
+		return load
+
+	def __iter__(self) -> Iterator[ReplicaLoad]:
+		self._read = [
+			load if load is not None else gate.load()
+			for load, gate in zip(self._read, self._gates)
+		]
+		return iter(self._read)
 
 
 class AgentAffinity:
@@ -347,10 +424,12 @@ class LeastLoaded:
 	"""Each call to the replica with the fewest requests in flight and waiting."""
 
 	def choose(self, agent_id: str, loads: Sequence[ReplicaLoad]) -> int:
-		return min(
-			range(len(loads)),
-			key=lambda i: (loads[i].requests + loads[i].waiting, loads[i].tokens),
-		)
+		best, chosen = None, 0
+		for i, load in enumerate(loads):  # each load read once
+			key = (load.requests + load.waiting, load.tokens)
+			if best is None or key < best:
+				best, chosen = key, i
+		return chosen
 
 
 # --- recovery ----------------------------------------------------------------------
@@ -380,12 +459,15 @@ class Recovery:
 	server serves again, a new one if its endpoint or key changed, or ``None``
 	while it is down. The first call that fails on a replica starts one watch,
 	which calls ``check`` every ``poll_s`` seconds until the replica serves or
-	``outage_s`` has passed; later calls wait on the same watch. A check that
-	raises, or does not answer within ``check_timeout_s``, counts as the replica
-	still being down. The watch serves every call on the replica, so it runs in
-	a context of its own, not in the first failing call's. A call that fails
-	again after its replica came back waits ``poll_s`` before it is sent again,
-	and fails ``outage_s`` after its first failure.
+	``outage_s`` has passed; later calls wait on the same watch. A call whose
+	watch gives up while at least ``poll_s`` of the call's own ``outage_s`` is
+	left starts a new one. A check that raises, or does not answer within
+	``check_timeout_s``, counts as the replica still being down. The watch
+	serves every call on the replica, so it runs in a context of its own, not
+	in the first failing call's. A call that fails again after its replica
+	came back waits ``poll_s`` before it is sent again. A call fails
+	``outage_s`` after its first failure, or earlier when its watch gives up
+	with less than ``poll_s`` of that left.
 	"""
 
 	def __init__(
@@ -414,20 +496,41 @@ class Recovery:
 
 	async def wait(self, i: int, timeout: float | None = None) -> Any | None:
 		"""Replica ``i``'s model once it serves again, or ``None`` after
-		``outage_s``, or after ``timeout`` seconds for this caller."""
-		future = self._watches.get(i)
-		if future is None:
-			future = self._watches[i] = asyncio.get_running_loop().create_future()
-			# No agent, span or run config of the call that happened to fail first.
-			task = asyncio.create_task(
-				self._watch(i, future), context=contextvars.Context()
-			)
-			self._tasks.add(task)
-			task.add_done_callback(self._tasks.discard)
-		# asyncio.wait leaves the watch running when this caller times out or
-		# is cancelled.
-		done, _ = await asyncio.wait({future}, timeout=timeout)
-		return future.result() if done else None
+		``outage_s``, or after ``timeout`` seconds for this caller.
+
+		A caller with a ``timeout`` waits it out: if the watch it joined gives
+		up first, having started earlier for another call, and at least
+		``poll_s`` of the caller's time is left, the caller starts a new watch.
+		With less left, it returns ``None`` then, and leaves no watch behind
+		that no call waits for."""
+		loop = asyncio.get_running_loop()
+		end = None if timeout is None else loop.time() + timeout
+		while True:
+			if end is not None and end - loop.time() <= 0:
+				return None
+			future = self._watches.get(i)
+			if future is None:
+				future = self._watches[i] = loop.create_future()
+				# No agent, span or run config of the call that happened to fail
+				# first.
+				task = asyncio.create_task(
+					self._watch(i, future), context=contextvars.Context()
+				)
+				self._tasks.add(task)
+				task.add_done_callback(self._tasks.discard)
+			left = None if end is None else end - loop.time()
+			# asyncio.wait leaves the watch running when this caller times out
+			# or is cancelled.
+			done, _ = await asyncio.wait({future}, timeout=left)
+			if not done:
+				return None
+			model = future.result()
+			if model is not None or end is None:
+				return model
+			# The watch gave up a poll_s after its last check, so a new one may
+			# check at once. With outage_s 0, a watch gives up without a check.
+			if self.outage_s <= 0 or end - loop.time() < self.poll_s:
+				return None
 
 	async def _watch(self, i: int, future: asyncio.Future) -> None:
 		t0 = time.monotonic()
@@ -461,7 +564,9 @@ class Recovery:
 					return
 				await asyncio.sleep(self.poll_s)
 		finally:
-			if not future.done():  # the watch was cancelled: its calls fail as they are
+			# The watch was cancelled: its calls see the replica as still down,
+			# and those with at least poll_s left start a new watch.
+			if not future.done():
 				future.set_result(None)
 			if self._watches.get(i) is future:
 				del self._watches[i]
@@ -483,7 +588,13 @@ class Recovery:
 
 @dataclass(frozen=True, slots=True)
 class CallRecord:
-	"""One model call."""
+	"""One model call.
+
+	``wait_s`` is the time the call waited for admission, over all its tries;
+	``service_s`` the time the try that succeeded spent at the replica; and
+	``recovery_s`` the rest, when ``Recovery`` waited out an outage: the tries
+	that failed, and the wait for the replica to come back. The three add up to
+	the call's time."""
 
 	agent_id: str
 	replica: int
@@ -501,6 +612,8 @@ class CallRecord:
 	"""The reply's thinking, if the server reports it."""
 	meta: Any = None
 	"""What the caller passed with the call."""
+	recovery_s: float = 0.0
+	"""The tries that failed and the wait for the replica to come back."""
 
 
 def _message_chars(messages: Sequence[BaseMessage]) -> int:
@@ -512,6 +625,53 @@ def _message_chars(messages: Sequence[BaseMessage]) -> int:
 		for call in getattr(m, "tool_calls", None) or ():
 			n += len(call.get("name", "")) + len(json.dumps(call.get("args", {})))
 	return n
+
+
+class _FirstCalls:
+	"""What servers count for agents' first calls: a fixed part, such as tool
+	schemas and a template that the messages do not show, plus tokens per
+	character. An exponentially weighted least-squares fit of the prompt's
+	tokens on its characters; until there are ``1 / alpha`` of them, the calls
+	weigh equally.
+
+	The tokens per character are never below ``floor``, the ratio learned
+	from the characters later calls add, which carry no fixed part: a first
+	prompt counts at least as much as its text. The fit's slope falls below
+	it when the first calls cannot tell the two parts apart: while their
+	lengths barely vary, or when shorter prompts carry tool schemas and
+	longer ones do not. The ratio is then the floor, and the fixed part is the
+	rest."""
+
+	__slots__ = ("alpha", "n", "x", "y", "xx", "xy")
+
+	MIN_RATIO = 0.05
+	MAX_RATIO = 2.0
+
+	def __init__(self, alpha: float) -> None:
+		self.alpha = alpha
+		self.n = 0
+		self.x = self.y = self.xx = self.xy = 0.0
+
+	def add(self, chars: int, tokens: int) -> None:
+		self.n += 1
+		w = max(self.alpha, 1 / self.n)
+		self.x += w * (chars - self.x)
+		self.y += w * (tokens - self.y)
+		self.xx += w * (chars * chars - self.xx)
+		self.xy += w * (chars * tokens - self.xy)
+
+	def line(self, floor: float) -> tuple[float, float]:
+		"""The fixed part, in tokens, and the tokens per character, at least
+		``floor``."""
+		ratio = floor
+		var = self.xx - self.x * self.x
+		if var > max((0.1 * self.x) ** 2, 100.0):
+			ratio = max((self.xy - self.x * self.y) / var, floor)
+		# Not ``max``: a NaN falls to the bottom of the range too.
+		ratio = (
+			min(ratio, self.MAX_RATIO) if ratio >= self.MIN_RATIO else self.MIN_RATIO
+		)
+		return max(self.y - ratio * self.x, 0.0), ratio
 
 
 class _Agent:
@@ -544,6 +704,7 @@ class _Core:
 		self.admission = admission
 		self.counts_tokens = bool(admission is not None and admission.counts_tokens)
 		self.gates: list[Gate] = []
+		warn_oversize = _OversizeWarning(name)
 		for _ in replicas:
 			gate = admission.gate(share) if admission is not None else _Open()
 			if not isinstance(gate, Gate):
@@ -552,6 +713,8 @@ class _Core:
 					f"{type(gate).__name__}, which is not a Gate: a gate needs "
 					"acquire, release, agent_done, load and stats"
 				)
+			if isinstance(gate, AdmissionGate):
+				gate._warn_oversize = warn_oversize
 			self.gates.append(gate)
 		self.routing = routing
 		self.share = share
@@ -559,9 +722,10 @@ class _Core:
 		self.recovery = recovery
 		self.tracked_agents = tracked_agents
 		self.agents: OrderedDict[str, _Agent] = OrderedDict()
-		self.first_ratio = 0.45
+		self.first_ratio = 0.45  # tokens per character, before any first call
 		self.delta_ratio = 0.3
 		self.alpha = 0.05
+		self.first_calls = _FirstCalls(self.alpha)
 		self.listeners: list[Callable[[CallRecord, AIMessage], None]] = []
 		self.calls = [0] * len(replicas)
 		self.prompt_tokens = 0
@@ -588,9 +752,17 @@ class _Core:
 			self.agents.move_to_end(agent_id)
 		return state
 
+	def first_call_line(self) -> tuple[float | None, float]:
+		"""The fixed part and tokens per character of a first call; no fixed
+		part before any first call was counted."""
+		if not self.first_calls.n:
+			return None, self.first_ratio
+		return self.first_calls.line(self.delta_ratio)
+
 	def estimate(self, state: _Agent, chars: int) -> int:
 		if state.chars < 0:
-			return int(chars * self.first_ratio)
+			base, ratio = self.first_call_line()
+			return int((base or 0.0) + chars * ratio)
 		return state.tokens + int(max(chars - state.chars, 0) * self.delta_ratio)
 
 	def learn(
@@ -601,7 +773,7 @@ class _Core:
 		a = self.alpha
 		if state.chars < 0:
 			if chars > 0:
-				self.first_ratio += a * (prompt / chars - self.first_ratio)
+				self.first_calls.add(chars, prompt)
 		elif chars - state.chars > 50:
 			added = max(prompt - state.tokens, 0) / (chars - state.chars)
 			self.delta_ratio += a * (added - self.delta_ratio)
@@ -631,6 +803,8 @@ class Fleet:
 			raise ValueError("a fleet needs at least one replica")
 		if not 0 < share <= 1:
 			raise ValueError("share must be in (0, 1]")
+		if reply_reserve < 0:
+			raise ValueError("reply_reserve must not be negative")
 		self._core = _Core(
 			list(replicas),
 			admission,
@@ -706,7 +880,7 @@ class Fleet:
 		if reserve < 0:
 			raise ValueError("reserve must not be negative")
 		core = self._core
-		i = core.routing.choose(agent_id, [g.load() for g in core.gates])
+		i = core.routing.choose(agent_id, _Loads(core.gates))
 		gate = core.gates[i]
 		state = core.agent(agent_id)
 		chars = _message_chars(messages)
@@ -718,12 +892,16 @@ class Fleet:
 		asked = time.monotonic()
 		attrs = {_telemetry.FLEET_NAME: core.name, _telemetry.FLEET_REPLICA: i}
 		failing_since: float | None = None
+		wait_s = 0.0  # for admission, over every try
 		with _agents.activity(_agents.AgentState.MODEL_QUEUED):
 			while True:
+				queued = time.monotonic()
 				await gate.acquire(weight, agent_id)
 				failed: BaseException | None = None
 				try:
 					got = time.monotonic()
+					wait_s += got - queued
+					_telemetry.ADMISSION_WAIT.record(got - queued, attrs)
 					core.in_flight += 1
 					core.in_flight_max = max(core.in_flight_max, core.in_flight)
 					try:
@@ -733,6 +911,10 @@ class Fleet:
 							)
 					except Exception as exc:
 						core.errors[type(exc).__name__] += 1
+						_telemetry.MODEL_SERVICE.record(
+							time.monotonic() - got,
+							{**attrs, _telemetry.ERROR_TYPE: type(exc).__qualname__},
+						)
 						if core.recovery is None or not _transient(exc):
 							raise
 						failed = exc
@@ -759,7 +941,6 @@ class Fleet:
 					core.replicas[i] = model
 					core.generation[i] += 1
 				core.retried += 1
-		_telemetry.ADMISSION_WAIT.record(got - asked, attrs)
 		_telemetry.MODEL_SERVICE.record(done - got, attrs)
 		return self._account(
 			core,
@@ -769,9 +950,9 @@ class Fleet:
 			chars,
 			reply,
 			asked_at,
-			asked,
-			got,
-			done,
+			wait_s,
+			done - got,
+			0.0 if failing_since is None else max(got - asked - wait_s, 0.0),
 			estimate,
 			after_tool,
 			meta,
@@ -786,9 +967,9 @@ class Fleet:
 		chars: int,
 		reply: AIMessage,
 		asked_at: float,
-		asked: float,
-		got: float,
-		done: float,
+		wait_s: float,
+		service_s: float,
+		recovery_s: float,
 		estimate: int,
 		after_tool: str | None,
 		meta: Any,
@@ -813,8 +994,8 @@ class Fleet:
 			agent_id=agent_id,
 			replica=i,
 			t_end=t_end,
-			wait_s=got - asked,
-			service_s=done - got,
+			wait_s=wait_s,
+			service_s=service_s,
 			prompt_tokens=prompt,
 			cached_tokens=None if cached is None else int(cached),
 			completion_tokens=completion,
@@ -824,6 +1005,7 @@ class Fleet:
 			prev_prompt_tokens=state.prev_prompt,
 			reasoning_tokens=reasoning,
 			meta=meta,
+			recovery_s=recovery_s,
 		)
 		# The conversation keeps the reply but not its thinking.
 		kept = completion - (reasoning or 0)
@@ -847,6 +1029,7 @@ class Fleet:
 	def stats(self) -> dict:
 		"""The fleet's counters, with its gates' and its recovery's."""
 		core = self._core
+		base, ratio = core.first_call_line()
 		return {
 			"name": core.name,
 			"replicas": len(core.replicas),
@@ -865,7 +1048,8 @@ class Fleet:
 			"in_flight_max": core.in_flight_max,
 			"gates": [g.stats() for g in core.gates],
 			"tokens_per_char": {
-				"first_call": round(core.first_ratio, 4),
+				"first_call": round(ratio, 4),
+				"first_call_base": None if base is None else round(base),
 				"added": round(core.delta_ratio, 4),
 			},
 			"replies_tool_call": core.replies_tool,

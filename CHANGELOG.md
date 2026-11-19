@@ -11,12 +11,31 @@ predate this changelog, so their changes are not listed here.
 
 ### Added
 
+- `flowgentic.fleet`: an `AdmissionGate` counts the calls it admits alone
+  above its token cap (`oversize` in its stats), and the fleet logs the
+  first as a warning, once for all its replicas; a gate built on its own
+  warns once on its own. A gate holds one process's share of a replica's
+  caps, so one such call takes the replica past its cap while the other
+  processes use their shares.
 - The package declares its classifiers and project URLs, and ships a
   `py.typed` marker, so type checkers read Flowgentic's annotations. Its
   description, and the documentation site's, now say what Flowgentic is.
 
 ### Changed
 
+- `flowgentic.fleet`: a `CallRecord`'s times add up to the call's.
+  `wait_s` is the wait for admission alone, summed over the call's tries;
+  before, it ran from the call's start to its last admission, so it counted
+  an outage that `Recovery` waited out. The new `recovery_s` holds that
+  outage: the tries that failed and the wait for the replica to come back.
+  `service_s` is unchanged.
+- `flowgentic.fleet`: the admission-wait and request-duration histograms are
+  recorded for each try, so a retried call records one of each per try. A
+  try that fails, also one that ends the call, records its time at the
+  replica with `error.type`; before, a failed call recorded nothing.
+- `flowgentic.fleet`: a routing reads a replica's load only when it asks for
+  it. Under `AgentAffinity` and `RoundRobin` a call no longer reads every
+  replica's load: with 256 replicas, a call costs what it costs with one.
 - `flowgentic.agent.time` is a counter, as agent-seconds add up. It was a
   gauge that started from 0 at each run of a host and lost a host's time when
   the host was gone. It now adds up the agent-seconds of every run in the
@@ -25,6 +44,20 @@ predate this changelog, so their changes are not listed here.
 
 ### Fixed
 
+- `flowgentic.fleet`: an agent's first call is estimated as a fixed part,
+  such as tool schemas the messages do not show, plus tokens per character,
+  both learned from earlier first calls. With tokens per character alone,
+  short first prompts taught a ratio that made a later long first prompt's
+  estimate many times too large, and its call waited to run alone. The
+  tokens per character are never fewer than those of the characters later
+  calls add, so a first call is never estimated below its text alone.
+  `stats()["tokens_per_char"]` gains `first_call_base`, the fixed part.
+- `flowgentic.fleet`: a call that joined a recovery watch started for an
+  earlier call failed when that watch gave up, before its own `outage_s`
+  had passed. It now starts a new watch if at least `poll_s` of its own
+  `outage_s` is left, and fails then otherwise.
+- `Fleet` refuses a negative `reply_reserve`, which took tokens off every
+  call's admission estimate.
 - The `flowgentic.agents` gauge counts the agents of runs in progress only.
   It counted the agents of every run that had ended too, for as long as its
   host was alive: a cancelled run's agents stayed `pending`, and finished

@@ -44,7 +44,14 @@ returns an `AIMessage`, and `bind_tools` if the agents call tools.
   [Other admission policies](#other-admission-policies)).
 - **It shares the caps among agent processes.** Each process takes `share`
   of every replica's caps. This holds because every process routes the same
-  agents to the same replicas.
+  agents to the same replicas. A process cannot see the others' calls, so a
+  call whose context is larger than the process's share of the token cap is
+  admitted alone, once nothing else of the process is in flight at that
+  replica; one such call takes the replica past its cap while the other
+  processes use their shares. Each gate counts such calls (`oversize` in
+  `fleet.stats()["gates"]`), and the fleet logs the first as a warning,
+  once for all its replicas. Choose the cap and `share` so that the largest
+  context fits in one share.
 - **It waits out a server that went away.** With `Recovery(check)`, a call
   that fails because its server is down, restarting or overloaded (a
   connection error, a timeout, a 5xx, or a 401 after a new key) gives up its
@@ -56,6 +63,9 @@ returns an `AIMessage`, and `bind_tools` if the agents call tools.
   while it is down. The first failing call on a replica starts one watch,
   which calls `check(i)` every `poll_s` seconds until the replica serves
   again or `outage_s` has passed; later failing calls wait on the same watch.
+  A call whose watch gives up, because it started earlier for another call,
+  starts a new one if at least `poll_s` of the call's own `outage_s` is
+  left; with less, it fails then.
   A check that raises, or does not answer within `check_timeout_s` (30 s by
   default), counts as the replica still being down: the watch logs it, counts
   it in `fleet.stats()["recovery"]["check_failures"]`, and keeps polling. The watch runs in a
@@ -80,8 +90,16 @@ fleet = Fleet(replicas, recovery=Recovery(check, outage_s=1_800, poll_s=5))
 A call's live context is estimated before it is sent: the agent's size after
 its previous call, as the server counted it, plus the characters added since,
 at the tokens per character the server's counts give, plus `reply_reserve`
-for the reply. The fleet remembers the sizes of the most recent
-`tracked_agents` agents.
+for the reply. An agent's first call is estimated from the server's counts
+for earlier first calls, as a fixed part, such as tool schemas and a template
+that the messages do not show, plus tokens per character. The tokens per
+character are never fewer than those of the characters later calls add, so a
+first call is never estimated below its text alone, also while the first
+prompts' lengths barely vary, or when agents with and without tool schemas
+mix. `fleet.stats()["tokens_per_char"]` gives what was
+learned: `first_call` and `first_call_base` (the fixed part, in tokens), and
+`added`. The fleet remembers the sizes of the most recent `tracked_agents`
+agents.
 
 ## Settings per call
 
@@ -173,18 +191,24 @@ calls; a call of that agent may still be in flight.
 ## What it reports
 
 `fleet.add_listener(listener)` calls `listener(record, reply)` after each
-call. The `CallRecord` holds the agent and replica, the wait for admission
-and the time at the server, the prompt, cached and completion tokens, the
-reasoning tokens if reported, the admission estimate, the gap since the
-agent's previous call, the tool whose result came just before, and the
-caller's `meta`. `fleet.stats()` adds up the calls, tokens and replies, and
-gives each replica's admission and the recovery's outages.
+call that returns. The `CallRecord` holds the agent and replica, the
+prompt, cached and completion tokens, the reasoning tokens if reported, the
+admission estimate, the gap since the agent's previous call, the tool whose
+result came just before, and the caller's `meta`. Its times add up to the
+call's: `wait_s`, the wait for admission over all the call's tries;
+`service_s`, the time the try that succeeded spent at the replica; and
+`recovery_s`, when `Recovery` waited out an outage, the tries that failed
+and the wait for the replica to come back. `fleet.stats()` adds up the
+calls, tokens, replies and errors, and gives each replica's admission and
+the recovery's outages.
 
 Through the OpenTelemetry API, and only once the application configures an
 SDK:
 
 - `flowgentic.fleet.admission.wait` and `flowgentic.fleet.request.duration`
-  record each call's wait for admission and its time at the replica;
+  record each try's wait for admission and its time at the replica, so a
+  retried call records one of each per try; a try that failed, retried or
+  not, carries its error's class in `error.type`;
 - `flowgentic.fleet.tokens.active`, `flowgentic.fleet.requests.active` and
   `flowgentic.fleet.requests.waiting` give each replica's tokens and requests
   in flight, and its requests waiting, read when the SDK collects.

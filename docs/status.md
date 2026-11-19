@@ -134,13 +134,11 @@ Agents at scale:
       share unused.
     - A call whose context is larger than a process's share of a replica's
       token cap is still admitted, alone, once nothing else from that process
-      is in flight at that replica. With several processes, such calls can
-      together exceed the cap. Choose the cap and `share` so that the largest
-      context fits in one share.
-    - Before an agent's first call, its context is estimated from the tokens
-      per character of earlier first calls, with no fixed term. After short
-      first prompts, a much longer first prompt is overestimated, and its call
-      may wait to run alone. Later calls use the size the server reported.
+      is in flight at that replica. One such call takes the replica past its
+      cap while the other processes use their shares. Choose the cap and
+      `share` so that the largest context fits in one share. Each gate counts
+      such calls (`oversize` in `fleet.stats()["gates"]`), and the fleet logs
+      the first as a warning.
 - Python 3.14 is not tested. The host's collector settings were measured on
   CPython 3.12, and 3.14 has a new, incremental collector.
 
