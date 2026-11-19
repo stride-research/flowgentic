@@ -25,7 +25,7 @@ tools = bind_tools(runtime, [
 | Tool | Made with | Runs | For |
 | --- | --- | --- | --- |
 | Inline | the framework's own, such as LangChain's `@tool` | in the agent's process, on its event loop | short Python |
-| Task | `task_tool(fn)` | as a RHAPSODY function task in the process's session | compute the agent waits for |
+| Task | `task_tool(fn)` | as a function task: in the process's RHAPSODY session, or on a backend of the application's AsyncFlow engine | compute the agent waits for |
 | Service | `mcp_tool(name, ...)` | in the tool service, through its MCP pool | tools on MCP servers |
 
 A task tool's function must be importable by the workers: a top-level
@@ -35,10 +35,50 @@ tool's arguments reach the tool service as JSON values, so the service needs
 none of the agent's classes.
 
 `flowgentic.tools` needs no extra to import. Task tools need the `rhapsody`
-extra when they run, MCP tools need the [tool service](tool-service.md), and
-`bind_tools` needs the `langgraph` extra. Flowgentic never creates a RHAPSODY
-backend: the application creates the `Session` on whatever fits its machine,
-such as a thread pool on a laptop or Dragon on an HPC allocation.
+extra when they run on a session, and the `asyncflow` extra on an engine. MCP
+tools need the [tool service](tool-service.md), and `bind_tools` needs the
+`langgraph` extra. Flowgentic never creates a RHAPSODY backend: the application
+creates the `Session` on whatever fits its machine, such as a thread pool on a
+laptop or Dragon on an HPC allocation.
+
+## In an AsyncFlow application
+
+An application whose workflow runs on AsyncFlow can run its agents' task tools
+as tasks of its own engine. What an agent decides then runs beside the
+workflow's other tasks, on the same backends, and shows in the same telemetry:
+
+```python
+from radical.asyncflow import WorkflowEngine
+
+flow = await WorkflowEngine.create(backend=[compute, ai])  # the application's engine
+runtime = ToolRuntime(engine=flow, backend="compute")
+tools = bind_tools(runtime, [
+    task_tool(run_kernel, suspend=True),                  # on "compute"
+    task_tool(score, backend="ai"),                       # a tool may name its own backend
+])
+```
+
+Each call of a task tool submits one AsyncFlow function task, on the backend
+the tool names, else on the runtime's `backend`, else on the engine's default.
+Suspension, repeat safety and the host's registrations work as on a session.
+The function may be `async def`, and its arguments may have any names, those of
+AsyncFlow's own call keywords included. AsyncFlow knows the task by the
+function's name, and gives it its uid, such as `task.000007`, when the runtime
+submits it.
+
+On an engine, a tool's task fields are `backend` and
+`task_backend_specific_kwargs`, the backend's own fields such as resources,
+which AsyncFlow passes to the backend as the task's `task_description`. Any
+other field is a `ValueError`, and so is a backend the engine lacks: when the
+runtime is made, for its own `backend`, or at a tool's first call, for the
+tool's. On a session, `backend` names the RHAPSODY backend, in the same way. A
+runtime has a session or an engine, not both.
+
+The engine is the application's: Flowgentic neither starts it nor shuts it
+down. AsyncFlow keeps every task, with its arguments and value, until the
+engine shuts down, so a campaign's memory grows with the tasks its agents ask
+for. A task still running when the engine shuts down ends with
+`TaskCancelled`, and so does one asked for after.
 
 ## Suspension
 
@@ -84,14 +124,17 @@ admitted yet is withdrawn once no call waits for it, such as when every agent
 that asked for it is cancelled or its host stops: it never reaches RHAPSODY,
 and the call made again submits it afresh.
 
-A task that RHAPSODY cancels, or whose session closes before it ends, ends with
-`TaskCancelled`: its place in its order is given back, and the model reads that
-the call failed. A task that its order admits after the session has closed
-fails at once, in the same way.
+A task that RHAPSODY or AsyncFlow cancels, or whose session closes or engine
+shuts down before it ends, ends with `TaskCancelled`: its place in its order is
+given back, and the model reads that the call failed. A task that its order
+admits after the session has closed, or the engine has shut down, fails at
+once, in the same way. On an engine, cancelling the future that
+`runtime.submit` returned also asks the task's backend to cancel it.
 
 A task's RHAPSODY uid is `flowgentic.` and its key, with `/` written `.`, `_`
 written `__`, and any character other than a letter, a digit or `-` written
-`_x<hex>_`, so different calls never share a uid.
+`_x<hex>_`, so different calls never share a uid. AsyncFlow names its tasks
+itself; the [decision record](#the-decision-record) holds each one's uid.
 
 An MCP call that lost its connection may or may not have run on the server. It
 is sent again only for a tool declared `idempotent=True`, such as a lookup.
@@ -112,24 +155,61 @@ its tool calls per message reuses call ids on later turns, so a `prepare` that
 names a file after the call should not use `call_id` alone; a random part,
 such as a `uuid4()`, is safe, since `prepare` runs once. A failed, refused or lost
 call reaches the model as the tool's error, so the agent can read it and
-decide what to do. A runtime set up wrong, without the RHAPSODY session or the
-started service client a tool needs, raises `RuntimeError` instead: with
+decide what to do. A runtime set up wrong, without the session or engine, or the
+started service client, that a tool needs, raises `RuntimeError` instead: with
 `ToolNode`'s default error handling, the agent fails.
 
 ## Order of tasks
 
-When tasks reach RHAPSODY is a policy, a `TaskOrder`: `admit(info)` returns
+When tasks reach RHAPSODY or AsyncFlow is a policy, a `TaskOrder`: `admit(info)` returns
 when a task may be submitted, or raises to refuse it, and `done(info)` is
 called when an admitted task ends. `Immediate()`, the default, submits every
 task at once. A policy can hold tasks and release them in an order of its
 choosing, such as a campaign's priorities, or refuse them, as a budget does.
 
+## The decision record
+
+Each task ends in a `TaskRecord`, which `runtime.add_listener(listener)` hands
+to each listener before the task's agent is told. It ties the task to the
+decision that asked for it, the agent (`record.info.agent_id`) and its tool
+call (`record.info.call_id`), and says where the task ran and when:
+
+| Field | What |
+| --- | --- |
+| `uid` | The task's uid in AsyncFlow or RHAPSODY; `None` if it was never submitted |
+| `backend` | The backend it was sent to: on an engine, the named one or the engine's default; on a session, the named one, if any |
+| `t_commit` | When the agent committed to the call: when the reply of the model call that made it reached the agent, for a model run through a [fleet](fleet.md) in an agent the [host](agent-host.md) runs; otherwise `t_submit` |
+| `t_submit` | When the runtime got the call |
+| `t_admit` | When its order admitted it and the runtime submitted it; `None` if it never was |
+| `t_start` | When it started: AsyncFlow's `TaskStarted` event |
+| `t_finish` | When it ended: AsyncFlow's `TaskCompleted`, `TaskFailed` or `TaskCanceled` event |
+| `t_end` | When the runtime saw it end, just before its agent is told |
+| `outcome` | `ok`, `error`, `refused` or `cancelled`, with its `value` or `error` |
+
+Times are `time.time()` in the agent's process, which on an engine is the
+engine's too. A withdrawn task is `cancelled` with no admission time.
+
+`t_start` and `t_finish` come from AsyncFlow's telemetry, so they are there
+once the application has started it (`await flow.start_telemetry()`, which
+needs `rhapsody-py[telemetry]`), and `t_start` only on a backend that reports
+a task running: RHAPSODY's do, AsyncFlow's own `LocalExecutionBackend` does
+not. On a session, both are `None`. AsyncFlow emits a task's end event as the
+task ends, and its telemetry delivers it a moment later; the runtime waits at
+most one pass of the event loop for it. An event that comes later is still in
+AsyncFlow's telemetry, under the record's `uid`.
+
+From one agent's records: the time from a decision to its task's start is
+`t_start - t_commit`, of which `t_admit - t_commit` is Flowgentic's and its
+order's; the task runs for `t_finish - t_start`; and the runtime hands its
+result over `t_end - t_finish` after it ends. The time an agent takes to
+decide again, once a task's result has reached it, is the next record's
+`t_commit` minus this one's `t_end`, less the host's resume when the agent
+suspended.
+
 ## What it reports
 
-- `runtime.add_listener(listener)` receives a `TaskRecord` as each task ends:
-  its info, when it was asked for, admitted and ended, its outcome (`ok`,
-  `error`, `refused` or `cancelled`), and its value or error. A withdrawn task
-  is `cancelled` with no admission time.
+- `runtime.add_listener(listener)` receives each task's
+  [decision record](#the-decision-record).
 - `runtime.stats()` counts the tasks submitted, asked for again, failed and
   refused.
 - Each task or service call is an `execute_tool` span, inside its agent's

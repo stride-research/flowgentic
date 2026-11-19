@@ -7,6 +7,39 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
+## [Unreleased]
+
+### Added
+
+- Task tools on the application's AsyncFlow engine.
+  `ToolRuntime(engine=flow, backend="compute")` runs each task tool as an
+  AsyncFlow function task on a named backend of the engine the application
+  passes in, so the tasks its agents ask for are tasks of the application.
+  Suspension, repeat safety and the host's registrations work as on a RHAPSODY
+  session. A tool may name its own backend (`task_tool(fn, backend="ai")`) and
+  give the backend's own fields (`task_backend_specific_kwargs`); a backend the
+  engine lacks, or another field, is a `ValueError`. A task still running when
+  the engine shuts down ends with `TaskCancelled`. A runtime takes a session or
+  an engine, not both.
+- `ToolRuntime(..., backend=...)`: the backend task tools run on unless a tool
+  names its own, on a session as on an engine.
+- The decision record. `TaskRecord` gains `uid` (the task's uid in AsyncFlow or
+  RHAPSODY), `backend`, `t_commit` (when the agent committed to the call),
+  `t_start` and `t_finish` (when the task started and ended, from AsyncFlow's
+  task events, once the engine's telemetry runs). With a model run through a
+  fleet in an agent the host runs, `t_commit` is when the reply that made the
+  call reached the agent; otherwise it is `t_submit`.
+
+### Changed
+
+- The `asyncflow` extra is `radical-asyncflow>=0.7,<0.8` (was `>=0.6,<0.7`).
+  AsyncFlow 0.7 sets a task's uid when the task is called, which the decision
+  record needs, and its `task` spans name the backend each task ran on, where
+  0.6 labelled every one with the default backend.
+- The error of a task tool on a runtime with neither a session nor an engine
+  now reads "task tools need a ToolRuntime with a RHAPSODY session or an
+  AsyncFlow engine".
+
 ## [0.5.1] - 2026-11-19
 
 A patch release: fixes for most of the known limitations that 0.5.0's
@@ -694,6 +727,7 @@ on `main`.
   - Each test matrix job runs its own Python with the dev extra.
   - The bandit job runs again.
 
+[Unreleased]: https://github.com/stride-research/flowgentic/compare/v0.5.1...HEAD
 [0.5.1]: https://github.com/stride-research/flowgentic/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/stride-research/flowgentic/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/stride-research/flowgentic/compare/v0.3.1...v0.4.0

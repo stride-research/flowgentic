@@ -225,12 +225,13 @@ def process_agent_seconds() -> dict[AgentState, float]:
 class _Agent:
 	"""The context variable's value: one live agent, with its open activities."""
 
-	__slots__ = ("id", "states", "_open", "registered", "finished", "at_end")
+	__slots__ = ("id", "states", "_open", "registered", "finished", "at_end", "replied")
 
 	def __init__(self, agent_id: str, states: AgentStates) -> None:
 		self.id = agent_id
 		self.states = states
 		self.finished = False
+		self.replied: float | None = None
 		self._open = [0] * _N
 		self.registered: dict[str, asyncio.Future] = {}
 		self.at_end: list[Callable[[], None]] = []
@@ -266,6 +267,24 @@ def current_agent() -> str | None:
 	"""The id of the agent the current coroutine works for, if any."""
 	agent = _current.get()
 	return None if agent is None else agent.id
+
+
+def note_reply(agent_id: str, t: float) -> None:
+	"""Note that a model reply reached the agent ``agent_id`` at ``t``
+	(``time.time()``), if the current task runs that agent: the time a tool call
+	in the reply was committed to."""
+	agent = _current.get()
+	if agent is not None and agent.id == agent_id:
+		agent.replied = t
+
+
+def last_reply(agent_id: str) -> float | None:
+	"""When the last model reply noted for the agent ``agent_id`` reached it, if
+	the current task runs that agent."""
+	agent = _current.get()
+	if agent is None or agent.id != agent_id:
+		return None
+	return agent.replied
 
 
 @contextmanager

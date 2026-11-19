@@ -78,8 +78,9 @@ and metrics. Each path is an extra:
 
 Agents at scale need `langgraph`, `rhapsody` and `mcp`:
 `flowgentic[langgraph,rhapsody,mcp]`. The LangGraph integration on AsyncFlow
-needs `langgraph` and `asyncflow`, and `bind_agent` needs `asyncflow`. Without
-an extra it needs, importing a part raises an error that names the extra.
+needs `langgraph` and `asyncflow`, and `bind_agent` needs `asyncflow`, as do
+task tools on an AsyncFlow engine. Without an extra it needs, importing a part
+raises an error that names the extra.
 `flowgentic.host`, `flowgentic.store` and `flowgentic.tools` import with no
 extra. The `examples` extra adds `langgraph` and `asyncflow`, with
 `academy-py>=1.0,<2` for the Academy example, and the OpenTelemetry SDK,
@@ -142,9 +143,21 @@ The AsyncFlow path:
 
 - ADR mode is not supported. The demos' `--controller adr` needs an ADR source
   checkout (`ADR_SRC`), because ADR is not released.
-- Not validated: using an engine that the caller creates (the integration
-  always creates its own), and any remote or HPC backend. Cancellation reaching
-  in-flight AsyncFlow tasks is validated on local backends only.
+- Not validated: the LangGraph integration on an engine that the caller
+  creates (the integration always creates its own), and any remote or HPC
+  backend. Task tools on the application's engine
+  ([Tool placement](features/tools.md#in-an-asyncflow-application)) are tested
+  on RHAPSODY thread-pool backends only. Cancellation reaching in-flight
+  AsyncFlow tasks is validated on local backends only.
+- Task tools on an AsyncFlow engine: AsyncFlow keeps every task, with its
+  arguments and value, until the engine shuts down, so a campaign's memory
+  grows with the tasks its agents ask for.
+- A task's record has a start and finish time only on an AsyncFlow engine
+  whose telemetry the application has started, and a start only on a backend
+  that reports a task running, as RHAPSODY's do and AsyncFlow's own
+  `LocalExecutionBackend` does not. On a RHAPSODY session, both are `None`.
+  Its commitment time is a model reply's only when the model runs through a
+  fleet in an agent the host runs.
 - The recipe for calling Academy agents from AsyncFlow tasks is tested with
   Academy's local exchange and AsyncFlow's local backend only; see
   [Academy actions as AsyncFlow tasks](guides/academy-on-asyncflow.md#limitations).
