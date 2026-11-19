@@ -652,3 +652,102 @@ def test_task_and_mcp_tools_are_bound_with_their_schemas():
     assert set(schemas["simulate"]["properties"]) == {"x"}
     assert set(schemas["lookup"]["properties"]) == {"material"}
     assert model.bound[0].description == "Run a simulation of x."
+
+
+# --- more failures ------------------------------------------------------------------
+
+
+class FailingService(FakeService):
+    async def call(self, uid, tool, args, *, idempotent=False):
+        raise ConnectionError("service gone")
+
+
+async def test_a_failed_mcp_call_or_task_output_reaches_the_model():
+    session = await thread_session()
+    lookup = mcp_tool("lookup", description="Look up.", args_schema=LookupArgs)
+
+    def unreadable(value):
+        raise KeyError("y")
+
+    seen = []
+
+    def script(messages):
+        results = [m for m in messages if m.type == "tool"]
+        if results:
+            seen.extend(results)
+            return AIMessage("done")
+        return AIMessage(
+            "",
+            tool_calls=[
+                {"name": "lookup", "args": {"material": "x"}, "id": "a"},
+                {"name": "lookup", "args": {}, "id": "b"},
+                {"name": "simulate", "args": {"x": 1.0}, "id": "c"},
+            ],
+        )
+
+    runner = LoopRunner(
+        Scripted(script=script),
+        [lookup, task_tool(simulate, output=unreadable)],
+        runtime=ToolRuntime(session, FailingService()),
+    )
+    report = await AgentHost(runner, stagger=FAST).run(inputs(1))
+    await session.close()
+    assert report.finished == 1
+    by_id = {m.tool_call_id: m.content for m in seen}
+    assert by_id["a"] == "lookup failed: ConnectionError: service gone"
+    assert "ValidationError" in by_id["b"] and "material" in by_id["b"]
+    assert by_id["c"] == "Error: KeyError('y')\n Please fix your mistakes."
+
+
+async def test_a_call_that_fails_the_agent_stops_the_others_of_its_reply():
+    model = Scripted(script=calls_then_answer(("wait_a_bit", {"name": "a"}), ("simulate", {"x": 1.0})))
+    runner = LoopRunner(model, [wait_a_bit, task_tool(simulate)], runtime=ToolRuntime())
+    t = time.perf_counter()
+    report = await AgentHost(runner, stagger=FAST).run(inputs(1))
+    assert time.perf_counter() - t < 0.15  # did not wait for the 0.2 s call
+    assert report.errors == {"RuntimeError": 1}
+
+
+class UndeletableStore(CountingStore):
+    def delete(self, key):
+        raise ConnectionError("store gone")
+
+
+async def test_a_state_that_cannot_be_deleted_leaves_the_agent_finished(caplog):
+    session = await thread_session()
+    store = UndeletableStore()
+    model = Scripted(script=calls_then_answer(("simulate", {"x": 1.0})))
+    runner = LoopRunner(
+        model, [task_tool(simulate, suspend=True)], runtime=ToolRuntime(session), store=store
+    )
+    report = await AgentHost(runner, stagger=FAST).run(inputs(3))
+    await session.close()
+    assert report.finished == 3
+    assert runner.stats()["delete_failures"] == 3
+    warnings = [r for r in caplog.records if r.levelname == "WARNING" and "stays in the store" in r.message]
+    assert len(warnings) == 1  # once; the others at debug level
+
+
+class ForgetfulStore(CountingStore):
+    def put(self, key, value):
+        self.calls["put"] += 1  # and keeps nothing
+
+
+async def test_an_agent_whose_state_is_lost_fails_on_resume():
+    session = await thread_session()
+    model = Scripted(script=calls_then_answer(("simulate", {"x": 1.0})))
+    runner = LoopRunner(
+        model, [task_tool(simulate, suspend=True)], runtime=ToolRuntime(session), store=ForgetfulStore()
+    )
+    report = await AgentHost(runner, stagger=FAST).run(inputs(1))
+    await session.close()
+    (agent,) = report.agents
+    assert agent.status == "failed"
+    assert agent.error == "RuntimeError: agent 'agent-0' has no saved state under 'loop/agent-0'"
+
+
+async def test_a_fleet_chat_model_runs_as_its_fleet():
+    fleet = Fleet([Scripted(script=calls_then_answer(("inline_note", {"text": "hi"})))])
+    report = await AgentHost(LoopRunner(fleet.chat_model(), [inline_note]), stagger=FAST).run(inputs(3))
+    assert report.finished == 3
+    assert fleet.stats()["calls"] == 6
