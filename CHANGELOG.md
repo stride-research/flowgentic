@@ -9,6 +9,11 @@ predate this changelog, so their changes are not listed here.
 
 ## [Unreleased]
 
+### Added
+
+- `flowgentic.tools.TaskCancelled`, the error a task ends with when RHAPSODY
+  cancels it or its session closes before it ends.
+
 ### Changed
 
 - A task or MCP call made by a LangGraph agent is keyed by its agent, the
@@ -23,10 +28,13 @@ predate this changelog, so their changes are not listed here.
   is written `__`, and any character other than a letter, a digit or `-` is
   written `_x<hex>_`, where every such character was `_`. A uid made by 0.5.0
   for the same call differs.
-- Cancelling a task tool's wait, as cancelling its agent does, leaves the task
-  running, where it cancelled Flowgentic's side of the task. The task keeps its
-  place in its `TaskOrder` until it ends, and the same call made again gets its
-  result.
+- Cancelling a task tool's wait, as cancelling its agent does, leaves a task
+  that has started running, where it cancelled Flowgentic's side of the task.
+  The task keeps its place in its `TaskOrder` until it ends, and the same call
+  made again gets its result. A task that its order has not admitted yet is
+  withdrawn once no call waits for it, the host's wait for a suspended agent
+  included: it never reaches RHAPSODY, and the call made again submits it
+  afresh. A task cancelled before admission is likewise forgotten.
 - `ToolServiceClient` takes the service's `call_timeout` (120 s by default, as
   `serve`'s), and its deadline, `timeout`, defaults to `call_timeout` plus
   30 s: 150 s by default, as before. A `timeout` not above `call_timeout`
@@ -36,7 +44,9 @@ predate this changelog, so their changes are not listed here.
 
 - A model server that numbers its tool calls per message reuses call ids on
   later turns, and the later, different call got the first call's result. It
-  now runs.
+  now runs, when each turn's tools run in a LangGraph task of their own; a
+  node that loops between the model and its tools itself still shares one key
+  across turns.
 - Two calls whose keys differ only in characters other than letters, digits,
   `_`, `.` and `-`, such as `a.b/c` and `a/b.c`, shared one RHAPSODY uid, and
   RHAPSODY answered both with one task.
@@ -44,11 +54,20 @@ predate this changelog, so their changes are not listed here.
   `CancelledError`, which failed its agent, and a cancelled wait released its
   task's place in its `TaskOrder` while the task still ran. A task cancelled by
   whoever holds its future now reaches the model as a failed call.
+- A RHAPSODY session that closed left the tasks it dropped unfinished on the
+  thread-pool backend: their places in their `TaskOrder` were never given back,
+  and calls still waiting on them waited forever. They now end with
+  `TaskCancelled`, and a task admitted after its session closed fails at once.
+- A task that RHAPSODY cancelled was taken for a success that returned `None`.
+  It now ends with `TaskCancelled`.
 - A RHAPSODY session keeps every task's description for its life, and each
   held the task's arguments, its result, the backend's text of the result and
-  its exception. Flowgentic now drops them once it has read the task's outcome:
-  20,000 tasks with 10 kB results, on a thread pool, took 103 MB instead of
-  465 MB. RHAPSODY 0.7 still keeps each task's description.
+  its exception, and through the exception's traceback the runtime that ran it.
+  Flowgentic now drops them once it has read the task's outcome: 20,000 tasks
+  with 10 kB results, on a thread pool, took 101 MB instead of 465 MB.
+  RHAPSODY 0.7 still keeps each task's description.
+- A task that failed with no call left to read its outcome, as when its agent
+  was stopped, was logged by asyncio as an exception never retrieved.
 
 ## [0.5.0] - 2026-11-18
 
