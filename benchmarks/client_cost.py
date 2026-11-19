@@ -2,7 +2,10 @@
 
 The stub, in a process of its own, answers every chat completion with the same
 reply, a tool call of about 40 tokens, after ``--delay`` seconds, so that
-``N`` calls are in flight at the client. The client, in this process, keeps
+``N`` calls are in flight at the client. By default the delay is what vLLM's
+server took per call in G1 at the same ``N`` (Qwen3-8B on one GPU): 0.6 s at
+1, 1.3 s at 64, 8.9 s at 512. A much shorter delay makes the single-threaded
+client the bottleneck, and its cost per call is then not a client's cost. The client, in this process, keeps
 ``N`` calls going: after ``N + 20`` calls have finished, a window opens; it
 closes after ``--calls`` calls. Over the window: the process's CPU time (all
 threads) per call, calls per second, and the call's mean time. Each call sends
@@ -321,12 +324,34 @@ async def measure(kind: str, url: str, in_flight: int, calls: int) -> dict:
 CLIENTS = ["transport", "asyncopenai", "chatopenai", "chatopenai-adapter", "httpx"]
 
 
+# vLLM's mean time per call in G1, by calls in flight (Qwen3-8B, one GPU).
+G1_SERVER_S = {1: 0.6, 64: 1.3, 512: 8.9}
+
+
+def delay_for(n: int, given: float) -> float:
+    if given:
+        return given
+    return G1_SERVER_S.get(n) or min(G1_SERVER_S.items(), key=lambda kv: abs(kv[0] - n))[1]
+
+
+# vLLM's mean time per call in G1, by calls in flight (Qwen3-8B, one GPU).
+G1_SERVER_S = {1: 0.6, 64: 1.3, 512: 8.9}
+
+
+def delay_for(n: int, given: float) -> float:
+    if given:
+        return given
+    return G1_SERVER_S.get(n) or min(G1_SERVER_S.items(), key=lambda kv: abs(kv[0] - n))[1]
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--client", choices=CLIENTS, default="transport")
     p.add_argument("--in-flight", type=int, default=64)
     p.add_argument("--calls", type=int, default=0, help="calls in the window (default: 400 at N=1, else 2,000)")
-    p.add_argument("--delay", type=float, default=0.05, help="the stub's time per call, in seconds")
+    p.add_argument(
+        "--delay", type=float, default=0.0, help="the stub's time per call, in seconds (default: G1's)"
+    )
     p.add_argument("--repeat", type=int, default=0)
     p.add_argument("--clients", type=lambda s: s.split(","), default=CLIENTS)
     p.add_argument("--sizes", type=lambda s: [int(x) for x in s.split(",")], default=[1, 64, 512])
@@ -337,14 +362,14 @@ def main() -> None:
         serve(a.serve, a.delay)
         return
     if a.repeat:
-        with Stub(a.delay) as stub:
-            for rep in range(a.repeat):
-                for n in a.sizes:
+        for rep in range(a.repeat):
+            for n in a.sizes:
+                with Stub(delay_for(n, a.delay)) as stub:
                     for kind in a.clients:
                         out = subprocess.run(
                             [
                                 sys.executable, __file__, "--client", kind, "--in-flight", str(n),
-                                "--url", stub.url, "--calls", str(a.calls), "--delay", str(a.delay),
+                                "--url", stub.url, "--calls", str(a.calls),
                             ],  # fmt: skip
                             capture_output=True, text=True, check=False, timeout=900,
                         )
@@ -352,14 +377,17 @@ def main() -> None:
                             sys.exit(out.stderr)
                         line = json.loads(out.stdout.strip().splitlines()[-1])
                         line["rep"] = rep
+                        line["delay_s"] = stub.delay
                         print(json.dumps(line), flush=True)
         return
-    calls = a.calls or (400 if a.in_flight == 1 else 2000)
+    calls = a.calls or (100 if a.in_flight == 1 else 2000)
     if a.url:
         print(json.dumps(asyncio.run(measure(a.client, a.url, a.in_flight, calls))))
         return
-    with Stub(a.delay) as stub:
-        print(json.dumps(asyncio.run(measure(a.client, stub.url, a.in_flight, calls))))
+    with Stub(delay_for(a.in_flight, a.delay)) as stub:
+        out = asyncio.run(measure(a.client, stub.url, a.in_flight, calls))
+        out["delay_s"] = stub.delay
+        print(json.dumps(out))
 
 
 if __name__ == "__main__":
