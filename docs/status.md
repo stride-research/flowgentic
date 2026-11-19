@@ -114,6 +114,12 @@ Agents at scale:
       runs, so a graph that runs a suspending subgraph in a loop, such as a
       supervisor, stores more with every turn.
 - Tools:
+    - A repeated task or MCP call is told apart from a new one by its
+      LangGraph task and the tool call's id. A node that loops between the
+      model and its tools itself runs every turn in one task, so a model
+      server that numbers its tool calls per message gets an earlier call's
+      result there for a later call with the same id. Servers that make
+      unique ids, as vLLM and OpenAI do, are not affected.
     - `ToolRuntime(retained=...)` bounds what Flowgentic keeps of ended tasks,
       not what RHAPSODY keeps. Flowgentic drops a task's arguments and result
       from its description once it has read them, but RHAPSODY 0.7 still keeps

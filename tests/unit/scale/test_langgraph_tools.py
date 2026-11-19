@@ -13,6 +13,8 @@ import pytest
 from _support import RUNS, Scripted, broken, calls_then_answer, react_graph, simulate, thread_session
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
+from langgraph.graph import START, MessagesState, StateGraph
+from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel
 
 from flowgentic import _agents
@@ -1024,8 +1026,7 @@ def expected_answer(turns: int, parallel: int = 1) -> str:
 
 def tool_node_graph(model, tools, saver):
     """model -> one ToolNode task for all of a message's calls -> model."""
-    from langgraph.graph import START, MessagesState, StateGraph
-    from langgraph.prebuilt import ToolNode, tools_condition
+    from langgraph.prebuilt import tools_condition
 
     async def call_model(state: MessagesState):
         return {"messages": [await model.ainvoke(state["messages"])]}
@@ -1041,8 +1042,6 @@ def tool_node_graph(model, tools, saver):
 
 def in_a_subgraph(model, tools, saver):
     """The react graph as a node of an outer graph, which checkpoints both."""
-    from langgraph.graph import START, MessagesState, StateGraph
-
     g = StateGraph(MessagesState)
     g.add_node("agent", react_graph(model, tools))
     g.add_edge(START, "agent")
@@ -1081,6 +1080,38 @@ async def test_a_call_id_used_again_on_a_later_turn_is_a_new_call(suspend, shape
             assert agent.suspensions == turns
     assert RUNS == {"simulate": 2 * turns * parallel}
     assert runtime.stats()["submitted"] == 2 * turns * parallel
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="a node that loops between the model and its tools runs every turn in "
+    "one LangGraph task, so a call id reused on a later turn shares the earlier key",
+)
+async def test_a_call_id_used_again_in_a_node_that_loops_itself_is_a_new_call():
+    session = await thread_session()
+    runtime = ToolRuntime(session)
+    model = Scripted(script=numbered_per_message(turns=2))
+    node = ToolNode(bind_tools(runtime, [task_tool(simulate)]), handle_tool_errors=True)
+
+    async def agent(state: MessagesState):
+        messages = list(state["messages"])
+        while True:
+            reply = await model.ainvoke(messages)
+            messages.append(reply)
+            if not reply.tool_calls:
+                return {"messages": messages[len(state["messages"]) :]}
+            messages.extend((await node.ainvoke({"messages": messages}))["messages"])
+
+    g = StateGraph(MessagesState)
+    g.add_node("agent", agent)
+    g.add_edge(START, "agent")
+    graph = g.compile(checkpointer=KeyValueSaver(MemoryStore()))
+    outputs = {}
+    await AgentHost(
+        GraphRunner(graph), stagger=FAST, on_done=lambda r, o: outputs.__setitem__(r.id, o)
+    ).run(inputs(1))
+    await session.close()
+    assert outputs["agent-0"]["messages"][-1].content == expected_answer(turns=2)
 
 
 async def test_mcp_calls_with_a_reused_call_id_reach_the_service_as_new_calls():

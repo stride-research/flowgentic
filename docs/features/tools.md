@@ -68,6 +68,14 @@ ended tasks (100,000 by default), and an agent in a host finds the tasks it
 asked for until it ends, however many have ended since. The tool service keeps
 its own answers, by the same key.
 
+The task tells turns apart only when each turn's tools run in a LangGraph task
+of their own, as they do in a `ToolNode` node, with `route_tool_calls`, or in a
+subgraph built that way. A node that loops between the model and its tools
+itself runs every turn in one task: there, a model server that numbers its tool
+calls per message gets an earlier turn's result for a later call with the same
+id. Give the tools a node of their own, or use a model server that makes unique
+call ids, as vLLM and OpenAI do.
+
 Cancelling an agent, or a task tool's wait, leaves a task that has started
 running: the task belongs to every call with its key, and RHAPSODY does not
 stop a task that has started. The task keeps its place in its `TaskOrder` until
