@@ -33,7 +33,7 @@ LangGraph execution adapter (`LangGraphIntegration`) is frozen. New
 applications can bind agents with `bind_agent`, or run LangGraph on AsyncFlow
 directly.
 
-0.5.0 requires Python 3.11 or later, and installs each path's dependencies as
+0.5.1 requires Python 3.11 or later, and installs each path's dependencies as
 an extra.
 
 | Path | Agent framework | Runs tasks on | Python |
@@ -96,7 +96,7 @@ use:
 ```bash
 uv build
 uv venv --python 3.11 flowgentic-env
-uv pip install --python flowgentic-env/bin/python "dist/flowgentic-0.5.0-py3-none-any.whl[langgraph,rhapsody,mcp]"
+uv pip install --python flowgentic-env/bin/python "dist/flowgentic-0.5.1-py3-none-any.whl[langgraph,rhapsody,mcp]"
 ```
 
 ## Run the examples
@@ -144,7 +144,7 @@ holds the metadata, and GitHub's "Cite this repository" menu turns it into APA
 or BibTeX:
 
 > Alsaadi, A., Amirghofran, Y., Barbero, C., Cordovez, D., Dominguez, J.,
-> Oliveros, D., & Turilli, M. (2026). *Flowgentic* (Version 0.5.0) [Computer
+> Oliveros, D., & Turilli, M. (2026). *Flowgentic* (Version 0.5.1) [Computer
 > software]. https://github.com/stride-research/flowgentic
 
 ## License

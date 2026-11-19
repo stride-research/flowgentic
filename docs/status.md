@@ -90,16 +90,16 @@ Agents at scale:
 
 - CI runs no part under Dragon: `RadexStore` is tested against a stand-in for
   RaDEX's client, task tools run on RHAPSODY's thread-pool backend, and the
-  tool service's queues are the standard library's. For this release the parts
-  were tested under Dragon by hand: the store's contract on RaDEX, an agent
-  suspended by one Dragon process and resumed by another, the tool service in
-  a Dragon process serving two agent processes over Dragon's queues, and the
-  worked example adapted to Dragon, with 1,000 agents in two processes, every
-  suspension resumed from RaDEX. They passed under Dragon 0.15.0 on Python
-  3.12, with RHAPSODY at commit `2523ead`, whose native Dragon backend is not
-  in a release yet, and RaDEX at commit `9f9b0df`.
-  The tests marked `dragon` make these checks, the last one with the
-  example's `--dragon` flag; the contributing guide says how to run them.
+  tool service's queues are the standard library's. For 0.5.0, and again for
+  0.5.1, the parts were tested under Dragon by hand: the store's contract on
+  RaDEX, an agent suspended by one Dragon process and resumed by another, the
+  tool service in a Dragon process serving two agent processes over Dragon's
+  queues, and the worked example adapted to Dragon, with 1,000 agents in two
+  processes, every suspension resumed from RaDEX. They passed under Dragon
+  0.15.0 on Python 3.12, with RHAPSODY at commit `2523ead`, whose native
+  Dragon backend is not in a release yet, and RaDEX at commit `9f9b0df`. The
+  tests marked `dragon` make these checks, the last one with the example's
+  `--dragon` flag; the contributing guide says how to run them.
 - RaDEX has no package: `RadexStore` needs RaDEX's Python client built from
   source with its C++ core.
 - An agent resumes only in the process that suspended it, because that
