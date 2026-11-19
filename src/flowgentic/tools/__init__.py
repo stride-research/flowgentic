@@ -77,6 +77,14 @@ def _escape(match: re.Match) -> str:
 	return f"_x{ord(c):x}_"
 
 
+def _read_outcome(job: asyncio.Future) -> None:
+	# The runtime reports each task's outcome itself: in its records and spans,
+	# and to each call that asks. A failure that no call read, as when its agent
+	# was stopped, is no error for asyncio to log.
+	if not job.cancelled():
+		job.exception()
+
+
 def _key_part(value: str) -> str:
 	# A part of a key holds no "/", so the parts of a key are always the same.
 	return str(value).replace("%", "%25").replace("/", "%2F")
@@ -353,6 +361,7 @@ class ToolRuntime:
 		# Until its order admits it, a task that no call waits for any more is
 		# withdrawn: it never reaches RHAPSODY.
 		_agents.withdrawable(job, lambda: self._forget(key, job, cancel=True))
+		job.add_done_callback(_read_outcome)
 		self.submitted += 1
 		return job
 

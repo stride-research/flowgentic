@@ -159,3 +159,6 @@ async def run_function(
 			description.update(
 				args=(), return_value=None, stdout=None, stderr=None, exception=None
 			)
+			# The future bound to the description holds the task's exception,
+			# whose traceback reaches the caller's frames.
+			description._future = None

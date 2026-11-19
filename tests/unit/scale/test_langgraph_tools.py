@@ -486,6 +486,24 @@ async def test_closing_the_session_ends_its_tasks_and_frees_their_places():
     await later.close()
 
 
+async def test_the_session_keeps_nothing_of_a_failed_task_once_read(caplog):
+    """RHAPSODY's session keeps each task's description for its life. Once a
+    failed task's outcome is read, the description keeps neither its exception
+    nor, through the exception's traceback, the runtime and its tasks. The
+    runtime reports each outcome itself, so a failure that no call read, as
+    when its agent was stopped, is no asyncio error either."""
+    session = await thread_session()
+    runtime = ToolRuntime(session)
+    job = runtime.submit(task_tool(broken), "a", "c1", {"x": 1.0})
+    await asyncio.wait([job])
+    kept = weakref.ref(runtime), weakref.ref(job)
+    del job, runtime
+    gc.collect()
+    assert [ref() for ref in kept] == [None, None]
+    assert "never retrieved" not in caplog.text
+    await session.close()
+
+
 async def test_a_task_rhapsody_cancels_ends_cancelled():
     """A task RHAPSODY cancels ends without a value: it is no success."""
     session = await thread_session()
