@@ -36,13 +36,22 @@ Arguments with no JSON form fail their own call at once, with
 
 If the service process dies, for example killed for using too much memory,
 its answers never come. So every call has a deadline: `ToolServiceClient`'s
-`timeout`, 150 s by default, the service's default `call_timeout` (120 s) plus
-a margin for the queues. A call with no answer by then fails with
-`ToolServiceError`, and the agent reads that its tool failed. Keep `timeout`
-above the `call_timeout` the service runs with, or slow calls will fail at the
-client while the service still runs them. Asking again with the same uid sends
-the request again, and a service that is still running answers from its kept
-answer.
+`timeout`. The service ends each call within its `call_timeout`, resends
+included, so give each client the `call_timeout` the service runs with, and the
+deadline follows: `call_timeout` plus 30 s for the queues, 150 s with the
+default of 120 s.
+
+```python
+stats = await serve(requests, replies, pool, call_timeout=600)              # service
+client = ToolServiceClient(requests, replies[i], index=i, call_timeout=600)  # deadline 630 s
+```
+
+A `timeout` passed explicitly must be above `call_timeout`, or the client
+would give up on calls that the service still makes; the client refuses one
+that is not. A call with no answer by its deadline fails with
+`ToolServiceError`, and the agent reads that its tool failed. Asking again with
+the same uid sends the request again, and a service that is still running
+answers from its kept answer.
 
 To fail sooner, pass `alive`, a function that tells whether the service is
 still running. The client asks it in the agent process, from its reader

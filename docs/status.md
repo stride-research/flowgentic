@@ -114,20 +114,17 @@ Agents at scale:
       runs, so a graph that runs a suspending subgraph in a loop, such as a
       supervisor, stores more with every turn.
 - Tools:
-    - A repeated task or MCP call is recognized by the agent's id and the tool
-      call's id alone. A model server that reuses tool-call ids within a
-      conversation, numbering them per message, gets an earlier call's result
-      for a later, different call. Servers that generate unique ids, as vLLM
-      and OpenAI do, are not affected. Agent and call ids that differ only in
-      characters other than letters, digits, `_`, `.` and `-` can also be
-      taken for the same call.
-    - Cancelling an agent while it waits on a task tool leaves the task
-      running in RHAPSODY, and releases the task's place in its `TaskOrder`
-      before the task ends.
+    - A repeated task or MCP call is told apart from a new one by its
+      LangGraph task and the tool call's id. A node that loops between the
+      model and its tools itself runs every turn in one task, so a model
+      server that numbers its tool calls per message gets an earlier call's
+      result there for a later call with the same id. Servers that make
+      unique ids, as vLLM and OpenAI do, are not affected.
     - `ToolRuntime(retained=...)` bounds what Flowgentic keeps of ended tasks,
-      not what RHAPSODY keeps. RHAPSODY 0.7 keeps each task's description and
-      result for the life of its session, so a process's memory grows with the
-      tasks it runs.
+      not what RHAPSODY keeps. Flowgentic drops a task's arguments and result
+      from its description once it has read them, but RHAPSODY 0.7 still keeps
+      each task's description for the life of its session, so a process's
+      memory still grows with the tasks it runs, by a few kilobytes a task.
 - The fleet:
     - Model admission is shared among agent processes in static, equal shares
       (`Fleet(share=...)`): a process with fewer agents leaves part of its
