@@ -367,7 +367,7 @@ async def test_cancelling_a_cycle_cancels_inflight_simulations(
 
 
 # Criterion 7 (amendment A2): AsyncFlow's own OpenTelemetry spans. AsyncFlow
-# (0.5.0, 0.6.0) needs RHAPSODY's TelemetryManager, which neither AsyncFlow nor
+# (0.5.0 to 0.7) needs RHAPSODY's TelemetryManager, which neither AsyncFlow nor
 # Flowgentic depends on; the dev extra installs it.
 @pytest.mark.parametrize("integration", INTEGRATIONS)
 async def test_asyncflow_telemetry_spans(integration: str) -> None:
@@ -404,9 +404,17 @@ async def test_asyncflow_telemetry_spans(integration: str) -> None:
     for span in tasks:
         assert {"task_id", "executable", "status"} <= set(span.attributes)
         assert span.attributes["status"] == "completed"
-    # AsyncFlow 0.5.0 and 0.6.0 label every task with the default backend, including
-    # those that ran on "ai" (test_both_versions_place_tasks_on_the_named_backends).
-    assert set(labels.values()) == {"compute"}
+    # Each task span names the backend the task ran on, as
+    # test_both_versions_place_tasks_on_the_named_backends places them. AsyncFlow
+    # 0.5.0 and 0.6.0 labelled every task with the default backend, "compute".
+    assert labels == {
+        "run_simulation": "compute",
+        "query_surrogate": "ai",
+        "reason_about_plan": "ai",
+        "update_surrogate": "ai",
+        "reason_about_evidence": "ai",
+        "coordinate_agents": "ai",
+    }
 
 
 # --- R5b: LLM tool selection and handoff, driven by a scripted chat model ----

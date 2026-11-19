@@ -44,7 +44,7 @@ langgraph = [
     "langchain-ollama>=1.0,<2.0",
 ]
 asyncflow = [
-    "radical-asyncflow>=0.6,<0.7",
+    "radical-asyncflow>=0.7,<0.8",
 ]
 rhapsody = [
     "rhapsody-py>=0.7,<0.8",

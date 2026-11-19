@@ -54,11 +54,11 @@ run, and a graph that should change between runs is built anew as a
 | Path | Agent framework | Runs tasks on | Python |
 | --- | --- | --- | --- |
 | Agents at scale | LangGraph 1.x | RHAPSODY 0.7 on a thread pool, in CI; RHAPSODY's native Dragon backend, not yet released, by hand | 3.11, 3.12, 3.13 |
-| AsyncFlow | LangGraph 1.x | RADICAL AsyncFlow 0.6.0, local backends | 3.11, 3.12, 3.13 |
+| AsyncFlow | LangGraph 1.x | RADICAL AsyncFlow 0.7, local backends | 3.11, 3.12, 3.13 |
 
 Tested environment, from `uv.lock`: LangGraph 1.2.16, langgraph-checkpoint
 4.3.0, langchain-core 1.7.0, langchain 1.4.7, rhapsody-py 0.7.0, mcp 2.3.0,
-radical-asyncflow 0.6.0 and academy-py 1.0.0. CI runs the test suite on Python
+radical-asyncflow 0.7.0 and academy-py 1.0.0. CI runs the test suite on Python
 3.11, 3.12 and 3.13, and on Python 3.11 with the lowest versions the
 dependency ranges allow; a weekly workflow runs it, and builds the docs, on
 the newest releases within the ranges.
@@ -71,8 +71,10 @@ and metrics. Each path is an extra:
   `>=1.0,<2.0`.
 - `rhapsody`: `rhapsody-py>=0.7,<0.8`, for task tools.
 - `mcp`: `mcp>=2.3,<2.4`, for the tool service's MCP clients.
-- `asyncflow`: `radical-asyncflow>=0.6,<0.7`, because before 1.0 an AsyncFlow
-  minor release may break.
+- `asyncflow`: `radical-asyncflow>=0.7,<0.8`, because before 1.0 an AsyncFlow
+  minor release may break. 0.7 is the floor: it sets a task's uid when the
+  task is called, which task tools on an engine record, and its task spans
+  name the backend each task ran on.
 
 Agents at scale need `langgraph`, `rhapsody` and `mcp`:
 `flowgentic[langgraph,rhapsody,mcp]`. The LangGraph integration on AsyncFlow
@@ -146,14 +148,13 @@ The AsyncFlow path:
 - The recipe for calling Academy agents from AsyncFlow tasks is tested with
   Academy's local exchange and AsyncFlow's local backend only; see
   [Academy actions as AsyncFlow tasks](guides/academy-on-asyncflow.md#limitations).
-- AsyncFlow 0.6.0 has no per-task retry or timeout, so applications wrap the
+- AsyncFlow 0.7 has no per-task retry or timeout, so applications wrap the
   task calls that need them. See
   [Retries and timeouts](guides/retries-and-timeouts.md).
 - Tracing (see [Telemetry](features/telemetry.md)):
     - A model call inside an AsyncFlow task is a sibling of the task's span, not
       its child.
     - AsyncFlow block spans hang from the session span, not from the caller's.
-    - AsyncFlow 0.6.0 labels every task span with the default backend.
     - No cost that a provider reports is recorded.
     - Acceptance's evaluation events are log records, emitted through Python's
       OpenTelemetry Logs API, which still lives in the module
