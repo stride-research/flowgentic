@@ -13,6 +13,15 @@ predate this changelog, so their changes are not listed here.
 
 - `flowgentic.tools.TaskCancelled`, the error a task ends with when RHAPSODY
   cancels it or its session closes before it ends.
+- `flowgentic.fleet`: an `AdmissionGate` counts the calls it admits alone
+  above its token cap (`oversize` in its stats), and the fleet logs the
+  first as a warning, once for all its replicas; a gate built on its own
+  warns once on its own. A gate holds one process's share of a replica's
+  caps, so one such call takes the replica past its cap while the other
+  processes use their shares.
+- The package declares its classifiers and project URLs, and ships a
+  `py.typed` marker, so type checkers read Flowgentic's annotations. Its
+  description, and the documentation site's, now say what Flowgentic is.
 
 ### Changed
 
@@ -39,6 +48,24 @@ predate this changelog, so their changes are not listed here.
   `serve`'s), and its deadline, `timeout`, defaults to `call_timeout` plus
   30 s: 150 s by default, as before. A `timeout` not above `call_timeout`
   raises `ValueError`; pass the service's `call_timeout` with it.
+- `flowgentic.fleet`: a `CallRecord`'s times add up to the call's.
+  `wait_s` is the wait for admission alone, summed over the call's tries;
+  before, it ran from the call's start to its last admission, so it counted
+  an outage that `Recovery` waited out. The new `recovery_s` holds that
+  outage: the tries that failed and the wait for the replica to come back.
+  `service_s` is unchanged.
+- `flowgentic.fleet`: the admission-wait and request-duration histograms are
+  recorded for each try, so a retried call records one of each per try. A
+  try that fails, also one that ends the call, records its time at the
+  replica with `error.type`; before, a failed call recorded nothing.
+- `flowgentic.fleet`: a routing reads a replica's load only when it asks for
+  it. Under `AgentAffinity` and `RoundRobin` a call no longer reads every
+  replica's load: with 256 replicas, a call costs what it costs with one.
+- `flowgentic.agent.time` is a counter, as agent-seconds add up. It was a
+  gauge that started from 0 at each run of a host and lost a host's time when
+  the host was gone. It now adds up the agent-seconds of every run in the
+  process, and an exporter reads it as a monotonic sum. A run's own
+  agent-seconds stay in its report.
 
 ### Fixed
 
@@ -68,6 +95,36 @@ predate this changelog, so their changes are not listed here.
   RHAPSODY 0.7 still keeps each task's description.
 - A task that failed with no call left to read its outcome, as when its agent
   was stopped, was logged by asyncio as an exception never retrieved.
+- `flowgentic.fleet`: an agent's first call is estimated as a fixed part,
+  such as tool schemas the messages do not show, plus tokens per character,
+  both learned from earlier first calls. With tokens per character alone,
+  short first prompts taught a ratio that made a later long first prompt's
+  estimate many times too large, and its call waited to run alone. The
+  tokens per character are never fewer than those of the characters later
+  calls add, so a first call is never estimated below its text alone.
+  `stats()["tokens_per_char"]` gains `first_call_base`, the fixed part.
+- `flowgentic.fleet`: a call that joined a recovery watch started for an
+  earlier call failed when that watch gave up, before its own `outage_s`
+  had passed. It now starts a new watch if at least `poll_s` of its own
+  `outage_s` is left, and fails then otherwise.
+- `Fleet` refuses a negative `reply_reserve`, which took tokens off every
+  call's admission estimate.
+- The `flowgentic.agents` gauge counts the agents of runs in progress only.
+  It counted the agents of every run that had ended too, for as long as its
+  host was alive: a cancelled run's agents stayed `pending`, and finished
+  ones `done`. With no run in progress, every state reads 0.
+- `Collector` refuses a `threshold` below 1. CPython takes a first threshold
+  of 0 to turn automatic collection off, so `Collector(threshold=0)` stopped
+  the cyclic collector for as long as the host ran; below 0 it collected at
+  nearly every allocation.
+- `register_pending` called outside an agent's task, as by code that submits
+  tasks before a run, no longer keeps the future for the life of the process.
+  The first agent that waits on such a registration takes it, and it is
+  released when that agent ends. One that no agent takes is released when the
+  host run ends, or the last of the runs in progress if several overlap. A
+  registration made outside an agent with no host run after it is still held
+  for the life of the process. A registration made in an agent's task lasts
+  until the agent ends, as before.
 
 ## [0.5.0] - 2026-11-18
 
@@ -89,6 +146,12 @@ active development; the AsyncFlow path stays in maintenance mode.
   needs both, `bind_agent` needs `asyncflow`, and
   `flowgentic[langgraph,asyncflow]` installs what 0.4 installed.
 - `flowgentic.langGraph` is renamed `flowgentic.langgraph`. Change the imports.
+  A source checkout updated in place from 0.4 on a case-insensitive file
+  system, as macOS's is by default, can keep the directory's old name, because
+  its ignored `__pycache__` keeps the directory, and `import
+  flowgentic.langgraph` then fails. Run `git clean -fdX src` before updating;
+  after, remove `src/flowgentic/langGraph` and run `git checkout -- src`. An
+  installed wheel upgrades cleanly.
 - `LangraphIntegration` and `ExecutionWrappersLangraph` are renamed
   `LangGraphIntegration` and `ExecutionWrappersLangGraph`, with no alias.
   Change the imports.

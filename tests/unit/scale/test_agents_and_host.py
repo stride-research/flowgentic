@@ -97,6 +97,104 @@ class FakeRunner:
         return Finished({"agent": agent.id, "resumed": True})
 
 
+def done_future(value=None) -> asyncio.Future:
+    future = asyncio.get_running_loop().create_future()
+    future.set_result(value)
+    return future
+
+
+class WaitsOnPre:
+    """Each agent suspends on the task registered for it as ``pre/<id>``."""
+
+    async def start(self, agent):
+        return Suspended((("i1", f"pre/{agent.id}"),))
+
+    async def resume(self, agent, done):
+        return Finished(done)
+
+
+async def test_a_task_registered_before_the_run_is_found_after_it_ends():
+    # Submitted up front, outside any agent, by code that keeps no reference
+    # to the future: the task ends before its agent asks for it.
+    for i in range(3):
+        register_pending(f"pre/a{i}", done_future(i))
+    gc.collect()
+    host = AgentHost(WaitsOnPre(), stagger=FAST, collector=None)
+    report = await host.run([Agent(f"a{i}", None) for i in range(3)])
+    assert report.outcomes == {"done": 3}, report.agents[0].error
+    # Each became its agent's, and was released when the agent ended.
+    assert all(_agents.pending(f"pre/a{i}") is None for i in range(3))
+
+
+async def test_a_registration_no_agent_takes_is_released_when_the_run_ends():
+    future = done_future()
+    register_pending("pre/unused", future)
+    await AgentHost(FakeRunner(), stagger=FAST, collector=None).run([Agent("a1", None)])
+    assert _agents.pending("pre/unused") is None
+
+
+async def test_overlapping_runs_hold_registrations_until_the_last_ends():
+    go = asyncio.Event()
+
+    class Later(WaitsOnPre):
+        async def start(self, agent):
+            await go.wait()
+            return await super().start(agent)
+
+    later = AgentHost(Later(), stagger=FAST, collector=None)
+    b = asyncio.create_task(later.run([Agent("b", None)]))
+    await asyncio.sleep(0.01)
+    register_pending("pre/b", done_future())
+    # Another host's run ends while b's is in progress, before b asks.
+    await AgentHost(FakeRunner(), stagger=FAST, collector=None).run([Agent("a1", None)])
+    go.set()
+    report = await b
+    assert report.outcomes == {"done": 1}, report.agents[0].error
+
+
+async def test_an_agents_registration_lasts_until_the_agent_ends():
+    seen = {}
+
+    class Registers(FakeRunner):
+        async def start(self, agent):
+            future = asyncio.get_running_loop().create_future()
+            future.set_result(None)
+            register_pending(f"task-{agent.id}", future)
+            del future
+            gc.collect()
+            seen[agent.id] = _agents.pending(f"task-{agent.id}") is not None
+            return Finished(None)
+
+    # Registered earlier under the same key outside an agent, and still held:
+    # the agent's own registration replaces it.
+    earlier = asyncio.get_running_loop().create_future()
+    register_pending("task-a", earlier)
+    await AgentHost(Registers(), stagger=FAST, collector=None).run([Agent("a", None)])
+    assert seen == {"a": True}
+    assert _agents.pending("task-a") is None
+
+
+async def test_a_forgotten_registration_is_gone_from_both_registries():
+    # As of a task withdrawn before it started: outside an agent, none took it.
+    register_pending("withdrawn/outside", done_future())
+    _agents.forget_pending("withdrawn/outside")
+    assert _agents.pending("withdrawn/outside") is None
+
+    seen = {}
+
+    class Forgets(FakeRunner):
+        async def start(self, agent):
+            key = f"withdrawn/{agent.id}"
+            register_pending(key, done_future())
+            _agents.forget_pending(key)
+            seen[agent.id] = (_agents.pending(key), _agents.registered(key))
+            return Finished(None)
+
+    report = await AgentHost(Forgets(), stagger=FAST, collector=None).run([Agent("a", None)])
+    assert report.outcomes == {"done": 1}, report.agents[0].error
+    assert seen == {"a": (None, None)}
+
+
 async def test_live_agents_stay_under_the_cap():
     runner = FakeRunner()
     host = AgentHost(runner, max_live_agents=10, stagger=FAST, collector=None)
@@ -164,6 +262,14 @@ async def test_collector_is_tuned_during_a_run_and_restored():
     assert nothing_left_frozen()
 
 
+@pytest.mark.parametrize("threshold", [0, -1])
+def test_a_collector_threshold_below_one_is_refused(threshold):
+    # 0 would turn automatic collection off; below 0, CPython collects at
+    # nearly every allocation.
+    with pytest.raises(ValueError, match="threshold"):
+        Collector(threshold=threshold)
+
+
 async def test_collector_is_restored_when_a_run_is_cancelled():
     before = gc.get_threshold()
     host = AgentHost(FakeRunner(sleep=10), stagger=FAST)
@@ -226,6 +332,78 @@ def points(reader, name: str) -> list:
                 if metric.name == name:
                     out.extend(metric.data.data_points)
     return out
+
+
+def metric_data(reader, name: str):
+    """The data of metric ``name`` in a new collection, or ``None``."""
+    data = reader.get_metrics_data()
+    for resource in data.resource_metrics if data else []:
+        for scope in resource.scope_metrics:
+            for metric in scope.metrics:
+                if metric.name == name:
+                    return metric.data
+    return None
+
+
+def by_state(data) -> dict[str, float]:
+    return {
+        p.attributes["flowgentic.agent.state"]: p.value
+        for p in (data.data_points if data else [])
+    }
+
+
+class Sleeps:
+    def __init__(self, sleep: float):
+        self.sleep = sleep
+
+    async def start(self, agent):
+        await asyncio.sleep(self.sleep)
+        return Finished(None)
+
+
+async def test_the_agents_gauge_counts_only_live_runs(metric_reader):
+    def agents():
+        return by_state(metric_data(metric_reader, "flowgentic.agents"))
+
+    gc.collect()  # forget the states of earlier tests' hosts
+    before = agents()
+    slow = AgentHost(Sleeps(10), max_live_agents=10, stagger=FAST, collector=None)
+    run = asyncio.create_task(slow.run_indexed(range(1_000), lambda i: None))
+    await asyncio.sleep(0.05)
+    during = agents()
+    run.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await run
+    quick = AgentHost(Sleeps(0), stagger=FAST, collector=None)
+    await quick.run([Agent(str(i), None) for i in range(50)])
+    after = agents()
+
+    assert during["pending"] - before.get("pending", 0) == 990
+    assert during["working"] - before.get("working", 0) == 10
+    # Both runs have ended: neither host's agents are counted any more.
+    for state in ("pending", "working", "done"):
+        assert after.get(state, 0) == before.get(state, 0), state
+
+
+async def test_agent_time_is_a_counter_that_grows_across_runs(metric_reader):
+    def working():
+        data = metric_data(metric_reader, "flowgentic.agent.time")
+        assert type(data).__name__ == "Sum" and data.is_monotonic
+        return by_state(data).get("working", 0.0)
+
+    host = AgentHost(Sleeps(0.1), stagger=FAST, collector=None)
+    before = working()
+    await host.run([Agent("a", None), Agent("b", None)])
+    first = working()
+    await host.run([Agent("c", None)])  # a new run does not reset the total
+    second = working()
+    del host
+    gc.collect()  # nor does a host that is gone
+    last = working()
+
+    assert first - before >= 0.18
+    assert second - first >= 0.09
+    assert last >= second
 
 
 def agent_spans(exporter) -> dict:
@@ -381,7 +559,10 @@ async def test_the_host_records_agents_spans_and_its_own_health(
 ):
     runner = FakeRunner(sleep=0.25)  # long enough for a few 100 ms lag samples
     host = AgentHost(runner, stagger=FAST)
-    await host.run([Agent("s1", None), Agent("a1", None)])
+    run = asyncio.create_task(host.run([Agent("s1", None), Agent("a1", None)]))
+    await asyncio.sleep(0.1)
+    working = by_state(metric_data(metric_reader, "flowgentic.agents"))["working"]
+    await run
 
     spans = agent_spans(span_exporter)
     assert spans.keys() == {"s1", "a1"}
@@ -392,8 +573,7 @@ async def test_the_host_records_agents_spans_and_its_own_health(
     assert [e.attributes["gen_ai.agent.id"] for e in suspends] == ["s1"]
     assert suspends[0].attributes["flowgentic.agent.suspend.waits"] == 1
 
-    done = [p for p in points(metric_reader, "flowgentic.agents") if p.attributes["flowgentic.agent.state"] == "done"]
-    assert done and done[0].value >= 2
+    assert working >= 2  # read while the run was live
     time_by_state = {
         p.attributes["flowgentic.agent.state"]: p for p in points(metric_reader, "flowgentic.agent.time")
     }

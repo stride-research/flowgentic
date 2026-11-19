@@ -182,7 +182,7 @@ AsyncFlow checkout instead, and `FLOWGENTIC_PYTHON` to use another interpreter.
 `make examples-ai-hpc-deterministic` and `make examples-ai-hpc-agentic` create
 the environment and run the `application` controller.
 
-ADR mode (`adr`) is unsupported in Flowgentic 0.3.0. ADR has no release, so the
+ADR mode (`adr`) is not supported in Flowgentic. ADR has no release, so the
 `adr` controller needs an ADR source checkout: `../../radical/radical.adr/src`
 relative to the repository, or the path in `ADR_SRC`.
 

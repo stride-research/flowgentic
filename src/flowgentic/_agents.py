@@ -71,6 +71,13 @@ _N = len(AgentState)
 # Every AgentStates in the process, for the telemetry's observable gauges.
 _all_states: weakref.WeakSet[AgentStates] = weakref.WeakSet()
 
+# Agent-seconds in each state, added up over every AgentStates the process has
+# had, for the telemetry's counter: unlike a run's own, they only grow, through
+# new runs and after a host is gone.
+_process_lock = threading.Lock()
+_process_seconds = [0.0] * _N
+_process_has_states = False  # no agent metrics in a process that never had any
+
 
 class AgentStates:
 	"""How many agents are in each state, and the agent-seconds spent in each.
@@ -89,12 +96,15 @@ class AgentStates:
 		self._running = False
 		for agent in agents:
 			self.add(agent)
+		global _process_has_states
+		_process_has_states = True
 		_all_states.add(self)
 
 	def _begin_run(self, ids: Iterable[str], *, pending: int | None = None) -> None:
 		with self._lock:
 			if self._running:
 				raise RuntimeError("these agent states already track an active run")
+			self._advance(time.monotonic())  # the process's total, before the reset
 			self._state = dict.fromkeys(ids, AgentState.PENDING)
 			self._counts = [0] * _N
 			self._counts[AgentState.PENDING] = (
@@ -106,7 +116,7 @@ class AgentStates:
 
 	def _end_run(self) -> None:
 		# Agents that never started, in a run that failed or was cancelled,
-		# stay pending.
+		# stay pending in the run's report. The telemetry stops counting them.
 		with self._lock:
 			self._advance(time.monotonic())
 			self._t = None
@@ -149,10 +159,19 @@ class AgentStates:
 			return
 		dt = now - self._t
 		if dt > 0:
-			for s, c in enumerate(self._counts):
-				if c:
-					self._seconds[s] += c * dt
+			with _process_lock:
+				for s, c in enumerate(self._counts):
+					if c:
+						self._seconds[s] += c * dt
+						_process_seconds[s] += c * dt
 			self._t = now
+
+	def _live_counts(self) -> list[int] | None:
+		"""Agents in each state now, by the state's value, or ``None`` once a
+		host's run on these states has ended: the telemetry counts live agents
+		only."""
+		with self._lock:
+			return None if self._t is None else list(self._counts)
 
 	def counts(self) -> dict[AgentState, int]:
 		"""Agents in each state now."""
@@ -189,6 +208,18 @@ class AgentStates:
 				for k, v in categories.items()
 			},
 		}
+
+
+def process_agent_seconds() -> dict[AgentState, float]:
+	"""Agent-seconds spent in each state by every agent the process has had,
+	through every run, up to now; empty in a process that never counted agents."""
+	if not _process_has_states:
+		return {}
+	for states in list(_all_states):
+		with states._lock:
+			states._advance(time.monotonic())
+	with _process_lock:
+		return {AgentState(s): v for s, v in enumerate(_process_seconds)}
 
 
 class _Agent:
@@ -276,15 +307,67 @@ def _enter_task_context(
 	otel_context.attach(trace_context)
 
 
+# Agents' registrations, made in an agent's task or taken by an agent that waits
+# on them, held until the host releases them when the agent ends.
 _pending: dict[str, asyncio.Future] = {}
+# Registrations made outside an agent, as before a run, by code that may keep no
+# reference to the future: held until an agent takes one, or until no host run
+# is in progress any more.
+_unowned: dict[str, asyncio.Future] = {}
+_unowned_lock = threading.Lock()
+_host_runs = 0
 
 
 def register_pending(key: str, future: asyncio.Future) -> None:
-	"""Record the future of a submitted task under its key."""
-	_pending[key] = future
+	"""Record the future of a submitted task under its key.
+
+	In an agent's task, the registration lasts until the host ends the agent.
+	Outside one, as before a run, the first agent that waits on it takes it,
+	and it lasts until that agent ends. One that no agent takes is released
+	when a host run ends and no other is in progress. A registration made
+	outside an agent with no host run after it is held for the life of the
+	process."""
 	agent = _current.get()
-	if agent is not None:
+	with _unowned_lock:
+		if agent is None:
+			_unowned[key] = future
+			return
+		_unowned.pop(key, None)  # an agent's registration replaces another's
+	_pending[key] = future
+	agent.registered[key] = future
+
+
+def take_pending(key: str) -> asyncio.Future | None:
+	"""The future of the task submitted under ``key``, for the current agent to
+	wait on. One registered outside an agent becomes this agent's, released
+	when it ends."""
+	future = _pending.get(key)
+	agent = _current.get()
+	if future is not None or agent is None:
+		return pending(key)
+	with _unowned_lock:
+		future = _unowned.pop(key, None)
+	if future is not None:
+		_pending[key] = future
 		agent.registered[key] = future
+	return future
+
+
+def begin_host_run() -> None:
+	"""Count a host run in progress, for the registrations made outside agents."""
+	global _host_runs
+	with _unowned_lock:
+		_host_runs += 1
+
+
+def end_host_run() -> None:
+	"""Count a host run ended. When none is in progress any more, release the
+	registrations made outside agents that no agent took."""
+	global _host_runs
+	with _unowned_lock:
+		_host_runs -= 1
+		if not _host_runs:
+			_unowned.clear()
 
 
 def release_pending() -> None:
@@ -299,7 +382,11 @@ def release_pending() -> None:
 
 
 def forget_pending(key: str) -> None:
+	"""Forget the registration under ``key``, as of a task withdrawn before it
+	started: the current agent's, or one made outside an agent that none took."""
 	_pending.pop(key, None)
+	with _unowned_lock:
+		_unowned.pop(key, None)
 	agent = _current.get()
 	if agent is not None:
 		agent.registered.pop(key, None)
@@ -307,7 +394,8 @@ def forget_pending(key: str) -> None:
 
 def pending(key: str) -> asyncio.Future | None:
 	"""The future of the task submitted under ``key`` in this process."""
-	return _pending.get(key)
+	future = _pending.get(key)
+	return _unowned.get(key) if future is None else future
 
 
 def registered(key: str) -> asyncio.Future | None:
