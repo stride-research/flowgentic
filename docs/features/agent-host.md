@@ -84,7 +84,9 @@ campaign reports:
 
 Each run requires unique agent IDs and starts its own accounting period.
 The counts can be read from another thread while agents run, for a sampler of
-your own: pass `states=` to share one `AgentStates`.
+your own: pass your `AgentStates` as `states=` and read it while the host runs.
+An `AgentStates` tracks one run at a time, so hosts that run at the same time
+each need their own; a second run on one that is in use raises `RuntimeError`.
 
 ## Runners
 

@@ -1,6 +1,6 @@
 site_name: Flowgentic
 site_url: https://stride-research.github.io/flowgentic/
-site_description: Agent components and LangGraph workflows on RADICAL AsyncFlow
+site_description: "Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as AsyncFlow workflow tasks, and as LangGraph agents at scale whose tools run as RHAPSODY tasks and whose state lives in RaDEX."
 repo_url: https://github.com/stride-research/flowgentic
 repo_name: stride-research/flowgentic
 

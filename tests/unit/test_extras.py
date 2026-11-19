@@ -193,3 +193,11 @@ def test_other_import_errors_are_not_reworded(module: str, missing: str) -> None
 		result.stderr.splitlines()[-1]
 		== f"ModuleNotFoundError: No module named {missing!r}"
 	)
+
+
+def test_the_package_marks_itself_typed():
+	"""Type checkers read a package's annotations only if it ships ``py.typed``
+	(PEP 561), and the build includes it as package data."""
+	from importlib.resources import files
+
+	assert (files("flowgentic") / "py.typed").is_file()
