@@ -613,3 +613,26 @@ async def test_on_a_session_the_record_names_the_rhapsody_task():
     assert default.t_start is None and default.t_finish is None
     assert default.t_commit == default.t_submit
     assert RUNS == {"simulate": 2}
+
+
+async def test_on_asyncflows_own_backend_a_task_has_a_finish_but_no_start():
+    """AsyncFlow's ``LocalExecutionBackend`` never reports a task running, so
+    its tasks have no ``TaskStarted`` event, and no start; the finish needs no
+    event."""
+    pytest.importorskip("rhapsody.telemetry.manager", reason="AsyncFlow telemetry needs rhapsody-py[telemetry]")
+    from radical.asyncflow import LocalExecutionBackend
+
+    flow = await _asyncflow.open_engine(await LocalExecutionBackend(ThreadPoolExecutor(max_workers=2), name="local"))
+    telemetry = await flow.start_telemetry()
+    runtime = ToolRuntime(engine=flow, telemetry=telemetry)
+    records = []
+    runtime.add_listener(records.append)
+    try:
+        value = await runtime.submit(task_tool(simulate), "a", "c1", {"x": 1.0})
+    finally:
+        await telemetry.stop()
+        await _asyncflow.close_engine(flow)
+    assert value == {"y": 2.0}
+    (record,) = records
+    assert record.backend == "local" and record.uid.startswith("task.")
+    assert record.t_start is None and record.t_admit <= record.t_finish <= record.t_end

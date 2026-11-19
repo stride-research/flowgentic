@@ -147,7 +147,8 @@ The AsyncFlow path:
   creates (the integration always creates its own), and any remote or HPC
   backend. Task tools on the application's engine
   ([Tool placement](features/tools.md#in-an-asyncflow-application)) are tested
-  on RHAPSODY thread-pool backends only. Cancellation reaching in-flight
+  on RHAPSODY's thread-pool and process-pool backends and AsyncFlow's own
+  `LocalExecutionBackend` only. Cancellation reaching in-flight
   AsyncFlow tasks is validated on local backends only.
 - Task tools on an AsyncFlow engine: AsyncFlow keeps every task, with its
   arguments and value, until the engine shuts down, so a campaign's memory
