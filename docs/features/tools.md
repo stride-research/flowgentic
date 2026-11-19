@@ -57,12 +57,41 @@ the agent's other tool calls do not run again either.
 
 ## Repeat safety
 
-A task or service call is keyed by its agent and the tool call's id. A call
-made again with the same key, as a framework does when it resumes an agent,
-gets the first call's result and runs nothing. The runtime keeps the last
-`retained` ended tasks (100,000 by default), and an agent in a host finds the
-tasks it asked for until it ends, however many have ended since. The tool
-service keeps its own answers.
+A task or service call is keyed by its agent, the LangGraph task that runs
+the tool, and the tool call's id: `agent/task/call`. A call made again with the
+same key, as a framework does when it resumes an agent, gets the first call's
+result and runs nothing: LangGraph gives a task the same id when it runs again.
+A later turn that reuses a call id, as a model server that numbers its tool
+calls per message does, runs in a new task, so it makes a new call. Outside a
+LangGraph run the key is `agent/call`. The runtime keeps the last `retained`
+ended tasks (100,000 by default), and an agent in a host finds the tasks it
+asked for until it ends, however many have ended since. The tool service keeps
+its own answers, by the same key.
+
+The task tells turns apart only when each turn's tools run in a LangGraph task
+of their own, as they do in a `ToolNode` node, with `route_tool_calls`, or in a
+subgraph built that way. A node that loops between the model and its tools
+itself runs every turn in one task: there, a model server that numbers its tool
+calls per message gets an earlier turn's result for a later call with the same
+id. Give the tools a node of their own, or use a model server that makes unique
+call ids, as vLLM and OpenAI do.
+
+Cancelling an agent, or a task tool's wait, leaves a task that has started
+running: the task belongs to every call with its key, and RHAPSODY does not
+stop a task that has started. The task keeps its place in its `TaskOrder` until
+it ends, and the call made again gets its result. A task its order has not
+admitted yet is withdrawn once no call waits for it, such as when every agent
+that asked for it is cancelled or its host stops: it never reaches RHAPSODY,
+and the call made again submits it afresh.
+
+A task that RHAPSODY cancels, or whose session closes before it ends, ends with
+`TaskCancelled`: its place in its order is given back, and the model reads that
+the call failed. A task that its order admits after the session has closed
+fails at once, in the same way.
+
+A task's RHAPSODY uid is `flowgentic.` and its key, with `/` written `.`, `_`
+written `__`, and any character other than a letter, a digit or `-` written
+`_x<hex>_`, so different calls never share a uid.
 
 An MCP call that lost its connection may or may not have run on the server. It
 is sent again only for a tool declared `idempotent=True`, such as a lookup.
@@ -78,7 +107,10 @@ A task tool's arguments for the model can differ from its function's:
 - `output(value)` turns the function's result into what the model reads.
 
 `prepare` runs once per task, when the task is submitted: an agent that
-resumes finds its task and does not call it again. A failed, refused or lost
+resumes finds its task and does not call it again. A model server that numbers
+its tool calls per message reuses call ids on later turns, so a `prepare` that
+names a file after the call should not use `call_id` alone; a random part,
+such as a `uuid4()`, is safe, since `prepare` runs once. A failed, refused or lost
 call reaches the model as the tool's error, so the agent can read it and
 decide what to do. A runtime set up wrong, without the RHAPSODY session or the
 started service client a tool needs, raises `RuntimeError` instead: with
@@ -96,7 +128,8 @@ choosing, such as a campaign's priorities, or refuse them, as a budget does.
 
 - `runtime.add_listener(listener)` receives a `TaskRecord` as each task ends:
   its info, when it was asked for, admitted and ended, its outcome (`ok`,
-  `error`, `refused` or `cancelled`), and its value or error.
+  `error`, `refused` or `cancelled`), and its value or error. A withdrawn task
+  is `cancelled` with no admission time.
 - `runtime.stats()` counts the tasks submitted, asked for again, failed and
   refused.
 - Each task or service call is an `execute_tool` span, inside its agent's

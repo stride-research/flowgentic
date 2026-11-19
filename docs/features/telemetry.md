@@ -82,8 +82,8 @@ agents' states or an agent process's health. Every duration is in seconds.
 
 | Metric | Instrument | Unit | Attributes | What it measures |
 | --- | --- | --- | --- | --- |
-| `flowgentic.agents` | Gauge, read at collection | `{agent}` | `flowgentic.agent.state` | Agents in each state, summed over the process's agent hosts |
-| `flowgentic.agent.time` | Gauge, read at collection | `s` | `flowgentic.agent.state`, `flowgentic.agent.category` | Agent-seconds spent in each state, summed over the hosts, each since its latest run began |
+| `flowgentic.agents` | Gauge, read at collection | `{agent}` | `flowgentic.agent.state` | Agents in each state, summed over the process's running agent hosts |
+| `flowgentic.agent.time` | Counter, read at collection | `s` | `flowgentic.agent.state`, `flowgentic.agent.category` | Agent-seconds spent in each state by every agent the process has run |
 | `flowgentic.host.loop.lag` | Histogram | `s` | | How late the event loop woke a 100 ms timer, sampled every 100 ms while a host runs on it |
 | `flowgentic.host.gc.pause` | Histogram | `s` | `flowgentic.gc.generation` | Each pause of the cyclic garbage collector while a host runs |
 | `flowgentic.tool.duration` | Histogram | `s` | `gen_ai.tool.name`, `flowgentic.tool.kind`, `flowgentic.tool.outcome` | Time from a task or service call's submission to its result; see [Tool placement](tools.md#what-it-reports) |
@@ -97,8 +97,13 @@ agents' states or an agent process's health. Every duration is in seconds.
 `model_queued`, `model_request`, `tool_wait` and `done`, the
 [agent host's states](agent-host.md#what-it-reports) in lower case.
 `flowgentic.agent.category` is `working`, `waiting`, `model_request`, or
-`none` for `pending` and `done`. The gauges cost nothing while agents run:
-the SDK reads the counts when it collects.
+`none` for `pending` and `done`. `flowgentic.agents` counts the agents of
+runs in progress only: once a host's `run` returns, its agents leave the
+counts, and with no run in progress every state reads 0.
+`flowgentic.agent.time` only grows: a new run, on the same host or another,
+adds to it, and it keeps the time of hosts that are gone. A run's own
+agent-seconds are in its report. These instruments cost nothing while agents
+run: the SDK reads the counts when it collects.
 
 Hosts that run at the same time in a process share one collector callback
 and, on each event loop, one lag timer, so each pause and each lag sample is

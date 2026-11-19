@@ -22,6 +22,17 @@ predate this changelog, so their changes are not listed here.
   empty), and an agent id run again, as a conversation continued in a later
   host run, starts a fresh thread. It is off by default, which keeps 0.5.0's
   behaviour. The agents-at-scale example turns it on.
+- `flowgentic.tools.TaskCancelled`, the error a task ends with when RHAPSODY
+  cancels it or its session closes before it ends.
+- `flowgentic.fleet`: an `AdmissionGate` counts the calls it admits alone
+  above its token cap (`oversize` in its stats), and the fleet logs the
+  first as a warning, once for all its replicas; a gate built on its own
+  warns once on its own. A gate holds one process's share of a replica's
+  caps, so one such call takes the replica past its cap while the other
+  processes use their shares.
+- The package declares its classifiers and project URLs, and ships a
+  `py.typed` marker, so type checkers read Flowgentic's annotations. Its
+  description, and the documentation site's, now say what Flowgentic is.
 
 ### Changed
 
@@ -31,6 +42,47 @@ predate this changelog, so their changes are not listed here.
   and delete a thread this version saved a subgraph in, but it raises
   `AttributeError` when it saves a new subgraph namespace in that thread. Do
   not go back to 0.5.0 over a store with such threads.
+- A task or MCP call made by a LangGraph agent is keyed by its agent, the
+  LangGraph task that runs the tool, and the tool call's id:
+  `agent/task/call`, where it was `agent/call`. LangGraph gives a task the
+  same id when it runs again on resume, so a repeated call still runs
+  nothing; outside a LangGraph run the key is `agent/call`, as before.
+  `ToolRuntime.key`, `submit` and `call_service` take the task as a
+  keyword-only `scope`. A `/` or `%` in an id is written `%2F` or `%25` in
+  the key.
+- A task's RHAPSODY uid escapes its key one-to-one: `/` is written `.`, `_`
+  is written `__`, and any character other than a letter, a digit or `-` is
+  written `_x<hex>_`, where every such character was `_`. A uid made by 0.5.0
+  for the same call differs.
+- Cancelling a task tool's wait, as cancelling its agent does, leaves a task
+  that has started running, where it cancelled Flowgentic's side of the task.
+  The task keeps its place in its `TaskOrder` until it ends, and the same call
+  made again gets its result. A task that its order has not admitted yet is
+  withdrawn once no call waits for it, the host's wait for a suspended agent
+  included: it never reaches RHAPSODY, and the call made again submits it
+  afresh. A task cancelled before admission is likewise forgotten.
+- `ToolServiceClient` takes the service's `call_timeout` (120 s by default, as
+  `serve`'s), and its deadline, `timeout`, defaults to `call_timeout` plus
+  30 s: 150 s by default, as before. A `timeout` not above `call_timeout`
+  raises `ValueError`; pass the service's `call_timeout` with it.
+- `flowgentic.fleet`: a `CallRecord`'s times add up to the call's.
+  `wait_s` is the wait for admission alone, summed over the call's tries;
+  before, it ran from the call's start to its last admission, so it counted
+  an outage that `Recovery` waited out. The new `recovery_s` holds that
+  outage: the tries that failed and the wait for the replica to come back.
+  `service_s` is unchanged.
+- `flowgentic.fleet`: the admission-wait and request-duration histograms are
+  recorded for each try, so a retried call records one of each per try. A
+  try that fails, also one that ends the call, records its time at the
+  replica with `error.type`; before, a failed call recorded nothing.
+- `flowgentic.fleet`: a routing reads a replica's load only when it asks for
+  it. Under `AgentAffinity` and `RoundRobin` a call no longer reads every
+  replica's load: with 256 replicas, a call costs what it costs with one.
+- `flowgentic.agent.time` is a counter, as agent-seconds add up. It was a
+  gauge that started from 0 at each run of a host and lost a host's time when
+  the host was gone. It now adds up the agent-seconds of every run in the
+  process, and an exporter reads it as a monotonic sum. A run's own
+  agent-seconds stay in its report.
 
 ### Fixed
 
@@ -45,6 +97,62 @@ predate this changelog, so their changes are not listed here.
 - `from flowgentic.langgraph import *` works without the `asyncflow` extra.
 - `GraphRunner` no longer keeps a resume count for an agent that the host
   cancels or fails while it waits between two resumes.
+- A model server that numbers its tool calls per message reuses call ids on
+  later turns, and the later, different call got the first call's result. It
+  now runs, when each turn's tools run in a LangGraph task of their own; a
+  node that loops between the model and its tools itself still shares one key
+  across turns.
+- Two calls whose keys differ only in characters other than letters, digits,
+  `_`, `.` and `-`, such as `a.b/c` and `a/b.c`, shared one RHAPSODY uid, and
+  RHAPSODY answered both with one task.
+- A task tool's call made again after its wait was cancelled raised a bare
+  `CancelledError`, which failed its agent, and a cancelled wait released its
+  task's place in its `TaskOrder` while the task still ran. A task cancelled by
+  whoever holds its future now reaches the model as a failed call.
+- A RHAPSODY session that closed left the tasks it dropped unfinished on the
+  thread-pool backend: their places in their `TaskOrder` were never given back,
+  and calls still waiting on them waited forever. They now end with
+  `TaskCancelled`, and a task admitted after its session closed fails at once.
+- A task that RHAPSODY cancelled was taken for a success that returned `None`.
+  It now ends with `TaskCancelled`.
+- A RHAPSODY session keeps every task's description for its life, and each
+  held the task's arguments, its result, the backend's text of the result and
+  its exception, and through the exception's traceback the runtime that ran it.
+  Flowgentic now drops them once it has read the task's outcome: 20,000 tasks
+  with 10 kB results, on a thread pool, took 101 MB instead of 465 MB.
+  RHAPSODY 0.7 still keeps each task's description.
+- A task that failed with no call left to read its outcome, as when its agent
+  was stopped, was logged by asyncio as an exception never retrieved.
+- `flowgentic.fleet`: an agent's first call is estimated as a fixed part,
+  such as tool schemas the messages do not show, plus tokens per character,
+  both learned from earlier first calls. With tokens per character alone,
+  short first prompts taught a ratio that made a later long first prompt's
+  estimate many times too large, and its call waited to run alone. The
+  tokens per character are never fewer than those of the characters later
+  calls add, so a first call is never estimated below its text alone.
+  `stats()["tokens_per_char"]` gains `first_call_base`, the fixed part.
+- `flowgentic.fleet`: a call that joined a recovery watch started for an
+  earlier call failed when that watch gave up, before its own `outage_s`
+  had passed. It now starts a new watch if at least `poll_s` of its own
+  `outage_s` is left, and fails then otherwise.
+- `Fleet` refuses a negative `reply_reserve`, which took tokens off every
+  call's admission estimate.
+- The `flowgentic.agents` gauge counts the agents of runs in progress only.
+  It counted the agents of every run that had ended too, for as long as its
+  host was alive: a cancelled run's agents stayed `pending`, and finished
+  ones `done`. With no run in progress, every state reads 0.
+- `Collector` refuses a `threshold` below 1. CPython takes a first threshold
+  of 0 to turn automatic collection off, so `Collector(threshold=0)` stopped
+  the cyclic collector for as long as the host ran; below 0 it collected at
+  nearly every allocation.
+- `register_pending` called outside an agent's task, as by code that submits
+  tasks before a run, no longer keeps the future for the life of the process.
+  The first agent that waits on such a registration takes it, and it is
+  released when that agent ends. One that no agent takes is released when the
+  host run ends, or the last of the runs in progress if several overlap. A
+  registration made outside an agent with no host run after it is still held
+  for the life of the process. A registration made in an agent's task lasts
+  until the agent ends, as before.
 
 ## [0.5.0] - 2026-11-18
 
@@ -66,6 +174,12 @@ active development; the AsyncFlow path stays in maintenance mode.
   needs both, `bind_agent` needs `asyncflow`, and
   `flowgentic[langgraph,asyncflow]` installs what 0.4 installed.
 - `flowgentic.langGraph` is renamed `flowgentic.langgraph`. Change the imports.
+  A source checkout updated in place from 0.4 on a case-insensitive file
+  system, as macOS's is by default, can keep the directory's old name, because
+  its ignored `__pycache__` keeps the directory, and `import
+  flowgentic.langgraph` then fails. Run `git clean -fdX src` before updating;
+  after, remove `src/flowgentic/langGraph` and run `git checkout -- src`. An
+  installed wheel upgrades cleanly.
 - `LangraphIntegration` and `ExecutionWrappersLangraph` are renamed
   `LangGraphIntegration` and `ExecutionWrappersLangGraph`, with no alias.
   Change the imports.

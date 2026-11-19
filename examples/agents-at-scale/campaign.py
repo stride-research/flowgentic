@@ -8,7 +8,7 @@ allocation:
 
 - a scripted model behind a ``Fleet`` of two replicas, for model servers;
 - RHAPSODY on a thread pool, for a RHAPSODY session on Dragon;
-- ``KeyValueSaver(MemoryStore())``, for ``KeyValueSaver(RadexStore(...))``;
+- ``KeyValueSaver(MemoryStore())``, for ``KeyValueSaver(RadexStore.attach(...))``;
 - the tool service in a thread of this process, for the tool service in a
   process of its own;
 - an MCP server in a process of its own, on 127.0.0.1, for MCP servers on the
@@ -406,8 +406,6 @@ async def run_agents(
         task = f"Find the best temperature for cand-{i:06d}"
         return {"messages": [HumanMessage(task)]}
 
-    # --8<-- [end:host]
-
     try:
         report = await host.run_indexed(
             range(index, agents, processes), input_for, id_prefix="agent-"
@@ -415,6 +413,7 @@ async def run_agents(
     finally:
         client.stop()
         await session.close()
+    # --8<-- [end:host]
     fleet_stats = fleet.stats()
     return {
         "index": index,

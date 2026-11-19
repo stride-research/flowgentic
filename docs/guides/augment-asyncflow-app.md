@@ -14,7 +14,7 @@ analyst and a supervisor to the RADICAL baseline. Its run is tested in
 
 !!! note "Under ADR"
     An application controlled by ADR takes the same decision in ADR's `@decide`
-    instead. ADR is not released, and Flowgentic 0.3.0 does not support ADR
+    instead. ADR is not released, and Flowgentic does not support ADR
     mode.
 
 ## 1. Keep the application's tasks on AsyncFlow

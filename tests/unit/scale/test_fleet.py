@@ -130,6 +130,88 @@ async def test_a_request_admitted_then_cancelled_releases_what_it_took():
     assert waiting.cancelled() and gate.load() == ReplicaLoad(0, 0, 0)
 
 
+async def test_a_request_above_the_token_cap_is_counted_and_warned_of_once(caplog):
+    gate = TokenAdmission(tokens=1000, requests=10).gate(share=0.25)  # 250 tokens here
+    with caplog.at_level("WARNING", logger="flowgentic.fleet"):
+        await gate.acquire(100, "a")
+        gate.release(100, "a")
+        for n in (400, 600):  # each larger than this process's share: admitted alone
+            await gate.acquire(n, "b")
+            gate.release(n, "b")
+    assert gate.stats()["oversize"] == 2
+    (warning,) = [r for r in caplog.records if r.name == "flowgentic.fleet"]
+    assert "400" in warning.getMessage() and "250" in warning.getMessage()
+    assert RequestAdmission(3).gate(share=1.0).stats()["oversize"] == 0
+
+
+class Hanging(Slow):
+    """A server that takes its time, until it is told to hurry."""
+
+    hang = True
+
+    async def ainvoke(self, messages, config=None):
+        self.now += 1
+        try:
+            await asyncio.sleep(30 if self.hang else 0)
+        finally:
+            self.now -= 1
+        return AIMessage("DONE")
+
+
+async def test_cancelling_a_call_at_its_replica_gives_back_its_place():
+    model = Hanging()
+    fleet = Fleet([model], admission=TokenAdmission(1000, 1))
+    states = AgentStates(["agent-1"])
+
+    async def one():
+        _agents.set_current_agent("agent-1", states)
+        states.enter("agent-1", AgentState.WORKING)
+        await fleet.ainvoke("agent-1", [HumanMessage("x" * 400)])
+
+    call = asyncio.create_task(one())
+    await asyncio.sleep(0.02)
+    assert model.now == 1 and states.state("agent-1") == AgentState.MODEL_REQUEST
+    call.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await call
+    assert fleet.load() == [ReplicaLoad(0, 0, 0)] and fleet._core.in_flight == 0
+    assert model.now == 0 and states.state("agent-1") == AgentState.WORKING
+    model.hang = False
+    await asyncio.wait_for(fleet.ainvoke("agent-2", [HumanMessage("hi")]), 1)  # admitted at once
+
+
+async def test_cancelling_a_call_that_waits_out_an_outage_gives_back_its_place():
+    async def check(i):
+        return None
+
+    fleet = Fleet([Down({"up": False})], admission=RequestAdmission(1), recovery=Recovery(check, poll_s=0.02))
+    call = asyncio.create_task(fleet.ainvoke("a", [HumanMessage("hi")]))
+    await asyncio.sleep(0.05)
+    assert fleet._core.recovery._watches  # the call failed and waits
+    call.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await call
+    assert fleet.load() == [ReplicaLoad(0, 0, 0)] and fleet._core.in_flight == 0
+
+
+def test_a_negative_reply_reserve_is_refused():
+    with pytest.raises(ValueError, match="reply_reserve"):
+        Fleet([Slow()], reply_reserve=-1)
+    Fleet([Slow()], reply_reserve=0)
+
+
+async def test_a_fleet_warns_of_requests_above_the_token_cap_once_for_all_its_replicas(caplog):
+    fleet = Fleet(
+        [Recording() for _ in range(4)], admission=TokenAdmission(100, 10), routing=RoundRobin(), name="big"
+    )
+    with caplog.at_level("WARNING", logger="flowgentic.fleet"):
+        for i in range(4):  # one call, above the cap, to each replica
+            await fleet.ainvoke(f"a{i}", [HumanMessage("x" * 1000)])
+    assert [g["oversize"] for g in fleet.stats()["gates"]] == [1, 1, 1, 1]
+    (warning,) = [r for r in caplog.records if r.name == "flowgentic.fleet"]
+    assert "big" in warning.getMessage()
+
+
 def test_share_scales_the_caps():
     gate = TokenAdmission(tokens=1000, requests=10).gate(share=0.25)
     assert (gate.cap_tokens, gate.cap_requests) == (250, 2)
@@ -213,6 +295,25 @@ async def test_a_custom_admission_sees_whose_call_it_admits():
     assert records[-1].gap_s is None and records[-1].prev_prompt_tokens is None
 
 
+class CountedLoads(Ledger):
+    loads = 0
+
+    def load(self):
+        CountedLoads.loads += 1
+        return super().load()
+
+
+@pytest.mark.parametrize(
+    "routing, most",
+    [(AgentAffinity(), 0), (RoundRobin(), 0), (LeastLoaded(), 8)],  # at most one per replica
+)
+async def test_a_call_reads_the_replicas_loads_only_if_its_routing_does(routing, most):
+    fleet = Fleet([Recording() for _ in range(8)], admission=LedgerAdmission(CountedLoads), routing=routing)
+    CountedLoads.loads = 0
+    await fleet.ainvoke("a", [HumanMessage("hi")])
+    assert CountedLoads.loads == most
+
+
 def test_the_built_in_gates_are_gates_and_a_gate_that_is_not_is_refused():
     Gate = fleet_module.Gate
     assert isinstance(TokenAdmission(1000, 10).gate(1.0), Gate)
@@ -276,6 +377,100 @@ async def test_the_estimate_learns_and_tracks_a_bounded_number_of_agents():
     second = records[-1]
     assert second.prev_prompt_tokens == 1000 and second.gap_s is not None
     assert second.estimate >= 1010  # the first call's size, as the server counted it
+
+
+class Counting:
+    """A server that counts a prompt as ``base`` tokens, such as tool schemas
+    and a template the messages do not show, plus ``per_char`` per character."""
+
+    def __init__(self, base, per_char=0.25):
+        self.base, self.per_char = base, per_char
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+    async def ainvoke(self, messages, **kwargs):
+        chars = sum(len(m.content) for m in messages)
+        reply = AIMessage("DONE")
+        reply.usage_metadata = {
+            "input_tokens": self.base + int(chars * self.per_char),
+            "output_tokens": 5,
+            "total_tokens": 0,
+        }
+        return reply
+
+
+class SomeWithTools(Counting):
+    """A server on which the agents whose prompt starts with "t" carry 2,750
+    tokens of tool schemas, and the others none."""
+
+    def __init__(self):
+        super().__init__(0)
+
+    async def ainvoke(self, messages, **kwargs):
+        reply = await super().ainvoke(messages, **kwargs)
+        if messages[0].content.startswith("t"):
+            reply.usage_metadata["input_tokens"] += 2750
+        return reply
+
+
+@pytest.mark.parametrize("kind, counted", [("p", 25_000), ("t", 27_750)])
+async def test_first_calls_with_and_without_tools_do_not_lower_the_estimate(kind, counted):
+    # Shorter prompts with tool schemas count more tokens than longer ones without.
+    fleet = Fleet([SomeWithTools()], admission=TokenAdmission(235_000, 96))
+    records = []
+    fleet.add_listener(lambda record, reply: records.append(record))
+    for i in range(100):
+        await fleet.ainvoke(f"t{i}", [HumanMessage("t" * 1_000)])  # 3,000 tokens
+        await fleet.ainvoke(f"p{i}", [HumanMessage("p" * 3_000)])  # 750 tokens
+    await fleet.ainvoke("long", [HumanMessage(kind * 100_000)])
+    estimate = records[-1].estimate - fleet.stats()["reply_reserve_tokens"]
+    assert records[-1].prompt_tokens == counted
+    assert 100_000 * fleet.stats()["tokens_per_char"]["added"] <= estimate  # at least its text
+    assert 0.9 * counted <= estimate <= 1.5 * counted
+
+
+async def first_call_estimate(server, prompts, long):
+    """The estimate of a first call of ``long`` characters, after first calls
+    of the given lengths; and what the server counted."""
+    fleet = Fleet([server], admission=TokenAdmission(235_000, 96))
+    records = []
+    fleet.add_listener(lambda record, reply: records.append(record))
+    for i, n in enumerate(prompts):
+        await fleet.ainvoke(f"a{i}", [HumanMessage("x" * n)])
+    await fleet.ainvoke("long", [HumanMessage("x" * long)])
+    return records[-1].estimate - fleet.stats()["reply_reserve_tokens"], records[-1].prompt_tokens, fleet
+
+
+async def test_a_long_first_prompt_after_short_ones_is_not_overestimated():
+    # Short first prompts that the server counts as mostly fixed tokens.
+    estimate, counted, fleet = await first_call_estimate(Counting(1000), [41] * 200, 40_000)
+    assert counted == 11_000
+    assert 0.5 * counted <= estimate <= 1.5 * counted
+    per_char = fleet.stats()["tokens_per_char"]
+    # The fixed part, less what the floor of 0.3 tokens per character, not yet
+    # learned from later calls, takes from it.
+    assert 850 <= per_char["first_call_base"] <= 1_100
+
+
+async def test_the_first_call_estimate_learns_a_fixed_part_and_a_ratio():
+    lengths = [100 + 37 * (i % 50) * (i % 7) for i in range(300)]  # 100 to 11,000 characters
+    estimate, counted, fleet = await first_call_estimate(Counting(2000, 0.5), lengths, 40_000)
+    assert counted == 22_000
+    assert 0.9 * counted <= estimate <= 1.1 * counted
+    per_char = fleet.stats()["tokens_per_char"]
+    assert abs(per_char["first_call"] - 0.5) < 0.05
+    assert abs(per_char["first_call_base"] - 2000) < 200
+
+
+async def test_the_first_call_estimate_starts_from_a_ratio_alone():
+    fleet = Fleet([Counting(0)], admission=TokenAdmission(235_000, 96))
+    records = []
+    fleet.add_listener(lambda record, reply: records.append(record))
+    assert fleet.stats()["tokens_per_char"]["first_call_base"] is None
+    await fleet.ainvoke("a", [HumanMessage("x" * 1000)])
+    assert records[0].estimate == int(1000 * 0.45) + 64  # nothing learned yet
+    assert fleet.stats()["tokens_per_char"]["first_call_base"] is not None
 
 
 class APIConnectionError(Exception):
@@ -404,6 +599,103 @@ async def test_a_check_that_hangs_once_does_not_stop_recovery():
     reply = await asyncio.wait_for(fleet.ainvoke("a", [HumanMessage("hi")]), 5)
     assert reply.content == "DONE v2" and len(probes) == 2
     assert recovery.stats()["check_failures"] == {0: 1}
+
+
+async def test_a_call_that_joins_a_watch_near_its_end_waits_out_its_own_outage():
+    server = {"up": False}
+    model = Down(server)
+
+    async def check(i):
+        return model if server["up"] else None
+
+    fleet = Fleet([model], recovery=Recovery(check, outage_s=1.0, poll_s=0.02))
+    first = asyncio.create_task(fleet.ainvoke("a", [HumanMessage("hi")]))
+    await asyncio.sleep(0.7)
+    late = asyncio.create_task(fleet.ainvoke("b", [HumanMessage("hi")]))  # fails at 0.7
+    await asyncio.sleep(0.6)  # the first call's outage_s has passed
+    assert first.done() and isinstance(first.exception(), APIConnectionError)
+    assert not late.done()  # its own outage_s has not
+    server["up"] = True
+    assert (await asyncio.wait_for(late, 5)).content == "DONE v1"
+    assert fleet.stats()["recovery"]["gave_up"] == {0: 1}
+
+
+async def test_a_call_with_less_than_poll_s_left_starts_no_new_watch():
+    loop = asyncio.get_running_loop()
+    checks = []
+
+    async def check(i):
+        checks.append(loop.time())
+        return None
+
+    recovery = Recovery(check, outage_s=0.3, poll_s=0.1)
+    fleet = Fleet([Down({"up": False})], recovery=recovery)
+    first = asyncio.create_task(fleet.ainvoke("a", [HumanMessage("hi")]))
+    await asyncio.sleep(0.05)
+    late = asyncio.create_task(fleet.ainvoke("b", [HumanMessage("hi")]))  # 0.05 s behind
+    for call in (first, late):
+        with pytest.raises(APIConnectionError):
+            await asyncio.wait_for(call, 5)
+    last = loop.time()
+    await asyncio.sleep(0.25)
+    assert [t for t in checks if t > last] == []  # no check that no call waits for
+    assert recovery.stats()["gave_up"] == {0: 1} and not recovery._tasks
+
+
+async def test_a_call_that_joins_a_watch_whose_check_hangs_gets_a_new_watch():
+    server = {"up": True, "tag": "v2"}  # already back, elsewhere
+    new = Down(server, "v2")
+    probes = []
+
+    async def check(i):
+        probes.append(i)
+        if len(probes) == 1:
+            await asyncio.Event().wait()  # a probe to the old node, which never answers
+        return new
+
+    # The first probe outlives the first call's outage_s.
+    fleet = Fleet([Down(server, "v1")], recovery=Recovery(check, outage_s=0.3, poll_s=0.02))
+    with pytest.raises(APIConnectionError):
+        await asyncio.wait_for(fleet.ainvoke("a", [HumanMessage("hi")]), 5)
+    reply = await asyncio.wait_for(fleet.ainvoke("b", [HumanMessage("hi")]), 5)
+    assert reply.content == "DONE v2" and len(probes) == 2
+
+
+class SlowDown(Down):
+    """A server that takes 50 ms to answer, or to fail while it is down."""
+
+    async def ainvoke(self, messages):
+        await asyncio.sleep(0.05)
+        return await super().ainvoke(messages)
+
+
+async def test_a_records_wait_is_for_admission_and_its_outage_is_apart():
+    server = {"up": False}
+    model = SlowDown(server)
+
+    async def check(i):
+        return model if server["up"] else None
+
+    fleet = Fleet([model], recovery=Recovery(check, poll_s=0.02))  # no admission
+    records = []
+    fleet.add_listener(lambda record, reply: records.append(record))
+
+    async def back():
+        await asyncio.sleep(0.4)
+        server["up"] = True
+
+    asyncio.create_task(back())
+    t = asyncio.get_running_loop().time()
+    await fleet.ainvoke("a", [HumanMessage("hi")])
+    total = asyncio.get_running_loop().time() - t
+    (record,) = records
+    assert record.wait_s < 0.02  # nothing to wait for: no admission
+    assert 0.04 <= record.service_s < 0.1  # the try that succeeded
+    assert record.recovery_s >= 0.35  # the failed try and the outage
+    assert abs(record.wait_s + record.service_s + record.recovery_s - total) < 0.02
+
+    await fleet.ainvoke("a", [HumanMessage("hi")])
+    assert records[-1].recovery_s == 0.0
 
 
 async def test_a_check_that_raises_counts_as_down():
@@ -825,6 +1117,38 @@ async def test_the_fleet_records_admission_and_each_replicas_load(metric_reader)
     (service,) = points(metric_reader, "flowgentic.fleet.request.duration", "metrics")
     assert wait.count == 3 and wait.max > 0
     assert service.count == 3 and service.min > 0
+
+
+async def test_every_try_is_recorded_and_a_failed_one_with_its_error(metric_reader):
+    server = {"up": False}
+    model = Down(server)
+
+    async def check(i):
+        server["up"] = True  # back at the first check
+        return model
+
+    fleet = Fleet([model], admission=RequestAdmission(4), recovery=Recovery(check, poll_s=0.02), name="tries")
+    await fleet.ainvoke("a", [HumanMessage("hi")])  # fails once, then succeeds
+
+    class Bad(Down):
+        async def ainvoke(self, messages):
+            raise ValueError("400 bad request")
+
+    failing = Fleet([Bad(server)], name="refused")
+    with pytest.raises(ValueError):
+        await failing.ainvoke("a", [HumanMessage("hi")])
+
+    (wait,) = points(metric_reader, "flowgentic.fleet.admission.wait", "tries")
+    assert wait.count == 2  # one admission per try
+    service = {
+        p.attributes.get("error.type"): p.count
+        for p in points(metric_reader, "flowgentic.fleet.request.duration", "tries")
+    }
+    assert service == {"APIConnectionError": 1, None: 1}
+    (wait,) = points(metric_reader, "flowgentic.fleet.admission.wait", "refused")
+    (service,) = points(metric_reader, "flowgentic.fleet.request.duration", "refused")
+    assert wait.count == 1 and service.count == 1
+    assert service.attributes["error.type"] == "ValueError"
 
 
 # --- spans: last, as the instrumentation stays on for the rest of the module ------

@@ -3,6 +3,8 @@ repeat safety, failures, order policies, telemetry, and the checkpoints written.
 
 import asyncio
 import gc
+import threading
+import time
 import traceback
 import weakref
 from types import SimpleNamespace
@@ -11,13 +13,15 @@ import pytest
 from _support import RUNS, Scripted, broken, calls_then_answer, react_graph, simulate, thread_session
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
+from langgraph.graph import START, MessagesState, StateGraph
+from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel
 
 from flowgentic import _agents
 from flowgentic.host import Agent, AgentHost, AgentState, Finished, Stagger, Suspended
 from flowgentic.langgraph import GraphRunner, KeyValueSaver, bind_tools
 from flowgentic.store import MemoryStore
-from flowgentic.tools import TaskInfo, ToolRuntime, mcp_tool, task_tool
+from flowgentic.tools import TaskCancelled, TaskInfo, ToolRuntime, mcp_tool, task_tool
 from flowgentic.tools.service import ToolServiceClient, ToolServiceError
 
 FAST = Stagger(batch=50, interval_s=0.0)
@@ -72,7 +76,8 @@ async def test_a_suspended_agent_resumes_and_nothing_runs_twice():
     assert '{"y": 3.0}' in final and "noted hi" in final
     assert host.states.agent_seconds()[AgentState.TOOL_WAIT] > 0
     # the host holds no task of an agent that has ended
-    assert all(_agents.pending(f"agent-{i}/call-0") is None for i in range(20))
+    assert len(runtime._jobs) == 20
+    assert all(_agents.pending(key) is None for key in runtime._jobs)
 
 
 def left_by(run_objects: tuple) -> list:
@@ -169,7 +174,7 @@ async def test_after_a_run_nothing_keeps_the_agents_messages(fn, suspend):
         assert [m() for m in kept] == [None, None, None]
     finally:
         gc.enable()
-    job = runtime._jobs["agent-0/call-0"]
+    (job,) = runtime._jobs.values()
     error = job.exception()
     assert (error is None) == (fn is simulate)
     if error is not None:  # no frame of the tool that waited on the task
@@ -240,9 +245,28 @@ async def test_repeat_safety_and_retention():
     await runtime.submit(sim, "a", "c1", {"x": 1.0})
     await session.close()
     assert RUNS["simulate"] == 5
-    assert runtime.uid("a b/c:1") == "flowgentic.a_b.c_1"
+    assert runtime.uid("a b/c:1") == "flowgentic.a_x20_b.c_x3a_1"
     with pytest.raises(ValueError, match="at least 1"):
         ToolRuntime(session, retained=0)
+
+
+@pytest.mark.parametrize("fn", [simulate, broken], ids=["ok", "failed"])
+async def test_a_task_description_keeps_no_payload_once_read(fn):
+    """RHAPSODY's session keeps every task's description for its life, with the
+    task's arguments, its result and the backend's copies of it. Once Flowgentic
+    has read the outcome, the description keeps none of them."""
+    session = await thread_session()
+    runtime = ToolRuntime(session)
+    job = runtime.submit(task_tool(fn), "a", "c1", {"x": 1.5})
+    await asyncio.wait([job])
+    description = session._tasks[runtime.uid("a/c1")]
+    await session.close()
+    if fn is simulate:
+        assert job.result() == {"y": 3.0}
+    else:
+        assert "no convergence at 1.5" in str(job.exception())
+    assert description["return_value"] is None and description["exception"] is None
+    assert not description["args"] and not description["stdout"] and not description["stderr"]
 
 
 async def test_a_resumed_agent_finds_its_task_after_the_runtime_dropped_it():
@@ -269,12 +293,12 @@ async def test_only_the_asking_agents_own_registrations_are_found():
     session = await thread_session()
     runtime = ToolRuntime(session)
     stale = asyncio.get_running_loop().create_future()
-    _agents.register_pending("a/c1", stale)
+    _agents.register_pending("a/c1", stale)  # held until a host run ends
     try:
         job = runtime.submit(task_tool(simulate), "a", "c1", {"x": 1.0})
         assert job is not stale and await job == {"y": 2.0}
     finally:
-        _agents.forget_pending("a/c1")
+        _agents._unowned.pop("a/c1", None)  # no host run here to release it
         await session.close()
     assert RUNS == {"simulate": 1}
 
@@ -324,22 +348,272 @@ async def test_an_order_policy_decides_when_tasks_are_submitted():
     assert [(r.info.key, r.outcome) for r in records] == [("a/c2", "cancelled"), ("a/c1", "ok")]
 
 
-async def test_cancelling_a_tool_that_waits_cancels_its_task():
-    """The tool waits for its task without raising the task's exception, and
-    cancelling the tool still cancels the task, as awaiting the task would."""
+async def test_cancelling_a_tool_that_waits_leaves_its_started_task_running():
+    """A started task is shared by every call with its key, and RHAPSODY does
+    not stop it: cancelling the wait, as cancelling its agent does, leaves it
+    running, and the call made again gets the task's result."""
     session = await thread_session()
-    runtime = ToolRuntime(session, order=Held())
-    (tool_,) = bind_tools(runtime, [task_tool(simulate)])
-    call = {"name": "simulate", "args": {"x": 1.0}, "id": "c1", "type": "tool_call"}
-    waiting = asyncio.create_task(tool_.ainvoke(call, {"configurable": {"thread_id": "a"}}))
+    order = Held()
+    order.gate.set()
+    runtime = ToolRuntime(session, order=order)
+    (tool_,) = bind_tools(runtime, [task_tool(slow_simulate)])
+    call = {"name": "slow_simulate", "args": {"x": 1.0}, "id": "c1", "type": "tool_call"}
+    config = {"configurable": {"thread_id": "a"}}
+    waiting = asyncio.create_task(tool_.ainvoke(call, config))
     await asyncio.sleep(0.05)
     job = runtime._jobs["a/c1"]
     waiting.cancel()
     with pytest.raises(asyncio.CancelledError):
         await waiting
-    await asyncio.wait([job])
+    assert not job.done()
+    again = await tool_.ainvoke(call, config)
     await session.close()
-    assert job.cancelled() and RUNS == {}
+    assert again.content == '{"y": 2.0}' and again.status == "success"
+    assert not job.cancelled() and RUNS == {"slow_simulate": 1}
+    assert order.admitted == order.ended == ["a/c1"]
+
+
+async def test_a_queued_task_no_call_waits_for_is_withdrawn():
+    """Tasks that their order has not admitted yet, whose agents are all gone,
+    never reach RHAPSODY; the started one runs on. A call made again for a
+    withdrawn task submits it afresh."""
+    session = await thread_session()
+    order = OneAtATime()
+    runtime = ToolRuntime(session, order=order)
+    records = []
+    runtime.add_listener(records.append)
+    (tool_,) = bind_tools(runtime, [task_tool(slow_simulate)])
+
+    def call(i):
+        return (
+            {"name": "slow_simulate", "args": {"x": float(i)}, "id": "c1", "type": "tool_call"},
+            {"configurable": {"thread_id": f"agent-{i}"}},
+        )
+
+    waits = [asyncio.create_task(tool_.ainvoke(*call(i))) for i in range(3)]
+    await until(lambda: len(runtime._jobs) == 3 and order.slot.locked())  # one runs
+    for wait in waits:
+        wait.cancel()
+    await asyncio.gather(*waits, return_exceptions=True)
+    await asyncio.sleep(0.6)  # time for two more tasks, had they been submitted
+    assert RUNS == {"slow_simulate": 1}
+    (ran,) = [r for r in records if r.outcome == "ok"]
+    withdrawn = [r for r in records if r is not ran]
+    assert [(r.outcome, r.t_admit) for r in withdrawn] == [("cancelled", None)] * 2
+    assert list(runtime._jobs) == [ran.info.key]
+    again = await tool_.ainvoke(*call(int(withdrawn[0].info.args["x"])))
+    await session.close()
+    assert again.status == "success" and RUNS == {"slow_simulate": 2}
+
+
+async def test_a_queued_task_stays_while_a_call_still_waits_for_it():
+    """Calls made again with one key share its task: cancelling one of their
+    waits leaves the task to the others."""
+    session = await thread_session()
+    order = Held()
+    runtime = ToolRuntime(session, order=order)
+    (tool_,) = bind_tools(runtime, [task_tool(simulate)])
+    call = {"name": "simulate", "args": {"x": 1.0}, "id": "c1", "type": "tool_call"}
+    config = {"configurable": {"thread_id": "a"}}
+    first = asyncio.create_task(tool_.ainvoke(call, config))
+    second = asyncio.create_task(tool_.ainvoke(call, config))
+    await asyncio.sleep(0.05)
+    first.cancel()
+    await asyncio.gather(first, return_exceptions=True)
+    order.gate.set()
+    out = await second
+    await session.close()
+    assert out.content == '{"y": 2.0}' and RUNS == {"simulate": 1}
+    assert runtime.stats()["submitted"] == 1 and runtime.stats()["repeats"] == 1
+
+
+async def test_a_stopped_host_withdraws_the_queued_tasks_of_its_suspended_agents():
+    session = await thread_session()
+    order = OneAtATime()
+    runtime = ToolRuntime(session, order=order)
+    graph = react_graph(
+        Scripted(script=calls_then_answer(("slow_simulate", {"x": 1.0}))),
+        bind_tools(runtime, [task_tool(slow_simulate, suspend=True)]),
+        KeyValueSaver(MemoryStore()),
+    )
+    host = AgentHost(GraphRunner(graph), stagger=FAST)
+    run = asyncio.create_task(host.run(inputs(3)))
+    # Every agent has suspended, and one task runs.
+    await until(
+        lambda: order.slot.locked()
+        and host.states.counts().get(AgentState.TOOL_WAIT, 0) == 3
+    )
+    run.cancel()
+    await asyncio.gather(run, return_exceptions=True)
+    await asyncio.sleep(0.6)
+    await session.close()
+    assert RUNS == {"slow_simulate": 1}
+
+
+async def test_closing_the_session_ends_its_tasks_and_frees_their_places():
+    """A campaign stops its host, then closes its RHAPSODY session, which drops
+    the tasks it still runs. A task left running by its cancelled wait ends,
+    cancelled, and gives its place in its order back; a task its order admits
+    after the session closed fails at once."""
+    session = await thread_session()
+    order = OneAtATime()
+    runtime = ToolRuntime(session, order=order)
+    records = []
+    runtime.add_listener(records.append)
+    (tool_,) = bind_tools(runtime, [task_tool(slow_simulate)])
+
+    def call(agent):
+        return (
+            {"name": "slow_simulate", "args": {"x": 1.0}, "id": "c1", "type": "tool_call"},
+            {"configurable": {"thread_id": agent}},
+        )
+
+    running = asyncio.create_task(tool_.ainvoke(*call("a")))
+    await until(lambda: order.slot.locked())  # a's task runs
+    queued = asyncio.create_task(tool_.ainvoke(*call("b")))  # b's waits for its turn
+    await until(lambda: len(runtime._jobs) == 2)
+    running.cancel()
+    await asyncio.gather(running, return_exceptions=True)
+    await session.close()
+    out = await asyncio.wait_for(queued, 2)
+    job = runtime._jobs["a/c1"]
+    assert job.done() and isinstance(job.exception(), TaskCancelled)
+    assert out.status == "error" and "TaskCancelled: the RHAPSODY session is closed" in out.content
+    assert [(r.info.agent_id, r.outcome) for r in records] == [("a", "cancelled"), ("b", "cancelled")]
+    assert "the RHAPSODY session closed before the task ended" in records[0].error
+    # The order is free for the next session's tasks.
+    later = await thread_session()
+    again = ToolRuntime(later, order=order).submit(task_tool(simulate), "c", "c1", {"x": 2.0})
+    assert await asyncio.wait_for(again, 2) == {"y": 4.0}
+    await later.close()
+
+
+async def test_the_session_keeps_nothing_of_a_failed_task_once_read(caplog):
+    """RHAPSODY's session keeps each task's description for its life. Once a
+    failed task's outcome is read, the description keeps neither its exception
+    nor, through the exception's traceback, the runtime and its tasks. The
+    runtime reports each outcome itself, so a failure that no call read, as
+    when its agent was stopped, is no asyncio error either."""
+    session = await thread_session()
+    runtime = ToolRuntime(session)
+    job = runtime.submit(task_tool(broken), "a", "c1", {"x": 1.0})
+    await asyncio.wait([job])
+    kept = weakref.ref(runtime), weakref.ref(job)
+    del job, runtime
+    gc.collect()
+    assert [ref() for ref in kept] == [None, None]
+    assert "never retrieved" not in caplog.text
+    await session.close()
+
+
+async def test_a_task_rhapsody_cancels_ends_cancelled():
+    """A task RHAPSODY cancels ends without a value: it is no success."""
+    session = await thread_session()
+    order = OneAtATime()
+    runtime = ToolRuntime(session, order=order)
+    job = runtime.submit(task_tool(slow_simulate), "a", "c1", {"x": 1.0})
+    await asyncio.sleep(0.05)
+    (backend,) = session.backends.values()
+    assert await backend.cancel_task(runtime.uid("a/c1"))
+    await asyncio.wait_for(asyncio.wait([job]), 2)
+    assert isinstance(job.exception(), TaskCancelled)
+    assert "RHAPSODY cancelled the task" in str(job.exception())
+    assert not order.slot.locked()
+    await session.close()
+
+
+async def test_a_call_made_again_after_a_timed_out_wait_gets_the_task():
+    session = await thread_session()
+    runtime = ToolRuntime(session)
+    (tool_,) = bind_tools(runtime, [task_tool(slow_simulate)])
+    call = {"name": "slow_simulate", "args": {"x": 1.0}, "id": "c1", "type": "tool_call"}
+    config = {"configurable": {"thread_id": "a"}}
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(tool_.ainvoke(call, config), 0.05)
+    out = await tool_.ainvoke(call, config)
+    await session.close()
+    assert out.content == '{"y": 2.0}' and RUNS == {"slow_simulate": 1}
+    assert not asyncio.current_task().cancelling()
+
+
+class OneAtATime:
+    """An order policy that admits one task at a time."""
+
+    def __init__(self):
+        self.slot = asyncio.Semaphore(1)
+
+    async def admit(self, info: TaskInfo) -> None:
+        await self.slot.acquire()
+
+    def done(self, info: TaskInfo) -> None:
+        self.slot.release()
+
+
+async def test_a_cancelled_wait_keeps_its_tasks_place_in_the_order_until_it_ends():
+    session = await thread_session()
+    runtime = ToolRuntime(session, order=OneAtATime())
+    (tool_,) = bind_tools(runtime, [task_tool(counted_simulate)])
+    calls = [
+        ({"name": "counted_simulate", "args": {"x": x}, "id": "c1", "type": "tool_call"},
+         {"configurable": {"thread_id": agent}})
+        for agent, x in (("a", 1.0), ("b", 2.0))
+    ]
+    waits = [asyncio.create_task(tool_.ainvoke(call, config)) for call, config in calls]
+    await asyncio.sleep(0.1)  # a's task runs; b's waits for its turn
+    waits[0].cancel()
+    await asyncio.gather(*waits, return_exceptions=True)
+    jobs = list(runtime._jobs.values())
+    await asyncio.wait(jobs)
+    await session.close()
+    assert COUNTED["peak"] == 1  # never two at once under a one-at-a-time order
+    assert [job.result() for job in jobs] == [{"y": 2.0}, {"y": 4.0}]
+
+
+async def test_a_task_cancelled_by_its_owner_reaches_the_model_as_an_error():
+    """A started task's future cancelled directly, not through a tool's wait,
+    is a failed call for the model to read, not a CancelledError that would
+    fail its agent."""
+    session = await thread_session()
+    runtime = ToolRuntime(session)
+    (tool_,) = bind_tools(runtime, [task_tool(slow_simulate)])
+    call = {"name": "slow_simulate", "args": {"x": 1.0}, "id": "c1", "type": "tool_call"}
+    config = {"configurable": {"thread_id": "a"}}
+    job = runtime.submit(task_tool(slow_simulate), "a", "c1", {"x": 1.0})
+    await asyncio.sleep(0.05)
+    job.cancel()
+    out = await tool_.ainvoke(call, config)
+    await session.close()
+    assert out.status == "error" and "slow_simulate failed: its task was cancelled" in out.content
+
+
+async def until(condition, timeout: float = 5.0) -> None:
+    """Wait until ``condition()`` holds, failing after ``timeout`` seconds."""
+    end = time.monotonic() + timeout
+    while not condition():
+        assert time.monotonic() < end, "condition not reached"
+        await asyncio.sleep(0.01)
+
+
+def slow_simulate(x: float) -> dict:
+    """A simulation that takes a while."""
+    time.sleep(0.3)
+    RUNS["slow_simulate"] = RUNS.get("slow_simulate", 0) + 1
+    return {"y": 2 * x}
+
+
+COUNTED = {"running": 0, "peak": 0}
+_COUNTED_LOCK = threading.Lock()
+
+
+def counted_simulate(x: float) -> dict:
+    """A simulation that counts how many run at once."""
+    with _COUNTED_LOCK:
+        COUNTED["running"] += 1
+        COUNTED["peak"] = max(COUNTED["peak"], COUNTED["running"])
+    time.sleep(0.3)
+    with _COUNTED_LOCK:
+        COUNTED["running"] -= 1
+    return {"y": 2 * x}
 
 
 def write_result(x: float, key: str, scale: int) -> dict:
@@ -718,3 +992,208 @@ async def test_a_limit_that_lets_an_agent_finish_in_memory_lets_it_finish_suspen
     if status == "done":
         assert agent.suspensions == (5 if suspend else 0)
     assert not runner._resumes  # nothing kept for an agent that has ended
+
+
+# --- keys of tool calls ---------------------------------------------------------
+
+
+def numbered_per_message(turns: int, parallel: int = 1):
+    """A model whose server numbers tool-call ids per message, as some do: each
+    turn's calls are ``call-0``, ``call-1``, ..., with new arguments each turn.
+    After ``turns`` turns it answers with every result, in order."""
+
+    def script(messages):
+        results = [m for m in messages if m.type == "tool"]
+        turn = len(results) // parallel
+        if turn < turns:
+            return AIMessage(
+                "",
+                tool_calls=[
+                    {"name": "simulate", "args": {"x": float(10 * turn + i)}, "id": f"call-{i}"}
+                    for i in range(parallel)
+                ],
+            )
+        return AIMessage(" | ".join(str(m.content) for m in results))
+
+    return script
+
+
+def expected_answer(turns: int, parallel: int = 1) -> str:
+    return " | ".join(
+        f'{{"y": {2.0 * (10 * turn + i)}}}' for turn in range(turns) for i in range(parallel)
+    )
+
+
+def tool_node_graph(model, tools, saver):
+    """model -> one ToolNode task for all of a message's calls -> model."""
+    from langgraph.prebuilt import tools_condition
+
+    async def call_model(state: MessagesState):
+        return {"messages": [await model.ainvoke(state["messages"])]}
+
+    g = StateGraph(MessagesState)
+    g.add_node("model", call_model)
+    g.add_node("tools", ToolNode(tools, handle_tool_errors=True))
+    g.add_edge(START, "model")
+    g.add_conditional_edges("model", tools_condition)
+    g.add_edge("tools", "model")
+    return g.compile(checkpointer=saver)
+
+
+def in_a_subgraph(model, tools, saver):
+    """The react graph as a node of an outer graph, which checkpoints both."""
+    g = StateGraph(MessagesState)
+    g.add_node("agent", react_graph(model, tools))
+    g.add_edge(START, "agent")
+    return g.compile(checkpointer=saver)
+
+
+@pytest.mark.parametrize("suspend", [False, True], ids=["in-memory", "suspended"])
+@pytest.mark.parametrize(
+    "shape, parallel",
+    [("send", 1), ("send", 2), ("tool-node", 2), ("subgraph", 2)],
+)
+async def test_a_call_id_used_again_on_a_later_turn_is_a_new_call(suspend, shape, parallel):
+    """A model server may number its tool calls per message, so a later turn
+    reuses an earlier turn's ids. Each turn's calls run, once each, and each
+    returns its own result; repeats on resume still run nothing again."""
+    turns = 3
+    session = await thread_session()
+    runtime = ToolRuntime(session)
+    tools = bind_tools(runtime, [task_tool(simulate, suspend=suspend)])
+    model = Scripted(script=numbered_per_message(turns, parallel))
+    build = {"send": react_graph, "tool-node": tool_node_graph, "subgraph": in_a_subgraph}[shape]
+    graph = build(model, tools, KeyValueSaver(MemoryStore()))
+    outputs = {}
+    report = await AgentHost(
+        GraphRunner(graph), stagger=FAST, on_done=lambda r, o: outputs.__setitem__(r.id, o)
+    ).run(inputs(2))
+    await session.close()
+    assert report.finished == 2, [a.error for a in report.agents]
+    for agent in report.agents:
+        assert outputs[agent.id]["messages"][-1].content == expected_answer(turns, parallel)
+        if not suspend:
+            assert agent.suspensions == 0
+        elif shape == "tool-node":  # one task for both calls: resumed once per call
+            assert turns <= agent.suspensions <= turns * parallel
+        else:
+            assert agent.suspensions == turns
+    assert RUNS == {"simulate": 2 * turns * parallel}
+    assert runtime.stats()["submitted"] == 2 * turns * parallel
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="a node that loops between the model and its tools runs every turn in "
+    "one LangGraph task, so a call id reused on a later turn shares the earlier key",
+)
+async def test_a_call_id_used_again_in_a_node_that_loops_itself_is_a_new_call():
+    session = await thread_session()
+    runtime = ToolRuntime(session)
+    model = Scripted(script=numbered_per_message(turns=2))
+    node = ToolNode(bind_tools(runtime, [task_tool(simulate)]), handle_tool_errors=True)
+
+    async def agent(state: MessagesState):
+        messages = list(state["messages"])
+        while True:
+            reply = await model.ainvoke(messages)
+            messages.append(reply)
+            if not reply.tool_calls:
+                return {"messages": messages[len(state["messages"]) :]}
+            messages.extend((await node.ainvoke({"messages": messages}))["messages"])
+
+    g = StateGraph(MessagesState)
+    g.add_node("agent", agent)
+    g.add_edge(START, "agent")
+    graph = g.compile(checkpointer=KeyValueSaver(MemoryStore()))
+    outputs = {}
+    await AgentHost(
+        GraphRunner(graph), stagger=FAST, on_done=lambda r, o: outputs.__setitem__(r.id, o)
+    ).run(inputs(1))
+    await session.close()
+    assert outputs["agent-0"]["messages"][-1].content == expected_answer(turns=2)
+
+
+async def test_mcp_calls_with_a_reused_call_id_reach_the_service_as_new_calls():
+    service = FakeService()
+    runtime = ToolRuntime(service=service)
+    lookup = mcp_tool("lookup", description="Look a material up.", args_schema=LookupArgs)
+
+    def script(messages):
+        done = sum(1 for m in messages if m.type == "tool")
+        if done < 2:
+            material = ["Fe", "Cu"][done]
+            return AIMessage(
+                "", tool_calls=[{"name": "lookup", "args": {"material": material}, "id": "call-0"}]
+            )
+        return AIMessage(" | ".join(str(m.content) for m in messages if m.type == "tool"))
+
+    graph = react_graph(Scripted(script=script), bind_tools(runtime, [lookup]), KeyValueSaver(MemoryStore()))
+    outputs = {}
+    await AgentHost(
+        GraphRunner(graph), stagger=FAST, on_done=lambda r, o: outputs.__setitem__(r.id, o)
+    ).run(inputs(1))
+    uids = [uid for uid, *_ in service.calls]
+    assert [args["material"] for _, _, args, _ in service.calls] == ["Fe", "Cu"]
+    assert len(set(uids)) == 2
+    assert all(u.startswith("agent-0/") and u.endswith("/call-0") for u in uids)
+    answer = outputs["agent-0"]["messages"][-1].content
+    assert '"Fe"' in answer and '"Cu"' in answer
+
+
+def decode_uid(uid: str) -> str:
+    """The key a task uid was made from: the uid's encoding read back."""
+    s = uid.removeprefix("flowgentic.")
+    out, i = [], 0
+    while i < len(s):
+        c = s[i]
+        if c == ".":
+            out.append("/")
+            i += 1
+        elif c == "_" and s[i + 1] == "_":
+            out.append("_")
+            i += 2
+        elif c == "_":
+            assert s[i + 1] == "x", uid
+            end = s.index("_", i + 2)
+            out.append(chr(int(s[i + 2 : end], 16)))
+            i = end + 1
+        else:
+            assert c.isascii() and (c.isalnum() or c == "-"), uid
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+def test_task_uids_are_one_to_one_and_readable():
+    import random
+    import re
+
+    key = ToolRuntime.key
+    pairs = [
+        (key("a.b", "c"), key("a", "b.c")),
+        (key("u 1", "c"), key("u_1", "c")),
+        (key("a", "b/c"), key("a/b", "c")),
+        (key("a", "c", "t"), key("a", "t/c")),
+        (key("a", "c", "t"), key("a/t", "c")),
+    ]
+    for one, other in pairs:
+        assert one != other
+        assert ToolRuntime.uid(one) != ToolRuntime.uid(other)
+    rng = random.Random(7)
+    alphabet = "ab0-_./ %:|é"
+    keys = {
+        key(*("".join(rng.choices(alphabet, k=rng.randint(1, 6))) for _ in range(3)))
+        for _ in range(5000)
+    }
+    uids = {ToolRuntime.uid(k) for k in keys}
+    assert len(uids) == len(keys)
+    for k in keys:
+        uid = ToolRuntime.uid(k)
+        assert re.fullmatch(r"flowgentic\.[A-Za-z0-9_.-]+", uid)
+        assert decode_uid(uid) == k
+    # Ordinary ids stay readable.
+    assert key("agent-7", "call_ab12") == "agent-7/call_ab12"
+    assert key("agent-7", "call-0", "1f0e-77aa") == "agent-7/1f0e-77aa/call-0"
+    assert ToolRuntime.uid("agent-7/1f0e-77aa/call-0") == "flowgentic.agent-7.1f0e-77aa.call-0"
+    assert ToolRuntime.uid("agent-7/call_ab12") == "flowgentic.agent-7.call__ab12"

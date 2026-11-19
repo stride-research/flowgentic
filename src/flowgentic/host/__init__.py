@@ -125,11 +125,17 @@ class Collector:
 	some of its own objects there): CPython cannot thaw only part of them, and
 	reference cycles left frozen would never be freed. An application that
 	keeps objects of its own frozen passes ``freeze=False``. The defaults were
-	measured on CPython 3.12.
+	measured on CPython 3.12. ``threshold`` must be at least 1: CPython takes 0
+	to turn automatic collection off, and collects at nearly every allocation
+	below 0.
 	"""
 
 	threshold: int = 100_000
 	freeze: bool = True
+
+	def __post_init__(self) -> None:
+		if self.threshold < 1:
+			raise ValueError("a collector's threshold must be at least 1")
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,9 +225,11 @@ class AgentHost:
 		if len({a.id for a in work}) != len(work):
 			raise ValueError("agent ids must be unique within a run")
 		self.states._begin_run(a.id for a in work)
+		_agents.begin_host_run()
 		try:
 			return await self._run(work, len(work), indexed=False)
 		finally:
+			_agents.end_host_run()
 			self.states._end_run()
 
 	async def run_indexed(
@@ -241,10 +249,12 @@ class AgentHost:
 			raise TypeError("indices must be a range")
 		count = len(indices)
 		self.states._begin_run((), pending=count)
+		_agents.begin_host_run()
 		try:
 			agents = (Agent(f"{id_prefix}{i}", input_for(i)) for i in indices)
 			return await self._run(agents, count, indexed=True)
 		finally:
+			_agents.end_host_run()
 			self.states._end_run()
 
 	async def _run(
@@ -398,7 +408,7 @@ class AgentHost:
 		_telemetry.emit_suspend(agent.id, len(step.waits))
 		futures = []
 		for _, key in step.waits:
-			future = _agents.pending(key)
+			future = _agents.take_pending(key)
 			if future is None:
 				raise RuntimeError(
 					f"agent {agent.id} waits on task {key!r}, which this process "
@@ -406,7 +416,9 @@ class AgentHost:
 				)
 			futures.append(future)
 		try:
-			await asyncio.wait(futures)
+			# A stopped host withdraws the tasks that their order has not
+			# admitted yet, when no other call waits for them.
+			await _agents.wait(futures)
 		finally:
 			self.states.enter(agent.id, AgentState.WORKING)
 		return {rid: {"flowgentic_done": key} for rid, key in step.waits}

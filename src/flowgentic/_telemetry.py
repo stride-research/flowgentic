@@ -120,25 +120,27 @@ GC_PAUSE = meter.create_histogram(
 
 
 def _observe_agents(options: object) -> list:
-	from flowgentic._agents import _all_states
+	from flowgentic import _agents
+	from flowgentic._agents import AgentState, _all_states
 
-	totals: dict = {}
+	if not _agents._process_has_states:
+		return []
+	# Every state, at 0 when no run is live, so a state's last count does not
+	# linger once its agents are gone.
+	totals = [0] * len(AgentState)
 	for states in list(_all_states):
-		for state, count in states.counts().items():
-			totals[state] = totals.get(state, 0) + count
+		counts = states._live_counts()
+		if counts is not None:
+			totals = [a + b for a, b in zip(totals, counts, strict=True)]
 	return [
-		metrics.Observation(count, {AGENT_STATE: state.name.lower()})
-		for state, count in totals.items()
+		metrics.Observation(count, {AGENT_STATE: AgentState(s).name.lower()})
+		for s, count in enumerate(totals)
 	]
 
 
 def _observe_agent_seconds(options: object) -> list:
-	from flowgentic._agents import CATEGORY, _all_states
+	from flowgentic._agents import CATEGORY, process_agent_seconds
 
-	totals: dict = {}
-	for states in list(_all_states):
-		for state, seconds in states.agent_seconds().items():
-			totals[state] = totals.get(state, 0.0) + seconds
 	return [
 		metrics.Observation(
 			seconds,
@@ -147,7 +149,7 @@ def _observe_agent_seconds(options: object) -> list:
 				AGENT_CATEGORY: CATEGORY.get(state, "none"),
 			},
 		)
-		for state, seconds in totals.items()
+		for state, seconds in process_agent_seconds().items()
 	]
 
 
@@ -155,13 +157,13 @@ meter.create_observable_gauge(
 	"flowgentic.agents",
 	callbacks=[_observe_agents],
 	unit="{agent}",
-	description="Agents in each state, across the process's agent hosts",
+	description="Agents in each state, across the process's running agent hosts",
 )
-meter.create_observable_gauge(
+meter.create_observable_counter(
 	"flowgentic.agent.time",
 	callbacks=[_observe_agent_seconds],
 	unit="s",
-	description="Agent-seconds spent in each state",
+	description="Agent-seconds spent in each state, by every agent the process ran",
 )
 
 

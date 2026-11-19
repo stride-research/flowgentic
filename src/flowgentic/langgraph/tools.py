@@ -62,12 +62,23 @@ def bind_tools(runtime: ToolRuntime, tools: Iterable[Any]) -> list[BaseTool]:
 	return out
 
 
-def _agent_id() -> str:
-	agent = (ensure_config().get("configurable") or {}).get("thread_id")
-	agent = agent or _agents.current_agent()
+def _agent_and_scope() -> tuple[str, str]:
+	"""The agent's id, and the LangGraph task that runs the tool call.
+
+	A model server may number its tool calls per message, so a later turn can
+	reuse an earlier turn's call id. The task's id tells the two apart: each
+	step's tasks have their own, and a task that runs again on resume has the
+	same. It is the last part of the run's ``checkpoint_ns``, whose id is
+	derived from the namespaces above it, so a tool in a subgraph has one too.
+	Outside a LangGraph task there is none, and the call id alone keys the
+	call."""
+	configurable = ensure_config().get("configurable") or {}
+	agent = configurable.get("thread_id") or _agents.current_agent()
 	if not agent:
 		raise ToolException("a task or MCP tool needs the agent's thread_id")
-	return str(agent)
+	ns = configurable.get("checkpoint_ns") or ""
+	_, sep, task = ns.rpartition("|")[2].partition(":")
+	return str(agent), task if sep else ""
 
 
 def _with_call_id(schema: Any) -> Any:
@@ -89,31 +100,32 @@ async def _settled(job: asyncio.Future) -> None:
 	The runtime keeps an ended task, and RHAPSODY's session its failure, so the
 	task's exception lives on. Raised here, it would keep this tool's frames in
 	its traceback, and on CPython 3.12 those of the LangGraph run that called
-	the tool, with the agent's whole state. Cancelling the wait cancels the
-	task, as awaiting it would."""
-	if job.done():
-		return
-	try:
-		await asyncio.wait((job,))
-	except asyncio.CancelledError:
-		job.cancel()
-		raise
+	the tool, with the agent's whole state.
+
+	Cancelling the wait leaves a started task running. The task belongs to
+	every call with its key, such as the same call made again once its agent
+	runs again, and RHAPSODY does not stop a task that has started; so the task
+	keeps its place in its ``TaskOrder`` until it ends. A task its order has
+	not admitted yet is withdrawn once no call waits for it."""
+	await _agents.wait((job,))
 
 
 def _task_tool(runtime: ToolRuntime, tool: TaskTool) -> BaseTool:
 	async def run(**kwargs: Any) -> str:
 		call_id = kwargs.pop(_CALL_ID)
-		agent = _agent_id()
-		job = runtime.submit(tool, agent, call_id, kwargs)
+		agent, scope = _agent_and_scope()
+		job = runtime.submit(tool, agent, call_id, kwargs, scope=scope)
 		if tool.suspends(agent, kwargs):
 			try:
-				interrupt({PENDING_KEY: runtime.key(agent, call_id)})
+				interrupt({PENDING_KEY: runtime.key(agent, call_id, scope)})
 			except GraphInterrupt as exc:
 				record_interrupt(exc)  # freed when the run stops
 				raise
 		with _agents.activity(AgentState.TOOL_WAIT):
 			await _settled(job)
-		error = None if job.cancelled() else job.exception()
+		if job.cancelled():  # by whoever submitted it: the model reads it
+			raise ToolException(f"{tool.name} failed: its task was cancelled")
+		error = job.exception()
 		if error is not None:  # the model reads the failure
 			raise ToolException(
 				f"{tool.name} failed: {type(error).__name__}: {error}"[:500]
@@ -136,10 +148,12 @@ def _task_tool(runtime: ToolRuntime, tool: TaskTool) -> BaseTool:
 def _mcp_tool(runtime: ToolRuntime, tool: McpTool) -> BaseTool:
 	async def run(**kwargs: Any) -> str:
 		call_id = kwargs.pop(_CALL_ID)
-		agent = _agent_id()
+		agent, scope = _agent_and_scope()
 		with _agents.activity(AgentState.TOOL_CALL):
 			try:
-				value = await runtime.call_service(tool, agent, call_id, kwargs)
+				value = await runtime.call_service(
+					tool, agent, call_id, kwargs, scope=scope
+				)
 			except RuntimeError:
 				# Set up wrong: no service client, or one not started. As with
 				# a task tool, the agent fails rather than tell its model.
