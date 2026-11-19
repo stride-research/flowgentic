@@ -90,8 +90,8 @@ Agents at scale:
 
 - CI runs no part under Dragon: `RadexStore` is tested against a stand-in for
   RaDEX's client, task tools run on RHAPSODY's thread-pool backend, and the
-  tool service's queues are the standard library's. For this release the parts
-  were tested under Dragon by hand: the store's contract on RaDEX, an agent
+  tool service's queues are the standard library's. For 0.5.0, and again for
+  0.5.1, the parts were tested under Dragon by hand: the store's contract on RaDEX, an agent
   suspended by one Dragon process and resumed by another, the tool service in
   a Dragon process serving two agent processes over Dragon's queues, and the
   worked example adapted to Dragon, with 1,000 agents in two processes, every
