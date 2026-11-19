@@ -200,6 +200,18 @@ def test_a_negative_reply_reserve_is_refused():
     Fleet([Slow()], reply_reserve=0)
 
 
+async def test_a_fleet_warns_of_requests_above_the_token_cap_once_for_all_its_replicas(caplog):
+    fleet = Fleet(
+        [Recording() for _ in range(4)], admission=TokenAdmission(100, 10), routing=RoundRobin(), name="big"
+    )
+    with caplog.at_level("WARNING", logger="flowgentic.fleet"):
+        for i in range(4):  # one call, above the cap, to each replica
+            await fleet.ainvoke(f"a{i}", [HumanMessage("x" * 1000)])
+    assert [g["oversize"] for g in fleet.stats()["gates"]] == [1, 1, 1, 1]
+    (warning,) = [r for r in caplog.records if r.name == "flowgentic.fleet"]
+    assert "big" in warning.getMessage()
+
+
 def test_share_scales_the_caps():
     gate = TokenAdmission(tokens=1000, requests=10).gate(share=0.25)
     assert (gate.cap_tokens, gate.cap_requests) == (250, 2)

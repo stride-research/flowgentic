@@ -159,6 +159,34 @@ class Gate(Protocol):
 	def stats(self) -> dict: ...
 
 
+class _OversizeWarning:
+	"""Logs the first request admitted alone above a token cap, once for all
+	the gates that share it: a fleet's gates share one, and a gate built on its
+	own has its own."""
+
+	__slots__ = ("fleet", "logged")
+
+	def __init__(self, fleet: str | None = None) -> None:
+		self.fleet = fleet
+		self.logged = False
+
+	def __call__(self, n: int, cap: int) -> None:
+		if self.logged:
+			return
+		self.logged = True
+		log.warning(
+			"%sa model request of %d tokens is larger than this process's token "
+			"cap at its replica, %d, so it is admitted alone; it takes the "
+			"replica past its cap while the other processes use their shares. "
+			"Raise the cap or this process's share so that the largest context "
+			"fits in one share. Later requests like it are counted in the gates' "
+			"stats (oversize), without a warning",
+			"" if not self.fleet else f"fleet {self.fleet!r}: ",
+			n,
+			cap,
+		)
+
+
 class AdmissionGate:
 	"""Admits requests to one replica while the tokens of live context and the
 	requests in flight stay under their caps. ``tokens=None`` counts requests
@@ -167,9 +195,10 @@ class AdmissionGate:
 
 	A gate holds one process's share of a replica's caps, and cannot see the
 	other processes' requests. A request admitted alone above the share's token
-	cap may therefore take the replica past its cap, if other processes do the
-	same: such requests are counted (``oversize`` in ``stats()``), and the
-	first is logged as a warning. A ``Gate``."""
+	cap therefore takes the replica past its cap while the other processes use
+	their shares: such requests are counted (``oversize`` in ``stats()``), and
+	the first is logged as a warning, once for all the gates of a fleet. A
+	``Gate``."""
 
 	def __init__(self, tokens: int | None, requests: int) -> None:
 		if (tokens is not None and tokens < 1) or requests < 1:
@@ -184,6 +213,7 @@ class AdmissionGate:
 		self.queued = 0
 		self.oversize = 0
 		self.blocked_s = 0.0
+		self._warn_oversize = _OversizeWarning()  # a fleet gives its gates one
 		self._blocked_since: float | None = None
 		self._waiters: deque[tuple[int, asyncio.Future]] = deque()
 
@@ -197,16 +227,7 @@ class AdmissionGate:
 	def _take(self, n: int) -> None:
 		if self.cap_tokens is not None and n > self.cap_tokens:
 			self.oversize += 1
-			if self.oversize == 1:
-				log.warning(
-					"a model request of %d tokens is larger than this process's "
-					"token cap at its replica, %d, so it runs alone; requests like "
-					"it from several processes can take the replica past its cap. "
-					"Raise the cap or this process's share so that the largest "
-					"context fits in one share",
-					n,
-					self.cap_tokens,
-				)
+			self._warn_oversize(n, self.cap_tokens)
 		self.tokens += n
 		self.requests += 1
 		self.admitted += 1
@@ -680,6 +701,7 @@ class _Core:
 		self.admission = admission
 		self.counts_tokens = bool(admission is not None and admission.counts_tokens)
 		self.gates: list[Gate] = []
+		warn_oversize = _OversizeWarning(name)
 		for _ in replicas:
 			gate = admission.gate(share) if admission is not None else _Open()
 			if not isinstance(gate, Gate):
@@ -688,6 +710,8 @@ class _Core:
 					f"{type(gate).__name__}, which is not a Gate: a gate needs "
 					"acquire, release, agent_done, load and stats"
 				)
+			if isinstance(gate, AdmissionGate):
+				gate._warn_oversize = warn_oversize
 			self.gates.append(gate)
 		self.routing = routing
 		self.share = share

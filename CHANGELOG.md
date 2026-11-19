@@ -12,9 +12,11 @@ predate this changelog, so their changes are not listed here.
 ### Added
 
 - `flowgentic.fleet`: an `AdmissionGate` counts the calls it admits alone
-  above its token cap (`oversize` in its stats) and logs the first as a
-  warning. A gate holds one process's share of a replica's caps, so such
-  calls from several processes can take the replica past its cap.
+  above its token cap (`oversize` in its stats), and the fleet logs the
+  first as a warning, once for all its replicas; a gate built on its own
+  warns once on its own. A gate holds one process's share of a replica's
+  caps, so one such call takes the replica past its cap while the other
+  processes use their shares.
 
 ### Changed
 

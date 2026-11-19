@@ -47,10 +47,11 @@ returns an `AIMessage`, and `bind_tools` if the agents call tools.
   agents to the same replicas. A process cannot see the others' calls, so a
   call whose context is larger than the process's share of the token cap is
   admitted alone, once nothing else of the process is in flight at that
-  replica; several processes doing so can take the replica past its cap.
-  The gate counts such calls (`oversize` in `fleet.stats()["gates"]`) and
-  logs the first as a warning. Choose the cap and `share` so that the
-  largest context fits in one share.
+  replica; one such call takes the replica past its cap while the other
+  processes use their shares. Each gate counts such calls (`oversize` in
+  `fleet.stats()["gates"]`), and the fleet logs the first as a warning,
+  once for all its replicas. Choose the cap and `share` so that the largest
+  context fits in one share.
 - **It waits out a server that went away.** With `Recovery(check)`, a call
   that fails because its server is down, restarting or overloaded (a
   connection error, a timeout, a 5xx, or a 401 after a new key) gives up its
