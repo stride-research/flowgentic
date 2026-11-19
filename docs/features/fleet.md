@@ -62,8 +62,9 @@ returns an `AIMessage`, and `bind_tools` if the agents call tools.
   while it is down. The first failing call on a replica starts one watch,
   which calls `check(i)` every `poll_s` seconds until the replica serves
   again or `outage_s` has passed; later failing calls wait on the same watch.
-  A call whose watch gives up before the call's own `outage_s` has passed,
-  because the watch started earlier for another call, starts a new one.
+  A call whose watch gives up, because it started earlier for another call,
+  starts a new one if at least `poll_s` of the call's own `outage_s` is
+  left; with less, it fails then.
   A check that raises, or does not answer within `check_timeout_s` (30 s by
   default), counts as the replica still being down: the watch logs it, counts
   it in `fleet.stats()["recovery"]["check_failures"]`, and keeps polling. The watch runs in a

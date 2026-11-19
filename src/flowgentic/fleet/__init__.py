@@ -438,8 +438,8 @@ class Recovery:
 	while it is down. The first call that fails on a replica starts one watch,
 	which calls ``check`` every ``poll_s`` seconds until the replica serves or
 	``outage_s`` has passed; later calls wait on the same watch. A call whose
-	watch gives up before the call's own ``outage_s`` has passed starts a new
-	one. A check that raises, or does not answer within ``check_timeout_s``,
+	watch gives up while at least ``poll_s`` of the call's own ``outage_s`` is
+	left starts a new one. A check that raises, or does not answer within ``check_timeout_s``,
 	counts as the replica still being down. The watch serves every call on the
 	replica, so it runs in a context of its own, not in the first failing
 	call's. A call that fails again after its replica came back waits
@@ -476,11 +476,15 @@ class Recovery:
 		``outage_s``, or after ``timeout`` seconds for this caller.
 
 		A caller with a ``timeout`` waits it out: if the watch it joined gives
-		up first, having started earlier for another call, it starts a new
-		watch."""
+		up first, having started earlier for another call, and at least
+		``poll_s`` of the caller's time is left, the caller starts a new watch.
+		With less left, it returns ``None`` then, and leaves no watch behind
+		that no call waits for."""
 		loop = asyncio.get_running_loop()
 		end = None if timeout is None else loop.time() + timeout
 		while True:
+			if end is not None and end - loop.time() <= 0:
+				return None
 			future = self._watches.get(i)
 			if future is None:
 				future = self._watches[i] = loop.create_future()
@@ -492,18 +496,18 @@ class Recovery:
 				self._tasks.add(task)
 				task.add_done_callback(self._tasks.discard)
 			left = None if end is None else end - loop.time()
-			if left is not None and left <= 0:
-				return None
 			# asyncio.wait leaves the watch running when this caller times out
 			# or is cancelled.
 			done, _ = await asyncio.wait({future}, timeout=left)
 			if not done:
 				return None
 			model = future.result()
-			if model is not None or end is None or loop.time() >= end:
+			if model is not None or end is None:
 				return model
-			# The watch gave up: poll again, as it would have, in a new one.
-			await asyncio.sleep(min(self.poll_s, end - loop.time()))
+			# The watch gave up a poll_s after its last check, so a new one may
+			# check at once. With outage_s 0, a watch gives up without a check.
+			if self.outage_s <= 0 or end - loop.time() < self.poll_s:
+				return None
 
 	async def _watch(self, i: int, future: asyncio.Future) -> None:
 		t0 = time.monotonic()

@@ -576,6 +576,28 @@ async def test_a_call_that_joins_a_watch_near_its_end_waits_out_its_own_outage()
     assert fleet.stats()["recovery"]["gave_up"] == {0: 1}
 
 
+async def test_a_call_with_less_than_poll_s_left_starts_no_new_watch():
+    loop = asyncio.get_running_loop()
+    checks = []
+
+    async def check(i):
+        checks.append(loop.time())
+        return None
+
+    recovery = Recovery(check, outage_s=0.3, poll_s=0.1)
+    fleet = Fleet([Down({"up": False})], recovery=recovery)
+    first = asyncio.create_task(fleet.ainvoke("a", [HumanMessage("hi")]))
+    await asyncio.sleep(0.05)
+    late = asyncio.create_task(fleet.ainvoke("b", [HumanMessage("hi")]))  # 0.05 s behind
+    for call in (first, late):
+        with pytest.raises(APIConnectionError):
+            await asyncio.wait_for(call, 5)
+    last = loop.time()
+    await asyncio.sleep(0.25)
+    assert [t for t in checks if t > last] == []  # no check that no call waits for
+    assert recovery.stats()["gave_up"] == {0: 1} and not recovery._tasks
+
+
 async def test_a_call_that_joins_a_watch_whose_check_hangs_gets_a_new_watch():
     server = {"up": True, "tag": "v2"}  # already back, elsewhere
     new = Down(server, "v2")

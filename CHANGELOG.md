@@ -42,7 +42,8 @@ predate this changelog, so their changes are not listed here.
   `stats()["tokens_per_char"]` gains `first_call_base`, the fixed part.
 - `flowgentic.fleet`: a call that joined a recovery watch started for an
   earlier call failed when that watch gave up, before its own `outage_s`
-  had passed. It now waits out its own `outage_s`, in a new watch.
+  had passed. It now starts a new watch if at least `poll_s` of its own
+  `outage_s` is left, and fails then otherwise.
 - `Fleet` refuses a negative `reply_reserve`, which took tokens off every
   call's admission estimate.
 
