@@ -46,7 +46,8 @@ reply's reasoning tokens, when the server reports them
 (``output_token_details.reasoning``): the conversation does not keep a model's
 thinking. An agent's first call is estimated from the sizes the server counted
 for earlier first calls, as a fixed part, such as tool schemas and a template
-that the messages do not show, plus tokens per character.
+that the messages do not show, plus tokens per character, never fewer than the
+characters later calls add count.
 
 ``fleet.ainvoke(agent_id, messages)`` is the direct path, for a graph's own
 model node. ``fleet.chat_model()`` is a LangChain chat model for prebuilt
@@ -609,9 +610,13 @@ class _FirstCalls:
 	tokens on its characters; until there are ``1 / alpha`` of them, the calls
 	weigh equally.
 
-	While the first calls' lengths barely vary, they cannot tell the two
-	apart: the ratio is then the one learned from the characters later calls
-	add, and the fixed part is the rest."""
+	The tokens per character are never below ``floor``, the ratio learned
+	from the characters later calls add, which carry no fixed part: a first
+	prompt counts at least as much as its text. The fit's slope falls below
+	it when the first calls cannot tell the two parts apart: while their
+	lengths barely vary, or when shorter prompts carry tool schemas and
+	longer ones do not. The ratio is then the floor, and the fixed part is the
+	rest."""
 
 	__slots__ = ("alpha", "n", "x", "y", "xx", "xy")
 
@@ -631,14 +636,17 @@ class _FirstCalls:
 		self.xx += w * (chars * chars - self.xx)
 		self.xy += w * (chars * tokens - self.xy)
 
-	def line(self, fallback: float) -> tuple[float, float]:
-		"""The fixed part, in tokens, and the tokens per character."""
+	def line(self, floor: float) -> tuple[float, float]:
+		"""The fixed part, in tokens, and the tokens per character, at least
+		``floor``."""
+		ratio = floor
 		var = self.xx - self.x * self.x
 		if var > max((0.1 * self.x) ** 2, 100.0):
-			ratio = (self.xy - self.x * self.y) / var
-		else:
-			ratio = fallback
-		ratio = min(max(ratio, self.MIN_RATIO), self.MAX_RATIO)
+			ratio = max((self.xy - self.x * self.y) / var, floor)
+		# Not ``max``: a NaN falls to the bottom of the range too.
+		ratio = (
+			min(ratio, self.MAX_RATIO) if ratio >= self.MIN_RATIO else self.MIN_RATIO
+		)
 		return max(self.y - ratio * self.x, 0.0), ratio
 
 

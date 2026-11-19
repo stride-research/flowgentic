@@ -91,9 +91,11 @@ its previous call, as the server counted it, plus the characters added since,
 at the tokens per character the server's counts give, plus `reply_reserve`
 for the reply. An agent's first call is estimated from the server's counts
 for earlier first calls, as a fixed part, such as tool schemas and a template
-that the messages do not show, plus tokens per character; while the first
-prompts' lengths barely vary, the tokens per character are those of the
-characters later calls add. `fleet.stats()["tokens_per_char"]` gives what was
+that the messages do not show, plus tokens per character. The tokens per
+character are never fewer than those of the characters later calls add, so a
+first call is never estimated below its text alone, also while the first
+prompts' lengths barely vary, or when agents with and without tool schemas
+mix. `fleet.stats()["tokens_per_char"]` gives what was
 learned: `first_call` and `first_call_base` (the fixed part, in tokens), and
 `added`. The fleet remembers the sizes of the most recent `tracked_agents`
 agents.

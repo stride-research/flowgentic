@@ -388,6 +388,36 @@ class Counting:
         return reply
 
 
+class SomeWithTools(Counting):
+    """A server on which the agents whose prompt starts with "t" carry 2,750
+    tokens of tool schemas, and the others none."""
+
+    def __init__(self):
+        super().__init__(0)
+
+    async def ainvoke(self, messages, **kwargs):
+        reply = await super().ainvoke(messages, **kwargs)
+        if messages[0].content.startswith("t"):
+            reply.usage_metadata["input_tokens"] += 2750
+        return reply
+
+
+@pytest.mark.parametrize("kind, counted", [("p", 25_000), ("t", 27_750)])
+async def test_first_calls_with_and_without_tools_do_not_lower_the_estimate(kind, counted):
+    # Shorter prompts with tool schemas count more tokens than longer ones without.
+    fleet = Fleet([SomeWithTools()], admission=TokenAdmission(235_000, 96))
+    records = []
+    fleet.add_listener(lambda record, reply: records.append(record))
+    for i in range(100):
+        await fleet.ainvoke(f"t{i}", [HumanMessage("t" * 1_000)])  # 3,000 tokens
+        await fleet.ainvoke(f"p{i}", [HumanMessage("p" * 3_000)])  # 750 tokens
+    await fleet.ainvoke("long", [HumanMessage(kind * 100_000)])
+    estimate = records[-1].estimate - fleet.stats()["reply_reserve_tokens"]
+    assert records[-1].prompt_tokens == counted
+    assert 100_000 * fleet.stats()["tokens_per_char"]["added"] <= estimate  # at least its text
+    assert 0.9 * counted <= estimate <= 1.5 * counted
+
+
 async def first_call_estimate(server, prompts, long):
     """The estimate of a first call of ``long`` characters, after first calls
     of the given lengths; and what the server counted."""
@@ -406,7 +436,9 @@ async def test_a_long_first_prompt_after_short_ones_is_not_overestimated():
     assert counted == 11_000
     assert 0.5 * counted <= estimate <= 1.5 * counted
     per_char = fleet.stats()["tokens_per_char"]
-    assert 900 <= per_char["first_call_base"] <= 1_100
+    # The fixed part, less what the floor of 0.3 tokens per character, not yet
+    # learned from later calls, takes from it.
+    assert 850 <= per_char["first_call_base"] <= 1_100
 
 
 async def test_the_first_call_estimate_learns_a_fixed_part_and_a_ratio():

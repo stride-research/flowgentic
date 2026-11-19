@@ -38,7 +38,9 @@ predate this changelog, so their changes are not listed here.
   such as tool schemas the messages do not show, plus tokens per character,
   both learned from earlier first calls. With tokens per character alone,
   short first prompts taught a ratio that made a later long first prompt's
-  estimate many times too large, and its call waited to run alone.
+  estimate many times too large, and its call waited to run alone. The
+  tokens per character are never fewer than those of the characters later
+  calls add, so a first call is never estimated below its text alone.
   `stats()["tokens_per_char"]` gains `first_call_base`, the fixed part.
 - `flowgentic.fleet`: a call that joined a recovery watch started for an
   earlier call failed when that watch gave up, before its own `outage_s`
