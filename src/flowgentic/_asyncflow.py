@@ -14,7 +14,8 @@ caller's OpenTelemetry context does not follow, so the submitter passes it
 along as a W3C carrier and the task attaches it.
 
 Task tools reach an application's engine through ``function_task`` and
-``result``; ``times`` reads their start and end from the engine's telemetry.
+``result``. ``Finish`` stamps when a task ended, and ``starts`` reads when tasks
+started from the telemetry an application has started on its engine.
 
 AsyncFlow is an extra: without it, importing this module raises an error that
 names the extra to install.
@@ -23,6 +24,7 @@ names the extra to install.
 import asyncio
 import functools
 import inspect
+import time
 import weakref
 from typing import Any, Awaitable, Callable
 
@@ -37,7 +39,7 @@ except ModuleNotFoundError as exc:
 	) from exc
 
 from flowgentic import _telemetry
-from flowgentic._rhapsody import TaskCancelled
+from flowgentic._agents import TaskCancelled
 
 Submitter = Callable[..., Awaitable[Any]]
 
@@ -146,89 +148,82 @@ def function_task(
 	return call
 
 
-async def result(future: asyncio.Future, times: "Times | None" = None) -> Any:
+async def result(future: asyncio.Future) -> Any:
 	"""Wait for a task submitted with ``function_task``, and return its value.
 
 	A failure raises the task's exception. ``TaskCancelled`` is raised if
 	AsyncFlow cancelled the task, as it does to the tasks still running when
 	the engine shuts down, and to a task called after. Cancelling the wait
-	cancels the task, on its backend if it runs there.
-
-	With ``times``, the wait ends once the task's end event has reached them,
-	if it can within one more pass of the event loop: AsyncFlow emits the event
-	as it resolves the future, and its telemetry delivers it on the loop's
-	next pass. A task cancelled by the engine has no end event."""
+	cancels the task, on its backend if it runs there."""
 	try:
 		await asyncio.wait((future,))
 	except asyncio.CancelledError:
 		future.cancel()
 		raise
-	if times is not None and not times.ended(uid(future)):
-		await asyncio.sleep(0)
 	if future.cancelled():
 		raise TaskCancelled("AsyncFlow cancelled the task")
 	return future.result()
 
 
-# The events that end a task, in RHAPSODY's telemetry, which AsyncFlow emits
-_END_EVENTS = frozenset({"TaskCompleted", "TaskFailed", "TaskCanceled"})
+class Finish:
+	"""When a task submitted with ``function_task`` ended, in this process.
+
+	``time`` is ``time.time()`` on the event loop's first pass after AsyncFlow
+	resolved the task's future, which it does as the backend reports the
+	task's end, just before it emits the task's end event; ``None`` until then.
+	It needs no telemetry, and no event."""
+
+	__slots__ = ("time",)
+
+	def __init__(self, future: asyncio.Future) -> None:
+		self.time: float | None = None
+		future.add_done_callback(self._stamp)
+
+	def _stamp(self, future: asyncio.Future) -> None:
+		self.time = time.time()
 
 
-class Times:
-	"""When AsyncFlow's telemetry says the tasks added here started and ended.
+class Starts:
+	"""When tasks started, from AsyncFlow's ``TaskStarted`` events.
 
-	For each task added, the ``event_time`` of its first ``TaskStarted`` event
-	and of its first end event (``TaskCompleted``, ``TaskFailed`` or
-	``TaskCanceled``), from the engine's telemetry; ``None`` until the event
-	arrives. A backend that never reports a task running, such as AsyncFlow's
-	own ``LocalExecutionBackend``, gives no start."""
+	For each task added, the ``event_time`` of its first ``TaskStarted`` event;
+	``None`` until the event arrives. The telemetry delivers events in batches,
+	after the fact: under a burst of events, a task can end before its start
+	event arrives. A backend that never reports a task running, such as
+	AsyncFlow's own ``LocalExecutionBackend``, gives no start."""
 
-	__slots__ = ("_times",)
+	__slots__ = ("_starts",)
 
 	def __init__(self) -> None:
-		self._times: dict[str, list[float | None]] = {}
+		self._starts: dict[str, float | None] = {}
 
 	def add(self, task_uid: str) -> None:
 		"""Watch the task ``task_uid`` from now on."""
-		self._times[task_uid] = [None, None]
+		self._starts[task_uid] = None
 
-	def ended(self, task_uid: str | None) -> bool:
-		"""Whether the task's end event has arrived."""
-		times = self._times.get(task_uid)
-		return times is not None and times[1] is not None
-
-	def pop(self, task_uid: str) -> tuple[float | None, float | None]:
-		"""The task's start and end, and stop watching it."""
-		start, end = self._times.pop(task_uid, (None, None))
-		return start, end
+	def pop(self, task_uid: str) -> float | None:
+		"""The task's start, if its event has arrived, and stop watching it."""
+		return self._starts.pop(task_uid, None)
 
 	def __call__(self, event: Any) -> None:
-		times = self._times.get(event.task_id)
-		if times is None:
-			return
-		kind = event.event_type
-		if kind == "TaskStarted":
-			if times[0] is None:
-				times[0] = event.event_time
-		elif kind in _END_EVENTS and times[1] is None:
-			times[1] = event.event_time
+		task_uid = event.task_id
+		if (
+			event.event_type == "TaskStarted"
+			and task_uid in self._starts
+			and self._starts[task_uid] is None
+		):
+			self._starts[task_uid] = event.event_time
 
 
-_watched: weakref.WeakKeyDictionary[Any, Times] = weakref.WeakKeyDictionary()
+_watched: weakref.WeakKeyDictionary[Any, Starts] = weakref.WeakKeyDictionary()
 
 
-def times(engine: WorkflowEngine) -> Times | None:
-	"""The ``Times`` of the engine's telemetry, once ``engine.start_telemetry()``
-	has run; ``None`` before. The first call for a telemetry subscribes to it.
-
-	AsyncFlow 0.7 keeps the telemetry it started on the engine, privately: this
-	is the one place that reads it."""
-	telemetry = getattr(engine, "_telemetry", None)
-	if telemetry is None:
-		return None
+def starts(telemetry: Any) -> Starts:
+	"""The ``Starts`` of a telemetry, the one ``engine.start_telemetry()``
+	returns: subscribed to it on first use, then shared."""
 	known = _watched.get(telemetry)
 	if known is None:
-		known = _watched[telemetry] = Times()
+		known = _watched[telemetry] = Starts()
 		telemetry.subscribe(known)
 	return known
 

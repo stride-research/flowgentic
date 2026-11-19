@@ -17,18 +17,24 @@ predate this changelog, so their changes are not listed here.
   passes in, so the tasks its agents ask for are tasks of the application.
   Suspension, repeat safety and the host's registrations work as on a RHAPSODY
   session. A tool may name its own backend (`task_tool(fn, backend="ai")`) and
-  give the backend's own fields (`task_backend_specific_kwargs`); a backend the
-  engine lacks, or another field, is a `ValueError`. A task still running when
-  the engine shuts down ends with `TaskCancelled`. A runtime takes a session or
-  an engine, not both.
+  give the backend's own fields (`task_backend_specific_kwargs`). A task still
+  running when the engine shuts down ends with `TaskCancelled`. A runtime
+  takes a session or an engine, not both.
 - `ToolRuntime(..., backend=...)`: the backend task tools run on unless a tool
   names its own, on a session as on an engine.
-- The decision record. `TaskRecord` gains `uid` (the task's uid in AsyncFlow or
-  RHAPSODY), `backend`, `t_commit` (when the agent committed to the call),
-  `t_start` and `t_finish` (when the task started and ended, from AsyncFlow's
-  task events, once the engine's telemetry runs). With a model run through a
-  fleet in an agent the host runs, `t_commit` is when the reply that made the
-  call reached the agent; otherwise it is `t_submit`.
+- `ToolRuntime.check(tool)`, which `bind_tools` calls: a backend the session or
+  engine lacks, or a field an engine cannot take, is a `ValueError` when the
+  runtime is made or the tool is bound, and a `RuntimeError`, which fails the
+  agent, when a tool that was not bound is called.
+- The decision record. `TaskRecord` gains `uid` (the task's uid in AsyncFlow,
+  or in RHAPSODY once the session has accepted it), `backend`, `t_commit`
+  (when the agent committed to the call), `t_start` and `t_finish`. With a
+  model run through a fleet in an agent the host runs, `t_commit` is when the
+  reply that made the call, by its id, reached the agent; otherwise it is
+  `t_submit`. On an engine, `t_finish` is when the agent's process saw
+  AsyncFlow resolve the task, and `t_start` comes from AsyncFlow's
+  `TaskStarted` events in the telemetry the application passes
+  (`ToolRuntime(engine=flow, telemetry=await flow.start_telemetry())`).
 
 ### Changed
 
@@ -39,6 +45,14 @@ predate this changelog, so their changes are not listed here.
 - The error of a task tool on a runtime with neither a session nor an engine
   now reads "task tools need a ToolRuntime with a RHAPSODY session or an
   AsyncFlow engine".
+- `TaskRecord.t_submit` is taken when `ToolRuntime.submit` gets the call, not
+  when the task's own coroutine first runs.
+- On a session, a task tool naming a backend the session lacks fails its agent
+  with `RuntimeError` when called, and `bind_tools` refuses it; before, the
+  session's error reached the model.
+- `flowgentic.tools.TaskCancelled` is now defined in `flowgentic._agents`, so
+  that neither seam imports the other; import it from `flowgentic.tools`, as
+  before.
 
 ## [0.5.1] - 2026-11-19
 

@@ -22,11 +22,7 @@ from collections.abc import Callable
 from typing import Any
 
 from flowgentic import _telemetry
-
-
-class TaskCancelled(Exception):
-	"""RHAPSODY cancelled the task, or its session closed before the task ended."""
-
+from flowgentic._agents import TaskCancelled
 
 # A task's state once RHAPSODY has cancelled it, in every backend's mapping.
 _CANCELED = "CANCELED"
@@ -109,17 +105,34 @@ def _compute_task() -> type:
 	return ComputeTask
 
 
+def check_backend(session: Any, backend: str) -> None:
+	"""Raise ``ValueError`` unless ``backend`` names one of the session's
+	backends that run tasks."""
+	names = [
+		name
+		for name, known in session.backends.items()
+		if hasattr(known, "submit_tasks")
+	]
+	if backend not in names:
+		raise ValueError(
+			f"the RHAPSODY session has no backend {backend!r}: its backends are "
+			+ ", ".join(repr(name) for name in names)
+		)
+
+
 async def run_function(
 	session: Any,
 	func: Callable[..., Any],
 	kwargs: dict[str, Any],
 	*,
 	uid: str,
+	on_submitted: Callable[[], None] | None = None,
 	**task: Any,
 ) -> Any:
 	"""Run ``func(**kwargs)`` as one RHAPSODY function task named ``uid``, and
 	return its value. A failure raises the task's exception. ``task`` adds
 	fields to the task's description, such as resources or a backend's name.
+	``on_submitted()`` is called once the session has accepted the task.
 
 	``TaskCancelled`` is raised if RHAPSODY cancels the task, or if the session
 	is closed or closes before the task ends.
@@ -139,6 +152,8 @@ async def run_function(
 		**task,
 	)
 	(future,) = await session.submit_tasks([description])
+	if on_submitted is not None:
+		on_submitted()
 	closed = asyncio.get_running_loop().create_future()
 	known.waits.add(closed)
 	try:

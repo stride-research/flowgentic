@@ -152,12 +152,14 @@ The AsyncFlow path:
 - Task tools on an AsyncFlow engine: AsyncFlow keeps every task, with its
   arguments and value, until the engine shuts down, so a campaign's memory
   grows with the tasks its agents ask for.
-- A task's record has a start and finish time only on an AsyncFlow engine
-  whose telemetry the application has started, and a start only on a backend
-  that reports a task running, as RHAPSODY's do and AsyncFlow's own
-  `LocalExecutionBackend` does not. On a RHAPSODY session, both are `None`.
-  Its commitment time is a model reply's only when the model runs through a
-  fleet in an agent the host runs.
+- A task's record has a finish time only on an AsyncFlow engine, and a start
+  time only when the application hands the runtime the engine's telemetry, on
+  a backend that reports a task running (RHAPSODY's do; AsyncFlow's own
+  `LocalExecutionBackend` does not), and if the start event arrives before the
+  task ends: in a burst of thousands of tasks, some arrive later and are found
+  in the telemetry by the record's uid. On a RHAPSODY session, both are
+  `None`. Its commitment time is a model reply's only when the model runs
+  through a fleet in an agent the host runs.
 - The recipe for calling Academy agents from AsyncFlow tasks is tested with
   Academy's local exchange and AsyncFlow's local backend only; see
   [Academy actions as AsyncFlow tasks](guides/academy-on-asyncflow.md#limitations).

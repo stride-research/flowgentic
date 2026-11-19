@@ -70,9 +70,12 @@ On an engine, a tool's task fields are `backend` and
 `task_backend_specific_kwargs`, the backend's own fields such as resources,
 which AsyncFlow passes to the backend as the task's `task_description`. Any
 other field is a `ValueError`, and so is a backend the engine lacks: when the
-runtime is made, for its own `backend`, or at a tool's first call, for the
-tool's. On a session, `backend` names the RHAPSODY backend, in the same way. A
-runtime has a session or an engine, not both.
+runtime is made, for its own `backend`, or when the tool is bound
+(`bind_tools`, through `ToolRuntime.check`), for the tool's. On a session,
+`backend` names the RHAPSODY backend, checked in the same way against the
+session's backends. A tool called without being bound, on a runtime that
+cannot run it, raises `RuntimeError`, which fails its agent. A runtime has a
+session or an engine, not both.
 
 The engine is the application's: Flowgentic neither starts it nor shuts it
 down. AsyncFlow keeps every task, with its arguments and value, until the
@@ -178,25 +181,41 @@ call (`record.info.call_id`), and says where the task ran and when:
 | --- | --- |
 | `uid` | The task's uid in AsyncFlow or RHAPSODY; `None` if it was never submitted |
 | `backend` | The backend it was sent to: on an engine, the named one or the engine's default; on a session, the named one, if any |
-| `t_commit` | When the agent committed to the call: when the reply of the model call that made it reached the agent, for a model run through a [fleet](fleet.md) in an agent the [host](agent-host.md) runs; otherwise `t_submit` |
+| `t_commit` | When the agent committed to the call: when the model reply that made the call reached the agent, for a model run through a [fleet](fleet.md) in an agent the [host](agent-host.md) runs; otherwise `t_submit` |
 | `t_submit` | When the runtime got the call |
 | `t_admit` | When its order admitted it and the runtime submitted it; `None` if it never was |
-| `t_start` | When it started: AsyncFlow's `TaskStarted` event |
-| `t_finish` | When it ended: AsyncFlow's `TaskCompleted`, `TaskFailed` or `TaskCanceled` event |
+| `t_start` | When it started: AsyncFlow's `TaskStarted` event, from the telemetry the runtime was given |
+| `t_finish` | When it ended: when the agent's process saw AsyncFlow resolve the task |
 | `t_end` | When the runtime saw it end, just before its agent is told |
 | `outcome` | `ok`, `error`, `refused` or `cancelled`, with its `value` or `error` |
 
 Times are `time.time()` in the agent's process, which on an engine is the
 engine's too. A withdrawn task is `cancelled` with no admission time.
 
-`t_start` and `t_finish` come from AsyncFlow's telemetry, so they are there
-once the application has started it (`await flow.start_telemetry()`, which
-needs `rhapsody-py[telemetry]`), and `t_start` only on a backend that reports
-a task running: RHAPSODY's do, AsyncFlow's own `LocalExecutionBackend` does
-not. On a session, both are `None`. AsyncFlow emits a task's end event as the
-task ends, and its telemetry delivers it a moment later; the runtime waits at
-most one pass of the event loop for it. An event that comes later is still in
-AsyncFlow's telemetry, under the record's `uid`.
+The fleet notes each reply with the ids of its tool calls, so a call that no
+reply made, such as one a graph node makes itself, commits when the runtime
+gets it.
+
+`t_finish` is stamped on the event loop's first pass after AsyncFlow resolves
+the task's future, which it does as the backend reports the task's end, just
+before it emits its own end event. It needs no telemetry. On a session it is
+`None`.
+
+`t_start` comes from AsyncFlow's telemetry, which the application starts and
+hands to the runtime:
+
+```python
+telemetry = await flow.start_telemetry()  # needs rhapsody-py[telemetry]
+runtime = ToolRuntime(engine=flow, backend="compute", telemetry=telemetry)
+```
+
+The telemetry delivers its events in batches, after the fact. A task whose
+`TaskStarted` event has not arrived when the task ends, as can happen in a
+burst of thousands of tasks, has no `t_start` in its record; the event is still
+in the telemetry, under the record's `uid`, for a join after the run. A backend
+that never reports a task running, such as AsyncFlow's own
+`LocalExecutionBackend`, gives no `t_start`. Without telemetry, and on a
+session, `t_start` is `None`.
 
 From one agent's records: the time from a decision to its task's start is
 `t_start - t_commit`, of which `t_admit - t_commit` is Flowgentic's and its
