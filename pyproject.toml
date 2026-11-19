@@ -46,7 +46,7 @@ langgraph = [
     "langchain-ollama>=1.0,<2.0",
 ]
 openai = [
-    "openai>=1.68,<4",
+    "openai>=1.109,<4",
 ]
 asyncflow = [
     "radical-asyncflow>=0.6,<0.7",

@@ -73,7 +73,7 @@ and metrics. Each path is an extra:
 - `langgraph`: `langgraph>=1.1.5,<2.0`, `langgraph-checkpoint>=4.3,<5`, and
   `langchain-core`, `langchain`, `langchain-openai` and `langchain-ollama` at
   `>=1.0,<2.0`.
-- `openai`: `openai>=1.68,<4`, for the fleet's `OpenAITransport`.
+- `openai`: `openai>=1.109,<4`, for the fleet's `OpenAITransport`.
 - `rhapsody`: `rhapsody-py>=0.7,<0.8`, for task tools.
 - `mcp`: `mcp>=2.3,<2.4`, for the tool service's MCP clients.
 - `asyncflow`: `radical-asyncflow>=0.6,<0.7`, because before 1.0 an AsyncFlow

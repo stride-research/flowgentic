@@ -732,7 +732,7 @@ requires-dist = [
     { name = "mkdocs-section-index", marker = "extra == 'dev'", specifier = ">=0.3.10" },
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'dev'", specifier = ">=1.0.7" },
     { name = "numpy", marker = "extra == 'dev'", specifier = ">=1.26" },
-    { name = "openai", marker = "extra == 'openai'", specifier = ">=1.68,<4" },
+    { name = "openai", marker = "extra == 'openai'", specifier = ">=1.109,<4" },
     { name = "opentelemetry-api", specifier = ">=1.43,<2" },
     { name = "opentelemetry-instrumentation-genai-langchain", marker = "extra == 'examples'", specifier = ">=1.3b0,<1.4" },
     { name = "opentelemetry-instrumentation-genai-openai", marker = "extra == 'examples'", specifier = ">=1.3b0,<1.4" },
