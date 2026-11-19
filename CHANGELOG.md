@@ -15,16 +15,27 @@ predate this changelog, so their changes are not listed here.
   checkpointer once its run ends, before the host passes the output to
   `on_done`, so the store holds the agents still running, not every agent of
   the campaign. Interrupted, failed and cancelled agents keep their threads.
-  `GraphRunner(graph, delete_finished=False)` keeps finished agents' threads
-  too, as 0.5.0 did. A thread that cannot be deleted is logged and counted in
+  A thread that cannot be deleted is logged and counted in
   `GraphRunner.delete_failures`, and the agent still finishes.
+  With this default, `on_done` can no longer read the thread's state
+  (`graph.get_state` finds it empty), and an agent id run again, as a
+  conversation continued in a later host run, starts a fresh thread.
+  `GraphRunner(graph, delete_finished=False)` keeps finished agents' threads,
+  as 0.5.0 did.
+- `KeyValueSaver` keeps a thread's list of subgraph namespaces as a mapping,
+  each namespace with the parent checkpoint it ran under. This version reads a
+  store written by 0.5.0. The other way round, 0.5.0's saver can read, resume
+  and delete a thread this version saved a subgraph in, but it raises
+  `AttributeError` when it saves a new subgraph namespace in that thread. Do
+  not go back to 0.5.0 over a store with such threads.
 
 ### Fixed
 
 - `KeyValueSaver` drops a subgraph's checkpoints once its parent has moved past
   the step that ran it, with the subgraph's own subgraphs. A graph that runs a
   suspending subgraph in a loop, as a supervisor does, no longer stores more
-  with every turn.
+  with every turn. A stateful subgraph's checkpoints (`checkpointer=True`),
+  which every call reuses, are kept.
 - `KeyValueSaver.stats()` counts what LangGraph's copies of the saver put and
   read. With `LANGGRAPH_STRICT_MSGPACK=true`, a graph runs on a copy, and the
   saver reported zeros.

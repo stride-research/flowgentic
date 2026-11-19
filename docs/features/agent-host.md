@@ -106,10 +106,16 @@ When an agent finishes, `GraphRunner` deletes its thread from the graph's
 checkpointer, before the host passes the output to `on_done`. The store then
 holds the agents that are running, not every agent of the campaign. An
 interrupted agent keeps its thread, so it can resume once a human answers, and
-so does a failed or cancelled one, to debug or retry it. Pass
+so does a failed or cancelled one, to debug or retry it. If a thread cannot be
+deleted, the runner logs it and counts it in `delete_failures`, and the agent
+still finishes.
+
+Two things follow from the deletion. `on_done` gets the agent's output, but
+the thread's state is gone by then: `graph.get_state` there finds an empty
+thread. And an agent id run again, as a conversation continued in a later
+host run, starts a fresh thread, without the earlier turns. Pass
 `GraphRunner(graph, delete_finished=False)` to keep finished agents' threads
-too. If a thread cannot be deleted, the runner logs it and counts it in
-`delete_failures`, and the agent still finishes.
+for either.
 
 Each resume is a new LangGraph run, which counts its steps against
 `recursion_limit` afresh. So `GraphRunner` also lets one agent resume at most
