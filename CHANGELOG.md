@@ -7,6 +7,31 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
+## [Unreleased]
+
+### Added
+
+- `flowgentic.loop.LoopRunner`, Flowgentic's own agent loop: a runner for the
+  agent host on `langchain-core` alone, beside LangGraph's `GraphRunner`,
+  which stays. It runs a tool-calling agent as a loop over a fleet or any
+  LangChain chat model, with task tools, MCP tools and LangChain tools; the
+  calls of one reply run concurrently. A task tool that suspends saves the
+  agent's messages to a `KeyValueStore` with one put, read back with one get
+  on resume; the entry is deleted when the agent ends, however it ends. Tool
+  errors go back to the model as error `ToolMessage`s, `max_model_calls`
+  limits the agent's model calls over its whole run
+  (`ModelCallLimitExceeded`), `response_format` gives a validated structured
+  answer in `LoopOutput.structured_response`, a `trim` hook shapes the history
+  before each model call, and an inline tool that raises `Interrupt(value)`
+  ends its agent as interrupted, with an `Interruption`. The agent's states
+  and spans are counted as the host's other parts count them. See the agent
+  loop page.
+- A `langchain-core` extra, with `langchain-core>=1.0,<2.0` only: what the
+  agent loop and the fleet need. The fleet's import error now names it.
+- `benchmarks/agent_loop.py` runs the agents-at-scale example's workload in
+  one agent process with either runner, and prints its wall and CPU time,
+  event-loop lag, collector pauses, peak RSS and store calls.
+
 ## [0.5.1] - 2026-11-19
 
 A patch release: fixes for most of the known limitations that 0.5.0's
@@ -694,6 +719,7 @@ on `main`.
   - Each test matrix job runs its own Python with the dev extra.
   - The bandit job runs again.
 
+[Unreleased]: https://github.com/stride-research/flowgentic/compare/v0.5.1...HEAD
 [0.5.1]: https://github.com/stride-research/flowgentic/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/stride-research/flowgentic/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/stride-research/flowgentic/compare/v0.3.1...v0.4.0

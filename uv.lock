@@ -695,6 +695,9 @@ examples = [
     { name = "radical-asyncflow" },
     { name = "rhapsody-py", extra = ["telemetry"] },
 ]
+langchain-core = [
+    { name = "langchain-core" },
+]
 langgraph = [
     { name = "langchain" },
     { name = "langchain-core" },
@@ -716,6 +719,7 @@ requires-dist = [
     { name = "flowgentic", extras = ["examples", "rhapsody", "mcp"], marker = "extra == 'dev'" },
     { name = "flowgentic", extras = ["langgraph", "asyncflow"], marker = "extra == 'examples'" },
     { name = "langchain", marker = "extra == 'langgraph'", specifier = ">=1.0,<2.0" },
+    { name = "langchain-core", marker = "extra == 'langchain-core'", specifier = ">=1.0,<2.0" },
     { name = "langchain-core", marker = "extra == 'langgraph'", specifier = ">=1.0,<2.0" },
     { name = "langchain-ollama", marker = "extra == 'langgraph'", specifier = ">=1.0,<2.0" },
     { name = "langchain-openai", marker = "extra == 'langgraph'", specifier = ">=1.0,<2.0" },
@@ -744,7 +748,7 @@ requires-dist = [
     { name = "rhapsody-py", extras = ["telemetry"], marker = "extra == 'examples'", specifier = ">=0.7,<0.8" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12.11" },
 ]
-provides-extras = ["langgraph", "asyncflow", "rhapsody", "mcp", "examples", "dev"]
+provides-extras = ["langgraph", "langchain-core", "asyncflow", "rhapsody", "mcp", "examples", "dev"]
 
 [[package]]
 name = "frozenlist"

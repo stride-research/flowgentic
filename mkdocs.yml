@@ -18,6 +18,7 @@ nav:
   - Features:
       - Acceptance: features/acceptance.md
       - Agent host: features/agent-host.md
+      - Agent loop: features/agent-loop.md
       - Services: features/services.md
       - Checkpointer: features/checkpointer.md
       - Tool placement: features/tools.md

@@ -139,7 +139,35 @@ def test_the_fleet_needs_langchain_only() -> None:
 	assert result.returncode == 0, result.stderr
 	result = run_without(LANGGRAPH, "import flowgentic.fleet")
 	assert result.returncode != 0
-	assert "install flowgentic[langgraph]" in result.stderr.splitlines()[-1]
+	assert "install flowgentic[langchain-core]" in result.stderr.splitlines()[-1]
+
+
+def test_the_agent_loop_needs_langchain_core_only() -> None:
+	"""Flowgentic's own loop runs an agent without LangGraph, LangChain's
+	agents, its providers or any other extra; without langchain-core it names
+	its extra."""
+	result = run_without(
+		["langgraph", "langchain", "langchain_openai", "langchain_ollama"]
+		+ ASYNCFLOW
+		+ MCP
+		+ RHAPSODY,
+		"""
+		import asyncio
+		from langchain_core.language_models import GenericFakeChatModel
+		from langchain_core.messages import AIMessage
+		from flowgentic.host import Agent, AgentHost
+		from flowgentic.loop import LoopRunner
+
+		model = GenericFakeChatModel(messages=iter([AIMessage("hi")]))
+		report = asyncio.run(AgentHost(LoopRunner(model)).run([Agent("a", "go")]))
+		print(report.outcomes)
+		""",
+	)
+	assert result.returncode == 0, result.stderr
+	assert result.stdout.strip() == "{'done': 1}"
+	result = run_without(["langchain_core"], "import flowgentic.loop")
+	assert result.returncode != 0
+	assert "install flowgentic[langchain-core]" in result.stderr.splitlines()[-1]
 
 
 @pytest.mark.parametrize(

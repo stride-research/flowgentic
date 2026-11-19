@@ -86,7 +86,8 @@ except ModuleNotFoundError as exc:
 	if exc.name != "langchain_core":
 		raise
 	raise ModuleNotFoundError(
-		"flowgentic.fleet needs LangChain: install flowgentic[langgraph]",
+		"flowgentic.fleet needs langchain-core: install flowgentic[langchain-core], "
+		"or flowgentic[langgraph], which has it too",
 		name=exc.name,
 	) from exc
 

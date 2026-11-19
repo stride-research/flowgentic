@@ -13,7 +13,9 @@ on an HPC allocation: the [agent host](features/agent-host.md), the
 the [tool service](features/tool-service.md) and the [fleet](features/fleet.md)
 client for model servers. [LangGraph agents at scale](guides/agents-at-scale.md)
 shows them together, in an example that runs on a laptop. Their interfaces
-may still change before 1.0, as the changelog will say.
+may still change before 1.0, as the changelog will say. The next release adds
+Flowgentic's own [agent loop](features/agent-loop.md), a runner on
+`langchain-core` beside LangGraph's; it is new, and its names may change.
 
 ## AsyncFlow path: maintenance mode
 
@@ -69,13 +71,16 @@ and metrics. Each path is an extra:
 - `langgraph`: `langgraph>=1.1.5,<2.0`, `langgraph-checkpoint>=4.3,<5`, and
   `langchain-core`, `langchain`, `langchain-openai` and `langchain-ollama` at
   `>=1.0,<2.0`.
+- `langchain-core`: `langchain-core>=1.0,<2.0`, for Flowgentic's own agent
+  loop and the fleet, without LangGraph.
 - `rhapsody`: `rhapsody-py>=0.7,<0.8`, for task tools.
 - `mcp`: `mcp>=2.3,<2.4`, for the tool service's MCP clients.
 - `asyncflow`: `radical-asyncflow>=0.6,<0.7`, because before 1.0 an AsyncFlow
   minor release may break.
 
 Agents at scale need `langgraph`, `rhapsody` and `mcp`:
-`flowgentic[langgraph,rhapsody,mcp]`. The LangGraph integration on AsyncFlow
+`flowgentic[langgraph,rhapsody,mcp]`, or `flowgentic[langchain-core,rhapsody,mcp]`
+with Flowgentic's own loop. The LangGraph integration on AsyncFlow
 needs `langgraph` and `asyncflow`, and `bind_agent` needs `asyncflow`. Without
 an extra it needs, importing a part raises an error that names the extra.
 `flowgentic.host`, `flowgentic.store` and `flowgentic.tools` import with no

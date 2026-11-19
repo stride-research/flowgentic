@@ -26,7 +26,8 @@ classifiers = [
     "Typing :: Typed",
 ]
 # Core: what every path needs. Each path adds an extra: `langgraph` for
-# LangGraph graphs and LangChain agents, `asyncflow` for AsyncFlow workflows,
+# LangGraph graphs and LangChain agents, `langchain-core` for Flowgentic's own
+# agent loop and the model fleet, `asyncflow` for AsyncFlow workflows,
 # `rhapsody` for tools that run as RHAPSODY tasks, `mcp` for the tool service's
 # MCP clients.
 dependencies = [
@@ -42,6 +43,9 @@ langgraph = [
     "langchain-core>=1.0,<2.0",
     "langchain-openai>=1.0,<2.0",
     "langchain-ollama>=1.0,<2.0",
+]
+langchain-core = [
+    "langchain-core>=1.0,<2.0",
 ]
 asyncflow = [
     "radical-asyncflow>=0.6,<0.7",
