@@ -23,9 +23,8 @@ never stop an agent that suspends on every turn. So the runner also lets an
 agent resume at most ``recursion_limit`` times: each resume runs at least one
 step, so an agent that would finish within the limit without suspending is
 never stopped by it, and one that loops on a suspending tool is. An agent's
-count lasts until it ends, or until the asyncio task that resumed it ends, as
-when the host cancels or fails an agent while it waits: the agent host runs
-each agent's start and resumes in one task.
+count lasts until its run ends, or until the agent host ends the agent, as when
+it cancels or fails an agent that waits between two resumes.
 
 A graph compiled with ``interrupt_before`` or ``interrupt_after`` is refused:
 a static breakpoint stops a run without an interrupt in its output, so the
@@ -45,7 +44,6 @@ that one's frames are left to the collector.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import traceback
 from contextvars import ContextVar
@@ -57,6 +55,7 @@ from langgraph.errors import GraphRecursionError
 from langgraph.graph import END
 from langgraph.types import Command, Send
 
+from flowgentic import _agents
 from flowgentic.host import Agent, Finished, Interrupted, Step, Suspended
 
 try:  # LangGraph's limit for a run whose config sets none
@@ -176,14 +175,12 @@ class GraphRunner:
 		count = self._resumes.get(agent_id)
 		if count is None:
 			count = self._resumes[agent_id] = [0]
-			# An agent cancelled or failed by the host while it waits never
-			# comes back here: its count goes when the task running it ends.
-			task = asyncio.current_task()
-			if task is not None:
-				task.add_done_callback(partial(self._forget, agent_id, count))
+			# An agent the host cancels or fails while it waits never comes
+			# back here: its count goes when the host ends it.
+			_agents.at_agent_end(agent_id, partial(self._forget, agent_id, count))
 		return count
 
-	def _forget(self, agent_id: str, count: list[int], _task: asyncio.Task) -> None:
+	def _forget(self, agent_id: str, count: list[int]) -> None:
 		if self._resumes.get(agent_id) is count:
 			del self._resumes[agent_id]
 

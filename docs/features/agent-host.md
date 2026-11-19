@@ -116,9 +116,8 @@ Each resume is a new LangGraph run, which counts its steps against
 `recursion_limit` times, and fails it with `GraphRecursionError` after that.
 Each resume runs at least one step, so an agent that would finish within the
 limit without suspending is never stopped by this. The count lasts until the
-agent ends, or until the asyncio task that resumed it ends, as when the host
-cancels an agent while it waits; the host runs each agent in one task.
-`GraphRunner` refuses a
+agent's run ends, or until the host ends the agent, as when it cancels or fails
+an agent that waits between two resumes. `GraphRunner` refuses a
 graph compiled with `interrupt_before` or `interrupt_after`: a static
 breakpoint stops a run without an interrupt, and the agent would end as
 finished, with partial output.
