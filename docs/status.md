@@ -105,14 +105,11 @@ Agents at scale:
 - An agent resumes only in the process that suspended it, because that
   process awaits the agent's tasks.
 - Checkpoints:
-    - A finished agent's last checkpoint stays in the store, so the store
-      grows with the campaign, not with the agents live at once. On a Dragon
-      dictionary, whose size is fixed when it is created, size it for the
-      campaign, or delete each finished agent's thread from the host's
-      `on_done` with `saver.delete_thread(result.id)`.
-    - A subgraph that suspends leaves its checkpoint behind each time it
-      runs, so a graph that runs a suspending subgraph in a loop, such as a
-      supervisor, stores more with every turn.
+    - A finished agent's last checkpoint stays in the store by default, so the
+      store grows with the campaign, not with the agents live at once. On a
+      Dragon dictionary, whose size is fixed when it is created, run the agents
+      with `GraphRunner(graph, delete_finished=True)`, which deletes each
+      finished agent's thread.
 - Tools:
     - A repeated task or MCP call is told apart from a new one by its
       LangGraph task and the tool call's id. A node that loops between the

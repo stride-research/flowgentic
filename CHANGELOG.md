@@ -11,6 +11,17 @@ predate this changelog, so their changes are not listed here.
 
 ### Added
 
+- `GraphRunner(graph, delete_finished=True)` deletes a finished agent's thread
+  from the graph's checkpointer once its run ends, before the host passes the
+  output to `on_done`, so the store holds the agents still running, not every
+  agent of the campaign. Turn it on when the store is a Dragon dictionary,
+  whose size is fixed. Interrupted, failed and cancelled agents keep their
+  threads. A thread that cannot be deleted is logged and counted in
+  `GraphRunner.delete_failures`, and the agent still finishes. With it on,
+  `on_done` can no longer read the thread's state (`graph.get_state` finds it
+  empty), and an agent id run again, as a conversation continued in a later
+  host run, starts a fresh thread. It is off by default, which keeps 0.5.0's
+  behaviour. The agents-at-scale example turns it on.
 - `flowgentic.tools.TaskCancelled`, the error a task ends with when RHAPSODY
   cancels it or its session closes before it ends.
 - `flowgentic.fleet`: an `AdmissionGate` counts the calls it admits alone
@@ -25,6 +36,12 @@ predate this changelog, so their changes are not listed here.
 
 ### Changed
 
+- `KeyValueSaver` keeps a thread's list of subgraph namespaces as a mapping,
+  each namespace with the parent checkpoint it ran under. This version reads a
+  store written by 0.5.0. The other way round, 0.5.0's saver can read, resume
+  and delete a thread this version saved a subgraph in, but it raises
+  `AttributeError` when it saves a new subgraph namespace in that thread. Do
+  not go back to 0.5.0 over a store with such threads.
 - A task or MCP call made by a LangGraph agent is keyed by its agent, the
   LangGraph task that runs the tool, and the tool call's id:
   `agent/task/call`, where it was `agent/call`. LangGraph gives a task the
@@ -69,6 +86,17 @@ predate this changelog, so their changes are not listed here.
 
 ### Fixed
 
+- `KeyValueSaver` drops a subgraph's checkpoints once its parent has moved past
+  the step that ran it, with the subgraph's own subgraphs. A graph that runs a
+  suspending subgraph in a loop, as a supervisor does, no longer stores more
+  with every turn. A stateful subgraph's checkpoints (`checkpointer=True`),
+  which every call reuses, are kept.
+- `KeyValueSaver.stats()` counts what LangGraph's copies of the saver put and
+  read. With `LANGGRAPH_STRICT_MSGPACK=true`, a graph runs on a copy, and the
+  saver reported zeros.
+- `from flowgentic.langgraph import *` works without the `asyncflow` extra.
+- `GraphRunner` no longer keeps a resume count for an agent that the host
+  cancels or fails while it waits between two resumes.
 - A model server that numbers its tool calls per message reuses call ids on
   later turns, and the later, different call got the first call's result. It
   now runs, when each turn's tools run in a LangGraph task of their own; a

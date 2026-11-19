@@ -6,6 +6,13 @@ interrupts raised by Flowgentic's task tools is a suspension, which the host
 resolves by awaiting the tasks and resuming the graph with ``Command(resume=...)``.
 Any other interrupt ends the agent as interrupted.
 
+A finished agent's thread stays in the graph's checkpointer, so the store grows
+with the campaign. With ``delete_finished=True`` the runner deletes it when the
+agent finishes, so that the store holds the agents still running: what a store
+of fixed size, such as a Dragon dictionary, needs. An interrupted agent's
+thread is kept even then, for a human-in-the-loop interrupt resumes from it,
+and so is a failed or cancelled agent's, to debug or retry it.
+
 ``route_tool_calls`` sends each tool call of the model's last message to the
 tool node as its own task (LangGraph's ``Send``). LangGraph saves the result of
 each finished call with the checkpoint, so when an agent resumes from a
@@ -16,7 +23,9 @@ Each resume is a new LangGraph run, and LangGraph counts a run's steps against
 never stop an agent that suspends on every turn. So the runner also lets an
 agent resume at most ``recursion_limit`` times: each resume runs at least one
 step, so an agent that would finish within the limit without suspending is
-never stopped by it, and one that loops on a suspending tool is.
+never stopped by it, and one that loops on a suspending tool is. An agent's
+count lasts until its run ends, or until the agent host ends the agent, as when
+it cancels or fails an agent that waits between two resumes.
 
 A graph compiled with ``interrupt_before`` or ``interrupt_after`` is refused:
 a static breakpoint stops a run without an interrupt in its output, so the
@@ -36,14 +45,18 @@ that one's frames are left to the collector.
 
 from __future__ import annotations
 
+import logging
 import traceback
 from contextvars import ContextVar
+from functools import partial
 from typing import Any, Literal
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.errors import GraphRecursionError
 from langgraph.graph import END
 from langgraph.types import Command, Send
 
+from flowgentic import _agents
 from flowgentic.host import Agent, Finished, Interrupted, Step, Suspended
 
 try:  # LangGraph's limit for a run whose config sets none
@@ -52,6 +65,8 @@ except ImportError:  # pragma: no cover - a LangGraph that moved it
 	_DEFAULT_LIMIT = 10_000
 
 __all__ = ["GraphRunner", "PENDING_KEY", "record_interrupt", "route_tool_calls"]
+
+log = logging.getLogger(__name__)
 
 PENDING_KEY = "flowgentic_pending"
 """The key of the interrupt value a task tool raises: the task's key."""
@@ -89,6 +104,14 @@ class GraphRunner:
 	``exit``, the default, saves a checkpoint only when a run ends or suspends.
 	An agent resumes at most as many times as its run's ``recursion_limit``;
 	one more resume fails it with ``GraphRecursionError``.
+
+	With ``delete_finished=True``, a finished agent's thread is deleted from the
+	graph's checkpointer once its run ends, before the host hands its output to
+	``on_done``. Two things are lost with it: ``on_done`` can no longer read the
+	thread's state (``graph.get_state`` finds it empty), and an agent id run
+	again, as a conversation continued, starts a fresh thread. A thread that
+	cannot be deleted is logged, and the agent still finishes;
+	``delete_failures`` counts them.
 	"""
 
 	def __init__(
@@ -97,6 +120,7 @@ class GraphRunner:
 		*,
 		config: dict | None = None,
 		durability: Durability = "exit",
+		delete_finished: bool = False,
 	) -> None:
 		if getattr(graph, "interrupt_before_nodes", None) or getattr(
 			graph, "interrupt_after_nodes", None
@@ -110,7 +134,12 @@ class GraphRunner:
 		self.graph = graph
 		self.config = dict(config or {})
 		self.durability = durability
-		self._resumes: dict[str, int] = {}  # per suspended agent
+		self.delete_finished = delete_finished
+		self.delete_failures = 0
+		self._cannot_delete = False
+		# Resumes per suspended agent, each in a cell of its own, so that a
+		# count dropped and made again for the same id is not dropped twice.
+		self._resumes: dict[str, list[int]] = {}
 
 	def _config(self, agent: Agent) -> dict:
 		config = {**self.config, **(agent.config or {})}
@@ -135,16 +164,29 @@ class GraphRunner:
 	async def resume(self, agent: Agent, done: dict[str, Any]) -> Step:
 		config = self._config(agent)
 		limit = self._limit(config)
-		resumes = self._resumes.get(agent.id, 0) + 1
-		if resumes > limit:
+		count = self._count(agent.id)
+		count[0] += 1
+		if count[0] > limit:
 			self._resumes.pop(agent.id, None)
 			raise GraphRecursionError(
 				f"Agent {agent.id!r} suspended more than {limit} times, its "
 				"recursion_limit. Each resume runs at least one step; raise "
 				"recursion_limit in the run's config if the agent should go on."
 			)
-		self._resumes[agent.id] = resumes
 		return await self._run(Command(resume=done), agent, config)
+
+	def _count(self, agent_id: str) -> list[int]:
+		count = self._resumes.get(agent_id)
+		if count is None:
+			count = self._resumes[agent_id] = [0]
+			# An agent the host cancels or fails while it waits never comes
+			# back here: its count goes when the host ends it.
+			_agents.at_agent_end(agent_id, partial(self._forget, agent_id, count))
+		return count
+
+	def _forget(self, agent_id: str, count: list[int]) -> None:
+		if self._resumes.get(agent_id) is count:
+			del self._resumes[agent_id]
 
 	async def _run(self, value: Any, agent: Agent, config: dict) -> Step:
 		raised: list[BaseException] = []
@@ -160,7 +202,36 @@ class GraphRunner:
 		step = _step(out)
 		if not isinstance(step, Suspended):
 			self._resumes.pop(agent.id, None)
+		if isinstance(step, Finished) and self.delete_finished:
+			await self._delete(agent.id)
 		return step
+
+	async def _delete(self, thread_id: str) -> None:
+		saver = getattr(self.graph, "checkpointer", None)
+		if not isinstance(saver, BaseCheckpointSaver) or self._cannot_delete:
+			return
+		try:
+			await saver.adelete_thread(thread_id)
+		except NotImplementedError:
+			# A saver that cannot delete never will: say so once, and stop asking.
+			self._cannot_delete = True
+			log.warning(
+				"%s cannot delete threads: finished agents' checkpoints stay in "
+				"it. Leave delete_finished off to keep them without this warning.",
+				type(saver).__name__,
+			)
+		except Exception as exc:
+			# The agent finished, and its output stands; only its thread stays.
+			self.delete_failures += 1
+			log.log(
+				logging.WARNING if self.delete_failures == 1 else logging.DEBUG,
+				"could not delete finished agent %s's thread (%s: %s); its "
+				"checkpoint stays in the store",
+				thread_id,
+				type(exc).__name__,
+				exc,
+				exc_info=self.delete_failures == 1,
+			)
 
 
 def _step(out: Any) -> Step:

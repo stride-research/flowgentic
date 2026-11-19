@@ -225,7 +225,7 @@ def process_agent_seconds() -> dict[AgentState, float]:
 class _Agent:
 	"""The context variable's value: one live agent, with its open activities."""
 
-	__slots__ = ("id", "states", "_open", "registered", "finished")
+	__slots__ = ("id", "states", "_open", "registered", "finished", "at_end")
 
 	def __init__(self, agent_id: str, states: AgentStates) -> None:
 		self.id = agent_id
@@ -233,6 +233,7 @@ class _Agent:
 		self.finished = False
 		self._open = [0] * _N
 		self.registered: dict[str, asyncio.Future] = {}
+		self.at_end: list[Callable[[], None]] = []
 
 	def open(self, state: AgentState) -> None:
 		self._open[state] += 1
@@ -371,7 +372,8 @@ def end_host_run() -> None:
 
 
 def release_pending() -> None:
-	"""Release this agent's task registrations when the runner finishes."""
+	"""Release this agent's task registrations when the runner finishes, and
+	call what ``at_agent_end`` registered for it."""
 	agent = _current.get()
 	if agent is not None:
 		agent.finished = True
@@ -379,6 +381,19 @@ def release_pending() -> None:
 			if _pending.get(key) is future:
 				_pending.pop(key)
 		agent.registered.clear()
+		at_end, agent.at_end = agent.at_end, []
+		for callback in at_end:
+			callback()
+
+
+def at_agent_end(agent_id: str, callback: Callable[[], None]) -> bool:
+	"""Call ``callback`` when the host ends the agent ``agent_id``, however it
+	ends, if the current task runs that agent in a host. Whether it will."""
+	agent = _current.get()
+	if agent is None or agent.id != agent_id or agent.finished:
+		return False
+	agent.at_end.append(callback)
+	return True
 
 
 def forget_pending(key: str) -> None:

@@ -144,6 +144,13 @@ closes the RHAPSODY session:
 --8<-- "examples/agents-at-scale/campaign.py:host"
 ```
 
+`delete_finished=True` deletes each agent's thread from the checkpointer once
+the agent finishes. The store then holds the agents still running, not every
+agent of the campaign, which a Dragon dictionary needs: its size is fixed when
+it is created. The example's `on_done` reads only the output, so it loses
+nothing; see the [agent host](../features/agent-host.md#runners) for what the
+option gives up.
+
 `--json` prints the whole summary, with each process's `HostReport` figures,
 the fleet's, the tools' and the checkpointer's counters.
 

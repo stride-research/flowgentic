@@ -50,7 +50,7 @@ calls few. For thread `t` and checkpoint namespace `ns`:
 | `lg/{t}/{ns}/w` | pending writes grouped by checkpoint id |
 | `lg/{t}/{ns}/c/{id}` | an older checkpoint, with its writes, when `keep_last` > 1 |
 | `lg/{t}/{ns}/index` | the older checkpoints' ids, oldest first |
-| `lg/{t}/namespaces` | the thread's namespaces other than the root |
+| `lg/{t}/namespaces` | the thread's namespaces other than the root, each with its parent's checkpoint id |
 
 - **It keeps the newest checkpoint only, by default.** Each checkpoint holds
   the agent's whole history, so keeping every one grows with the square of a
@@ -70,7 +70,28 @@ calls few. For thread `t` and checkpoint namespace `ns`:
   saver reads, changes and writes back the pending writes. That is safe
   because one process owns the thread, and updates in that process take a
   lock shared by savers for the thread.
+- **A subgraph's checkpoints go once its parent has moved on.** Each run of a
+  subgraph has a namespace of its own, named after the task that ran it
+  (`node:task_id`), so a graph that runs a suspending subgraph in a loop, as a
+  supervisor does, would leave one behind on every turn. When a subgraph's
+  namespace is first saved, the saver drops its siblings that ran under a
+  checkpoint of the parent's older than every one the parent keeps, with their
+  own subgraphs. The parent can no longer resume them. A loop then keeps the
+  subgraphs of its last step or two, however long it runs. A stateful
+  subgraph, compiled with `checkpointer=True`, saves every call under its
+  node's name alone, so that each call goes on from the last; its namespace is
+  never dropped. This costs a read of the parent's newest checkpoint (and of
+  its index, above `keep_last=1`) when a subgraph's namespace is first saved,
+  and nothing in the root namespace.
 - **`list` needs a thread id**, because RaDEX cannot list its keys.
+- **A finished agent's last checkpoint stays in the store**, so the store
+  grows with the campaign, not with the agents live at once. On a Dragon
+  dictionary, whose size is fixed when it is created, run the agents with
+  `GraphRunner(graph, delete_finished=True)`: the runner then deletes each
+  agent's thread once it finishes (see the
+  [agent host](agent-host.md#runners) for what that gives up).
+  `delete_thread` removes a thread, its namespaces included; it takes a few
+  store calls per namespace.
 
 `saver.stats()` returns how many checkpoints and writes the saver has put, how
 many checkpoints it has read, and their mean size in bytes.

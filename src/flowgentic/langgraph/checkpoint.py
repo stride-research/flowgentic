@@ -9,7 +9,8 @@ in tests. Keys, for thread ``t`` and namespace ``ns``::
     lg/{t}/{ns}/w                  pending writes grouped by checkpoint id
     lg/{t}/{ns}/c/{checkpoint_id}  an older retained checkpoint, with its writes
     lg/{t}/{ns}/index              the older retained ids, oldest first
-    lg/{t}/namespaces              the thread's namespaces other than the root
+    lg/{t}/namespaces              the thread's namespaces other than the root,
+                                   each with its parent's checkpoint id
 
 Each store call is a round trip that blocks the event loop, and a RaDEX client
 grows with each, so the layout keeps them few. With the default ``keep_last=1``
@@ -24,6 +25,19 @@ ordinary channels. Delta channels also read their parent to retain its replay da
 checkpoint holds the agent's whole history, so keeping all of them grows with
 the square of a run's length. With ``keep_last`` above one, each checkpoint
 also moves the previous newest one, with its writes, under ``c/``.
+
+A subgraph runs in a namespace of its own, one per task that runs it
+(``node:task_id``), so a graph that runs a suspending subgraph in a loop, as a
+supervisor does, would leave a namespace behind on every turn. Each namespace is
+registered with the id of the parent's checkpoint it ran under. When a new
+namespace registers, its per-task siblings whose parent checkpoint is older than
+every checkpoint the parent keeps are dropped, with their own subgraphs: the
+parent has moved past the step that ran them, and cannot go back to it. A
+sibling of a parent checkpoint not saved yet is kept, and so is a stateful
+subgraph's namespace (``checkpointer=True``), which has no task id and which
+every call reuses. This costs one read of the parent's head (and of its index,
+above ``keep_last=1``) when a namespace registers, and nothing in the root
+namespace.
 
 One process owns each thread's writes. Within a process, the saver serializes
 updates for a thread and reads the persisted head and pending writes before
@@ -80,6 +94,70 @@ def _key_part(value: str) -> str:
 	return str(value).replace("%", "%25").replace("/", "%2F")
 
 
+# LangGraph's separator of a subgraph's namespace from its parent's, and of a
+# node's name from the id of the task that ran it.
+_NS_SEP = "|"
+_NS_END = ":"
+
+
+def _parent_ns(ns: str) -> str:
+	return ns.rpartition(_NS_SEP)[0]
+
+
+def _per_task(ns: str) -> bool:
+	"""Whether ``ns`` is one task's run of a subgraph (``node:task_id``). A
+	stateful subgraph (``checkpointer=True``) saves every call under its node's
+	name alone, so that each call goes on from the last one's state."""
+	return _NS_END in ns.rpartition(_NS_SEP)[2]
+
+
+def _parent_checkpoint_id(
+	config: RunnableConfig, metadata: CheckpointMetadata | None, ns: str
+) -> str | None:
+	"""The id of the parent's checkpoint that a subgraph in ``ns`` runs under:
+	in LangGraph's map of the parents' checkpoints, or the metadata's."""
+	parent = _parent_ns(ns)
+	found = (config["configurable"].get("checkpoint_map") or {}).get(parent)
+	if found is None and metadata:
+		found = (metadata.get("parents") or {}).get(parent)
+	return found
+
+
+class _Counts:
+	"""What a saver has put and read. LangGraph runs a graph on a shallow copy
+	of its saver when strict msgpack is on (``with_allowlist``): every copy
+	shares this one object, so the saver the application holds counts too."""
+
+	__slots__ = (
+		"checkpoints_put",
+		"writes_put",
+		"checkpoints_read",
+		"checkpoint_bytes",
+	)
+
+	def __init__(self) -> None:
+		self.checkpoints_put = 0
+		self.writes_put = 0
+		self.checkpoints_read = 0
+		self.checkpoint_bytes = 0
+
+
+class _Count:
+	"""One of a saver's counters, read from and written to the counts its
+	copies share, so that setting one, as to reset it, reaches them all."""
+
+	def __set_name__(self, owner: type, name: str) -> None:
+		self.name = name
+
+	def __get__(self, saver: KeyValueSaver | None, owner: type | None = None) -> int:
+		if saver is None:
+			return self  # type: ignore[return-value]
+		return getattr(saver._counts, self.name)
+
+	def __set__(self, saver: KeyValueSaver, value: int) -> None:
+		setattr(saver._counts, self.name, value)
+
+
 class KeyValueSaver(BaseCheckpointSaver[str]):
 	"""Checkpoints in a ``KeyValueStore``; see the module's docstring."""
 
@@ -91,10 +169,16 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 			raise ValueError("keep_last must be at least 1")
 		self.store = store
 		self.keep_last = keep_last
-		self.checkpoints_put = 0
-		self.writes_put = 0
-		self.checkpoints_read = 0
-		self.checkpoint_bytes = 0
+		self._counts = _Counts()
+
+	checkpoints_put = _Count()
+	"""Checkpoints put, by this saver and its copies."""
+	writes_put = _Count()
+	"""Batches of pending writes put."""
+	checkpoints_read = _Count()
+	"""Checkpoints read back."""
+	checkpoint_bytes = _Count()
+	"""Bytes of the checkpoints put."""
 
 	@staticmethod
 	def _prefix(thread_id: str, ns: str) -> str:
@@ -128,7 +212,7 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 		writes: list,
 		config: RunnableConfig | None = None,
 	) -> CheckpointTuple:
-		self.checkpoints_read += 1
+		self._counts.checkpoints_read += 1
 		checkpoint, metadata, parent_id = saved
 		writes = sorted(writes, key=lambda w: writes_sort_key(w[3], w[0], w[4]))
 		return CheckpointTuple(
@@ -241,18 +325,62 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 			history[ch] = entry
 		return (*typed, self.serde.dumps_typed(history))
 
-	def _register_namespace(self, thread_id: str, ns: str) -> None:
-		if ns:
-			namespaces = self.store.get(f"lg/{_key_part(thread_id)}/namespaces", set())
-			if ns not in namespaces:
-				namespaces.add(ns)
-				self.store.put(f"lg/{_key_part(thread_id)}/namespaces", namespaces)
+	def _registry(self, thread_id: str) -> dict[str, str | None]:
+		"""The thread's namespaces, each with the id of the parent's checkpoint
+		it ran under, if known. 0.5.0 kept a set of namespaces alone."""
+		saved = self.store.get(f"lg/{_key_part(thread_id)}/namespaces", {})
+		return saved if isinstance(saved, dict) else dict.fromkeys(saved)
+
+	def _register_namespace(
+		self, thread_id: str, ns: str, parent_id: str | None
+	) -> None:
+		if not ns:
+			return
+		namespaces = self._registry(thread_id)
+		if ns in namespaces:
+			return
+		self._drop_stale(thread_id, namespaces, _parent_ns(ns))
+		namespaces[ns] = parent_id
+		self.store.put(f"lg/{_key_part(thread_id)}/namespaces", namespaces)
+
+	def _drop_stale(
+		self, thread_id: str, namespaces: dict[str, str | None], parent: str
+	) -> None:
+		"""Drop, from the store and from ``namespaces``, the per-task runs of
+		subgraphs of ``parent`` that ran under a checkpoint it no longer keeps,
+		with their own subgraphs. A stateful subgraph's namespace stays."""
+		siblings = [
+			(ns, parent_id)
+			for ns, parent_id in namespaces.items()
+			if parent_id is not None and _parent_ns(ns) == parent and _per_task(ns)
+		]
+		if not siblings:
+			return
+		prefix = self._prefix(thread_id, parent)
+		head = self.store.get(f"{prefix}/head", None)
+		if head is None:
+			return
+		kept = [head[0]]
+		if self.keep_last > 1:
+			kept += self.store.get(f"{prefix}/index", [])
+		oldest = min(kept)
+		for ns, parent_id in siblings:
+			if parent_id < oldest:
+				for old in [
+					n for n in namespaces if n == ns or n.startswith(ns + _NS_SEP)
+				]:
+					self._delete_namespace(thread_id, old)
+					del namespaces[old]
+
+	def _delete_namespace(self, thread_id: str, ns: str) -> None:
+		prefix = self._prefix(thread_id, ns)
+		for checkpoint_id in self.store.get(f"{prefix}/index", []):
+			self.store.delete(f"{prefix}/c/{_key_part(checkpoint_id)}")
+		for key in ("head", "w", "index"):
+			self.store.delete(f"{prefix}/{key}")
 
 	def _namespaces(self, thread_id: str) -> list[str]:
-		return [
-			"",
-			*sorted(self.store.get(f"lg/{_key_part(thread_id)}/namespaces", set())),
-		]
+		return ["", *sorted(self._registry(thread_id))]
 
 	def list(
 		self,
@@ -340,18 +468,22 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 			typed_metadata = self.serde.dumps_typed(
 				get_checkpoint_metadata(config, metadata)
 			)
-			self.checkpoint_bytes += len(typed_checkpoint[1]) + len(typed_metadata[1])
+			self._counts.checkpoint_bytes += len(typed_checkpoint[1]) + len(
+				typed_metadata[1]
+			)
 			if len(typed_checkpoint) == 3:
-				self.checkpoint_bytes += len(typed_checkpoint[2][1])
+				self._counts.checkpoint_bytes += len(typed_checkpoint[2][1])
 			parent_id = config["configurable"].get("checkpoint_id")
 			if self.keep_last > 1:
 				self._keep_previous(prefix, checkpoint_id)
-			self._register_namespace(thread_id, ns)
+			self._register_namespace(
+				thread_id, ns, _parent_checkpoint_id(config, metadata, ns)
+			)
 			self.store.put(
 				f"{prefix}/head",
 				(checkpoint_id, typed_checkpoint, typed_metadata, parent_id),
 			)
-			self.checkpoints_put += 1
+			self._counts.checkpoints_put += 1
 			return self._config(thread_id, ns, checkpoint_id)
 
 	def put_writes(
@@ -368,7 +500,9 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 			prefix = self._prefix(thread_id, ns)
 			head = self.store.get(f"{prefix}/head", None)
 			if head is None:
-				self._register_namespace(thread_id, ns)
+				self._register_namespace(
+					thread_id, ns, _parent_checkpoint_id(config, None, ns)
+				)
 			older = None
 			if head is not None and checkpoint_id < head[0]:
 				if self.keep_last == 1:
@@ -412,16 +546,12 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 				)
 			else:
 				self.store.put(f"{prefix}/w", batches)
-			self.writes_put += 1
+			self._counts.writes_put += 1
 
 	def delete_thread(self, thread_id: str) -> None:
 		with _thread_lock(thread_id):
 			for ns in self._namespaces(thread_id):
-				prefix = self._prefix(thread_id, ns)
-				for checkpoint_id in self.store.get(f"{prefix}/index", []):
-					self.store.delete(f"{prefix}/c/{_key_part(checkpoint_id)}")
-				for key in ("head", "w", "index"):
-					self.store.delete(f"{prefix}/{key}")
+				self._delete_namespace(thread_id, ns)
 			self.store.delete(f"lg/{_key_part(thread_id)}/namespaces")
 
 	def get_next_version(self, current: str | None, channel: None) -> str:

@@ -4,7 +4,8 @@ suspended run freed when it stops."""
 
 import asyncio
 import gc
-from typing import Annotated
+import operator
+from typing import Annotated, TypedDict
 
 import pytest
 from _support import Scripted, calls_then_answer, react_graph
@@ -12,8 +13,8 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import InjectedToolCallId, tool
 from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.errors import GraphInterrupt
-from langgraph.graph import END
+from langgraph.errors import GraphInterrupt, GraphRecursionError
+from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
 from flowgentic.host import Agent, AgentHost, AgentState, Finished, Interrupted, Stagger, Suspended, register_pending
@@ -162,6 +163,234 @@ def test_the_asyncflow_integration_spells_langgraph():
     assert not {"LangraphIntegration", "ExecutionWrappersLangraph"} & set(lg.__all__)
     assert lg.LangGraphIntegration.__name__ == "LangGraphIntegration"
     assert lg.ExecutionWrappersLangGraph.__name__ == "ExecutionWrappersLangGraph"
+
+
+@tool
+async def stuck_task(x: float, config: RunnableConfig, call_id: Annotated[str, InjectedToolCallId]) -> str:
+    """A task that never ends, or, for x < 0, one the host cannot find."""
+    key = f"{config['configurable']['thread_id']}/{call_id}"
+    if x >= 0 and key not in TASKS:
+        TASKS[key] = asyncio.get_running_loop().create_future()
+        register_pending(key, TASKS[key])
+    try:
+        interrupt({PENDING_KEY: key})
+    except GraphInterrupt as exc:
+        record_interrupt(exc)
+        raise
+    return "never"
+
+
+def slow_then(second: str, x: float):
+    """One slow task, then ``second``: the agent suspends twice."""
+
+    def script(messages):
+        done = sum(1 for m in messages if m.type == "tool")
+        name, args = ("slow_task", {"x": 1.0}) if done == 0 else (second, {"x": x})
+        return AIMessage("", tool_calls=[{"name": name, "args": args, "id": f"c{done}"}])
+
+    return script
+
+
+@pytest.mark.parametrize("ending", ["cancelled", "failed"])
+async def test_an_agent_that_ends_while_suspended_leaves_no_resume_count(ending):
+    """An agent cancelled, or failed by the host, while it waits between two
+    resumes never reaches the runner again: its count of resumes goes with it."""
+    x = 1.0 if ending == "cancelled" else -1.0
+    model = Scripted(script=slow_then("stuck_task", x))
+    runner = GraphRunner(react_graph(model, [slow_task, stuck_task], InMemorySaver()))
+    host = AgentHost(runner, stagger=FAST)
+    run = asyncio.create_task(host.run(inputs(3)))
+    if ending == "cancelled":
+        while len(TASKS) < 6:  # each agent waits on its second task
+            await asyncio.sleep(0.005)
+        await asyncio.sleep(0.01)
+        run.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await run
+    else:
+        report = await run
+        assert [a.status for a in report.agents] == ["failed"] * 3
+        assert all("did not submit" in a.error for a in report.agents)
+    assert not runner._resumes
+
+
+class Loop(TypedDict):
+    n: Annotated[int, operator.add]
+
+
+def suspending_forever():
+    """A graph whose one node suspends on every pass, and loops."""
+    g = StateGraph(Loop)
+    g.add_node("work", lambda s: {"n": interrupt({PENDING_KEY: f"k{s['n']}"})})
+    g.add_edge(START, "work")
+    g.add_edge("work", "work")
+    return g.compile(checkpointer=InMemorySaver())
+
+
+@pytest.mark.parametrize("how", ["same task", "task per resume", "wait_for"])
+async def test_the_resume_limit_holds_however_each_resume_is_awaited(how):
+    """The runner counts an agent's resumes until the agent ends, not until the
+    asyncio task a resume ran in ends: a caller outside the host may run each
+    resume in a task of its own."""
+    runner = GraphRunner(suspending_forever(), config={"recursion_limit": 3})
+    agent = Agent("a", {"n": 0})
+    step = await runner.start(agent)
+    resumes = 0
+    with pytest.raises(GraphRecursionError):
+        while isinstance(step, Suspended) and resumes < 10:
+            resumes += 1
+            call = runner.resume(agent, {rid: 1 for rid, _ in step.waits})
+            if how == "task per resume":
+                step = await asyncio.create_task(call)
+            elif how == "wait_for":
+                step = await asyncio.wait_for(call, 10)
+            else:
+                step = await call
+            await asyncio.sleep(0)  # let the ended task's callbacks run
+    assert resumes == 4
+    assert not runner._resumes
+
+
+def test_the_resume_limit_holds_across_event_loops():
+    runner = GraphRunner(suspending_forever(), config={"recursion_limit": 3})
+    agent = Agent("a", {"n": 0})
+    step = asyncio.run(runner.start(agent))
+    resumes = 0
+    with pytest.raises(GraphRecursionError):
+        while isinstance(step, Suspended) and resumes < 10:
+            resumes += 1
+            step = asyncio.run(runner.resume(agent, {rid: 1 for rid, _ in step.waits}))
+    assert resumes == 4
+
+
+@tool
+def fail(text: str) -> str:
+    """A tool that raises."""
+    raise RuntimeError(f"no {text}")
+
+
+def threads_in(store) -> set[str]:
+    return {key.split("/")[1] for key in store.keys()}
+
+
+async def test_by_default_a_finished_agents_thread_stays():
+    """on_done can read a finished agent's state from the checkpointer, and an
+    agent id run again, as a conversation continued, goes on from its thread."""
+    from langgraph.graph import MessagesState
+
+    g = StateGraph(MessagesState)
+    g.add_node("reply", lambda s: {"messages": [("ai", f"seen {len(s['messages'])}")]})
+    g.add_edge(START, "reply")
+    graph = g.compile(checkpointer=InMemorySaver())
+    seen, outputs = [], []
+
+    def on_done(result, output):
+        state = graph.get_state({"configurable": {"thread_id": result.id}})
+        seen.append(len(state.values["messages"]))
+        outputs.append(output["messages"][-1].content)
+
+    host = AgentHost(GraphRunner(graph), stagger=FAST, on_done=on_done)
+    await host.run([Agent("chat", {"messages": [HumanMessage("hi")]})])
+    await host.run([Agent("chat", {"messages": [HumanMessage("again")]})])
+    assert seen == [2, 4]
+    assert outputs == ["seen 1", "seen 3"]
+
+
+async def test_a_finished_agents_thread_leaves_the_store():
+    """With delete_finished, each finished agent's last checkpoint and pending
+    writes are deleted, so the store holds the agents still running, not the
+    campaign's."""
+    from flowgentic.langgraph import KeyValueSaver
+    from flowgentic.store import MemoryStore
+
+    store = MemoryStore()
+    model = Scripted(script=calls_then_answer(("slow_task", {"x": 1.5})))
+    outputs = {}
+    runner = GraphRunner(react_graph(model, [slow_task], KeyValueSaver(store)), delete_finished=True)
+    host = AgentHost(runner, stagger=FAST, on_done=lambda r, out: outputs.__setitem__(r.id, out))
+    report = await host.run(inputs(20))
+    assert report.finished == 20 and all(a.suspensions == 1 for a in report.agents)
+    assert "result 3.0" in outputs["agent-7"]["messages"][-1].content
+    assert store.keys() == []
+
+
+@pytest.mark.parametrize("delete_finished", [True, False])
+async def test_interrupted_and_failed_agents_keep_their_threads(delete_finished):
+    """With delete_finished, a human-in-the-loop interrupt still resumes from
+    the thread, and a failed agent's thread is kept to debug or retry it.
+    Without it, a finished agent's is kept too."""
+    from langgraph.types import Command
+
+    from flowgentic.langgraph import KeyValueSaver
+    from flowgentic.store import MemoryStore
+
+    store = MemoryStore()
+    saver = KeyValueSaver(store)
+
+    calls = {
+        "ask": ("ask_a_human", {"question": "go?"}),
+        "fail": ("fail", {"text": "x"}),
+        "wait": ("slow_task", {"x": 1.0}),
+    }
+
+    def script(messages):
+        text = messages[0].content
+        if text == "done" or any(m.type == "tool" for m in messages):
+            return AIMessage("done")
+        name, args = calls[text]
+        return AIMessage("", tool_calls=[{"name": name, "args": args, "id": "c0"}])
+
+    graph = react_graph(
+        Scripted(script=script), [ask_a_human, fail, slow_task], saver, handle_tool_errors=None
+    )
+    runner = GraphRunner(graph, delete_finished=delete_finished)
+    agents = [Agent(text, {"messages": [HumanMessage(text)]}) for text in ("ask", "fail", "wait", "done")]
+    report = await AgentHost(runner, stagger=FAST).run(agents)
+    assert {a.id: a.status for a in report.agents} == {
+        "ask": "interrupted",
+        "fail": "failed",
+        "wait": "done",
+        "done": "done",
+    }
+    kept = {"ask", "fail"} | (set() if delete_finished else {"wait", "done"})
+    assert threads_in(store) == kept
+    # The interrupted agent still resumes from its thread.
+    config = {"configurable": {"thread_id": "ask"}}
+    out = await graph.ainvoke(Command(resume="yes"), config)
+    assert out["messages"][-1].content == "done"
+
+
+@pytest.mark.parametrize("error", [ConnectionError, NotImplementedError])
+async def test_a_thread_that_cannot_be_deleted_leaves_the_agent_finished(caplog, error):
+    """A store that fails is logged once as a warning, and each failure counted;
+    a saver that cannot delete threads is reported once and not asked again."""
+    asked = []
+
+    class Undeletable(InMemorySaver):
+        async def adelete_thread(self, thread_id):
+            asked.append(thread_id)
+            raise error("store unreachable")
+
+    model = Scripted(script=calls_then_answer(("note", {"text": "hi"})))
+    runner = GraphRunner(react_graph(model, [note], Undeletable()), delete_finished=True)
+    with caplog.at_level("DEBUG", logger="flowgentic.langgraph.runner"):
+        report = await AgentHost(runner, stagger=FAST).run(inputs(3))
+    assert report.finished == 3
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    if error is NotImplementedError:
+        assert "cannot delete threads" in warnings[0].getMessage()
+        assert len(asked) == 1 and runner.delete_failures == 0
+    else:
+        assert "store unreachable" in warnings[0].getMessage()
+        assert len(asked) == 3 and runner.delete_failures == 3
+
+
+@pytest.mark.filterwarnings("ignore:`durability` has no effect")
+async def test_a_graph_without_a_checkpointer_runs_to_its_end():
+    model = Scripted(script=calls_then_answer(("note", {"text": "hi"})))
+    runner = GraphRunner(react_graph(model, [note]))
+    assert (await AgentHost(runner, stagger=FAST).run(inputs(2))).finished == 2
 
 
 def left_by(run_objects: tuple) -> list:

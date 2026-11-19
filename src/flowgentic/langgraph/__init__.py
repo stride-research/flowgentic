@@ -17,6 +17,7 @@ Without the extras a path needs, using it raises an error that names them.
 """
 
 import importlib
+import importlib.util
 from typing import Any
 
 try:
@@ -45,11 +46,8 @@ except ModuleNotFoundError as exc:
 
 __all__ = [
 	"PENDING_KEY",
-	"BaseLLMAgentState",
-	"ExecutionWrappersLangGraph",
 	"GraphRunner",
 	"KeyValueSaver",
-	"LangGraphIntegration",
 	"bind_tools",
 	"record_interrupt",
 	"route_tool_calls",
@@ -60,6 +58,20 @@ _ASYNCFLOW_PATH = {
 	"ExecutionWrappersLangGraph": "flowgentic.langgraph.execution_wrappers",
 	"BaseLLMAgentState": "flowgentic.langgraph.execution_wrappers",
 }
+
+
+def _asyncflow_installed() -> bool:
+	try:
+		return importlib.util.find_spec("radical.asyncflow") is not None
+	except ModuleNotFoundError:  # no radical namespace at all
+		return False
+
+
+# ``import *`` imports every name in ``__all__``: the AsyncFlow integration's
+# names are in it only when AsyncFlow is installed, so that a star import
+# works with the ``langgraph`` extra alone.
+if _asyncflow_installed():
+	__all__ += sorted(_ASYNCFLOW_PATH)
 
 _EXTRA_MODULES = (
 	"langgraph",
