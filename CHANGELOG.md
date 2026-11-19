@@ -43,8 +43,9 @@ work as before.
   OpenRouter and OpenAI, and `parse_completion` for such a server's reply. It
   reads the reasoning from `reasoning`, and from `reasoning_content` for older
   vLLM and SGLang; the cached tokens from `usage.prompt_tokens_details`, the
-  reasoning tokens from `usage.completion_tokens_details`. It needs a new
-  `openai` extra.
+  reasoning tokens from `usage.completion_tokens_details`. `pools=` spreads
+  its calls over several clients, each with its own connection pool, for a
+  replica with hundreds of calls in flight. It needs a new `openai` extra.
 - `flowgentic.langchain`, LangChain as an adapter, in the `langgraph` extra:
   `ChatModelTransport` (any LangChain chat model as a transport; it takes
   LangChain messages and tools as they are, too), `FleetChatModel` (moved

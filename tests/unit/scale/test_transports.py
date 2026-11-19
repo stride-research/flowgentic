@@ -171,3 +171,35 @@ def test_the_openai_transport_makes_its_client(monkeypatch):
     transport = OpenAITransport("m", base_url="http://node-2:8000/v1", max_retries=0, timeout=5)
     assert transport.client.api_key == "EMPTY" and transport.client.max_retries == 0
     assert transport.base_url == "http://node-2:8000/v1/"
+
+
+async def test_the_openai_transport_spreads_its_calls_over_its_pools(monkeypatch):
+    """At hundreds of calls in flight, one client's connection pool costs more
+    per call the more calls it holds; ``pools`` spreads them over clients."""
+    made = []
+
+    class Client:
+        def __init__(self, **kwargs):
+            made.append(self)
+            self.kwargs, self.calls = kwargs, 0
+            self.base_url = kwargs["base_url"]
+            self.chat = self
+            self.completions = self
+
+        async def create(self, **params):
+            self.calls += 1
+            return load(COMPLETIONS[0])["response"]
+
+    import openai
+
+    monkeypatch.setattr(openai, "AsyncOpenAI", Client)
+    transport = OpenAITransport("m", base_url="http://node-1:8000/v1", pools=3, max_retries=0)
+    for _ in range(7):
+        await transport.complete([{"role": "user", "content": "hi"}])
+    assert [c.calls for c in made] == [3, 2, 2]
+    assert all(c.kwargs["max_retries"] == 0 for c in made)
+    assert transport.client is made[0] and transport.clients == made
+    with pytest.raises(ValueError, match="pools"):
+        OpenAITransport("m", pools=0)
+    with pytest.raises(ValueError, match="client"):
+        OpenAITransport("m", client=made[0], pools=2)

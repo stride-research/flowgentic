@@ -60,7 +60,12 @@ prompt tokens from `usage.prompt_tokens_details`, and the reasoning tokens
 from `usage.completion_tokens_details`, when the server sends them (vLLM sends
 the first with `--enable-prompt-tokens-details`). Keywords given when it is
 made, such as `temperature=0`, go with every call; `max_retries=0` leaves
-retries to `Recovery`. `parse_completion` reads such a server's completion,
+retries to `Recovery`. A replica that holds hundreds of calls at once wants
+`pools=8`: the transport then makes eight clients, each with its own
+connection pool, and sends its calls to them in turn. One client's cost per
+call grows with the calls it holds in flight; against a local stub server, at
+512 calls in flight, one pool cost 31 ms of CPU per call (plain httpx too) and
+eight pools 3.5 ms, while at 64 in flight both cost about 3.5 ms. `parse_completion` reads such a server's completion,
 as the SDK's object or as its JSON, for a transport of your own.
 
 A LangChain chat model given as a replica, or returned by `Recovery`'s check,

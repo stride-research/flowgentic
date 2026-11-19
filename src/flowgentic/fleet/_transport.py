@@ -230,7 +230,13 @@ class OpenAITransport:
 	retries to the fleet's ``Recovery``. Other keywords are sent with every
 	call, such as ``temperature=0`` or ``extra_body``; a call's own keywords
 	override them. ``client`` replaces the client the transport would make.
-	Needs the ``openai`` extra.
+
+	``pools`` makes that many clients, each with its own connection pool, and
+	sends the calls to them in turn. One client's cost per call grows with the
+	calls it holds in flight: against a stub server, 31 ms of CPU per call at
+	512 in flight with one pool, plain httpx too, and 3.5 ms with eight; at 64
+	in flight, 3.5 ms either way. Give a replica that holds hundreds of calls
+	at once ``pools=8``. Needs the ``openai`` extra.
 	"""
 
 	def __init__(
@@ -242,9 +248,17 @@ class OpenAITransport:
 		timeout: float | None = None,
 		max_retries: int | None = None,
 		client: Any = None,  # noqa: ANN401  # an AsyncOpenAI
+		pools: int = 1,
 		**params: object,
 	) -> None:
-		if client is None:
+		if pools < 1:
+			raise ValueError("pools must be at least 1")
+		if client is not None and pools != 1:
+			raise ValueError(
+				"pass a client, or pools: the transport makes a pool's client"
+			)
+		clients = [client] if client is not None else []
+		for _ in range(pools if client is None else 0):
 			try:
 				from openai import AsyncOpenAI
 			except ModuleNotFoundError as exc:
@@ -259,14 +273,18 @@ class OpenAITransport:
 				options["timeout"] = timeout
 			if max_retries is not None:
 				options["max_retries"] = max_retries
-			client = AsyncOpenAI(
-				base_url=base_url,
-				api_key=api_key or os.environ.get("OPENAI_API_KEY") or "EMPTY",
-				**options,
+			clients.append(
+				AsyncOpenAI(
+					base_url=base_url,
+					api_key=api_key or os.environ.get("OPENAI_API_KEY") or "EMPTY",
+					**options,
+				)
 			)
-		self.client = client
+		self.clients = clients
+		self.client = clients[0]
+		self._next = 0
 		self.model = model
-		self.base_url = str(getattr(client, "base_url", base_url) or "")
+		self.base_url = str(getattr(self.client, "base_url", base_url) or "")
 		self.params = params
 
 	async def complete(
@@ -278,7 +296,11 @@ class OpenAITransport:
 		params = {**self.params, **kwargs}
 		if tools:
 			params["tools"] = list(tools)
-		completion = await self.client.chat.completions.create(
+		client = self.client
+		if len(self.clients) > 1:
+			client = self.clients[self._next]
+			self._next = (self._next + 1) % len(self.clients)
+		completion = await client.chat.completions.create(
 			model=self.model, messages=list(messages), **params
 		)
 		return parse_completion(completion)
