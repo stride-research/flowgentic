@@ -136,7 +136,9 @@ model servers:
 --8<-- "examples/agents-at-scale/campaign.py:process"
 ```
 
-And its host, which builds each agent's input as a slot opens:
+And its host, which builds each agent's input as a slot opens, runs the
+process's share of the agents, and then stops the tool service client and
+closes the RHAPSODY session:
 
 ```python
 --8<-- "examples/agents-at-scale/campaign.py:host"

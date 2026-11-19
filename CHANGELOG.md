@@ -17,6 +17,9 @@ predate this changelog, so their changes are not listed here.
   warns once on its own. A gate holds one process's share of a replica's
   caps, so one such call takes the replica past its cap while the other
   processes use their shares.
+- The package declares its classifiers and project URLs, and ships a
+  `py.typed` marker, so type checkers read Flowgentic's annotations. Its
+  description, and the documentation site's, now say what Flowgentic is.
 
 ### Changed
 
@@ -33,6 +36,11 @@ predate this changelog, so their changes are not listed here.
 - `flowgentic.fleet`: a routing reads a replica's load only when it asks for
   it. Under `AgentAffinity` and `RoundRobin` a call no longer reads every
   replica's load: with 256 replicas, a call costs what it costs with one.
+- `flowgentic.agent.time` is a counter, as agent-seconds add up. It was a
+  gauge that started from 0 at each run of a host and lost a host's time when
+  the host was gone. It now adds up the agent-seconds of every run in the
+  process, and an exporter reads it as a monotonic sum. A run's own
+  agent-seconds stay in its report.
 
 ### Fixed
 
@@ -50,6 +58,22 @@ predate this changelog, so their changes are not listed here.
   `outage_s` is left, and fails then otherwise.
 - `Fleet` refuses a negative `reply_reserve`, which took tokens off every
   call's admission estimate.
+- The `flowgentic.agents` gauge counts the agents of runs in progress only.
+  It counted the agents of every run that had ended too, for as long as its
+  host was alive: a cancelled run's agents stayed `pending`, and finished
+  ones `done`. With no run in progress, every state reads 0.
+- `Collector` refuses a `threshold` below 1. CPython takes a first threshold
+  of 0 to turn automatic collection off, so `Collector(threshold=0)` stopped
+  the cyclic collector for as long as the host ran; below 0 it collected at
+  nearly every allocation.
+- `register_pending` called outside an agent's task, as by code that submits
+  tasks before a run, no longer keeps the future for the life of the process.
+  The first agent that waits on such a registration takes it, and it is
+  released when that agent ends. One that no agent takes is released when the
+  host run ends, or the last of the runs in progress if several overlap. A
+  registration made outside an agent with no host run after it is still held
+  for the life of the process. A registration made in an agent's task lasts
+  until the agent ends, as before.
 
 ## [0.5.0] - 2026-11-18
 
@@ -71,6 +95,12 @@ active development; the AsyncFlow path stays in maintenance mode.
   needs both, `bind_agent` needs `asyncflow`, and
   `flowgentic[langgraph,asyncflow]` installs what 0.4 installed.
 - `flowgentic.langGraph` is renamed `flowgentic.langgraph`. Change the imports.
+  A source checkout updated in place from 0.4 on a case-insensitive file
+  system, as macOS's is by default, can keep the directory's old name, because
+  its ignored `__pycache__` keeps the directory, and `import
+  flowgentic.langgraph` then fails. Run `git clean -fdX src` before updating;
+  after, remove `src/flowgentic/langGraph` and run `git checkout -- src`. An
+  installed wheel upgrades cleanly.
 - `LangraphIntegration` and `ExecutionWrappersLangraph` are renamed
   `LangGraphIntegration` and `ExecutionWrappersLangGraph`, with no alias.
   Change the imports.
@@ -580,6 +610,7 @@ on `main`.
   - Each test matrix job runs its own Python with the dev extra.
   - The bandit job runs again.
 
+[Unreleased]: https://github.com/stride-research/flowgentic/compare/v0.5.0...HEAD
 [0.5.0]: https://github.com/stride-research/flowgentic/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/stride-research/flowgentic/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/stride-research/flowgentic/compare/v0.3.0...v0.3.1
