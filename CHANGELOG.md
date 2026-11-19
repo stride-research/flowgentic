@@ -15,6 +15,33 @@ predate this changelog, so their changes are not listed here.
   `py.typed` marker, so type checkers read Flowgentic's annotations. Its
   description, and the documentation site's, now say what Flowgentic is.
 
+### Changed
+
+- `flowgentic.agent.time` is a counter, as agent-seconds add up. It was a
+  gauge that started from 0 at each run of a host and lost a host's time when
+  the host was gone. It now adds up the agent-seconds of every run in the
+  process, and an exporter reads it as a monotonic sum. A run's own
+  agent-seconds stay in its report.
+
+### Fixed
+
+- The `flowgentic.agents` gauge counts the agents of runs in progress only.
+  It counted the agents of every run that had ended too, for as long as its
+  host was alive: a cancelled run's agents stayed `pending`, and finished
+  ones `done`. With no run in progress, every state reads 0.
+- `Collector` refuses a `threshold` below 1. CPython takes a first threshold
+  of 0 to turn automatic collection off, so `Collector(threshold=0)` stopped
+  the cyclic collector for as long as the host ran; below 0 it collected at
+  nearly every allocation.
+- `register_pending` called outside an agent's task, as by code that submits
+  tasks before a run, no longer keeps the future for the life of the process.
+  The first agent that waits on such a registration takes it, and it is
+  released when that agent ends. One that no agent takes is released when the
+  host run ends, or the last of the runs in progress if several overlap. A
+  registration made outside an agent with no host run after it is still held
+  for the life of the process. A registration made in an agent's task lasts
+  until the agent ends, as before.
+
 ## [0.5.0] - 2026-11-18
 
 Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as

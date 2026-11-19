@@ -25,7 +25,8 @@ print(report.finished, report.states["share_by_category"], report.loop_lag)
   collector runs every few hundred allocations and scans every young object.
   With thousands of agents in a process, each holding its conversation, that
   scanning takes most of the process's time. The host raises the collector's
-  first threshold (`Collector(threshold=100_000)`) and, once agents have
+  first threshold (`Collector(threshold=100_000)`; it must be at least 1,
+  since 0 would turn automatic collection off) and, once agents have
   started, moves the objects then alive out of the collector's reach
   (`gc.freeze()`). It restores both when `run` returns, and also when `run` is
   cancelled. Overlapping runs share the collector tuning until the last user
@@ -100,7 +101,12 @@ the agent's id as `thread_id` and LangGraph's `exit` durability by default, so
 a checkpoint is saved only when a run ends or suspends. A tool suspends its
 agent by calling LangGraph's `interrupt({PENDING_KEY: key})` for a task
 registered under `key`. The host releases an agent’s registrations when it
-finishes. The tool records the interrupt with `record_interrupt`, so
+finishes. A future registered outside an agent's task, as by code that
+submits tasks before a run, becomes the agent's that first waits on it, and
+is released when that agent finishes. One that no agent takes is released
+when the run ends, or the last of the runs in progress if several overlap;
+one registered when no run follows stays registered for the life of the
+process. The tool records the interrupt with `record_interrupt`, so
 the runner frees the run's frames as soon as it stops. Any other interrupt,
 such as a question for a human, ends the agent as `interrupted`.
 
@@ -141,9 +147,10 @@ SDK:
 - each agent's run is an `invoke_agent` span, with the agent's id in
   `gen_ai.agent.id`, and a `flowgentic.agent.suspend` event per suspension; a
   failed agent's span has status ERROR, `error.type` and the exception;
-- `flowgentic.agents` counts agents by `flowgentic.agent.state`, and
-  `flowgentic.agent.time` adds up agent-seconds by state and
-  `flowgentic.agent.category`, both read when the SDK collects;
+- `flowgentic.agents` counts the agents of runs in progress by
+  `flowgentic.agent.state`, and the counter `flowgentic.agent.time` adds up
+  agent-seconds by state and `flowgentic.agent.category` over every run in
+  the process, both read when the SDK collects;
 - `flowgentic.host.loop.lag` and `flowgentic.host.gc.pause` record the event
   loop's lag and the collector's pauses, once each however many hosts run.
 
