@@ -22,7 +22,9 @@ Clients:
 - ``chatopenai-adapter``: ``ChatOpenAI`` through Flowgentic's LangChain adapter
   on OpenAI-format messages, as the agent loop calls a LangChain model;
 - ``httpx``: one ``httpx.AsyncClient`` POST and ``json.loads``, a floor under
-  the SDK.
+  the SDK;
+- ``transport-8``: ``OpenAITransport`` over eight SDK clients taken in turn,
+  each with its own connection pool.
 
     python benchmarks/client_cost.py --client transport --in-flight 64
     python benchmarks/client_cost.py --repeat 3   # every client, N = 1, 64, 512
@@ -208,7 +210,9 @@ def make_client(kind: str, url: str, in_flight: int) -> Any:
         import httpx
 
         client = httpx.AsyncClient(
-            base_url=url, limits=httpx.Limits(max_connections=limits, max_keepalive_connections=limits)
+            base_url=url,
+            timeout=600,
+            limits=httpx.Limits(max_connections=limits, max_keepalive_connections=limits),
         )
         body = {"model": "Qwen3-8B", "messages": messages, "tools": TOOLS}
 
@@ -224,6 +228,7 @@ def make_client(kind: str, url: str, in_flight: int) -> Any:
         base_url=url,
         api_key="EMPTY",
         max_retries=0,
+        timeout=600,
         http_client=httpx.AsyncClient(
             limits=httpx.Limits(max_connections=limits, max_keepalive_connections=limits)
         ),
@@ -242,6 +247,35 @@ def make_client(kind: str, url: str, in_flight: int) -> Any:
 
         async def call() -> int:
             reply = await transport.complete(messages, TOOLS)
+            return len(reply.tool_calls)
+
+        return call
+    if kind == "transport-8":
+        # the same transport over 8 clients, each with its own connection
+        # pool, taken in turn: whether the pool's cost grows with its calls
+        from itertools import cycle
+
+        from flowgentic.fleet import OpenAITransport
+
+        per = max(in_flight // 8 + 16, 32)
+        transports = cycle(
+            OpenAITransport(
+                "Qwen3-8B",
+                client=AsyncOpenAI(
+                    base_url=url,
+                    api_key="EMPTY",
+                    max_retries=0,
+                    timeout=600,
+                    http_client=httpx.AsyncClient(
+                        limits=httpx.Limits(max_connections=per, max_keepalive_connections=per)
+                    ),
+                ),
+            )
+            for _ in range(8)
+        )
+
+        async def call() -> int:
+            reply = await next(transports).complete(messages, TOOLS)
             return len(reply.tool_calls)
 
         return call
@@ -321,7 +355,7 @@ async def measure(kind: str, url: str, in_flight: int, calls: int) -> dict:
     }
 
 
-CLIENTS = ["transport", "asyncopenai", "chatopenai", "chatopenai-adapter", "httpx"]
+CLIENTS = ["transport", "asyncopenai", "chatopenai", "chatopenai-adapter", "httpx", "transport-8"]
 
 
 # vLLM's mean time per call in G1, by calls in flight (Qwen3-8B, one GPU).
