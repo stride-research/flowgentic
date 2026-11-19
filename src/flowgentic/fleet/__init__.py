@@ -461,12 +461,13 @@ class Recovery:
 	which calls ``check`` every ``poll_s`` seconds until the replica serves or
 	``outage_s`` has passed; later calls wait on the same watch. A call whose
 	watch gives up while at least ``poll_s`` of the call's own ``outage_s`` is
-	left starts a new one. A check that raises, or does not answer within ``check_timeout_s``,
-	counts as the replica still being down. The watch serves every call on the
-	replica, so it runs in a context of its own, not in the first failing
-	call's. A call that fails again after its replica came back waits
-	``poll_s`` before it is sent again, and fails ``outage_s`` after its first
-	failure.
+	left starts a new one. A check that raises, or does not answer within
+	``check_timeout_s``, counts as the replica still being down. The watch
+	serves every call on the replica, so it runs in a context of its own, not
+	in the first failing call's. A call that fails again after its replica
+	came back waits ``poll_s`` before it is sent again. A call fails
+	``outage_s`` after its first failure, or earlier when its watch gives up
+	with less than ``poll_s`` of that left.
 	"""
 
 	def __init__(
@@ -563,7 +564,9 @@ class Recovery:
 					return
 				await asyncio.sleep(self.poll_s)
 		finally:
-			if not future.done():  # the watch was cancelled: its calls fail as they are
+			# The watch was cancelled: its calls see the replica as still down,
+			# and those with at least poll_s left start a new watch.
+			if not future.done():
 				future.set_result(None)
 			if self._watches.get(i) is future:
 				del self._watches[i]
