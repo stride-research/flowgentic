@@ -84,11 +84,14 @@ calls few. For thread `t` and checkpoint namespace `ns`:
   its index, above `keep_last=1`) when a subgraph's namespace is first saved,
   and nothing in the root namespace.
 - **`list` needs a thread id**, because RaDEX cannot list its keys.
-- **A finished agent's thread leaves the store** when the agent host's
-  `GraphRunner` runs it: the runner deletes the thread once the agent
-  finishes. The store then grows with the agents live at once, not with the
-  campaign. `delete_thread` removes a thread, its namespaces included; it
-  takes a few store calls per namespace.
+- **A finished agent's last checkpoint stays in the store**, so the store
+  grows with the campaign, not with the agents live at once. On a Dragon
+  dictionary, whose size is fixed when it is created, run the agents with
+  `GraphRunner(graph, delete_finished=True)`: the runner then deletes each
+  agent's thread once it finishes (see the
+  [agent host](agent-host.md#runners) for what that gives up).
+  `delete_thread` removes a thread, its namespaces included; it takes a few
+  store calls per namespace.
 
 `saver.stats()` returns how many checkpoints and writes the saver has put, how
 many checkpoints it has read, and their mean size in bytes.

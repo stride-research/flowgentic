@@ -273,16 +273,40 @@ def threads_in(store) -> set[str]:
     return {key.split("/")[1] for key in store.keys()}
 
 
+async def test_by_default_a_finished_agents_thread_stays():
+    """on_done can read a finished agent's state from the checkpointer, and an
+    agent id run again, as a conversation continued, goes on from its thread."""
+    from langgraph.graph import MessagesState
+
+    g = StateGraph(MessagesState)
+    g.add_node("reply", lambda s: {"messages": [("ai", f"seen {len(s['messages'])}")]})
+    g.add_edge(START, "reply")
+    graph = g.compile(checkpointer=InMemorySaver())
+    seen, outputs = [], []
+
+    def on_done(result, output):
+        state = graph.get_state({"configurable": {"thread_id": result.id}})
+        seen.append(len(state.values["messages"]))
+        outputs.append(output["messages"][-1].content)
+
+    host = AgentHost(GraphRunner(graph), stagger=FAST, on_done=on_done)
+    await host.run([Agent("chat", {"messages": [HumanMessage("hi")]})])
+    await host.run([Agent("chat", {"messages": [HumanMessage("again")]})])
+    assert seen == [2, 4]
+    assert outputs == ["seen 1", "seen 3"]
+
+
 async def test_a_finished_agents_thread_leaves_the_store():
-    """Each finished agent's last checkpoint and pending writes are deleted, so
-    the store holds the agents still running, not the campaign's."""
+    """With delete_finished, each finished agent's last checkpoint and pending
+    writes are deleted, so the store holds the agents still running, not the
+    campaign's."""
     from flowgentic.langgraph import KeyValueSaver
     from flowgentic.store import MemoryStore
 
     store = MemoryStore()
     model = Scripted(script=calls_then_answer(("slow_task", {"x": 1.5})))
     outputs = {}
-    runner = GraphRunner(react_graph(model, [slow_task], KeyValueSaver(store)))
+    runner = GraphRunner(react_graph(model, [slow_task], KeyValueSaver(store)), delete_finished=True)
     host = AgentHost(runner, stagger=FAST, on_done=lambda r, out: outputs.__setitem__(r.id, out))
     report = await host.run(inputs(20))
     assert report.finished == 20 and all(a.suspensions == 1 for a in report.agents)
@@ -292,9 +316,9 @@ async def test_a_finished_agents_thread_leaves_the_store():
 
 @pytest.mark.parametrize("delete_finished", [True, False])
 async def test_interrupted_and_failed_agents_keep_their_threads(delete_finished):
-    """A human-in-the-loop interrupt resumes from the thread, and a failed
-    agent's thread is kept to debug or retry it. With delete_finished=False,
-    a finished agent's is kept too."""
+    """With delete_finished, a human-in-the-loop interrupt still resumes from
+    the thread, and a failed agent's thread is kept to debug or retry it.
+    Without it, a finished agent's is kept too."""
     from langgraph.types import Command
 
     from flowgentic.langgraph import KeyValueSaver
@@ -348,7 +372,7 @@ async def test_a_thread_that_cannot_be_deleted_leaves_the_agent_finished(caplog,
             raise error("store unreachable")
 
     model = Scripted(script=calls_then_answer(("note", {"text": "hi"})))
-    runner = GraphRunner(react_graph(model, [note], Undeletable()))
+    runner = GraphRunner(react_graph(model, [note], Undeletable()), delete_finished=True)
     with caplog.at_level("DEBUG", logger="flowgentic.langgraph.runner"):
         report = await AgentHost(runner, stagger=FAST).run(inputs(3))
     assert report.finished == 3

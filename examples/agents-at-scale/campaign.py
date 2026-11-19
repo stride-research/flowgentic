@@ -394,7 +394,9 @@ async def run_agents(
 
     # --8<-- [start:host]
     host = AgentHost(
-        GraphRunner(build_graph(fleet, tools, saver)),
+        # A Dragon dictionary's size is fixed: keep the agents still running,
+        # not every agent of the campaign.
+        GraphRunner(build_graph(fleet, tools, saver), delete_finished=True),
         max_live_agents=5_000,
         stagger=Stagger(batch=100, interval_s=0.05),
         on_done=on_done,

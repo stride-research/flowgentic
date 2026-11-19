@@ -104,6 +104,12 @@ Agents at scale:
   source with its C++ core.
 - An agent resumes only in the process that suspended it, because that
   process awaits the agent's tasks.
+- Checkpoints:
+    - A finished agent's last checkpoint stays in the store by default, so the
+      store grows with the campaign, not with the agents live at once. On a
+      Dragon dictionary, whose size is fixed when it is created, run the agents
+      with `GraphRunner(graph, delete_finished=True)`, which deletes each
+      finished agent's thread.
 - Tools:
     - A repeated task or MCP call is recognized by the agent's id and the tool
       call's id alone. A model server that reuses tool-call ids within a

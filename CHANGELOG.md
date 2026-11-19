@@ -9,19 +9,22 @@ predate this changelog, so their changes are not listed here.
 
 ## [Unreleased]
 
+### Added
+
+- `GraphRunner(graph, delete_finished=True)` deletes a finished agent's thread
+  from the graph's checkpointer once its run ends, before the host passes the
+  output to `on_done`, so the store holds the agents still running, not every
+  agent of the campaign. Turn it on when the store is a Dragon dictionary,
+  whose size is fixed. Interrupted, failed and cancelled agents keep their
+  threads. A thread that cannot be deleted is logged and counted in
+  `GraphRunner.delete_failures`, and the agent still finishes. With it on,
+  `on_done` can no longer read the thread's state (`graph.get_state` finds it
+  empty), and an agent id run again, as a conversation continued in a later
+  host run, starts a fresh thread. It is off by default, which keeps 0.5.0's
+  behaviour. The agents-at-scale example turns it on.
+
 ### Changed
 
-- `GraphRunner` deletes a finished agent's thread from the graph's
-  checkpointer once its run ends, before the host passes the output to
-  `on_done`, so the store holds the agents still running, not every agent of
-  the campaign. Interrupted, failed and cancelled agents keep their threads.
-  A thread that cannot be deleted is logged and counted in
-  `GraphRunner.delete_failures`, and the agent still finishes.
-  With this default, `on_done` can no longer read the thread's state
-  (`graph.get_state` finds it empty), and an agent id run again, as a
-  conversation continued in a later host run, starts a fresh thread.
-  `GraphRunner(graph, delete_finished=False)` keeps finished agents' threads,
-  as 0.5.0 did.
 - `KeyValueSaver` keeps a thread's list of subgraph namespaces as a mapping,
   each namespace with the parent checkpoint it ran under. This version reads a
   store written by 0.5.0. The other way round, 0.5.0's saver can read, resume

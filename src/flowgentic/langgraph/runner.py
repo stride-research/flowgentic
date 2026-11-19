@@ -6,11 +6,12 @@ interrupts raised by Flowgentic's task tools is a suspension, which the host
 resolves by awaiting the tasks and resuming the graph with ``Command(resume=...)``.
 Any other interrupt ends the agent as interrupted.
 
-When an agent finishes, the runner deletes its thread from the graph's
-checkpointer, so the store holds the agents still running, not every agent of
-the campaign. An interrupted agent's thread is kept, for a human-in-the-loop
-interrupt resumes from it, and so is a failed or cancelled agent's, to debug
-or retry it. ``delete_finished=False`` keeps finished agents' threads too.
+A finished agent's thread stays in the graph's checkpointer, so the store grows
+with the campaign. With ``delete_finished=True`` the runner deletes it when the
+agent finishes, so that the store holds the agents still running: what a store
+of fixed size, such as a Dragon dictionary, needs. An interrupted agent's
+thread is kept even then, for a human-in-the-loop interrupt resumes from it,
+and so is a failed or cancelled agent's, to debug or retry it.
 
 ``route_tool_calls`` sends each tool call of the model's last message to the
 tool node as its own task (LangGraph's ``Send``). LangGraph saves the result of
@@ -104,10 +105,13 @@ class GraphRunner:
 	An agent resumes at most as many times as its run's ``recursion_limit``;
 	one more resume fails it with ``GraphRecursionError``.
 
-	With ``delete_finished``, the default, a finished agent's thread is deleted
-	from the graph's checkpointer once its run ends, before the host hands its
-	output to ``on_done``. A thread that cannot be deleted is logged, and the
-	agent still finishes; ``delete_failures`` counts them.
+	With ``delete_finished=True``, a finished agent's thread is deleted from the
+	graph's checkpointer once its run ends, before the host hands its output to
+	``on_done``. Two things are lost with it: ``on_done`` can no longer read the
+	thread's state (``graph.get_state`` finds it empty), and an agent id run
+	again, as a conversation continued, starts a fresh thread. A thread that
+	cannot be deleted is logged, and the agent still finishes;
+	``delete_failures`` counts them.
 	"""
 
 	def __init__(
@@ -116,7 +120,7 @@ class GraphRunner:
 		*,
 		config: dict | None = None,
 		durability: Durability = "exit",
-		delete_finished: bool = True,
+		delete_finished: bool = False,
 	) -> None:
 		if getattr(graph, "interrupt_before_nodes", None) or getattr(
 			graph, "interrupt_after_nodes", None
@@ -213,7 +217,7 @@ class GraphRunner:
 			self._cannot_delete = True
 			log.warning(
 				"%s cannot delete threads: finished agents' checkpoints stay in "
-				"it. Pass delete_finished=False to keep them without this warning.",
+				"it. Leave delete_finished off to keep them without this warning.",
 				type(saver).__name__,
 			)
 		except Exception as exc:
