@@ -27,6 +27,14 @@ GEN_AI_TOOL_NAME = "gen_ai.tool.name"
 GEN_AI_TOOL_CALL_ID = "gen_ai.tool.call.id"
 EXECUTE_TOOL = "execute_tool"
 GEN_AI_RESPONSE_ID = "gen_ai.response.id"
+GEN_AI_RESPONSE_MODEL = "gen_ai.response.model"
+GEN_AI_RESPONSE_FINISH_REASONS = "gen_ai.response.finish_reasons"
+GEN_AI_REQUEST_MODEL = "gen_ai.request.model"
+GEN_AI_USAGE_INPUT_TOKENS = "gen_ai.usage.input_tokens"
+GEN_AI_USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens"
+GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS = "gen_ai.usage.cache_read.input_tokens"
+GEN_AI_USAGE_REASONING_OUTPUT_TOKENS = "gen_ai.usage.reasoning.output_tokens"
+CHAT = "chat"
 INVOKE_AGENT = "invoke_agent"
 EVALUATION_RESULT = "gen_ai.evaluation.result"
 EVALUATION_NAME = "gen_ai.evaluation.name"
@@ -39,6 +47,8 @@ _CONTENT_ON_SPANS = {"SPAN_ONLY", "SPAN_AND_EVENT"}
 
 # General semantic conventions (stable)
 ERROR_TYPE = "error.type"
+SERVER_ADDRESS = "server.address"
+SERVER_PORT = "server.port"
 
 # Flowgentic's attributes, joining a span to the AsyncFlow task it submitted
 TASK_UID = "flowgentic.task.uid"
@@ -274,3 +284,27 @@ def attach_context(carrier: dict[str, str]) -> object:
 def detach_context(token: object) -> None:
 	"""Restore the trace context that was current before ``attach_context``."""
 	context.detach(token)
+
+
+def record_reply(span: trace.Span, reply: object) -> None:
+	"""Record a model's ``Reply`` on its ``chat`` span: the response's id and
+	model, its finish reason, and the usage the server reported. A count the
+	server did not report is left out, and so is a cached or reasoning count of
+	zero, as the GenAI conventions do."""
+	if not span.is_recording():
+		return
+	if reply.id:
+		span.set_attribute(GEN_AI_RESPONSE_ID, reply.id)
+	if reply.model:
+		span.set_attribute(GEN_AI_RESPONSE_MODEL, reply.model)
+	if reply.finish_reason:
+		span.set_attribute(GEN_AI_RESPONSE_FINISH_REASONS, [reply.finish_reason])
+	usage = reply.usage
+	if usage is None:
+		return
+	span.set_attribute(GEN_AI_USAGE_INPUT_TOKENS, usage.prompt_tokens)
+	span.set_attribute(GEN_AI_USAGE_OUTPUT_TOKENS, usage.completion_tokens)
+	if usage.cached_tokens:
+		span.set_attribute(GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS, usage.cached_tokens)
+	if usage.reasoning_tokens:
+		span.set_attribute(GEN_AI_USAGE_REASONING_OUTPUT_TOKENS, usage.reasoning_tokens)

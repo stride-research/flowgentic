@@ -1,0 +1,52 @@
+{
+ "source": "shaped after vLLM before it renamed reasoning_content to reasoning (https://docs.vllm.ai/en/latest/features/reasoning_outputs/); not recorded",
+ "response": {
+  "id": "chatcmpl-7f3f",
+  "object": "chat.completion",
+  "created": 1794826800,
+  "model": "Qwen3-8B",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "refusal": null,
+     "annotations": null,
+     "audio": null,
+     "function_call": null,
+     "content": "Hello there, friend.",
+     "reasoning_content": "A short greeting.",
+     "tool_calls": []
+    },
+    "logprobs": null,
+    "finish_reason": "stop",
+    "stop_reason": null,
+    "token_ids": null
+   }
+  ],
+  "service_tier": null,
+  "system_fingerprint": null,
+  "usage": {
+   "prompt_tokens": 30,
+   "total_tokens": 45,
+   "completion_tokens": 15,
+   "prompt_tokens_details": null
+  },
+  "prompt_logprobs": null,
+  "prompt_token_ids": null,
+  "kv_transfer_params": null
+ },
+ "expect": {
+  "content": "Hello there, friend.",
+  "tool_calls": [],
+  "invalid": [],
+  "reasoning": "A short greeting.",
+  "usage": [
+   30,
+   15,
+   null,
+   null
+  ],
+  "finish_reason": "stop"
+ }
+}

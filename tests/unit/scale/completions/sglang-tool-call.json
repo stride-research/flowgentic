@@ -1,0 +1,65 @@
+{
+ "source": "shaped after SGLang's OpenAI-compatible server (--tool-call-parser qwen25, --reasoning-parser qwen3, --enable-cache-report); not recorded",
+ "response": {
+  "id": "4f9d0c5e8a7b4d2b",
+  "object": "chat.completion",
+  "created": 1794826800,
+  "model": "Qwen/Qwen3-8B",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "reasoning_content": null,
+     "tool_calls": [
+      {
+       "id": "call_7c1f2a9e",
+       "type": "function",
+       "function": {
+        "name": "lookup",
+        "arguments": "{\"candidate\": \"cand-000001\"}"
+       },
+       "index": 0
+      }
+     ]
+    },
+    "logprobs": null,
+    "finish_reason": "tool_calls",
+    "matched_stop": null
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 316,
+   "total_tokens": 338,
+   "completion_tokens": 22,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "metadata": {
+   "weight_version": "default"
+  }
+ },
+ "expect": {
+  "content": "",
+  "tool_calls": [
+   [
+    "call_7c1f2a9e",
+    "lookup",
+    {
+     "candidate": "cand-000001"
+    }
+   ]
+  ],
+  "invalid": [],
+  "reasoning": null,
+  "usage": [
+   316,
+   22,
+   0,
+   null
+  ],
+  "finish_reason": "tool_calls"
+ }
+}

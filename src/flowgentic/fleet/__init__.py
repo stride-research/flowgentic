@@ -1,4 +1,4 @@
-"""The model fleet's client: one LangChain chat model per model server replica.
+"""The model fleet's client: one transport per model server replica.
 
 Agents' model calls go to placed models, one replica per GPU or server. The
 fleet decides, for each call, which replica takes it and when:
@@ -49,16 +49,30 @@ for earlier first calls, as a fixed part, such as tool schemas and a template
 that the messages do not show, plus tokens per character, never fewer than the
 characters later calls add count.
 
-``fleet.ainvoke(agent_id, messages)`` is the direct path, for a graph's own
-model node. ``fleet.chat_model()`` is a LangChain chat model for prebuilt
-agents, which reads the agent's id from the run config's ``thread_id``: the
-config passed to it, or else the LangGraph run it is called in. It opens no
-LangChain run of its own: it hands the caller's config to the replica, whose
-run is the call's only one. Both take, per call, settings for the replica
-(``extra_body``, ``max_tokens``, ...), which reach the replica for that call
-only, a ``reserve`` of tokens beyond the usual reply, such as a thinking
-budget, and a ``meta`` that the call's record carries. Which settings make a
-model think is the model's business, not the fleet's.
+**Replicas are transports** (``Transport``): each sends a conversation, as
+OpenAI Chat Completions messages, with the tools' JSON schemas, to one server,
+and returns a ``Reply``: its content and tool calls, the usage, and the
+reasoning text kept apart from the conversation. ``OpenAITransport`` calls an
+OpenAI-compatible server (vLLM, SGLang, OpenRouter) with the ``openai`` SDK.
+A LangChain chat model given as a replica, or returned by ``Recovery``'s
+check, runs through LangChain's adapter (``flowgentic.langchain``), which
+also takes LangChain messages and tools as they are.
+
+``fleet.ainvoke(agent_id, messages, tools=...)`` is the direct path; it
+returns the ``Reply``. ``fleet.chat_model()`` is the fleet as a LangChain chat
+model, for LangGraph graphs and prebuilt agents (``flowgentic.langchain``).
+Both take, per call, settings for the replica (``extra_body``,
+``max_tokens``, ...), which reach the replica for that call only, a
+``reserve`` of tokens beyond the usual reply, such as a thinking budget, and
+a ``meta`` that the call's record carries. Which settings make a model think
+is the model's business, not the fleet's.
+
+**Each try is a GenAI ``chat`` span**, with the request's and the response's
+model, the server's address and port, the finish reasons, and the usage the
+server reported (input, output, cached input and reasoning tokens). With the
+LangChain adapter, and OpenTelemetry's LangChain instrumentation on, the
+instrumentation's span is the call's, and the fleet records none, so no usage
+is counted twice.
 """
 
 from __future__ import annotations
@@ -75,23 +89,20 @@ from collections import Counter, OrderedDict, deque
 from collections.abc import Awaitable, Callable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
+from urllib.parse import urlsplit
 
-try:
-	from langchain_core.language_models import BaseChatModel, LanguageModelInput
-	from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
-	from langchain_core.outputs import ChatResult
-	from langchain_core.runnables import RunnableConfig
-	from langchain_core.runnables.config import ensure_config
-except ModuleNotFoundError as exc:
-	if exc.name != "langchain_core":
-		raise
-	raise ModuleNotFoundError(
-		"flowgentic.fleet needs langchain-core: install flowgentic[langchain-core], "
-		"or flowgentic[langgraph], which has it too",
-		name=exc.name,
-	) from exc
+from opentelemetry.trace import SpanKind, Status, StatusCode
 
 from flowgentic import _agents, _telemetry
+from flowgentic.fleet._transport import (
+	InvalidToolCall,
+	OpenAITransport,
+	Reply,
+	ToolCall,
+	Transport,
+	Usage,
+	parse_completion,
+)
 
 log = logging.getLogger(__name__)
 
@@ -103,13 +114,20 @@ __all__ = [
 	"Fleet",
 	"FleetChatModel",
 	"Gate",
+	"InvalidToolCall",
 	"LeastLoaded",
+	"OpenAITransport",
 	"Recovery",
+	"Reply",
 	"ReplicaLoad",
 	"RequestAdmission",
 	"RoundRobin",
 	"Routing",
 	"TokenAdmission",
+	"ToolCall",
+	"Transport",
+	"Usage",
+	"parse_completion",
 ]
 
 
@@ -456,11 +474,11 @@ def _transient(exc: BaseException) -> bool:
 class Recovery:
 	"""Waits out a replica whose server went away, for at most ``outage_s``.
 
-	``check(i)``, an ``async def``, returns replica ``i``'s chat model once its
-	server serves again, a new one if its endpoint or key changed, or ``None``
-	while it is down. The first call that fails on a replica starts one watch,
-	which calls ``check`` every ``poll_s`` seconds until the replica serves or
-	``outage_s`` has passed; later calls wait on the same watch. A call whose
+	``check(i)``, an ``async def``, returns replica ``i``'s transport once its
+	server serves again (a LangChain chat model is wrapped as one), a new one if
+	its endpoint or key changed, or ``None`` while it is down. The first call
+	that fails on a replica starts one watch, which calls ``check`` every
+	``poll_s`` seconds until the replica serves or ``outage_s`` has passed; later calls wait on the same watch. A call whose
 	watch gives up while at least ``poll_s`` of the call's own ``outage_s`` is
 	left starts a new one. A check that raises, or does not answer within
 	``check_timeout_s``, counts as the replica still being down. The watch
@@ -496,7 +514,7 @@ class Recovery:
 		self._tasks: set[asyncio.Task] = set()
 
 	async def wait(self, i: int, timeout: float | None = None) -> Any | None:
-		"""Replica ``i``'s model once it serves again, or ``None`` after
+		"""Replica ``i``'s transport once it serves again, or ``None`` after
 		``outage_s``, or after ``timeout`` seconds for this caller.
 
 		A caller with a ``timeout`` waits it out: if the watch it joined gives
@@ -617,15 +635,124 @@ class CallRecord:
 	"""The tries that failed and the wait for the replica to come back."""
 
 
-def _message_chars(messages: Sequence[BaseMessage]) -> int:
-	"""Characters of a conversation: contents and tool calls."""
+def _message_chars(messages: Sequence[Any]) -> int:
+	"""Characters of a conversation: contents and tool calls. Messages are
+	OpenAI-format dicts, or LangChain messages through LangChain's adapter."""
 	n = 0
 	for m in messages:
+		if isinstance(m, dict):
+			c = m.get("content")
+			if c is not None:
+				n += len(c) if isinstance(c, str) else len(str(c))
+			for call in m.get("tool_calls") or ():
+				function = call.get("function") or {}
+				n += len(function.get("name") or "") + len(
+					function.get("arguments") or ""
+				)
+			continue
 		c = m.content
 		n += len(c) if isinstance(c, str) else len(str(c))
 		for call in getattr(m, "tool_calls", None) or ():
 			n += len(call.get("name", "")) + len(json.dumps(call.get("args", {})))
 	return n
+
+
+def _reply_chars(reply: Reply) -> int:
+	"""Characters of a reply as the conversation keeps it."""
+	n = len(reply.content)
+	for call in reply.tool_calls:
+		n += len(call.name) + len(json.dumps(call.args))
+	for call in reply.invalid_tool_calls:
+		n += len(call.name) + 2
+	return n
+
+
+def _after_tool(messages: Sequence[Any]) -> str | None:
+	"""The tool whose result is the conversation's last message, if it is one."""
+	if not messages:
+		return None
+	last = messages[-1]
+	if not isinstance(last, dict):  # a LangChain message
+		return last.name if getattr(last, "type", None) == "tool" else None
+	if last.get("role") != "tool":
+		return None
+	if last.get("name"):
+		return last["name"]
+	call_id = last.get("tool_call_id")
+	for m in reversed(messages):
+		if isinstance(m, dict) and m.get("role") == "assistant":
+			for call in m.get("tool_calls") or ():
+				if call.get("id") == call_id:
+					return (call.get("function") or {}).get("name")
+			return None
+	return None
+
+
+def _as_transport(replica: object) -> Any:  # noqa: ANN401
+	"""``replica`` as a transport: itself if it is one; a LangChain chat model,
+	or anything else with ``ainvoke``, through LangChain's adapter."""
+	if callable(getattr(replica, "complete", None)):
+		return replica
+	if callable(getattr(replica, "ainvoke", None)):
+		from flowgentic.langchain import ChatModelTransport
+
+		return ChatModelTransport(replica)
+	raise TypeError(
+		f"a replica must be a Transport (with an async complete()) or a LangChain "
+		f"chat model, not {type(replica).__name__}"
+	)
+
+
+def _same_replica(model: object, transport: object) -> bool:
+	"""Whether ``model``, as ``Recovery``'s check returned it, is the transport
+	the fleet holds, or the chat model inside it."""
+	return model is transport or model is getattr(transport, "chat_model", None)
+
+
+def _server(base_url: str | None) -> tuple[str | None, int | None]:
+	if not base_url:
+		return None, None
+	parts = urlsplit(base_url)
+	port = parts.port or {"http": 80, "https": 443}.get(parts.scheme)
+	return parts.hostname, port
+
+
+async def _complete(
+	transport: Any,  # noqa: ANN401
+	messages: Sequence[Any],
+	tools: Sequence[Any] | None,
+	kwargs: dict,
+	attributes: dict | None = None,
+) -> Reply:
+	"""One try at a transport, as a GenAI ``chat`` span with its usage; see
+	the module's docstring."""
+	if not getattr(transport, "records_span", True):
+		return await transport.complete(messages, tools, **kwargs)
+	model = getattr(transport, "model", None)
+	attrs: dict[str, Any] = {_telemetry.GEN_AI_OPERATION_NAME: _telemetry.CHAT}
+	if model:
+		attrs[_telemetry.GEN_AI_REQUEST_MODEL] = model
+	host, port = _server(getattr(transport, "base_url", None))
+	if host:
+		attrs[_telemetry.SERVER_ADDRESS] = host
+		if port:
+			attrs[_telemetry.SERVER_PORT] = port
+	if attributes:
+		attrs.update(attributes)
+	name = f"{_telemetry.CHAT} {model}" if model else _telemetry.CHAT
+	with _telemetry.tracer.start_as_current_span(
+		name, kind=SpanKind.CLIENT, attributes=attrs, record_exception=False
+	) as span:
+		try:
+			reply = await transport.complete(messages, tools, **kwargs)
+		except Exception as exc:
+			span.set_attribute(_telemetry.ERROR_TYPE, type(exc).__qualname__)
+			span.set_status(
+				Status(StatusCode.ERROR, f"{type(exc).__name__}: {exc}"[:500])
+			)
+			raise
+		_telemetry.record_reply(span, reply)
+		return reply
 
 
 class _FirstCalls:
@@ -700,8 +827,7 @@ class _Core:
 		name: str,
 	) -> None:
 		self.name = name
-		self.replicas = list(replicas)
-		self.generation = [0] * len(replicas)
+		self.replicas = [_as_transport(r) for r in replicas]
 		self.admission = admission
 		self.counts_tokens = bool(admission is not None and admission.counts_tokens)
 		self.gates: list[Gate] = []
@@ -727,7 +853,7 @@ class _Core:
 		self.delta_ratio = 0.3
 		self.alpha = 0.05
 		self.first_calls = _FirstCalls(self.alpha)
-		self.listeners: list[Callable[[CallRecord, AIMessage], None]] = []
+		self.listeners: list[Callable[[CallRecord, Reply], None]] = []
 		self.calls = [0] * len(replicas)
 		self.prompt_tokens = 0
 		self.completion_tokens = 0
@@ -817,35 +943,18 @@ class Fleet:
 			name,
 		)
 		_all_fleets.add(self._core)
-		self._tools: tuple[Any, dict] | None = None
-		self._bound: dict[int, tuple[int, Any]] = {}
 
 	@property
 	def replicas(self) -> int:
 		"""How many replicas the fleet has."""
 		return len(self._core.replicas)
 
-	def bind_tools(self, tools: Sequence[Any], **kwargs: Any) -> Fleet:
-		"""A view of this fleet whose replicas are bound to ``tools``; it shares
-		the gates, the estimates and the counters."""
-		view = Fleet.__new__(Fleet)
-		view._core = self._core
-		view._tools = (list(tools), kwargs)
-		view._bound = {}
-		return view
+	@property
+	def transports(self) -> list[Any]:
+		"""Each replica's transport now: ``Recovery`` may have replaced one."""
+		return list(self._core.replicas)
 
-	def _model(self, i: int) -> Any:
-		core = self._core
-		cached = self._bound.get(i)
-		if cached is not None and cached[0] == core.generation[i]:
-			return cached[1]
-		model = core.replicas[i]
-		if self._tools is not None:
-			model = model.bind_tools(self._tools[0], **self._tools[1])
-		self._bound[i] = (core.generation[i], model)
-		return model
-
-	def add_listener(self, listener: Callable[[CallRecord, AIMessage], None]) -> None:
+	def add_listener(self, listener: Callable[[CallRecord, Reply], None]) -> None:
 		"""Call ``listener(record, reply)`` after each call."""
 		self._core.listeners.append(listener)
 
@@ -865,18 +974,22 @@ class Fleet:
 	async def ainvoke(
 		self,
 		agent_id: str,
-		messages: Sequence[BaseMessage],
+		messages: Sequence[Any],
 		*,
+		tools: Sequence[Any] | None = None,
 		reserve: int = 0,
-		meta: Any = None,
+		meta: Any = None,  # noqa: ANN401
 		**kwargs: Any,
-	) -> AIMessage:
-		"""Send an agent's call to its replica, through admission.
+	) -> Reply:
+		"""Send an agent's call to its replica, through admission; return the
+		replica's ``Reply``.
 
-		``kwargs`` go to the replica's ``ainvoke`` for this call only, a
-		``config`` included. ``reserve`` adds tokens to the call's admission
-		estimate, for a reply longer than usual, such as one that may think.
-		``meta`` goes into the call's ``CallRecord``.
+		``messages`` are OpenAI-format dicts (a LangChain transport also takes
+		LangChain messages). ``tools`` are the tools' JSON schemas (a LangChain
+		transport also takes LangChain tools). ``kwargs`` go to the transport's
+		``complete`` for this call only. ``reserve`` adds tokens to the call's
+		admission estimate, for a reply longer than usual, such as one that may
+		think. ``meta`` goes into the call's ``CallRecord``.
 		"""
 		if reserve < 0:
 			raise ValueError("reserve must not be negative")
@@ -887,11 +1000,11 @@ class Fleet:
 		chars = _message_chars(messages)
 		estimate = core.estimate(state, chars) + core.reply_reserve + reserve
 		weight = estimate if core.counts_tokens else 0
-		last = messages[-1] if messages else None
-		after_tool = last.name if isinstance(last, ToolMessage) else None
+		after_tool = _after_tool(messages)
 		asked_at = time.time()
 		asked = time.monotonic()
 		attrs = {_telemetry.FLEET_NAME: core.name, _telemetry.FLEET_REPLICA: i}
+		sent = list(messages)
 		failing_since: float | None = None
 		wait_s = 0.0  # for admission, over every try
 		with _agents.activity(_agents.AgentState.MODEL_QUEUED):
@@ -907,8 +1020,8 @@ class Fleet:
 					core.in_flight_max = max(core.in_flight_max, core.in_flight)
 					try:
 						with _agents.activity(_agents.AgentState.MODEL_REQUEST):
-							reply = await self._model(i).ainvoke(
-								list(messages), **kwargs
+							reply = await _complete(
+								core.replicas[i], sent, tools, kwargs, attrs
 							)
 					except Exception as exc:
 						core.errors[type(exc).__name__] += 1
@@ -938,9 +1051,8 @@ class Fleet:
 				model = await recovery.wait(i, left) if left > 0 else None
 				if model is None:
 					raise failed
-				if model is not core.replicas[i]:
-					core.replicas[i] = model
-					core.generation[i] += 1
+				if not _same_replica(model, core.replicas[i]):
+					core.replicas[i] = _as_transport(model)
 				core.retried += 1
 		_telemetry.MODEL_SERVICE.record(done - got, attrs)
 		return self._account(
@@ -966,7 +1078,7 @@ class Fleet:
 		agent_id: str,
 		state: _Agent,
 		chars: int,
-		reply: AIMessage,
+		reply: Reply,
 		asked_at: float,
 		wait_s: float,
 		service_s: float,
@@ -974,17 +1086,17 @@ class Fleet:
 		estimate: int,
 		after_tool: str | None,
 		meta: Any,
-	) -> AIMessage:
+	) -> Reply:
 		t_end = time.time()
 		core.calls[i] += 1
-		usage = getattr(reply, "usage_metadata", None) or {}
-		prompt = usage.get("input_tokens", 0) or 0
-		completion = usage.get("output_tokens", 0) or 0
-		cached = (usage.get("input_token_details") or {}).get("cache_read")
+		usage = reply.usage or Usage()
+		prompt = usage.prompt_tokens or 0
+		completion = usage.completion_tokens or 0
+		cached = usage.cached_tokens
 		if cached is not None:
 			core.cache_reported += 1
 			core.cached_tokens += int(cached)
-		reasoning = (usage.get("output_token_details") or {}).get("reasoning")
+		reasoning = usage.reasoning_tokens
 		if reasoning is not None:
 			reasoning = int(reasoning)
 			core.reasoning_reported += 1
@@ -1010,21 +1122,25 @@ class Fleet:
 		)
 		# The conversation keeps the reply but not its thinking.
 		kept = completion - (reasoning or 0)
-		core.learn(state, chars, _message_chars([reply]), prompt, kept)
+		core.learn(state, chars, _reply_chars(reply), prompt, kept)
 		state.last_end = t_end
 		state.prev_prompt = prompt
 		if reply.tool_calls:
 			core.replies_tool += 1
 		else:
 			core.replies_final += 1
-		if getattr(reply, "invalid_tool_calls", None):
+		if reply.invalid_tool_calls:
 			core.invalid_tool_calls += 1
 		for listener in core.listeners:
 			listener(record, reply)
 		return reply
 
-	def chat_model(self) -> FleetChatModel:
-		"""This fleet as a LangChain chat model; see the module's docstring."""
+	def chat_model(self) -> Any:  # noqa: ANN401  # a FleetChatModel
+		"""This fleet as a LangChain chat model, for LangGraph graphs and
+		prebuilt agents: ``flowgentic.langchain.FleetChatModel``. Needs the
+		``langgraph`` extra."""
+		from flowgentic.langchain import FleetChatModel
+
 		return FleetChatModel(fleet=self)
 
 	def stats(self) -> dict:
@@ -1062,58 +1178,6 @@ class Fleet:
 		}
 
 
-class FleetChatModel(BaseChatModel):
-	"""A fleet as a LangChain chat model.
-
-	The agent is the run config's ``thread_id``, as LangGraph sets it for each
-	thread: from the config passed to ``ainvoke``, or else from the LangGraph
-	run the model is called in; without one, the agent host's current agent.
-	The model opens no LangChain run of its own. It hands the caller's config
-	to the replica, so callbacks, tracers and LangGraph's streaming see one
-	model call, the replica's. ``reserve`` and ``meta`` are the fleet's; other
-	keywords go to the replica, as with ``Fleet.ainvoke``.
-	"""
-
-	fleet: Any
-
-	@property
-	def _llm_type(self) -> str:
-		return "flowgentic-fleet"
-
-	def bind_tools(self, tools: Sequence[Any], **kwargs: Any) -> FleetChatModel:
-		return FleetChatModel(fleet=self.fleet.bind_tools(tools, **kwargs))
-
-	async def ainvoke(
-		self,
-		input: LanguageModelInput,
-		config: RunnableConfig | None = None,
-		*,
-		stop: list[str] | None = None,
-		**kwargs: Any,
-	) -> AIMessage:
-		config = ensure_config(config)
-		agent = config.get("configurable", {}).get("thread_id")
-		agent = agent or _agents.current_agent()
-		if not agent:
-			raise ValueError(
-				"the fleet routes by agent: pass a thread_id in the config, or run "
-				"it in a LangGraph thread or an agent host"
-			)
-		if stop is not None:
-			kwargs["stop"] = stop
-		messages = self._convert_input(input).to_messages()
-		return await self.fleet.ainvoke(str(agent), messages, config=config, **kwargs)
-
-	def _generate(
-		self,
-		messages: list[BaseMessage],
-		stop: Any = None,
-		run_manager: Any = None,
-		**kwargs: Any,
-	) -> ChatResult:
-		raise NotImplementedError("the fleet is asynchronous: use ainvoke")
-
-
 def _loads(kind: str) -> dict[tuple[str, int], int]:
 	"""One kind of load, ``tokens``, ``requests`` or ``waiting``, per fleet name
 	and replica, summed over the process's fleets; read by the telemetry."""
@@ -1123,3 +1187,13 @@ def _loads(kind: str) -> dict[tuple[str, int], int]:
 			key = (core.name, i)
 			out[key] = out.get(key, 0) + getattr(gate.load(), kind)
 	return out
+
+
+def __getattr__(name: str) -> Any:  # noqa: ANN401
+	# FleetChatModel lives with LangChain's adapter; this name stays for the
+	# code that imports it from here.
+	if name == "FleetChatModel":
+		from flowgentic.langchain import FleetChatModel
+
+		return FleetChatModel
+	raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -520,7 +520,8 @@ async def test_a_server_back_with_a_new_endpoint_gets_a_new_model():
     fleet = Fleet([old], recovery=Recovery(check, poll_s=0.02))
     server["tag"] = "v2"  # requeued: a new port and key
     reply = await fleet.ainvoke("a", [HumanMessage("hi")])
-    assert reply.content == "DONE v2" and fleet._core.generation == [1]
+    assert reply.content == "DONE v2"
+    assert fleet.transports[0].chat_model is not old  # the new model, as its transport
 
 
 async def test_never_back_fails_with_the_original_error_and_bad_requests_fail_at_once():
@@ -833,7 +834,7 @@ THINK = {"extra_body": {"thinking_token_budget": 256}, "max_tokens": 512}
 
 async def test_a_calls_settings_reach_its_replica_and_only_for_that_call():
     model = Recording()
-    fleet = Fleet([model]).bind_tools([])
+    fleet = Fleet([model])
     await fleet.ainvoke("a", [HumanMessage("hi")], **THINK)
     await fleet.ainvoke("a", [HumanMessage("hi")])
     assert model.kwargs == [THINK, {}]
@@ -846,7 +847,7 @@ async def test_a_calls_settings_survive_a_replica_rebuilt_by_recovery():
     async def check(i):
         return new if server["tag"] == "v2" else None
 
-    fleet = Fleet([old], recovery=Recovery(check, poll_s=0.02)).bind_tools([])
+    fleet = Fleet([old], recovery=Recovery(check, poll_s=0.02))
     server["tag"] = "v2"  # the server came back elsewhere
     reply = await fleet.ainvoke("a", [HumanMessage("hi")], **THINK)
     assert reply.content == "DONE v2"
@@ -870,7 +871,7 @@ async def two_calls(usage):
     fleet.add_listener(lambda record, reply: records.append(record))
     first = [HumanMessage("x" * 400)]
     reply = await fleet.ainvoke("a", first)
-    await fleet.ainvoke("a", [*first, reply, HumanMessage("y" * 100)])
+    await fleet.ainvoke("a", [*first, reply.raw, HumanMessage("y" * 100)])
     return records
 
 
@@ -1070,15 +1071,17 @@ def test_the_chat_model_is_asynchronous_only():
 def test_the_fleet_module_names_only_its_api():
     for name in ("stable_hash", "transient", "TRANSIENT", "AgentState", "message_chars"):
         assert not hasattr(fleet_module, name), name
-    defined_here = {
+    public = {
         name
         for name, value in vars(fleet_module).items()
         if not name.startswith("_")
         and not inspect.ismodule(value)
-        and getattr(value, "__module__", fleet_module.__name__) == fleet_module.__name__
+        and getattr(value, "__module__", "").startswith(fleet_module.__name__)
     }
-    assert defined_here == set(fleet_module.__all__)
-    assert "Gate" in fleet_module.__all__
+    # FleetChatModel lives with LangChain's adapter; the fleet names it lazily.
+    assert public | {"FleetChatModel"} == set(fleet_module.__all__)
+    assert "Gate" in fleet_module.__all__ and "Transport" in fleet_module.__all__
+    assert fleet_module.FleetChatModel.__module__ == "flowgentic.langchain"
 
 
 # --- metrics -----------------------------------------------------------------------
@@ -1149,6 +1152,134 @@ async def test_every_try_is_recorded_and_a_failed_one_with_its_error(metric_read
     (service,) = points(metric_reader, "flowgentic.fleet.request.duration", "refused")
     assert wait.count == 1 and service.count == 1
     assert service.attributes["error.type"] == "ValueError"
+
+
+# --- transports ----------------------------------------------------------------------
+
+
+async def test_a_transport_replica_takes_openai_messages_and_tools():
+    from _support import ScriptedTransport, reply
+
+    transport = ScriptedTransport(
+        lambda m: reply("DONE", usage=(1200, 40), cached=1024, thinking=12, reasoning="hmm")
+    )
+    fleet = Fleet([transport], admission=TokenAdmission(100_000, 10))
+    seen = []
+    fleet.add_listener(lambda record, r: seen.append((record, r)))
+    tools = [{"type": "function", "function": {"name": "simulate", "parameters": {}}}]
+    first = [{"role": "user", "content": "x" * 400}]
+    out = await fleet.ainvoke("a", first, tools=tools, max_tokens=64)
+    assert out.content == "DONE" and out.reasoning == "hmm"
+    assert transport.calls[0] == (first, tools, {"max_tokens": 64})
+    later = [
+        *first,
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "c1", "type": "function", "function": {"name": "simulate", "arguments": "{}"}}
+        ]},
+        {"role": "tool", "tool_call_id": "c1", "content": "y" * 100},
+    ]
+    await fleet.ainvoke("a", later, tools=tools)
+    (record, r), (second, _) = seen
+    assert r is out
+    assert (record.prompt_tokens, record.cached_tokens, record.completion_tokens) == (1200, 1024, 40)
+    assert record.reasoning_tokens == 12 and record.after_tool is None
+    assert second.after_tool == "simulate"  # found by its call id
+    assert second.prev_prompt_tokens == 1200
+    stats = fleet.stats()
+    assert stats["cached_tokens"] == 2048 and stats["reasoning_tokens"] == 24
+
+
+async def test_each_try_is_a_chat_span_with_its_usage(span_exporter):
+    from _support import ScriptedTransport, reply
+
+    tries = iter([fleet_module.OpenAITransport, None])
+
+    class Flaky(ScriptedTransport):
+        async def complete(self, messages, tools=None, **kwargs):
+            if next(tries) is not None:
+                raise httpx_connection_error()
+            return await super().complete(messages, tools, **kwargs)
+
+    back = Flaky(lambda m: reply("DONE", usage=(300, 20), cached=256), base_url="http://node-3:8100/v1")
+
+    async def check(i):
+        return back
+
+    fleet = Fleet(
+        [back], recovery=Recovery(check, poll_s=0.01), name="qwen"
+    )
+    await fleet.ainvoke("a", [{"role": "user", "content": "hi"}])
+    spans = [s for s in span_exporter.get_finished_spans() if s.name == "chat scripted"]
+    failed, ok = spans
+    assert ok.attributes["gen_ai.operation.name"] == "chat"
+    assert ok.attributes["gen_ai.request.model"] == "scripted"
+    assert ok.attributes["server.address"] == "node-3" and ok.attributes["server.port"] == 8100
+    assert ok.attributes["gen_ai.usage.input_tokens"] == 300
+    assert ok.attributes["gen_ai.usage.output_tokens"] == 20
+    assert ok.attributes["gen_ai.usage.cache_read.input_tokens"] == 256
+    assert "gen_ai.usage.reasoning.output_tokens" not in ok.attributes  # not reported
+    assert ok.attributes["gen_ai.response.finish_reasons"] == ("stop",)
+    assert ok.attributes["flowgentic.fleet.name"] == "qwen"
+    assert failed.status.status_code.name == "ERROR"
+    assert failed.attributes["error.type"] == "APIConnectionError"
+
+
+def httpx_connection_error():
+    from openai import APIConnectionError
+
+    return APIConnectionError(request=httpx.Request("POST", "http://node-3:8100/v1"))
+
+
+async def test_a_langchain_replica_is_a_chat_span_too_without_its_instrumentation(span_exporter):
+    fleet = Fleet([Recording(usage={"input_tokens": 7, "output_tokens": 1, "total_tokens": 8})])
+    await fleet.ainvoke("a", [HumanMessage("hi")])
+    (span,) = [s for s in span_exporter.get_finished_spans() if s.attributes.get("gen_ai.operation.name") == "chat"]
+    assert span.attributes["gen_ai.usage.input_tokens"] == 7
+
+
+async def test_recovery_may_return_a_transport_or_a_chat_model():
+    from _support import ScriptedTransport
+
+    server = {"up": True, "tag": "v1"}
+    down = Down(server, "v1")  # a LangChain-like model, as AUTONMI's replicas are
+    back = ScriptedTransport(lambda m: "DONE v2")
+
+    async def check(i):
+        return back if server["tag"] == "v2" else None
+
+    fleet = Fleet([down], recovery=Recovery(check, poll_s=0.02))
+    server["tag"] = "v2"
+    out = await fleet.ainvoke("a", [{"role": "user", "content": "hi"}])
+    assert out.content == "DONE v2" and fleet.transports == [back]
+
+
+def test_a_replica_must_be_a_transport_or_a_chat_model():
+    with pytest.raises(TypeError, match="Transport"):
+        Fleet([object()])
+
+
+async def test_the_chat_model_over_a_transport_converts_messages_tools_and_reply():
+    from _support import ScriptedTransport, reply
+
+    transport = ScriptedTransport(
+        lambda m: reply(calls=[("c9", "note", {"text": "hi"}), ("c10", "note", '{"te')], usage=(50, 5), cached=32)
+    )
+    chat = Fleet([transport]).chat_model().bind_tools([note], tool_choice="auto")
+    out = await chat.ainvoke([HumanMessage("go"), AIMessage("ok")], thread("t-1"))
+    assert isinstance(out, AIMessage)
+    assert out.tool_calls == [{"name": "note", "args": {"text": "hi"}, "id": "c9", "type": "tool_call"}]
+    assert out.invalid_tool_calls[0]["id"] == "c10"
+    assert out.usage_metadata["input_tokens"] == 50
+    assert out.usage_metadata["input_token_details"] == {"cache_read": 32}
+    messages, tools, kwargs = transport.calls[0]
+    assert messages == [{"role": "user", "content": "go"}, {"role": "assistant", "content": "ok"}]
+    assert tools[0]["function"]["name"] == "note" and kwargs == {"tool_choice": "auto"}
+
+
+@tool
+def note(text: str) -> str:
+    """Take a note."""
+    return text
 
 
 # --- spans: last, as the instrumentation stays on for the rest of the module ------

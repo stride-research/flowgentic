@@ -1,0 +1,27 @@
+{
+ "source": "a reply without usage, as some servers stream it; not recorded",
+ "response": {
+  "id": "x",
+  "object": "chat.completion",
+  "model": "m",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "ok"
+    },
+    "finish_reason": "stop"
+   }
+  ],
+  "created": 1794826800
+ },
+ "expect": {
+  "content": "ok",
+  "tool_calls": [],
+  "invalid": [],
+  "reasoning": null,
+  "usage": null,
+  "finish_reason": "stop"
+ }
+}

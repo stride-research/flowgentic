@@ -1,0 +1,67 @@
+{
+ "source": "shaped after vLLM 0.19.1's OpenAI-compatible server (Qwen3-8B, hermes tool parser, qwen3 reasoning parser); not recorded; arguments cut short, as a reply stopped mid-call",
+ "response": {
+  "id": "chatcmpl-7f40",
+  "object": "chat.completion",
+  "created": 1794826800,
+  "model": "Qwen3-8B",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "refusal": null,
+     "annotations": null,
+     "audio": null,
+     "function_call": null,
+     "content": null,
+     "reasoning": null,
+     "tool_calls": [
+      {
+       "id": "chatcmpl-tool-9a20",
+       "type": "function",
+       "function": {
+        "name": "simulate",
+        "arguments": "{\"candidate\": \"cand-000001\", \"tempera"
+       }
+      }
+     ]
+    },
+    "logprobs": null,
+    "finish_reason": "tool_calls",
+    "stop_reason": null,
+    "token_ids": null
+   }
+  ],
+  "service_tier": null,
+  "system_fingerprint": null,
+  "usage": {
+   "prompt_tokens": 318,
+   "total_tokens": 330,
+   "completion_tokens": 12,
+   "prompt_tokens_details": null
+  },
+  "prompt_logprobs": null,
+  "prompt_token_ids": null,
+  "kv_transfer_params": null
+ },
+ "expect": {
+  "content": "",
+  "tool_calls": [],
+  "invalid": [
+   [
+    "chatcmpl-tool-9a20",
+    "simulate",
+    "{\"candidate\": \"cand-000001\", \"tempera"
+   ]
+  ],
+  "reasoning": null,
+  "usage": [
+   318,
+   12,
+   null,
+   null
+  ],
+  "finish_reason": "tool_calls"
+ }
+}

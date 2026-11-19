@@ -23,7 +23,7 @@ def load_benchmark() -> ModuleType:
     return module
 
 
-@pytest.mark.parametrize("runner", ["loop", "graph"])
+@pytest.mark.parametrize("runner", ["loop", "loop-langchain", "graph"])
 def test_both_runners_answer_every_agent_of_the_example(runner: str) -> None:
     out = load_benchmark().run_once(runner, 100, 8, 0.0)
     assert out["outcomes"] == {"done": 100}
@@ -31,6 +31,6 @@ def test_both_runners_answer_every_agent_of_the_example(runner: str) -> None:
     assert out["model_calls"] == 300
     assert out["tasks"]["submitted"] == 100 and out["tasks"]["repeats"] == 100
     assert out["store"]["keys_left"] == 0
-    if runner == "loop":
+    if runner != "graph":
         assert out["store"]["calls"] == {"put": 100, "get": 100, "delete": 100}
         assert out["runner_stats"]["tool_errors"] == 0

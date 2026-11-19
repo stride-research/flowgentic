@@ -1,4 +1,5 @@
-"""Flowgentic's own agent loop: a runner for the agent host, without LangGraph.
+"""Flowgentic's own agent loop: a runner for the agent host, on OpenAI-format
+messages, without LangChain or LangGraph.
 
 ``LoopRunner(model, tools)`` runs tool-calling agents in a
 ``flowgentic.host.AgentHost``. The model replies; the tool calls of its reply
@@ -7,16 +8,20 @@ model answers. It is the agent that ``GraphRunner`` runs with a ReAct graph,
 written as a ``while`` loop. ``GraphRunner`` stays, for graphs and for what
 LangGraph adds: streaming, middleware, human-in-the-loop resumes.
 
-The loop reads and makes messages, calls the model and runs inline tools
-through a backend (``flowgentic.loop._seams``). The one it ships is on
-``langchain-core``: LangChain's messages, the fleet or a LangChain chat model,
-and LangChain tools. The rest of the loop depends on none of them.
-
+- **Messages** are OpenAI Chat Completions dicts: ``role``, ``content``,
+  ``tool_calls`` with JSON-string arguments, ``tool_call_id``. The output's
+  messages, the state a suspension saves and ``trim`` all use them.
 - **The model** is a ``flowgentic.fleet.Fleet``, which routes and admits each
-  call by agent, or any LangChain chat model. Its tools are bound once.
+  call by agent, or a transport (``flowgentic.fleet.Transport``), such as
+  ``OpenAITransport``. Each model call is a GenAI ``chat`` span with its usage.
+  A LangChain chat model, or the fleet's ``FleetChatModel``, is accepted too,
+  through LangChain's adapter (``flowgentic.langchain``).
 - **Tools** are ``flowgentic.tools`` declarations, which run on a
   ``ToolRuntime`` (task tools as RHAPSODY tasks, MCP tools through the tool
-  service), and LangChain tools, which run inline. The calls of one reply run
+  service), and inline tools: plain functions, ``async`` or not, which run in
+  the agent's process. A LangChain tool runs inline through the adapter. A
+  tool's JSON schema comes from its pydantic ``args_schema``, or from the
+  function's signature through pydantic. The calls of one reply run
   concurrently.
 - **Suspension.** A task tool that suspends makes the loop save the agent's
   state, its messages and its count of model calls, to a ``KeyValueStore``
@@ -31,9 +36,9 @@ and LangChain tools. The rest of the loop depends on none of them.
   id, as a server that numbers its calls per reply does, makes a new call.
 - **Errors go to the model.** A tool that raises, arguments its schema
   refuses, a tool that does not exist, arguments that are not valid JSON, a
-  failed task or MCP call: each becomes a tool result marked as an error, which
-  the model reads. A runtime set up wrong, without the session or the service
-  client a tool needs, fails the agent instead.
+  failed task or MCP call: each becomes a tool result that says so. A runtime
+  set up wrong, without the session or the service client a tool needs, fails
+  the agent instead.
 - **A limit on model calls.** ``max_model_calls`` counts over the agent's whole
   run, suspensions included; the call past it fails the agent with
   ``ModelCallLimitExceeded``.
@@ -45,41 +50,42 @@ and LangChain tools. The rest of the loop depends on none of them.
 - **Trimming.** ``trim(messages)``, a function or a coroutine function, is
   called before each model call. What it returns is the agent's history from
   then on: what the model sees, what a suspension saves, what the output
-  holds. It must keep each tool call with its result, as
-  ``langchain_core.messages.trim_messages`` can.
+  holds. It must keep each tool call with its result.
 - **Interrupts.** An inline tool that raises ``Interrupt(value)`` stops its
   agent: the host ends it as interrupted, with an ``Interruption`` that holds
   the value, the call and the history. The store keeps nothing of it.
 - **Accounting and telemetry.** The agent's states are counted as the host's
-  other parts count them: model calls through the fleet, waits on tasks, calls
-  to the tool service, inline tools as working. Task and MCP calls are
-  ``execute_tool`` spans under the agent's ``invoke_agent`` span, and each
-  suspension is the host's ``flowgentic.agent.suspend`` event.
+  other parts count them: model calls (through the fleet, or around a
+  transport's call), waits on tasks, calls to the tool service, inline tools
+  as working. Task and MCP calls are ``execute_tool`` spans under the agent's
+  ``invoke_agent`` span, and each suspension is the host's
+  ``flowgentic.agent.suspend`` event.
 
-Messages are in the backend's format: LangChain messages, with the fleet or a
-LangChain chat model. An agent's input is then a string, a message, a list of
-messages (or of anything ``langchain_core.messages.convert_to_messages``
-takes) or a dict with ``messages``, as a LangGraph graph's input.
+An agent's input is a string, a message, a list of messages or a dict with
+``messages``, as a LangGraph graph's input; LangChain messages are converted.
 ``Agent.config`` is not read. A finished agent's output is a ``LoopOutput``.
-The runner never changes the caller's list of messages.
+The runner never changes the caller's messages.
 """
 
 from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import logging
+import sys
+import typing
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
 from functools import partial
 from typing import Any
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, create_model
 
 from flowgentic import _agents
 from flowgentic._agents import AgentState
+from flowgentic.fleet import Fleet, Reply, _as_transport, _complete
 from flowgentic.host import Agent, Finished, Interrupted, Step, Suspended
-from flowgentic.loop._seams import Backend, Bindable, Call, InlineTool, Spec, text
 from flowgentic.store import KeyValueStore, MemoryStore
 from flowgentic.tools import McpTool, TaskTool, ToolRuntime
 
@@ -98,15 +104,15 @@ ERROR = "Error: {error}\n Please fix your mistakes."
 NOT_A_TOOL = "Error: {name} is not a valid tool, try one of [{names}]."
 ANSWERED = "Answer recorded."
 
-Trim = Callable[[list[Any]], Sequence[Any] | Awaitable[Sequence[Any]]]
+Trim = Callable[[list[dict]], Sequence[dict] | Awaitable[Sequence[dict]]]
 
 
 @dataclass(frozen=True, slots=True)
 class LoopOutput:
-	"""A finished agent's output: its history, the validated answer when the
+	"""A finished agent's output: its messages, the validated answer when the
 	runner has a ``response_format``, and its model calls."""
 
-	messages: list[Any]
+	messages: list[dict]
 	structured_response: Any = None
 	model_calls: int = 0
 
@@ -114,11 +120,12 @@ class LoopOutput:
 @dataclass(frozen=True, slots=True)
 class Interruption:
 	"""Why an agent stopped: the value its tool raised ``Interrupt`` with, the
-	tool call, and the agent's history then, in which that call has no result."""
+	tool call (in the reply's ``tool_calls`` format), and the agent's messages
+	then, in which that call has no result."""
 
 	value: Any
 	tool_call: dict
-	messages: list[Any]
+	messages: list[dict]
 	model_calls: int
 
 
@@ -135,6 +142,28 @@ class ModelCallLimitExceeded(RuntimeError):  # noqa: N818
 	"""An agent needed more model calls than its runner's ``max_model_calls``."""
 
 
+@dataclass(frozen=True, slots=True)
+class _Call:
+	"""One tool call of a reply. ``args`` is ``None`` when the model's
+	arguments did not parse, and ``error`` says why."""
+
+	id: str
+	name: str
+	args: dict | None
+	error: str | None
+	raw: dict
+
+
+@dataclass(frozen=True, slots=True)
+class _Inline:
+	"""A function the loop runs in the agent's process."""
+
+	name: str
+	description: str
+	schema: Any
+	fn: Callable[..., Any]
+
+
 class _Result:
 	"""What one tool call gave: a result for the model (an error or not), a task
 	to wait on, an interrupt, or a structured answer."""
@@ -143,7 +172,7 @@ class _Result:
 
 	def __init__(
 		self,
-		message: object = None,
+		message: dict | None = None,
 		error: bool = False,
 		wait: tuple[str, str] | None = None,
 		interrupt: Interrupt | None = None,
@@ -159,13 +188,14 @@ class _Result:
 class LoopRunner:
 	"""Runs tool-calling agents; see the module's docstring.
 
-	``model``: a ``Fleet``, a ``FleetChatModel`` or a LangChain chat model.
+	``model``: a ``Fleet``, a transport, or a LangChain chat model.
 	``tools``: ``task_tool`` and ``mcp_tool`` declarations, which need
-	``runtime``, and LangChain tools. ``store``: where suspended agents' state
+	``runtime``, and inline tools. ``store``: where suspended agents' state
 	goes, a ``MemoryStore`` by default; each agent's key is ``key_prefix`` and
 	its id. ``system_prompt`` goes first in every model call and is never saved
-	or trimmed. ``response_format``, ``max_model_calls`` and ``trim``: see the
-	module's docstring.
+	or trimmed. ``model_kwargs`` go with every model call, such as
+	``max_tokens``. ``response_format``, ``max_model_calls`` and ``trim``: see
+	the module's docstring.
 	"""
 
 	def __init__(
@@ -179,29 +209,31 @@ class LoopRunner:
 		response_format: type[BaseModel] | None = None,
 		max_model_calls: int = 25,
 		trim: Trim | None = None,
+		model_kwargs: dict | None = None,
 		key_prefix: str = "loop/",
 	) -> None:
 		if max_model_calls < 1:
 			raise ValueError("max_model_calls must be at least 1")
-		if isinstance(model, Backend):
-			backend = model
-		else:
-			from flowgentic.loop._langchain import LangChain
-
-			backend = LangChain(model)
-		self._backend = backend
+		fleet = model if isinstance(model, Fleet) else getattr(model, "fleet", None)
+		self._fleet: Fleet | None = fleet if isinstance(fleet, Fleet) else None
+		self._transport = None if self._fleet is not None else _as_transport(model)
 		self.runtime = runtime
 		self.store = store if store is not None else MemoryStore()
 		self.system_prompt = system_prompt
 		self.response_format = response_format
 		self.max_model_calls = max_model_calls
 		self.trim = trim
+		self.model_kwargs = dict(model_kwargs or {})
 		self.key_prefix = key_prefix
-		self._system = None if system_prompt is None else backend.system(system_prompt)
+		self._system = (
+			None
+			if system_prompt is None
+			else {"role": "system", "content": system_prompt}
+		)
 
-		self._tools: dict[str, TaskTool | McpTool | InlineTool] = {}
-		self._schemas: dict[str, Any] = {}
-		bound: list[Bindable] = []
+		self._tools: dict[str, TaskTool | McpTool | _Inline] = {}
+		self._arg_schemas: dict[str, Any] = {}
+		schemas: list[dict] = []
 		for tool in tools:
 			if isinstance(tool, (TaskTool, McpTool)):
 				if runtime is None:
@@ -211,18 +243,16 @@ class LoopRunner:
 					)
 				schema = tool.args_schema
 				if schema is None and isinstance(tool, TaskTool):
-					schema = backend.schema(tool.name, tool.fn)
-				self._schemas[tool.name] = schema
-				bound.append(Spec(tool.name, tool.description, schema))
-				runs: TaskTool | McpTool | InlineTool = tool
+					schema = _signature_schema(tool.name, tool.fn)
+				name, description, runs = tool.name, tool.description, tool
 			else:
-				runs = backend.inline(tool)
-				if runs is None:
-					raise TypeError(f"not a tool: {tool!r}")
-				bound.append(runs)
-			if runs.name in self._tools:
-				raise ValueError(f"two tools are named {runs.name!r}")
-			self._tools[runs.name] = runs
+				runs = _inline(tool)
+				name, description, schema = runs.name, runs.description, runs.schema
+			if name in self._tools:
+				raise ValueError(f"two tools are named {name!r}")
+			self._tools[name] = runs
+			self._arg_schemas[name] = schema
+			schemas.append(_tool_schema(name, description, schema))
 		self._answer: str | None = None
 		if response_format is not None:
 			self._answer = response_format.__name__
@@ -231,8 +261,8 @@ class LoopRunner:
 					f"a tool is named {self._answer!r}, as the response format is"
 				)
 			description = (response_format.__doc__ or "").strip() or self._answer
-			bound.append(Spec(self._answer, description, response_format, answer=True))
-		self._model = backend.bind(bound)
+			schemas.append(_tool_schema(self._answer, description, response_format))
+		self.tool_schemas: list[dict] = schemas
 
 		self._saved: set[str] = set()  # agents with an entry in the store
 		self.model_calls = 0
@@ -253,7 +283,7 @@ class LoopRunner:
 
 	async def start(self, agent: Agent) -> Step:
 		"""Run the agent from its input until it ends, suspends or stops."""
-		return await self._run(agent.id, self._backend.to_list(agent.input), 0)
+		return await self._run(agent.id, _messages(agent.input), 0)
 
 	async def resume(self, agent: Agent, done: dict[str, Any]) -> Step:
 		"""Read the agent's state back and run it on; its tasks have ended."""
@@ -282,7 +312,7 @@ class LoopRunner:
 
 	# --- the loop --------------------------------------------------------------------
 
-	async def _run(self, agent_id: str, messages: list, calls: int) -> Step:
+	async def _run(self, agent_id: str, messages: list[dict], calls: int) -> Step:
 		try:
 			step = await self._loop(agent_id, messages, calls)
 		except BaseException:
@@ -292,17 +322,15 @@ class LoopRunner:
 			self._end(agent_id)
 		return step
 
-	async def _loop(self, agent_id: str, messages: list, calls: int) -> Step:
-		backend = self._backend
+	async def _loop(self, agent_id: str, messages: list[dict], calls: int) -> Step:
+		i, made, pending = _pending(messages)
 		while True:
-			i, made, pending = self._pending(messages)
 			if pending:
 				step = await self._tools_turn(
 					agent_id, messages, calls, i, made, pending
 				)
 				if step is not None:
 					return step
-				continue
 			if calls >= self.max_model_calls:
 				raise ModelCallLimitExceeded(
 					f"agent {agent_id!r} reached its limit of {calls} model calls "
@@ -313,58 +341,49 @@ class LoopRunner:
 			reply = await self._ask(agent_id, messages)
 			calls += 1
 			self.model_calls += 1
-			messages.append(reply)
-			if backend.calls(reply):
+			messages.append(reply.message())
+			i, made = len(messages) - 1, _calls_of(reply, messages[-1])
+			pending = made
+			if made:
 				continue
 			if self._answer is None:
 				return Finished(LoopOutput(messages, None, calls))
 			answer = self._parse(reply)
 			if answer is not None:
 				return Finished(LoopOutput(messages, answer, calls))
-			messages.append(
-				backend.human(f"Answer by calling the {self._answer} tool, on its own.")
-			)
+			nudge = f"Answer by calling the {self._answer} tool, on its own."
+			messages.append({"role": "user", "content": nudge})
 
-	def _pending(self, messages: list) -> tuple[int, list[Call], list[Call]]:
-		"""The last reply's index, its calls, and those with no result yet."""
-		backend = self._backend
-		for i in range(len(messages) - 1, -1, -1):
-			made = backend.calls(messages[i])
-			if made is None:
-				continue
-			if not made:
-				return i, made, []
-			answered = {backend.answers(m) for m in messages[i + 1 :]}
-			return i, made, [c for c in made if c.id not in answered]
-		return -1, [], []
-
-	async def _trimmed(self, messages: list) -> list:
+	async def _trimmed(self, messages: list[dict]) -> list[dict]:
 		out = self.trim(messages)
 		if inspect.isawaitable(out):
 			out = await out
 		return list(out)
 
-	async def _ask(self, agent_id: str, messages: list) -> object:
+	async def _ask(self, agent_id: str, messages: list[dict]) -> Reply:
 		sent = messages if self._system is None else [self._system, *messages]
-		if self._model.counts_states:
-			return await self._model(agent_id, sent)
+		tools = self.tool_schemas or None
+		if self._fleet is not None:
+			return await self._fleet.ainvoke(
+				agent_id, sent, tools=tools, **self.model_kwargs
+			)
 		with _agents.activity(AgentState.MODEL_REQUEST):
-			return await self._model(agent_id, sent)
+			return await _complete(self._transport, sent, tools, self.model_kwargs)
 
-	def _parse(self, reply: object) -> BaseModel | None:
+	def _parse(self, reply: Reply) -> BaseModel | None:
 		try:
-			return self.response_format.model_validate_json(self._backend.text(reply))
+			return self.response_format.model_validate_json(reply.content)
 		except ValidationError:
 			return None
 
 	async def _tools_turn(
 		self,
 		agent_id: str,
-		messages: list,
+		messages: list[dict],
 		calls: int,
 		i: int,
-		made: list[Call],
-		pending: list[Call],
+		made: list[_Call],
+		pending: list[_Call],
 	) -> Step | None:
 		scope = str(calls)  # the turn: the same when the agent resumes
 		alone = len(made) == 1
@@ -400,7 +419,7 @@ class LoopRunner:
 				)
 			if result.answer is not None:
 				answer = result.answer
-		self._order(messages, i, made)
+		_order(messages, i, made)
 		if stops:
 			self.interrupts += 1
 			return Interrupted(tuple(stops))
@@ -411,30 +430,14 @@ class LoopRunner:
 			return Finished(LoopOutput(messages, answer, calls))
 		return None
 
-	def _order(self, messages: list, i: int, made: list[Call]) -> None:
-		"""Put the results after reply ``i`` in the order of its calls: a resumed
-		call's result arrives after the others'."""
-		order = {c.id: n for n, c in enumerate(made)}
-		last = len(order)
-		answers = self._backend.answers
-		messages[i + 1 :] = sorted(
-			messages[i + 1 :], key=lambda m: order.get(answers(m), last)
-		)
-
 	# --- one tool call ---------------------------------------------------------------
 
-	def _error(self, call: Call, content: str) -> _Result:
-		return _Result(self._backend.result(call, content, True), error=True)
-
-	def _ok(self, call: Call, value: object) -> _Result:
-		return _Result(self._backend.result(call, text(value), False))
-
 	async def _call(
-		self, agent_id: str, scope: str, call: Call, alone: bool
+		self, agent_id: str, scope: str, call: _Call, alone: bool
 	) -> _Result:
 		if call.args is None:
 			error = call.error or "not valid JSON"
-			return self._error(
+			return _error(
 				call,
 				ERROR.format(
 					error=f"the arguments of {call.name} are not valid: {error}"
@@ -445,32 +448,34 @@ class LoopRunner:
 		tool = self._tools.get(call.name)
 		if tool is None:
 			names = ", ".join([*self._tools, *([self._answer] if self._answer else [])])
-			return self._error(call, NOT_A_TOOL.format(name=call.name, names=names))
-		if isinstance(tool, TaskTool):
-			return await self._task(agent_id, scope, call, tool)
-		if isinstance(tool, McpTool):
-			return await self._service(agent_id, scope, call, tool)
-		return await self._inline(call, tool)
-
-	async def _inline(self, call: Call, tool: InlineTool) -> _Result:
+			return _error(call, NOT_A_TOOL.format(name=call.name, names=names))
 		try:
-			message, error = await tool.run(call)
+			args = _validate(self._arg_schemas[call.name], call.args)
+		except ValidationError as exc:
+			return _error(call, ERROR.format(error=f"ValidationError: {exc}"))
+		if isinstance(tool, TaskTool):
+			return await self._task(agent_id, scope, call, tool, args)
+		if isinstance(tool, McpTool):
+			return await self._service(agent_id, scope, call, tool, args)
+		return await self._inline(call, tool, args)
+
+	async def _inline(self, call: _Call, tool: _Inline, args: dict) -> _Result:
+		try:
+			out = tool.fn(**args)
+			if inspect.isawaitable(out):
+				out = await out
 		except Interrupt as stop:
 			stop.__traceback__ = None  # keeps no frame of the tool's run
 			return _Result(interrupt=stop)
 		except ValidationError as exc:
-			return self._error(call, ERROR.format(error=f"ValidationError: {exc}"))
+			return _error(call, ERROR.format(error=f"ValidationError: {exc}"))
 		except Exception as exc:  # the model reads what went wrong
-			return self._error(call, ERROR.format(error=repr(exc)))
-		return _Result(message, error=error)
+			return _error(call, ERROR.format(error=repr(exc)))
+		return _ok(call, out)
 
 	async def _task(
-		self, agent_id: str, scope: str, call: Call, tool: TaskTool
+		self, agent_id: str, scope: str, call: _Call, tool: TaskTool, args: dict
 	) -> _Result:
-		try:
-			args = _validate(self._schemas[tool.name], call.args)
-		except ValidationError as exc:
-			return self._error(call, ERROR.format(error=f"ValidationError: {exc}"))
 		# A runtime without a session raises RuntimeError here: the agent fails.
 		job = self.runtime.submit(tool, agent_id, call.id, args, scope=scope)
 		if not job.done():
@@ -482,10 +487,10 @@ class LoopRunner:
 				# Withdraws a task not admitted yet if the agent is stopped.
 				await _agents.wait((job,))
 		if job.cancelled():
-			return self._error(call, f"{tool.name} failed: its task was cancelled")
+			return _error(call, f"{tool.name} failed: its task was cancelled")
 		error = job.exception()
 		if error is not None:
-			return self._error(
+			return _error(
 				call, f"{tool.name} failed: {type(error).__name__}: {error}"[:500]
 			)
 		try:
@@ -493,16 +498,12 @@ class LoopRunner:
 			if tool.output is not None:
 				value = tool.output(value)
 		except Exception as exc:
-			return self._error(call, ERROR.format(error=repr(exc)))
-		return self._ok(call, value)
+			return _error(call, ERROR.format(error=repr(exc)))
+		return _ok(call, value)
 
 	async def _service(
-		self, agent_id: str, scope: str, call: Call, tool: McpTool
+		self, agent_id: str, scope: str, call: _Call, tool: McpTool, args: dict
 	) -> _Result:
-		try:
-			args = _validate(self._schemas[tool.name], call.args)
-		except ValidationError as exc:
-			return self._error(call, ERROR.format(error=f"ValidationError: {exc}"))
 		with _agents.activity(AgentState.TOOL_CALL):
 			try:
 				value = await self.runtime.call_service(
@@ -511,14 +512,14 @@ class LoopRunner:
 			except RuntimeError:
 				raise  # set up wrong: no service client, or one not started
 			except Exception as exc:  # the model reads the failure
-				return self._error(
+				return _error(
 					call, f"{tool.name} failed: {type(exc).__name__}: {exc}"[:500]
 				)
-		return self._ok(call, value)
+		return _ok(call, value)
 
-	def _answer_call(self, call: Call, alone: bool) -> _Result:
+	def _answer_call(self, call: _Call, alone: bool) -> _Result:
 		if not alone:
-			return self._error(
+			return _error(
 				call,
 				ERROR.format(
 					error=f"{self._answer} gives the final answer: call it on its "
@@ -528,12 +529,12 @@ class LoopRunner:
 		try:
 			answer = self.response_format.model_validate(call.args)
 		except ValidationError as exc:
-			return self._error(call, ERROR.format(error=f"ValidationError: {exc}"))
-		return _Result(self._backend.result(call, ANSWERED, False), answer=answer)
+			return _error(call, ERROR.format(error=f"ValidationError: {exc}"))
+		return _Result(_result(call, ANSWERED), answer=answer)
 
 	# --- state -----------------------------------------------------------------------
 
-	def _save(self, agent_id: str, messages: list, calls: int) -> None:
+	def _save(self, agent_id: str, messages: list[dict], calls: int) -> None:
 		self.store.put(self.key(agent_id), {"messages": messages, "model_calls": calls})
 		self.store_puts += 1
 		self.suspensions += 1
@@ -547,7 +548,7 @@ class LoopRunner:
 			self._end(agent_id)
 
 	def _end(self, agent_id: str) -> None:
-		"""The agent makes no more calls: forget its state, and tell the model."""
+		"""The agent makes no more calls: forget its state, and tell the fleet."""
 		if agent_id in self._saved:
 			self._saved.discard(agent_id)
 			try:
@@ -563,7 +564,174 @@ class LoopRunner:
 					type(exc).__name__,
 					exc,
 				)
-		self._model.agent_done(agent_id)
+		if self._fleet is not None:
+			self._fleet.agent_done(agent_id)
+
+
+# --- messages ------------------------------------------------------------------------
+
+_ROLES = {"human": "user", "ai": "assistant"}
+
+
+def _messages(value: object) -> list[dict]:
+	"""An agent's input as a new list of OpenAI-format messages."""
+	if isinstance(value, dict) and "messages" in value:
+		value = value["messages"]
+	if (
+		isinstance(value, (str, dict))
+		or not isinstance(value, Iterable)
+		or _is_langchain(value, "langchain_core.messages", "BaseMessage")
+	):
+		value = [value]
+	out: list[dict] = []
+	for m in value:
+		if isinstance(m, str):
+			out.append({"role": "user", "content": m})
+		elif isinstance(m, dict):
+			out.append(m)
+		elif isinstance(m, tuple) and len(m) == 2:
+			out.append({"role": _ROLES.get(m[0], m[0]), "content": m[1]})
+		elif _is_langchain(m, "langchain_core.messages", "BaseMessage"):
+			from flowgentic.langchain import to_openai_messages
+
+			out.extend(to_openai_messages([m]))
+		else:
+			raise TypeError(f"not a message: {m!r}")
+	return out
+
+
+def _calls_of(reply: Reply, message: dict) -> list[_Call]:
+	"""A reply's tool calls, those whose arguments did not parse included."""
+	raw = {c["id"]: c for c in message.get("tool_calls") or ()}
+	calls = [_Call(c.id, c.name, c.args, None, raw[c.id]) for c in reply.tool_calls]
+	calls.extend(
+		_Call(c.id, c.name, None, f"{c.error}: {c.arguments}", raw[c.id])
+		for c in reply.invalid_tool_calls
+	)
+	return calls
+
+
+def _pending(messages: list[dict]) -> tuple[int, list[_Call], list[_Call]]:
+	"""The last reply's index, its calls, and those with no result yet, read
+	from the messages, as when an agent resumes."""
+	for i in range(len(messages) - 1, -1, -1):
+		m = messages[i]
+		if m.get("role") != "assistant":
+			continue
+		made = []
+		for c in m.get("tool_calls") or ():
+			function = c.get("function") or {}
+			try:
+				args = json.loads(function.get("arguments") or "{}")
+			except ValueError as exc:
+				args, error = None, f"not valid JSON: {exc}"
+			else:
+				error = None
+				if not isinstance(args, dict):
+					args, error = None, "not a JSON object"
+			made.append(_Call(c["id"], function.get("name") or "", args, error, c))
+		if not made:
+			return i, [], []
+		answered = {x.get("tool_call_id") for x in messages[i + 1 :]}
+		return i, made, [c for c in made if c.id not in answered]
+	return -1, [], []
+
+
+def _order(messages: list[dict], i: int, made: list[_Call]) -> None:
+	"""Put the results after reply ``i`` in the order of its calls: a resumed
+	call's result arrives after the others'."""
+	order = {c.id: n for n, c in enumerate(made)}
+	last = len(order)
+	messages[i + 1 :] = sorted(
+		messages[i + 1 :], key=lambda m: order.get(m.get("tool_call_id"), last)
+	)
+
+
+def _result(call: _Call, content: str) -> dict:
+	return {"role": "tool", "tool_call_id": call.id, "content": content}
+
+
+def _error(call: _Call, content: str) -> _Result:
+	return _Result(_result(call, content), error=True)
+
+
+def _ok(call: _Call, value: object) -> _Result:
+	text = value if isinstance(value, str) else json.dumps(value, default=str)
+	return _Result(_result(call, text))
+
+
+# --- tools ---------------------------------------------------------------------------
+
+
+def _is_langchain(obj: object, module: str, name: str) -> bool:
+	"""Whether ``obj`` is an instance of LangChain's ``module.name``, without
+	importing LangChain: if it is not loaded, nothing is one."""
+	loaded = sys.modules.get(module)
+	cls = getattr(loaded, name, None)
+	return cls is not None and isinstance(obj, cls)
+
+
+def _inline(tool: object) -> _Inline:
+	"""An inline tool: a LangChain tool, through the adapter, or a callable,
+	whose ``name``, ``description`` and ``args_schema`` attributes are used if
+	it has them, and otherwise its name, docstring and signature."""
+	if _is_langchain(tool, "langchain_core.tools", "BaseTool"):
+		from flowgentic.langchain import inline_tool
+
+		tool = inline_tool(tool)
+	if not callable(tool):
+		raise TypeError(f"not a tool: {tool!r}")
+	name = getattr(tool, "name", None) or getattr(tool, "__name__", None)
+	if not isinstance(name, str):
+		raise TypeError(f"not a tool: {tool!r}: give it a name")
+	description = getattr(tool, "description", None)
+	if not isinstance(description, str):
+		description = inspect.getdoc(tool) or name
+	schema = getattr(tool, "args_schema", None)
+	if schema is None:
+		schema = _signature_schema(name, tool)
+	return _Inline(name, description, schema, tool)
+
+
+def _signature_schema(name: str, fn: Callable[..., Any]) -> type[BaseModel]:
+	"""A pydantic model of ``fn``'s parameters, from its signature and type
+	hints; ``*args`` and ``**kwargs`` are left out."""
+	target = fn if inspect.isfunction(fn) or inspect.ismethod(fn) else fn.__call__
+	try:
+		hints = typing.get_type_hints(target)
+	except Exception:  # unresolvable annotations: no types
+		hints = {}
+	fields: dict[str, Any] = {}
+	for p in inspect.signature(fn).parameters.values():
+		if p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
+			continue
+		annotation = hints.get(p.name, Any)
+		fields[p.name] = (annotation, ... if p.default is p.empty else p.default)
+	return create_model(name, **fields)
+
+
+def _tool_schema(name: str, description: str, schema: object) -> dict:
+	"""A tool as the model sees it: OpenAI's function tool, its parameters
+	from a pydantic model (titles dropped, as LangChain drops them) or a JSON
+	schema as it is."""
+	if isinstance(schema, type) and issubclass(schema, BaseModel):
+		parameters = schema.model_json_schema()
+		parameters.pop("title", None)
+		for prop in (parameters.get("properties") or {}).values():
+			if isinstance(prop, dict):
+				prop.pop("title", None)
+	elif isinstance(schema, dict):
+		parameters = schema
+	else:
+		parameters = {"type": "object", "properties": {}}
+	return {
+		"type": "function",
+		"function": {
+			"name": name,
+			"description": description,
+			"parameters": parameters,
+		},
+	}
 
 
 def _validate(schema: object, args: dict) -> dict:

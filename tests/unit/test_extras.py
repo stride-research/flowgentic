@@ -43,6 +43,7 @@ LANGGRAPH = [
 ASYNCFLOW = ["radical", "radical.asyncflow"]
 MCP = ["mcp", "mcp_types"]
 RHAPSODY = ["rhapsody"]
+OPENAI = ["openai"]
 
 
 def test_the_core_needs_no_extra() -> None:
@@ -135,62 +136,65 @@ def test_the_checkpointer_names_its_extras() -> None:
 	assert "install flowgentic[langgraph]" in result.stderr
 
 
-def test_the_fleet_needs_langchain_only() -> None:
-	result = run_without(ASYNCFLOW + MCP, "from flowgentic.fleet import Fleet")
-	assert result.returncode == 0, result.stderr
-	result = run_without(LANGGRAPH, "import flowgentic.fleet")
-	assert result.returncode != 0
-	assert "install flowgentic[langchain-core]" in result.stderr.splitlines()[-1]
-
-
-def test_the_agent_loop_needs_langchain_core_only() -> None:
-	"""Flowgentic's own loop runs an agent without LangGraph, LangChain's
-	agents, its providers or any other extra; without langchain-core, the loop
-	imports, and a runner for a LangChain model names the extra."""
+def test_the_fleet_needs_no_extra() -> None:
+	"""The fleet imports and calls a transport with no extra; its OpenAI
+	transport names the openai extra, and its LangChain chat model, or a
+	LangChain replica, the langgraph extra."""
 	result = run_without(
-		["langgraph", "langchain", "langchain_openai", "langchain_ollama"]
-		+ ASYNCFLOW
-		+ MCP
-		+ RHAPSODY,
+		LANGGRAPH + ASYNCFLOW + MCP + RHAPSODY + OPENAI,
 		"""
 		import asyncio
-		from langchain_core.language_models import GenericFakeChatModel
-		from langchain_core.messages import AIMessage
-		from flowgentic.host import Agent, AgentHost
-		from flowgentic.loop import LoopRunner
+		from flowgentic.fleet import Fleet, Reply
 
-		model = GenericFakeChatModel(messages=iter([AIMessage("hi")]))
-		report = asyncio.run(AgentHost(LoopRunner(model)).run([Agent("a", "go")]))
-		print(report.outcomes)
+		class Echo:
+			async def complete(self, messages, tools=None, **kwargs):
+				return Reply(messages[-1]["content"].upper())
+
+		reply = asyncio.run(Fleet([Echo()]).ainvoke("a", [{"role": "user", "content": "hi"}]))
+		print(reply.content)
 		""",
 	)
 	assert result.returncode == 0, result.stderr
-	assert result.stdout.strip() == "{'done': 1}"
-	result = run_without(
-		["langchain_core"],
-		"""
-		from flowgentic.loop import LoopRunner
-		LoopRunner(object())
-		""",
-	)
+	assert result.stdout.strip() == "HI"
+	result = run_without(OPENAI, "from flowgentic.fleet import OpenAITransport; OpenAITransport('m')")
 	assert result.returncode != 0
-	assert "install flowgentic[langchain-core]" in result.stderr.splitlines()[-1]
+	assert "install flowgentic[openai]" in result.stderr.splitlines()[-1]
+	chat_model = """
+		from flowgentic.fleet import Fleet, Reply
+
+		class Echo:
+			async def complete(self, messages, tools=None, **kwargs):
+				return Reply()
+
+		Fleet([Echo()]).chat_model()
+		"""
+	langchain_replica = """
+		from flowgentic.fleet import Fleet
+
+		class ChatModel:
+			async def ainvoke(self, messages):
+				return None
+
+		Fleet([ChatModel()])
+		"""
+	for code in (chat_model, langchain_replica):
+		result = run_without(LANGGRAPH, code)
+		assert result.returncode != 0, code
+		assert "install flowgentic[langgraph]" in result.stderr.splitlines()[-1], result.stderr
 
 
-def test_the_agent_loop_runs_on_its_seams_without_langchain() -> None:
-	"""The loop's core imports no LangChain: with every LangChain and LangGraph
-	module blocked, it runs agents that suspend on a RHAPSODY task through a
-	backend on OpenAI-format dicts (tests/unit/scale/dict_backend.py)."""
-	scale = Path(__file__).resolve().parent / "scale"
+def test_the_agent_loop_needs_no_extra() -> None:
+	"""Flowgentic's own loop runs agents that suspend on a RHAPSODY task, on
+	OpenAI-format messages and a transport, with LangChain, LangGraph, the
+	openai SDK, AsyncFlow and MCP all blocked, and loads none of them."""
 	result = run_without(
-		LANGGRAPH + ASYNCFLOW + MCP,
-		f"""
+		LANGGRAPH + ASYNCFLOW + MCP + OPENAI,
+		"""
 		import asyncio, sys
 		from concurrent.futures import ThreadPoolExecutor
-		sys.path.insert(0, {str(scale)!r})
-		from dict_backend import DictBackend, assistant
 		from rhapsody import Session
 		from rhapsody.backends import ConcurrentExecutionBackend
+		from flowgentic.fleet import Reply, ToolCall
 		from flowgentic.host import Agent, AgentHost
 		from flowgentic.loop import LoopRunner
 		from flowgentic.tools import ToolRuntime, task_tool
@@ -198,27 +202,27 @@ def test_the_agent_loop_runs_on_its_seams_without_langchain() -> None:
 		def double(x: float) -> float:
 			return 2 * x
 
-		def script(messages):
-			results = [m for m in messages if m["role"] == "tool"]
-			if not results:
-				return assistant(calls=(("c1", "double", {{"x": 2.0}}),))
-			return assistant(results[0]["content"])
+		class Scripted:
+			async def complete(self, messages, tools=None, **kwargs):
+				results = [m for m in messages if m["role"] == "tool"]
+				if not results:
+					return Reply(tool_calls=(ToolCall("c1", "double", {"x": 2.0}),))
+				return Reply(results[0]["content"])
 
 		async def main():
 			session = Session(backends=[await ConcurrentExecutionBackend(ThreadPoolExecutor(2))])
 			answers = []
-			runner = LoopRunner(
-				DictBackend(script),
-				[task_tool(double, suspend=True)],
-				runtime=ToolRuntime(session),
-			)
+			runner = LoopRunner(Scripted(), [task_tool(double, suspend=True)], runtime=ToolRuntime(session))
 			host = AgentHost(runner, on_done=lambda r, out: answers.append(out.messages[-1]["content"]))
-			report = await host.run([Agent(f"a{{i}}", "go") for i in range(3)])
+			report = await host.run([Agent(f"a{i}", "go") for i in range(3)])
 			await session.close()
 			return report, answers
 
 		report, answers = asyncio.run(main())
-		loaded = sorted(m for m in sys.modules if m.split(".")[0] in {{"langchain_core", "langgraph", "langchain"}})
+		loaded = sorted(
+			m for m in sys.modules
+			if m.split(".")[0] in {"langchain_core", "langgraph", "langchain", "openai"}
+		)
 		print(report.outcomes, sum(a.suspensions for a in report.agents), answers, loaded)
 		""",
 	)
@@ -290,7 +294,7 @@ def test_chat_provider_imports_without_asyncflow() -> None:
 		("flowgentic.langgraph", "langgraph.types"),
 		("flowgentic.langgraph", "langgraph.checkpoint.base"),
 		("flowgentic.utils", "langchain_core.language_models"),
-		("flowgentic.fleet", "langchain_core.messages"),
+		("flowgentic.langchain", "langchain_core.messages"),
 		("flowgentic.tools.mcp", "mcp.client"),
 		("flowgentic.tools.mcp", "anyio"),
 	],

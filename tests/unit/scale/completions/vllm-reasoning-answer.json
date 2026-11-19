@@ -1,0 +1,54 @@
+{
+ "source": "shaped after vLLM 0.19.1's OpenAI-compatible server (Qwen3-8B, hermes tool parser, qwen3 reasoning parser); not recorded",
+ "response": {
+  "id": "chatcmpl-7f3e",
+  "object": "chat.completion",
+  "created": 1794826800,
+  "model": "Qwen3-8B",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "refusal": null,
+     "annotations": null,
+     "audio": null,
+     "function_call": null,
+     "content": "The best score is 0.98, at 480 degrees.",
+     "reasoning": "The simulation returned 0.98.",
+     "tool_calls": []
+    },
+    "logprobs": null,
+    "finish_reason": "stop",
+    "stop_reason": null,
+    "token_ids": null
+   }
+  ],
+  "service_tier": null,
+  "system_fingerprint": null,
+  "usage": {
+   "prompt_tokens": 420,
+   "total_tokens": 470,
+   "completion_tokens": 50,
+   "prompt_tokens_details": {
+    "cached_tokens": 400
+   }
+  },
+  "prompt_logprobs": null,
+  "prompt_token_ids": null,
+  "kv_transfer_params": null
+ },
+ "expect": {
+  "content": "The best score is 0.98, at 480 degrees.",
+  "tool_calls": [],
+  "invalid": [],
+  "reasoning": "The simulation returned 0.98.",
+  "usage": [
+   420,
+   50,
+   400,
+   null
+  ],
+  "finish_reason": "stop"
+ }
+}

@@ -1,0 +1,71 @@
+{
+ "source": "shaped after vLLM 0.19.1's OpenAI-compatible server (Qwen3-8B, hermes tool parser, qwen3 reasoning parser); not recorded",
+ "response": {
+  "id": "chatcmpl-7f3b",
+  "object": "chat.completion",
+  "created": 1794826800,
+  "model": "Qwen3-8B",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "refusal": null,
+     "annotations": null,
+     "audio": null,
+     "function_call": null,
+     "content": null,
+     "reasoning": null,
+     "tool_calls": [
+      {
+       "id": "chatcmpl-tool-9a1d",
+       "type": "function",
+       "function": {
+        "name": "lookup",
+        "arguments": "{\"candidate\": \"cand-000001\"}"
+       }
+      }
+     ]
+    },
+    "logprobs": null,
+    "finish_reason": "tool_calls",
+    "stop_reason": null,
+    "token_ids": null
+   }
+  ],
+  "service_tier": null,
+  "system_fingerprint": null,
+  "usage": {
+   "prompt_tokens": 318,
+   "total_tokens": 340,
+   "completion_tokens": 22,
+   "prompt_tokens_details": {
+    "cached_tokens": 304
+   }
+  },
+  "prompt_logprobs": null,
+  "prompt_token_ids": null,
+  "kv_transfer_params": null
+ },
+ "expect": {
+  "content": "",
+  "tool_calls": [
+   [
+    "chatcmpl-tool-9a1d",
+    "lookup",
+    {
+     "candidate": "cand-000001"
+    }
+   ]
+  ],
+  "invalid": [],
+  "reasoning": null,
+  "usage": [
+   318,
+   22,
+   304,
+   null
+  ],
+  "finish_reason": "tool_calls"
+ }
+}

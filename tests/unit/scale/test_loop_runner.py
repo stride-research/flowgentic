@@ -1,7 +1,8 @@
-"""Flowgentic's own agent loop in an agent host: suspension with its state in a
-key-value store, concurrent tool calls, tool errors returned to the model, the
-model-call limit, structured answers, the history-trim hook, interrupts, and
-the accounting and telemetry the host's other parts use."""
+"""Flowgentic's own agent loop in an agent host, on OpenAI-format messages and
+transports: suspension with its state in a key-value store, concurrent tool
+calls, tool errors returned to the model, the model-call limit, structured
+answers, the history-trim hook, interrupts, the accounting and telemetry the
+host's other parts use, and LangChain's models and tools through its adapter."""
 
 import asyncio
 import json
@@ -10,8 +11,19 @@ from collections import Counter
 from typing import Any
 
 import pytest
-from _support import RUNS, Scripted, broken, calls_then_answer, simulate, thread_session
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from _support import (
+    RUNS,
+    Scripted,
+    ScriptedTransport,
+    broken,
+    calls_then_answer,
+    dict_calls_then_answer,
+    reply,
+    simulate,
+    thread_session,
+    tool_results,
+)
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
 from pydantic import BaseModel
 
@@ -57,37 +69,15 @@ class CountingStore(MemoryStore):
         super().delete(key)
 
 
-class Slow(Scripted):
-    """A scripted model that takes ``latency_s`` to answer."""
-
-    latency_s: float = 0.01
-
-    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
-        await asyncio.sleep(self.latency_s)
-        return await super()._agenerate(messages, stop, run_manager, **kwargs)
-
-
-class Binding(Scripted):
-    """A scripted model that records the tools it is bound to."""
-
-    bound: list = []
-
-    def bind_tools(self, tools, **kwargs):
-        self.bound.extend(tools)
-        return self
-
-
-@tool
-def inline_note(text: str) -> str:
+async def note(text: str) -> str:
     """Take a note."""
-    RUNS["inline_note"] = RUNS.get("inline_note", 0) + 1
+    RUNS["note"] = RUNS.get("note", 0) + 1
     return f"noted {text}"
 
 
 RUNNING = {"now": 0, "most": 0}
 
 
-@tool
 async def wait_a_bit(name: str) -> str:
     """Wait for 0.2 s."""
     RUNNING["now"] += 1
@@ -99,7 +89,16 @@ async def wait_a_bit(name: str) -> str:
     return name
 
 
-@tool
+async def wait_long(name: str) -> str:
+    """Wait for 10 s."""
+    try:
+        await asyncio.sleep(10)
+    except asyncio.CancelledError:
+        RUNS["wait_long cancelled"] = RUNS.get("wait_long cancelled", 0) + 1
+        raise
+    return name
+
+
 def fragile(x: int) -> str:
     """Fail on odd numbers."""
     if x % 2:
@@ -107,7 +106,6 @@ def fragile(x: int) -> str:
     return "even"
 
 
-@tool
 def ask_a_human(question: str) -> str:
     """Ask a human."""
     raise Interrupt({"question": question})
@@ -132,6 +130,11 @@ class FakeService:
         return {"material": args["material"], "score": 0.5}
 
 
+class FailingService(FakeService):
+    async def call(self, uid, tool, args, *, idempotent=False):
+        raise ConnectionError("service gone")
+
+
 class Verdict(BaseModel):
     """The agent's verdict on its candidate."""
 
@@ -140,16 +143,20 @@ class Verdict(BaseModel):
 
 
 def inputs(n: int, prefix: str = "agent") -> list[Agent]:
-    return [Agent(f"{prefix}-{i}", [HumanMessage("go")]) for i in range(n)]
+    return [Agent(f"{prefix}-{i}", "go") for i in range(n)]
 
 
-def turns(messages: list[BaseMessage]) -> int:
+def turns(messages) -> int:
     """The model's replies so far."""
-    return sum(1 for m in messages if m.type == "ai")
+    return sum(1 for m in messages if m["role"] == "assistant")
 
 
 def collect(outputs: dict):
     return lambda result, output: outputs.__setitem__(result.id, output)
+
+
+def transport(*calls, **kwargs):
+    return ScriptedTransport(dict_calls_then_answer(*calls), **kwargs)
 
 
 # --- suspension and repeat safety ---------------------------------------------------
@@ -159,19 +166,15 @@ async def test_a_suspended_agent_resumes_from_the_store_and_nothing_runs_twice()
     session = await thread_session()
     runtime = ToolRuntime(session)
     store = CountingStore()
-    model = Scripted(
-        script=calls_then_answer(("simulate", {"x": 1.5}), ("inline_note", {"text": "hi"}))
-    )
-    runner = LoopRunner(
-        model, [task_tool(simulate, suspend=True), inline_note], runtime=runtime, store=store
-    )
+    model = transport(("simulate", {"x": 1.5}), ("note", {"text": "hi"}))
+    runner = LoopRunner(model, [task_tool(simulate, suspend=True), note], runtime=runtime, store=store)
     outputs = {}
     report = await AgentHost(runner, stagger=FAST, on_done=collect(outputs)).run(inputs(20))
     await session.close()
 
     assert report.finished == 20
     assert all(a.suspensions == 1 for a in report.agents)
-    assert RUNS == {"simulate": 20, "inline_note": 20}  # each ran once per agent
+    assert RUNS == {"simulate": 20, "note": 20}  # each ran once per agent
     assert runtime.stats()["repeats"] == 20  # the resume found the task
     # One put at the suspension, one get at the resume, one delete at the end.
     assert store.calls == {"put": 20, "get": 20, "delete": 20}
@@ -179,11 +182,15 @@ async def test_a_suspended_agent_resumes_from_the_store_and_nothing_runs_twice()
     out = outputs["agent-0"]
     assert isinstance(out, LoopOutput)
     assert out.model_calls == 2 and out.structured_response is None
-    final = out.messages[-1].content
+    assert all(isinstance(m, dict) for m in out.messages)
+    assert [m["role"] for m in out.messages] == ["user", "assistant", "tool", "tool", "assistant"]
+    final = out.messages[-1]["content"]
     assert '{"y": 3.0}' in final and "noted hi" in final
     # The note answered first, the task after the resume; the history keeps
     # the order of the calls.
-    assert [m.tool_call_id for m in out.messages if m.type == "tool"] == ["call-0", "call-1"]
+    assert [m["tool_call_id"] for m in tool_results(out.messages)] == ["call-0", "call-1"]
+    saved = store.last_put["messages"]
+    assert [m["role"] for m in saved] == ["user", "assistant", "tool"]  # the note's result
     stats = runner.stats()
     assert stats["model_calls"] == 40 and stats["suspensions"] == 20
     assert stats["tool_calls"] == 40 and stats["tool_errors"] == 0
@@ -192,9 +199,8 @@ async def test_a_suspended_agent_resumes_from_the_store_and_nothing_runs_twice()
 
 async def test_an_agent_that_never_suspends_never_touches_the_store():
     store = CountingStore()
-    model = Scripted(script=calls_then_answer(("inline_note", {"text": "hi"})))
     report = await AgentHost(
-        LoopRunner(model, [inline_note], store=store), stagger=FAST
+        LoopRunner(transport(("note", {"text": "hi"})), [note], store=store), stagger=FAST
     ).run(inputs(5))
     assert report.finished == 5
     assert store.calls == {}
@@ -208,52 +214,44 @@ async def test_a_call_id_reused_in_a_later_turn_is_a_new_task():
 
     def script(messages):
         if turns(messages) < 2:
-            x = float(turns(messages) + 1)
-            return AIMessage("", tool_calls=[{"name": "simulate", "args": {"x": x}, "id": "call-0"}])
-        return AIMessage(" | ".join(m.content for m in messages if m.type == "tool"))
+            return reply(calls=[("call-0", "simulate", {"x": float(turns(messages) + 1)})])
+        return reply(" | ".join(m["content"] for m in tool_results(messages)))
 
     outputs = {}
-    runner = LoopRunner(
-        Scripted(script=script), [task_tool(simulate, suspend=True)], runtime=runtime
-    )
+    runner = LoopRunner(ScriptedTransport(script), [task_tool(simulate, suspend=True)], runtime=runtime)
     report = await AgentHost(runner, stagger=FAST, on_done=collect(outputs)).run(inputs(3))
     await session.close()
     assert report.finished == 3
-    assert outputs["agent-0"].messages[-1].content == '{"y": 2.0} | {"y": 4.0}'
+    assert outputs["agent-0"].messages[-1]["content"] == '{"y": 2.0} | {"y": 4.0}'
     assert RUNS == {"simulate": 6}
     assert runtime.stats()["submitted"] == 6
 
 
 async def test_a_task_tool_that_does_not_suspend_is_awaited_in_the_loop():
     session = await thread_session()
-    runtime = ToolRuntime(session)
     store = CountingStore()
-    model = Scripted(script=calls_then_answer(("simulate", {"x": 2.0})))
     outputs = {}
     report = await AgentHost(
-        LoopRunner(model, [task_tool(simulate)], runtime=runtime, store=store),
+        LoopRunner(transport(("simulate", {"x": 2.0})), [task_tool(simulate)], runtime=ToolRuntime(session), store=store),
         stagger=FAST,
         on_done=collect(outputs),
     ).run(inputs(4))
     await session.close()
     assert report.finished == 4
     assert all(a.suspensions == 0 for a in report.agents)
-    assert outputs["agent-0"].messages[-1].content == '{"y": 4.0}'
+    assert outputs["agent-0"].messages[-1]["content"] == '{"y": 4.0}'
     assert store.calls == {}
 
 
 async def test_mcp_tools_go_through_the_service_keyed_by_agent_and_turn():
     service = FakeService()
-    lookup = mcp_tool(
-        "lookup", description="Look a material up.", args_schema=LookupArgs, idempotent=True
-    )
-    model = Scripted(script=calls_then_answer(("lookup", {"material": "x"})))
+    lookup = mcp_tool("lookup", description="Look a material up.", args_schema=LookupArgs, idempotent=True)
     outputs = {}
-    runner = LoopRunner(model, [lookup], runtime=ToolRuntime(service=service))
+    runner = LoopRunner(transport(("lookup", {"material": "x"})), [lookup], runtime=ToolRuntime(service=service))
     report = await AgentHost(runner, stagger=FAST, on_done=collect(outputs)).run(inputs(1))
     assert report.finished == 1
     assert service.calls == [("agent-0/1/call-0", "lookup", {"material": "x"}, True)]
-    assert '"score": 0.5' in outputs["agent-0"].messages[-1].content
+    assert '"score": 0.5' in outputs["agent-0"].messages[-1]["content"]
 
 
 @pytest.mark.parametrize("setup", ["task, no session", "mcp, no service"])
@@ -267,7 +265,7 @@ async def test_a_runtime_set_up_wrong_fails_the_agent(setup):
         tool_ = mcp_tool("lookup", description="Look up.", args_schema=LookupArgs)
         call = ("lookup", {"material": "x"})
         expected = "need a ToolRuntime with a tool service"
-    runner = LoopRunner(Scripted(script=calls_then_answer(call)), [tool_], runtime=ToolRuntime())
+    runner = LoopRunner(transport(call), [tool_], runtime=ToolRuntime())
     report = await AgentHost(runner, stagger=FAST).run(inputs(1))
     (agent,) = report.agents
     assert agent.status == "failed" and agent.error.startswith("RuntimeError: ")
@@ -278,19 +276,13 @@ async def test_a_runtime_set_up_wrong_fails_the_agent(setup):
 
 
 async def test_the_tool_calls_of_one_reply_run_at_once():
-    model = Scripted(
-        script=calls_then_answer(
-            ("wait_a_bit", {"name": "a"}), ("wait_a_bit", {"name": "b"}), ("wait_a_bit", {"name": "c"})
-        )
-    )
+    model = transport(("wait_a_bit", {"name": "a"}), ("wait_a_bit", {"name": "b"}), ("wait_a_bit", {"name": "c"}))
     outputs = {}
     RUNNING["most"] = 0
-    report = await AgentHost(
-        LoopRunner(model, [wait_a_bit]), stagger=FAST, on_done=collect(outputs)
-    ).run(inputs(1))
+    report = await AgentHost(LoopRunner(model, [wait_a_bit]), stagger=FAST, on_done=collect(outputs)).run(inputs(1))
     assert RUNNING["most"] == 3  # the three calls ran at once
     assert report.finished == 1
-    assert outputs["agent-0"].messages[-1].content == "a | b | c"
+    assert outputs["agent-0"].messages[-1]["content"] == "a | b | c"
 
 
 # --- errors -----------------------------------------------------------------------
@@ -298,44 +290,39 @@ async def test_the_tool_calls_of_one_reply_run_at_once():
 
 async def test_tool_errors_reach_the_model_and_the_agent_goes_on():
     session = await thread_session()
-    runtime = ToolRuntime(session)
     seen = []
 
     def script(messages):
-        results = [m for m in messages if m.type == "tool"]
+        results = tool_results(messages)
         if results:
             seen.extend(results)
-            return AIMessage("done")
-        return AIMessage(
-            "",
-            tool_calls=[
-                {"name": "fragile", "args": {"x": 1}, "id": "a"},  # raises
-                {"name": "fragile", "args": {"x": "one"}, "id": "b"},  # invalid arguments
-                {"name": "nowhere", "args": {}, "id": "c"},  # no such tool
-                {"name": "broken", "args": {"x": 1.0}, "id": "d"},  # the task fails
-                {"name": "simulate", "args": {}, "id": "e"},  # a task's argument missing
-            ],
-            invalid_tool_calls=[
-                {"name": "fragile", "args": "{x: ", "id": "f", "error": "bad JSON", "type": "invalid_tool_call"}
-            ],
+            return reply("done")
+        return reply(
+            calls=[
+                ("a", "fragile", {"x": 1}),  # raises
+                ("b", "fragile", {"x": "one"}),  # invalid arguments
+                ("c", "nowhere", {}),  # no such tool
+                ("d", "broken", {"x": 1.0}),  # the task fails
+                ("e", "simulate", {}),  # a task's argument missing
+                ("f", "fragile", '{"x": '),  # arguments that did not parse
+            ]
         )
 
     runner = LoopRunner(
-        Scripted(script=script), [fragile, task_tool(broken), task_tool(simulate)], runtime=runtime
+        ScriptedTransport(script), [fragile, task_tool(broken), task_tool(simulate)], runtime=ToolRuntime(session)
     )
     report = await AgentHost(runner, stagger=FAST).run(inputs(1))
     await session.close()
 
     assert report.finished == 1
-    by_id = {m.tool_call_id: m for m in seen}
-    assert [m.tool_call_id for m in seen] == list("abcdef")
-    assert all(m.status == "error" for m in seen)
-    assert by_id["a"].content == "Error: ValueError('odd 1')\n Please fix your mistakes."
-    assert "ValidationError" in by_id["b"].content and "x" in by_id["b"].content
-    assert by_id["c"].content.startswith("Error: nowhere is not a valid tool, try one of [")
-    assert by_id["d"].content == "broken failed: ValueError: no convergence at 1.0"
-    assert "ValidationError" in by_id["e"].content and "simulate" not in RUNS  # never submitted
-    assert "bad JSON" in by_id["f"].content
+    by_id = {m["tool_call_id"]: m["content"] for m in seen}
+    assert [m["tool_call_id"] for m in seen] == list("abcdef")
+    assert by_id["a"] == "Error: ValueError('odd 1')\n Please fix your mistakes."
+    assert "ValidationError" in by_id["b"] and "x" in by_id["b"]
+    assert by_id["c"].startswith("Error: nowhere is not a valid tool, try one of [")
+    assert by_id["d"] == "broken failed: ValueError: no convergence at 1.0"
+    assert "ValidationError" in by_id["e"] and "simulate" not in RUNS  # never submitted
+    assert "not valid JSON" in by_id["f"] and '{"x": ' in by_id["f"]
     assert runner.stats()["tool_errors"] == 6
 
 
@@ -343,17 +330,15 @@ async def test_an_agent_that_never_answers_fails_at_its_model_call_limit():
     """The count of model calls is saved with the agent's state, so the limit
     holds across suspensions."""
     session = await thread_session()
-    runtime = ToolRuntime(session)
     store = CountingStore()
 
     def script(messages):
-        n = turns(messages)
-        return AIMessage("", tool_calls=[{"name": "simulate", "args": {"x": 1.0}, "id": f"c{n}"}])
+        return reply(calls=[(f"c{turns(messages)}", "simulate", {"x": 1.0})])
 
     runner = LoopRunner(
-        Scripted(script=script),
+        ScriptedTransport(script),
         [task_tool(simulate, suspend=True)],
-        runtime=runtime,
+        runtime=ToolRuntime(session),
         store=store,
         max_model_calls=3,
     )
@@ -368,9 +353,9 @@ async def test_an_agent_that_never_answers_fails_at_its_model_call_limit():
     assert store.keys() == []  # a failed agent leaves no state behind
 
 
-async def test_a_model_call_limit_below_one_is_refused():
+def test_a_model_call_limit_below_one_is_refused():
     with pytest.raises(ValueError, match="max_model_calls"):
-        LoopRunner(Scripted(script=lambda m: AIMessage("hi")), max_model_calls=0)
+        LoopRunner(transport(), max_model_calls=0)
 
 
 def test_the_limit_error_is_a_runtime_error():
@@ -379,17 +364,14 @@ def test_the_limit_error_is_a_runtime_error():
 
 async def test_an_agent_that_fails_after_a_suspension_leaves_no_state():
     session = await thread_session()
-    runtime = ToolRuntime(session)
     store = CountingStore()
 
     def script(messages):
         if turns(messages) == 0:
-            return AIMessage("", tool_calls=[{"name": "simulate", "args": {"x": 1.0}, "id": "c"}])
+            return reply(calls=[("c", "simulate", {"x": 1.0})])
         raise ConnectionError("model server gone")
 
-    runner = LoopRunner(
-        Scripted(script=script), [task_tool(simulate, suspend=True)], runtime=runtime, store=store
-    )
+    runner = LoopRunner(ScriptedTransport(script), [task_tool(simulate, suspend=True)], runtime=ToolRuntime(session), store=store)
     report = await AgentHost(runner, stagger=FAST).run(inputs(3))
     await session.close()
     assert report.errors == {"ConnectionError": 3}
@@ -399,16 +381,12 @@ async def test_an_agent_that_fails_after_a_suspension_leaves_no_state():
 
 async def test_cancelling_the_host_while_agents_wait_leaves_the_store_empty(monkeypatch):
     session = await thread_session(workers=4)
-    runtime = ToolRuntime(session)
     store = CountingStore()
     forgotten = []
     monkeypatch.setattr(Fleet, "agent_done", lambda self, agent: forgotten.append(agent))
-    fleet = Fleet([Scripted(script=calls_then_answer(("slow_simulate", {"x": 1.0})))])
-    runner = LoopRunner(
-        fleet, [task_tool(slow_simulate, suspend=True)], runtime=runtime, store=store
-    )
-    host = AgentHost(runner, stagger=FAST)
-    run = asyncio.create_task(host.run(inputs(4)))
+    fleet = Fleet([transport(("slow_simulate", {"x": 1.0}))])
+    runner = LoopRunner(fleet, [task_tool(slow_simulate, suspend=True)], runtime=ToolRuntime(session), store=store)
+    run = asyncio.create_task(AgentHost(runner, stagger=FAST).run(inputs(4)))
     while len(store.keys()) < 4:
         await asyncio.sleep(0.01)
     assert sorted(store.keys()) == [f"loop/agent-{i}" for i in range(4)]
@@ -427,47 +405,41 @@ async def test_a_structured_answer_is_validated_and_ends_the_agent():
     def script(messages):
         n = turns(messages)
         if n == 0:  # the answer's arguments are wrong
-            return AIMessage("", tool_calls=[{"name": "Verdict", "args": {"score": "high"}, "id": "v1"}])
+            return reply(calls=[("v1", "Verdict", {"score": "high"})])
         if n == 1:  # an answer beside another call
-            return AIMessage(
-                "",
-                tool_calls=[
-                    {"name": "Verdict", "args": {"score": 0.9, "keep": True}, "id": "v2"},
-                    {"name": "inline_note", "args": {"text": "x"}, "id": "n1"},
-                ],
-            )
+            return reply(calls=[("v2", "Verdict", {"score": 0.9, "keep": True}), ("n1", "note", {"text": "x"})])
         if n == 2:  # an answer in prose
-            return AIMessage("It looks good to me.")
-        return AIMessage("", tool_calls=[{"name": "Verdict", "args": {"score": 0.9, "keep": True}, "id": "v3"}])
+            return reply("It looks good to me.")
+        return reply(calls=[("v3", "Verdict", {"score": 0.9, "keep": True})])
 
-    model = Binding(script=script, bound=[])
+    model = ScriptedTransport(script)
     outputs = {}
-    runner = LoopRunner(model, [inline_note], response_format=Verdict)
+    runner = LoopRunner(model, [note], response_format=Verdict)
     report = await AgentHost(runner, stagger=FAST, on_done=collect(outputs)).run(inputs(1))
 
     assert report.finished == 1
     out = outputs["agent-0"]
     assert out.structured_response == Verdict(score=0.9, keep=True)
     assert out.model_calls == 4
-    assert [getattr(t, "name", getattr(t, "__name__", None)) for t in model.bound] == [
-        "inline_note",
-        "Verdict",
-    ]
-    tools = {m.tool_call_id: m for m in out.messages if m.type == "tool"}
-    assert tools["v1"].status == "error" and "score" in tools["v1"].content
-    assert tools["v2"].status == "error" and "on its own" in tools["v2"].content
-    assert tools["n1"].content == "noted x"  # the other call ran
-    nudge = [m for m in out.messages if m.type == "human"][-1]
-    assert "Verdict" in nudge.content  # asked to answer through the tool
-    assert tools["v3"].status == "success" and out.messages[-1] is tools["v3"]
-    assert RUNS == {"inline_note": 1}
+    names = [t["function"]["name"] for t in model.calls[0][1]]
+    assert names == ["note", "Verdict"]
+    verdict = model.calls[0][1][1]["function"]
+    assert verdict["description"] == "The agent's verdict on its candidate."
+    assert set(verdict["parameters"]["properties"]) == {"score", "keep"}
+    results = {m["tool_call_id"]: m["content"] for m in tool_results(out.messages)}
+    assert results["v1"].startswith("Error: ValidationError") and "score" in results["v1"]
+    assert "on its own" in results["v2"]
+    assert results["n1"] == "noted x"  # the other call ran
+    nudge = [m for m in out.messages if m["role"] == "user"][-1]
+    assert "Verdict" in nudge["content"]  # asked to answer through the tool
+    assert out.messages[-1] == {"role": "tool", "tool_call_id": "v3", "content": "Answer recorded."}
+    assert RUNS == {"note": 1}
 
 
 async def test_a_structured_answer_given_as_json_text_is_accepted():
-    model = Scripted(script=lambda m: AIMessage(json.dumps({"score": 0.5, "keep": False})))
+    model = ScriptedTransport(lambda m: reply(json.dumps({"score": 0.5, "keep": False})))
     outputs = {}
-    runner = LoopRunner(model, response_format=Verdict)
-    report = await AgentHost(runner, stagger=FAST, on_done=collect(outputs)).run(inputs(1))
+    report = await AgentHost(LoopRunner(model, response_format=Verdict), stagger=FAST, on_done=collect(outputs)).run(inputs(1))
     assert report.finished == 1
     assert outputs["agent-0"].structured_response == Verdict(score=0.5, keep=False)
     assert outputs["agent-0"].model_calls == 1
@@ -479,15 +451,14 @@ async def test_a_structured_answer_given_as_json_text_is_accepted():
 @pytest.mark.parametrize("kind", ["sync", "async"])
 async def test_the_trim_hook_shapes_what_the_model_sees_and_what_is_saved(kind):
     session = await thread_session()
-    runtime = ToolRuntime(session)
     store = CountingStore()
     seen = []
 
     def script(messages):
-        seen.append([m.type for m in messages])
+        seen.append([m["role"] for m in messages])
         if len(seen) < 4:  # three turns of tools, then the answer
-            return AIMessage("", tool_calls=[{"name": "simulate", "args": {"x": 1.0}, "id": f"c{len(seen)}"}])
-        return AIMessage("done")
+            return reply(calls=[(f"c{len(seen)}", "simulate", {"x": 1.0})])
+        return reply("done")
 
     def keep_last_turn(messages):
         return messages[:1] + messages[-2:] if len(messages) > 3 else messages
@@ -495,14 +466,13 @@ async def test_the_trim_hook_shapes_what_the_model_sees_and_what_is_saved(kind):
     async def keep_last_turn_async(messages):
         return keep_last_turn(messages)
 
-    trim = keep_last_turn if kind == "sync" else keep_last_turn_async
     runner = LoopRunner(
-        Scripted(script=script),
+        ScriptedTransport(script),
         [task_tool(simulate, suspend=True)],
-        runtime=runtime,
+        runtime=ToolRuntime(session),
         store=store,
         system_prompt="Be brief.",
-        trim=trim,
+        trim=keep_last_turn if kind == "sync" else keep_last_turn_async,
         max_model_calls=10,
     )
     outputs = {}
@@ -512,59 +482,57 @@ async def test_the_trim_hook_shapes_what_the_model_sees_and_what_is_saved(kind):
     assert report.finished == 1
     # The system prompt goes with every call, and is never trimmed or saved.
     assert seen == [
-        ["system", "human"],
-        ["system", "human", "ai", "tool"],
-        ["system", "human", "ai", "tool"],
-        ["system", "human", "ai", "tool"],
+        ["system", "user"],
+        ["system", "user", "assistant", "tool"],
+        ["system", "user", "assistant", "tool"],
+        ["system", "user", "assistant", "tool"],
     ]
-    saved = store.last_put["messages"]
-    assert [m.type for m in saved] == ["human", "ai", "tool", "ai"]  # trimmed, then the call
-    assert [m.type for m in outputs["agent-0"].messages] == ["human", "ai", "tool", "ai"]
+    assert [m["role"] for m in store.last_put["messages"]] == ["user", "assistant", "tool", "assistant"]
+    assert [m["role"] for m in outputs["agent-0"].messages] == ["user", "assistant", "tool", "assistant"]
     assert outputs["agent-0"].model_calls == 4  # trimming keeps the count
 
 
 async def test_inputs_in_every_form_and_the_callers_list_unchanged():
-    given = [HumanMessage("go")]
+    given = [{"role": "user", "content": "go"}]
     agents = [
         Agent("a", "go"),
         Agent("b", given),
         Agent("c", {"messages": [("human", "go")]}),
-        Agent("d", HumanMessage("go")),
+        Agent("d", {"role": "user", "content": "go"}),
+        Agent("e", [HumanMessage("go")]),  # LangChain's, through the adapter
+        Agent("f", HumanMessage("go")),
     ]
-    model = Scripted(script=lambda m: AIMessage(f"{len(m)} {m[-1].content}"))
+    model = ScriptedTransport(lambda m: reply(f"{len(m)} {m[-1]['content']}"))
     outputs = {}
     report = await AgentHost(
         LoopRunner(model, system_prompt="Be brief."), stagger=FAST, on_done=collect(outputs)
     ).run(agents)
-    assert report.finished == 4
+    assert report.finished == 6
     for out in outputs.values():
-        assert [(m.type, m.content) for m in out.messages] == [("human", "go"), ("ai", "2 go")]
-    assert given == [HumanMessage("go")]
+        assert out.messages == [{"role": "user", "content": "go"}, {"role": "assistant", "content": "2 go"}]
+    assert given == [{"role": "user", "content": "go"}]
 
 
 # --- interrupts -------------------------------------------------------------------
 
 
 async def test_a_tool_that_interrupts_ends_its_agent_as_interrupted():
-    model = Scripted(
-        script=calls_then_answer(("ask_a_human", {"question": "go on?"}), ("inline_note", {"text": "hi"}))
-    )
     store = CountingStore()
     outputs = {}
-    runner = LoopRunner(model, [ask_a_human, inline_note], store=store)
+    runner = LoopRunner(transport(("ask_a_human", {"question": "go on?"}), ("note", {"text": "hi"})), [ask_a_human, note], store=store)
     report = await AgentHost(runner, stagger=FAST, on_done=collect(outputs)).run(inputs(2))
 
     assert [a.status for a in report.agents] == ["interrupted", "interrupted"]
     (stop,) = report.agents[0].interrupts
     assert isinstance(stop, Interruption)
     assert stop.value == {"question": "go on?"}
-    assert stop.tool_call["id"] == "call-0"
+    assert stop.tool_call["id"] == "call-0" and stop.tool_call["function"]["name"] == "ask_a_human"
     # The note answered; the question did not.
-    assert [m.type for m in stop.messages] == ["human", "ai", "tool"]
-    assert stop.messages[-1].tool_call_id == "call-1"
+    assert [m["role"] for m in stop.messages] == ["user", "assistant", "tool"]
+    assert stop.messages[-1]["tool_call_id"] == "call-1"
     assert stop.model_calls == 1
     assert outputs == {"agent-0": None, "agent-1": None}
-    assert RUNS == {"inline_note": 2}
+    assert RUNS == {"note": 2}
     assert store.calls == {} and store.keys() == []
     assert runner.stats()["interrupts"] == 2
 
@@ -575,30 +543,27 @@ async def test_a_tool_that_interrupts_ends_its_agent_as_interrupted():
 async def test_a_fleet_takes_the_agents_calls_and_hears_when_they_end(monkeypatch):
     forgotten = []
     monkeypatch.setattr(Fleet, "agent_done", lambda self, agent: forgotten.append(agent))
-    script = calls_then_answer(("inline_note", {"text": "hi"}))
-    fleet = Fleet([Scripted(script=script), Scripted(script=script)])
-    report = await AgentHost(LoopRunner(fleet, [inline_note]), stagger=FAST).run(inputs(10))
+    replicas = [transport(("note", {"text": "hi"})), transport(("note", {"text": "hi"}))]
+    fleet = Fleet(replicas)
+    runner = LoopRunner(fleet, [note], model_kwargs={"max_tokens": 64})
+    report = await AgentHost(runner, stagger=FAST).run(inputs(10))
     assert report.finished == 10
     assert fleet.stats()["calls"] == 20
     assert sorted(forgotten) == sorted(f"agent-{i}" for i in range(10))
+    calls = replicas[0].calls + replicas[1].calls
+    assert all(kwargs == {"max_tokens": 64} for _, _, kwargs in calls)
+    assert all(tools == runner.tool_schemas for _, tools, _ in calls)  # bound once
 
 
 async def test_agents_states_account_for_their_lifetimes():
     session = await thread_session()
-    runtime = ToolRuntime(session)
-    model = Slow(
-        script=calls_then_answer(
-            ("simulate", {"x": 1.0}), ("simulate_and_wait", {"x": 2.0}), ("inline_note", {"text": "hi"})
-        )
+    model = transport(
+        ("simulate", {"x": 1.0}), ("simulate_and_wait", {"x": 2.0}), ("note", {"text": "hi"}), latency_s=0.01
     )
-    tools = [
-        task_tool(simulate),
-        task_tool(simulate, suspend=True, name="simulate_and_wait"),
-        inline_note,
-    ]
+    tools = [task_tool(simulate), task_tool(simulate, suspend=True, name="simulate_and_wait"), note]
     lifetimes = []
     host = AgentHost(
-        LoopRunner(model, tools, runtime=runtime),
+        LoopRunner(model, tools, runtime=ToolRuntime(session)),
         stagger=FAST,
         on_done=lambda r, out: lifetimes.append(r.t_end - r.t_start),
     )
@@ -613,19 +578,24 @@ async def test_agents_states_account_for_their_lifetimes():
 
 async def test_the_host_records_the_loops_spans_and_suspensions(span_exporter, log_exporter):
     session = await thread_session()
-    runtime = ToolRuntime(session)
-    model = Scripted(script=calls_then_answer(("simulate", {"x": 1.0}), ("inline_note", {"text": "hi"})))
-    runner = LoopRunner(model, [task_tool(simulate, suspend=True), inline_note], runtime=runtime)
+    model = ScriptedTransport(
+        dict_calls_then_answer(("simulate", {"x": 1.0}), ("note", {"text": "hi"})),
+        model="qwen3-8b",
+        base_url="http://node-1:8000/v1",
+    )
+    runner = LoopRunner(model, [task_tool(simulate, suspend=True), note], runtime=ToolRuntime(session))
     report = await AgentHost(runner, stagger=FAST).run(inputs(3))
     await session.close()
     assert report.finished == 3
     spans = span_exporter.get_finished_spans()
-    agents = [s for s in spans if s.name == "invoke_agent"]
+    agents = {s.context.span_id: s for s in spans if s.name == "invoke_agent"}
     tools = [s for s in spans if s.name == "execute_tool simulate"]
-    assert len(agents) == 3 and len(tools) == 3
-    by_id = {s.context.span_id: s for s in agents}
-    assert all(t.parent.span_id in by_id for t in tools)  # each task under its agent
+    chats = [s for s in spans if s.name == "chat qwen3-8b"]
+    assert len(agents) == 3 and len(tools) == 3 and len(chats) == 6
+    assert all(s.parent.span_id in agents for s in tools + chats)  # each under its agent
     assert all(t.attributes["gen_ai.tool.call.id"] == "call-0" for t in tools)
+    assert all(c.attributes["gen_ai.usage.input_tokens"] == 10 for c in chats)
+    assert {c.attributes["server.address"] for c in chats} == {"node-1"}
     suspends = [r for r in log_exporter.get_finished_logs() if r.log_record.event_name == "flowgentic.agent.suspend"]
     assert len(suspends) == 3
 
@@ -634,40 +604,49 @@ async def test_the_host_records_the_loops_spans_and_suspensions(span_exporter, l
 
 
 def test_a_task_or_mcp_tool_needs_a_runtime():
-    model = Scripted(script=lambda m: AIMessage("hi"))
     with pytest.raises(ValueError, match="runtime"):
-        LoopRunner(model, [task_tool(simulate)])
+        LoopRunner(transport(), [task_tool(simulate)])
     with pytest.raises(ValueError, match="runtime"):
-        LoopRunner(model, [mcp_tool("lookup", description="Look up.", args_schema=LookupArgs)])
+        LoopRunner(transport(), [mcp_tool("lookup", description="Look up.", args_schema=LookupArgs)])
 
 
 def test_tool_names_must_be_unique_and_tools_must_be_tools():
-    model = Scripted(script=lambda m: AIMessage("hi"))
-    with pytest.raises(ValueError, match="inline_note"):
-        LoopRunner(model, [inline_note, inline_note])
+    with pytest.raises(ValueError, match="note"):
+        LoopRunner(transport(), [note, note])
     with pytest.raises(ValueError, match="Verdict"):
-        LoopRunner(model, [task_tool(simulate, name="Verdict")], runtime=ToolRuntime(), response_format=Verdict)
+        LoopRunner(transport(), [task_tool(simulate, name="Verdict")], runtime=ToolRuntime(), response_format=Verdict)
     with pytest.raises(TypeError, match="not a tool"):
-        LoopRunner(model, [simulate])
+        LoopRunner(transport(), [42])
+    with pytest.raises(TypeError, match="Transport"):
+        LoopRunner(object())
 
 
-def test_task_and_mcp_tools_are_bound_with_their_schemas():
-    model = Binding(script=lambda m: AIMessage("hi"), bound=[])
+def test_the_tools_json_schemas_come_from_pydantic():
+    class Weighted:
+        name = "weigh"
+        description = "Weigh a sample."
+        args_schema = LookupArgs
+
+        async def __call__(self, material: str) -> str:
+            return material
+
     lookup = mcp_tool("lookup", description="Look up.", args_schema=LookupArgs)
-    LoopRunner(model, [task_tool(simulate), lookup], runtime=ToolRuntime())
-    schemas = {t.name: t.tool_call_schema.model_json_schema() for t in model.bound}
-    assert set(schemas) == {"simulate", "lookup"}
-    assert set(schemas["simulate"]["properties"]) == {"x"}
-    assert set(schemas["lookup"]["properties"]) == {"material"}
-    assert model.bound[0].description == "Run a simulation of x."
+    runner = LoopRunner(transport(), [task_tool(simulate), lookup, note, Weighted()], runtime=ToolRuntime())
+    by_name = {t["function"]["name"]: t["function"] for t in runner.tool_schemas}
+    assert list(by_name) == ["simulate", "lookup", "note", "weigh"]
+    assert by_name["simulate"]["description"] == "Run a simulation of x."
+    assert by_name["simulate"]["parameters"] == {
+        "type": "object",
+        "properties": {"x": {"type": "number"}},
+        "required": ["x"],
+    }
+    assert by_name["lookup"]["parameters"]["properties"] == {"material": {"type": "string"}}
+    assert by_name["note"]["description"] == "Take a note."
+    assert by_name["note"]["parameters"]["properties"] == {"text": {"type": "string"}}
+    assert by_name["weigh"]["description"] == "Weigh a sample."
 
 
 # --- more failures ------------------------------------------------------------------
-
-
-class FailingService(FakeService):
-    async def call(self, uid, tool, args, *, idempotent=False):
-        raise ConnectionError("service gone")
 
 
 async def test_a_failed_mcp_call_or_task_output_reaches_the_model():
@@ -680,47 +659,28 @@ async def test_a_failed_mcp_call_or_task_output_reaches_the_model():
     seen = []
 
     def script(messages):
-        results = [m for m in messages if m.type == "tool"]
+        results = tool_results(messages)
         if results:
             seen.extend(results)
-            return AIMessage("done")
-        return AIMessage(
-            "",
-            tool_calls=[
-                {"name": "lookup", "args": {"material": "x"}, "id": "a"},
-                {"name": "lookup", "args": {}, "id": "b"},
-                {"name": "simulate", "args": {"x": 1.0}, "id": "c"},
-            ],
-        )
+            return reply("done")
+        return reply(calls=[("a", "lookup", {"material": "x"}), ("b", "lookup", {}), ("c", "simulate", {"x": 1.0})])
 
     runner = LoopRunner(
-        Scripted(script=script),
+        ScriptedTransport(script),
         [lookup, task_tool(simulate, output=unreadable)],
         runtime=ToolRuntime(session, FailingService()),
     )
     report = await AgentHost(runner, stagger=FAST).run(inputs(1))
     await session.close()
     assert report.finished == 1
-    by_id = {m.tool_call_id: m.content for m in seen}
+    by_id = {m["tool_call_id"]: m["content"] for m in seen}
     assert by_id["a"] == "lookup failed: ConnectionError: service gone"
     assert "ValidationError" in by_id["b"] and "material" in by_id["b"]
     assert by_id["c"] == "Error: KeyError('y')\n Please fix your mistakes."
 
 
-@tool
-async def wait_long(name: str) -> str:
-    """Wait for 10 s."""
-    try:
-        await asyncio.sleep(10)
-    except asyncio.CancelledError:
-        RUNS["wait_long cancelled"] = RUNS.get("wait_long cancelled", 0) + 1
-        raise
-    return name
-
-
 async def test_a_call_that_fails_the_agent_stops_the_others_of_its_reply():
-    model = Scripted(script=calls_then_answer(("wait_long", {"name": "a"}), ("simulate", {"x": 1.0})))
-    runner = LoopRunner(model, [wait_long, task_tool(simulate)], runtime=ToolRuntime())
+    runner = LoopRunner(transport(("wait_long", {"name": "a"}), ("simulate", {"x": 1.0})), [wait_long, task_tool(simulate)], runtime=ToolRuntime())
     t = time.perf_counter()
     report = await AgentHost(runner, stagger=FAST).run(inputs(1))
     assert time.perf_counter() - t < 5  # did not wait for the 10 s call
@@ -735,10 +695,8 @@ class UndeletableStore(CountingStore):
 
 async def test_a_state_that_cannot_be_deleted_leaves_the_agent_finished(caplog):
     session = await thread_session()
-    store = UndeletableStore()
-    model = Scripted(script=calls_then_answer(("simulate", {"x": 1.0})))
     runner = LoopRunner(
-        model, [task_tool(simulate, suspend=True)], runtime=ToolRuntime(session), store=store
+        transport(("simulate", {"x": 1.0})), [task_tool(simulate, suspend=True)], runtime=ToolRuntime(session), store=UndeletableStore()
     )
     report = await AgentHost(runner, stagger=FAST).run(inputs(3))
     await session.close()
@@ -755,9 +713,8 @@ class ForgetfulStore(CountingStore):
 
 async def test_an_agent_whose_state_is_lost_fails_on_resume():
     session = await thread_session()
-    model = Scripted(script=calls_then_answer(("simulate", {"x": 1.0})))
     runner = LoopRunner(
-        model, [task_tool(simulate, suspend=True)], runtime=ToolRuntime(session), store=ForgetfulStore()
+        transport(("simulate", {"x": 1.0})), [task_tool(simulate, suspend=True)], runtime=ToolRuntime(session), store=ForgetfulStore()
     )
     report = await AgentHost(runner, stagger=FAST).run(inputs(1))
     await session.close()
@@ -766,68 +723,72 @@ async def test_an_agent_whose_state_is_lost_fails_on_resume():
     assert agent.error == "RuntimeError: agent 'agent-0' has no saved state under 'loop/agent-0'"
 
 
-async def test_a_fleet_chat_model_runs_as_its_fleet():
-    fleet = Fleet([Scripted(script=calls_then_answer(("inline_note", {"text": "hi"})))])
-    report = await AgentHost(LoopRunner(fleet.chat_model(), [inline_note]), stagger=FAST).run(inputs(3))
+# --- LangChain, through the adapter ------------------------------------------------
+
+
+@tool
+def lc_note(text: str) -> str:
+    """Take a note, LangChain's way."""
+    RUNS["lc_note"] = RUNS.get("lc_note", 0) + 1
+    return f"noted {text}"
+
+
+@tool
+def lc_ask(question: str) -> str:
+    """Ask a human, LangChain's way."""
+    raise Interrupt(question)
+
+
+async def test_a_langchain_chat_model_and_tools_run_through_the_adapter():
+    """A LangChain chat model as the loop's model, and LangChain tools as its
+    inline tools: the loop's messages stay OpenAI-format dicts."""
+    session = await thread_session()
+    seen = []
+
+    def script(messages):
+        seen.append(messages)
+        return calls_then_answer(("simulate", {"x": 1.5}), ("lc_note", {"text": "hi"}))(messages)
+
+    outputs = {}
+    runner = LoopRunner(Scripted(script=script), [task_tool(simulate, suspend=True), lc_note], runtime=ToolRuntime(session))
+    report = await AgentHost(runner, stagger=FAST, on_done=collect(outputs)).run(inputs(3))
+    await session.close()
+    assert report.finished == 3 and all(a.suspensions == 1 for a in report.agents)
+    out = outputs["agent-0"]
+    assert all(isinstance(m, dict) for m in out.messages)
+    final = out.messages[-1]["content"]
+    assert '{"y": 3.0}' in final and "noted hi" in final
+    assert isinstance(seen[0][0], HumanMessage)  # the model got LangChain's messages
+    assert RUNS == {"simulate": 3, "lc_note": 3}
+    by_name = {t["function"]["name"]: t["function"] for t in runner.tool_schemas}
+    assert by_name["lc_note"]["description"] == "Take a note, LangChain's way."
+
+
+async def test_a_langchain_tool_can_interrupt():
+    runner = LoopRunner(transport(("lc_ask", {"question": "go on?"})), [lc_ask])
+    report = await AgentHost(runner, stagger=FAST).run(inputs(1))
+    (agent,) = report.agents
+    assert agent.status == "interrupted" and agent.interrupts[0].value == "go on?"
+
+
+async def test_the_fleets_chat_model_runs_as_its_fleet():
+    fleet = Fleet([Scripted(script=calls_then_answer(("lc_note", {"text": "hi"})))])
+    report = await AgentHost(LoopRunner(fleet.chat_model(), [lc_note]), stagger=FAST).run(inputs(3))
     assert report.finished == 3
     assert fleet.stats()["calls"] == 6
 
 
-# --- the seams ----------------------------------------------------------------------
-
-
-async def test_the_loop_runs_on_openai_format_dicts_through_its_seams():
-    """The loop reads and makes messages, calls the model and runs inline tools
-    only through its backend: one on OpenAI-format dicts, with no LangChain
-    message, runs the same agent, suspension included."""
-    from dict_backend import DictBackend, DictTool, assistant
-
-    session = await thread_session()
-    store = CountingStore()
-    seen = []
-
-    async def note(text: str) -> str:
-        """Take a note."""
-        return f"noted {text}"
-
+async def test_a_reply_from_a_langchain_model_keeps_its_invalid_calls():
     def script(messages):
-        seen.append(messages[0]["role"])
-        results = [m for m in messages if m["role"] == "tool"]
-        if not results:
-            return assistant(
-                calls=(
-                    ("c1", "simulate", {"x": 1.5}),
-                    ("c2", "note", {"text": "hi"}),
-                    ("c3", "note", {"text": 3}),  # refused by its schema
-                    ("c4", "note", "{text: "),  # does not parse
-                )
-            )
-        return assistant(" | ".join(m["content"] for m in results))
+        if any(m.type == "tool" for m in messages):
+            return AIMessage("done")
+        return AIMessage(
+            "",
+            invalid_tool_calls=[{"name": "lc_note", "args": "{text: ", "id": "f", "error": "bad JSON", "type": "invalid_tool_call"}],
+        )
 
-    backend = DictBackend(script)
     outputs = {}
-    runner = LoopRunner(
-        backend,
-        [task_tool(simulate, suspend=True), DictTool(note)],
-        runtime=ToolRuntime(session),
-        store=store,
-        system_prompt="Be brief.",
-    )
-    report = await AgentHost(runner, stagger=FAST, on_done=collect(outputs)).run(
-        [Agent(f"agent-{i}", "go") for i in range(3)]
-    )
-    await session.close()
-
-    assert report.finished == 3 and all(a.suspensions == 1 for a in report.agents)
-    assert store.calls == {"put": 3, "get": 3, "delete": 3}
-    assert [t["function"]["name"] for t in backend.bound] == ["simulate", "note"]
-    assert set(seen) == {"system"}
-    out = outputs["agent-0"]
-    assert all(isinstance(m, dict) for m in out.messages)
-    assert [m["role"] for m in out.messages] == ["user", "assistant"] + ["tool"] * 4 + ["assistant"]
-    assert [m["tool_call_id"] for m in out.messages if m["role"] == "tool"] == ["c1", "c2", "c3", "c4"]
-    final = out.messages[-1]["content"]
-    assert '{"y": 3.0}' in final and "noted hi" in final
-    assert "ValidationError" in final and "invalid JSON" in final
-    assert runner.stats()["tool_errors"] == 6  # two per agent
-    assert sorted(backend.model.done) == ["agent-0", "agent-1", "agent-2"]
+    report = await AgentHost(LoopRunner(Scripted(script=script), [lc_note]), stagger=FAST, on_done=collect(outputs)).run(inputs(1))
+    assert report.finished == 1
+    (result,) = tool_results(outputs["agent-0"].messages)
+    assert "bad JSON" in result["content"] and result["tool_call_id"] == "f"

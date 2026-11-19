@@ -1,0 +1,88 @@
+{
+ "source": "shaped after vLLM 0.19.1's OpenAI-compatible server (Qwen3-8B, hermes tool parser, qwen3 reasoning parser); not recorded",
+ "response": {
+  "id": "chatcmpl-7f3c",
+  "object": "chat.completion",
+  "created": 1794826800,
+  "model": "Qwen3-8B",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "refusal": null,
+     "annotations": null,
+     "audio": null,
+     "function_call": null,
+     "content": null,
+     "reasoning": null,
+     "tool_calls": [
+      {
+       "id": "chatcmpl-tool-1",
+       "type": "function",
+       "function": {
+        "name": "simulate",
+        "arguments": "{\"candidate\": \"cand-000001\", \"temperature\": 400}"
+       }
+      },
+      {
+       "id": "chatcmpl-tool-2",
+       "type": "function",
+       "function": {
+        "name": "simulate",
+        "arguments": "{\"candidate\": \"cand-000001\", \"temperature\": 500}"
+       }
+      }
+     ]
+    },
+    "logprobs": null,
+    "finish_reason": "tool_calls",
+    "stop_reason": null,
+    "token_ids": null
+   }
+  ],
+  "service_tier": null,
+  "system_fingerprint": null,
+  "usage": {
+   "prompt_tokens": 330,
+   "total_tokens": 390,
+   "completion_tokens": 60,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "prompt_logprobs": null,
+  "prompt_token_ids": null,
+  "kv_transfer_params": null
+ },
+ "expect": {
+  "content": "",
+  "tool_calls": [
+   [
+    "chatcmpl-tool-1",
+    "simulate",
+    {
+     "candidate": "cand-000001",
+     "temperature": 400
+    }
+   ],
+   [
+    "chatcmpl-tool-2",
+    "simulate",
+    {
+     "candidate": "cand-000001",
+     "temperature": 500
+    }
+   ]
+  ],
+  "invalid": [],
+  "reasoning": null,
+  "usage": [
+   330,
+   60,
+   0,
+   null
+  ],
+  "finish_reason": "tool_calls"
+ }
+}

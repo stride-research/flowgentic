@@ -666,6 +666,7 @@ dev = [
     { name = "mkdocstrings", extra = ["python"] },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "openai" },
     { name = "opentelemetry-instrumentation-genai-langchain" },
     { name = "opentelemetry-instrumentation-genai-openai" },
     { name = "opentelemetry-sdk" },
@@ -695,9 +696,6 @@ examples = [
     { name = "radical-asyncflow" },
     { name = "rhapsody-py", extra = ["telemetry"] },
 ]
-langchain-core = [
-    { name = "langchain-core" },
-]
 langgraph = [
     { name = "langchain" },
     { name = "langchain-core" },
@@ -709,6 +707,9 @@ langgraph = [
 mcp = [
     { name = "mcp" },
 ]
+openai = [
+    { name = "openai" },
+]
 rhapsody = [
     { name = "rhapsody-py" },
 ]
@@ -716,10 +717,9 @@ rhapsody = [
 [package.metadata]
 requires-dist = [
     { name = "academy-py", marker = "extra == 'examples'", specifier = ">=1.0,<2" },
-    { name = "flowgentic", extras = ["examples", "rhapsody", "mcp"], marker = "extra == 'dev'" },
+    { name = "flowgentic", extras = ["examples", "rhapsody", "mcp", "openai"], marker = "extra == 'dev'" },
     { name = "flowgentic", extras = ["langgraph", "asyncflow"], marker = "extra == 'examples'" },
     { name = "langchain", marker = "extra == 'langgraph'", specifier = ">=1.0,<2.0" },
-    { name = "langchain-core", marker = "extra == 'langchain-core'", specifier = ">=1.0,<2.0" },
     { name = "langchain-core", marker = "extra == 'langgraph'", specifier = ">=1.0,<2.0" },
     { name = "langchain-ollama", marker = "extra == 'langgraph'", specifier = ">=1.0,<2.0" },
     { name = "langchain-openai", marker = "extra == 'langgraph'", specifier = ">=1.0,<2.0" },
@@ -732,6 +732,7 @@ requires-dist = [
     { name = "mkdocs-section-index", marker = "extra == 'dev'", specifier = ">=0.3.10" },
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'dev'", specifier = ">=1.0.7" },
     { name = "numpy", marker = "extra == 'dev'", specifier = ">=1.26" },
+    { name = "openai", marker = "extra == 'openai'", specifier = ">=1.68,<4" },
     { name = "opentelemetry-api", specifier = ">=1.43,<2" },
     { name = "opentelemetry-instrumentation-genai-langchain", marker = "extra == 'examples'", specifier = ">=1.3b0,<1.4" },
     { name = "opentelemetry-instrumentation-genai-openai", marker = "extra == 'examples'", specifier = ">=1.3b0,<1.4" },
@@ -748,7 +749,7 @@ requires-dist = [
     { name = "rhapsody-py", extras = ["telemetry"], marker = "extra == 'examples'", specifier = ">=0.7,<0.8" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12.11" },
 ]
-provides-extras = ["langgraph", "langchain-core", "asyncflow", "rhapsody", "mcp", "examples", "dev"]
+provides-extras = ["langgraph", "openai", "asyncflow", "rhapsody", "mcp", "examples", "dev"]
 
 [[package]]
 name = "frozenlist"

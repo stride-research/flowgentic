@@ -64,6 +64,7 @@ from pydantic import BaseModel
 
 from flowgentic.fleet import Fleet, TokenAdmission
 from flowgentic.host import AgentHost, AgentResult, Stagger
+from flowgentic.langchain import to_ai_message
 from flowgentic.langgraph import (
     GraphRunner,
     KeyValueSaver,
@@ -312,12 +313,16 @@ class ScriptedModel(BaseChatModel):
 
 # --8<-- [start:graph]
 def build_graph(fleet: Fleet, tools: list, saver: KeyValueSaver):
-    """model -> each tool call as its own task -> model, until it answers."""
-    fleet = fleet.bind_tools(tools)
+    """model -> each tool call as its own task -> model, until it answers.
+
+    The replicas are LangChain chat models, so the fleet passes the graph's
+    messages and tools to them as they are, and the reply's ``raw`` message is
+    the model's own ``AIMessage``."""
 
     async def model(state: MessagesState, config: RunnableConfig) -> dict:
         agent = config["configurable"]["thread_id"]
-        return {"messages": [await fleet.ainvoke(agent, state["messages"])]}
+        reply = await fleet.ainvoke(agent, state["messages"], tools=tools)
+        return {"messages": [to_ai_message(reply)]}
 
     g = StateGraph(MessagesState)
     g.add_node("model", model)
