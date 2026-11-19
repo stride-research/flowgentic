@@ -156,4 +156,5 @@ any model calls, as one trace. See [Telemetry](features/telemetry.md).
 Run the scripts through `uv run --frozen --extra examples`, as the `make`
 targets do. Live agent decisions (`--agent-mode live`) need a model provider
 and its credentials; `examples/ai-hpc-coupling/README.md` lists the options.
-ADR control (`--controller adr`) is not supported in 0.3.0.
+ADR control (`--controller adr`) is not supported: it needs an ADR source
+checkout, because ADR is not released (see [Project status](status.md)).

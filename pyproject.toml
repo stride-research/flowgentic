@@ -1,7 +1,7 @@
 [project]
 name = "flowgentic"
 version = "0.5.0"
-description = "A library to enable running agentic frameworks on HPC environments."
+description = "Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as AsyncFlow workflow tasks, and as LangGraph agents at scale whose tools run as RHAPSODY tasks and whose state lives in RaDEX."
 readme = "README.md"
 authors = [
     { name = "Javier Dominguez", email = "jdominguez.ieu2023@student.ie.edu"},
@@ -9,6 +9,22 @@ authors = [
     { name = "Matteo Turilli", email = "mturilli@faculty.ie.edu"}
 ]
 requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Science/Research",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: System :: Distributed Computing",
+    "Typing :: Typed",
+]
 # Core: what every path needs. Each path adds an extra: `langgraph` for
 # LangGraph graphs and LangChain agents, `asyncflow` for AsyncFlow workflows,
 # `rhapsody` for tools that run as RHAPSODY tasks, `mcp` for the tool service's
@@ -61,12 +77,23 @@ dev = [
     "numpy>=1.26",
 ]
 
+[project.urls]
+Homepage = "https://github.com/stride-research/flowgentic"
+Documentation = "https://stride-research.github.io/flowgentic/"
+Repository = "https://github.com/stride-research/flowgentic"
+Issues = "https://github.com/stride-research/flowgentic/issues"
+Changelog = "https://github.com/stride-research/flowgentic/blob/main/CHANGELOG.md"
+
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# Inline type annotations, for type checkers (PEP 561).
+[tool.setuptools.package-data]
+flowgentic = ["py.typed"]
 
 [tool.ruff]
 line-length = 88
