@@ -150,6 +150,34 @@ async def test_the_task_runs_in_its_callers_trace_context(span_exporter):
     assert value["trace"] == span.context.trace_id
 
 
+def where_process(x: float) -> dict:
+    """Run x, and say which process ran it."""
+    import os
+
+    return {"y": 2 * x, "pid": os.getpid()}
+
+
+async def test_a_task_runs_on_a_process_pool():
+    """A process backend pickles the task's function, with the runtime's wrapper
+    around it; a failure comes back pickled too."""
+    import os
+    from concurrent.futures import ProcessPoolExecutor
+
+    from rhapsody.backends import ConcurrentExecutionBackend
+
+    backend = await ConcurrentExecutionBackend(ProcessPoolExecutor(max_workers=1), name="processes")
+    flow = await _asyncflow.open_engine(backend)
+    runtime = ToolRuntime(engine=flow)
+    try:
+        value = await runtime.submit(task_tool(where_process), "a", "c1", {"x": 1.0})
+        failed = runtime.submit(task_tool(broken), "a", "c2", {"x": 1.5})
+        await asyncio.wait([failed])
+    finally:
+        await _asyncflow.close_engine(flow)
+    assert value["y"] == 2.0 and value["pid"] != os.getpid()
+    assert "no convergence at 1.5" in str(failed.exception())
+
+
 # --- repeat safety, suspension, failure and cancellation ------------------------
 
 

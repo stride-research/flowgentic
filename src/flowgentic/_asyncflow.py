@@ -183,7 +183,7 @@ class Times:
 	arrives. A backend that never reports a task running, such as AsyncFlow's
 	own ``LocalExecutionBackend``, gives no start."""
 
-	__slots__ = ("_times", "__weakref__")
+	__slots__ = ("_times",)
 
 	def __init__(self) -> None:
 		self._times: dict[str, list[float | None]] = {}
