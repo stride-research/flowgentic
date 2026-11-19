@@ -9,28 +9,80 @@ predate this changelog, so their changes are not listed here.
 
 ## [Unreleased]
 
+The model path moves to OpenAI Chat Completions messages and transports, with
+LangChain as an adapter, and Flowgentic gains its own agent loop on them. The
+fleet's API breaks (under Changed), before 1.0; `GraphRunner` and its graphs
+work as before.
+
 ### Added
 
 - `flowgentic.loop.LoopRunner`, Flowgentic's own agent loop: a runner for the
-  agent host on `langchain-core` alone, beside LangGraph's `GraphRunner`,
-  which stays. It runs a tool-calling agent as a loop over a fleet or any
-  LangChain chat model, with task tools, MCP tools and LangChain tools; the
-  calls of one reply run concurrently. A task tool that suspends saves the
-  agent's messages to a `KeyValueStore` with one put, read back with one get
-  on resume; the entry is deleted when the agent ends, however it ends. Tool
-  errors go back to the model as error `ToolMessage`s, `max_model_calls`
-  limits the agent's model calls over its whole run
-  (`ModelCallLimitExceeded`), `response_format` gives a validated structured
-  answer in `LoopOutput.structured_response`, a `trim` hook shapes the history
-  before each model call, and an inline tool that raises `Interrupt(value)`
-  ends its agent as interrupted, with an `Interruption`. The agent's states
-  and spans are counted as the host's other parts count them. See the agent
-  loop page.
-- A `langchain-core` extra, with `langchain-core>=1.0,<2.0` only: what the
-  agent loop and the fleet need. The fleet's import error now names it.
+  agent host on OpenAI-format messages and transports, with no LangChain or
+  LangGraph and no extra, beside `GraphRunner`, which stays. It runs a
+  tool-calling agent as a loop over a fleet or a transport, with task tools,
+  MCP tools and inline tools (plain functions, their schemas through
+  pydantic); the calls of one reply run concurrently. A task tool that
+  suspends saves the agent's messages to a `KeyValueStore` with one put, read
+  back with one get on resume; the entry is deleted when the agent ends,
+  however it ends. Tool errors go back to the model, `max_model_calls` limits
+  the agent's model calls over its whole run (`ModelCallLimitExceeded`),
+  `response_format` gives a validated structured answer in
+  `LoopOutput.structured_response`, a `trim` hook shapes the history before
+  each model call, and an inline tool that raises `Interrupt(value)` ends its
+  agent as interrupted, with an `Interruption`. The agent's states and spans
+  are counted as the host's other parts count them. See the agent loop page.
+- `flowgentic.fleet.Transport`: what a fleet's replica, or the loop's model,
+  is. Its `async complete(messages, tools=None, **kwargs)` takes OpenAI-format
+  messages, the tools' JSON schemas and the call's keywords, and returns a
+  `Reply`: its `content`, `tool_calls` (`ToolCall`, arguments parsed),
+  `invalid_tool_calls` (`InvalidToolCall`, for the model to read why), `usage`
+  (`Usage`: prompt, completion, cached prompt and reasoning tokens) and the
+  `reasoning` text, kept out of the conversation; `Reply.message()` is what
+  the conversation keeps.
+- `flowgentic.fleet.OpenAITransport`, over the `openai` SDK, for vLLM, SGLang,
+  OpenRouter and OpenAI, and `parse_completion` for such a server's reply. It
+  reads the reasoning from `reasoning`, and from `reasoning_content` for older
+  vLLM and SGLang; the cached tokens from `usage.prompt_tokens_details`, the
+  reasoning tokens from `usage.completion_tokens_details`. It needs a new
+  `openai` extra.
+- `flowgentic.langchain`, LangChain as an adapter, in the `langgraph` extra:
+  `ChatModelTransport` (any LangChain chat model as a transport; it takes
+  LangChain messages and tools as they are, too), `FleetChatModel` (moved
+  here), `to_ai_message` and `reply_from_message`, `from_openai_messages` and
+  `to_openai_messages`, and `inline_tool` (a LangChain tool as an inline tool
+  of the loop, which the loop applies itself).
+- Each try of a model call through the fleet, or the loop's transport, is a
+  GenAI `chat` span with the usage the server reported, recorded by
+  Flowgentic. With LangChain replicas and OpenTelemetry's LangChain
+  instrumentation on, the instrumentation's span is the call's, and Flowgentic
+  records none.
 - `benchmarks/agent_loop.py` runs the agents-at-scale example's workload in
-  one agent process with either runner, and prints its wall and CPU time,
-  event-loop lag, collector pauses, peak RSS and store calls.
+  one agent process with the loop, the loop through LangChain's adapter, or
+  `GraphRunner`; `benchmarks/client_cost.py` measures a model client's CPU per
+  call against a local OpenAI-compatible stub.
+
+### Changed
+
+- **The fleet's API breaks.** A replica is a `Transport`. A LangChain chat
+  model given as a replica, or returned by `Recovery`'s check, is wrapped in
+  `ChatModelTransport`, so a fleet built from `ChatOpenAI` replicas keeps
+  working, and its calls reach the models unchanged. But:
+  - `Fleet.ainvoke(agent_id, messages, tools=None, ...)` returns a `Reply`,
+    not an `AIMessage`. Pass the tools' schemas, or LangChain tools to
+    LangChain replicas, as `tools=`. For an `AIMessage`, call
+    `flowgentic.langchain.to_ai_message(reply)`: with a LangChain replica it
+    is the replica's own message.
+  - `Fleet.bind_tools` is gone: pass `tools=` to `ainvoke`, or use
+    `fleet.chat_model().bind_tools(tools)`.
+  - A listener gets `(record, reply)` with the `Reply`, which keeps
+    `content`, `tool_calls` and `invalid_tool_calls`.
+  - `FleetChatModel` lives in `flowgentic.langchain`;
+    `flowgentic.fleet.FleetChatModel` still names it.
+  - `flowgentic.fleet` imports no LangChain and needs no extra; the
+    `langgraph` extra is needed only for LangChain replicas and
+    `chat_model()`.
+- The agents-at-scale example's model node calls `fleet.ainvoke` with the
+  tools and returns `to_ai_message(reply)`.
 
 ## [0.5.1] - 2026-11-19
 

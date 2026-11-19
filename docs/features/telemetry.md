@@ -23,6 +23,7 @@ LangChain instrumentation; see the end of this section.
 | `invoke_agent <identity>`, one per call of an agent bound with `bind_agent` | Flowgentic |
 | `invoke_agent`, one per agent an agent host runs, with a `flowgentic.agent.suspend` event per suspension; see [the agent host's spans](#the-agent-hosts-spans) | Flowgentic |
 | `execute_tool <tool>`, one per call of a task or MCP tool from `flowgentic.tools`; see [Tool placement](tools.md#what-it-reports) | Flowgentic |
+| `chat <model>`, one per try of a model call through the fleet or the agent loop's transport, with the usage the server reported; see [Fleet](fleet.md#what-it-reports). With LangChain replicas and the LangChain instrumentation on, the instrumentation's `chat` span takes its place | Flowgentic |
 | `accept <name>`, one per call of `accept`, with an `accept.attempt <name>` span per attempt and a `gen_ai.evaluation.result` event per check that ran; see [Acceptance](acceptance.md) | Flowgentic |
 | `chat <model>`, `execute_tool <tool>`, `invoke_workflow <graph>` | OpenTelemetry's GenAI instrumentation for LangChain, with its OpenAI instrumentation |
 | `session`, `workflow`, `block`, `task` | RHAPSODY, once the application calls `flow.start_telemetry()` |
@@ -223,7 +224,8 @@ actually ran on.
 
 ## Token usage
 
-Usage is recorded on each `chat` span, by the instrumentation that saw the
+Usage is recorded on each `chat` span, by Flowgentic for a call through the
+fleet or the agent loop's transport, or by the instrumentation that saw the
 response, as the provider reported it:
 
 | Attribute | Meaning |
@@ -238,9 +240,9 @@ measured is absent, never zero. The conventions also omit a cache or reasoning
 count that is zero. So a missing breakdown means "zero or unknown", while a
 missing input or output total means "not measured".
 
-Flowgentic records no token counts itself, and adds none up on its own spans.
-A decision's total is the sum over the `chat` spans below its `invoke_agent`
-span.
+Flowgentic adds no counts up on its own spans: a decision's total is the sum
+over the `chat` spans below its `invoke_agent` span. A model call has one
+`chat` span, Flowgentic's or the LangChain instrumentation's, never both.
 
 Two sources still invent counts, and Flowgentic cannot detect either from the
 client side:

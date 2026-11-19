@@ -6,7 +6,7 @@ process responsive while they run, resumes the ones that wait on tasks, and
 counts what each is doing. It works with any agent framework through a small
 `Runner`; `flowgentic.langgraph.GraphRunner` is LangGraph's, and
 `flowgentic.loop.LoopRunner` is Flowgentic's own [agent loop](agent-loop.md),
-on `langchain-core` alone.
+on OpenAI-format messages, with no LangChain.
 
 ```python
 from flowgentic.host import Agent, AgentHost

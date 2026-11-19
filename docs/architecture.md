@@ -48,8 +48,10 @@ with Dragon, its queues and RaDEX.
 The agent host knows no framework, and the tools no framework either: each
 framework has a runner and an adapter that turns tool declarations into its
 own tools. `flowgentic.langgraph` holds LangGraph's, with its checkpointer;
-`flowgentic.loop` is Flowgentic's own loop, which runs the declarations itself
-and saves a suspended agent's messages to the store. A
+`flowgentic.loop` is Flowgentic's own loop, on OpenAI-format messages and the
+fleet's transports, which runs the declarations itself and saves a suspended
+agent's messages to the store; `flowgentic.langchain` adapts LangChain's
+models, messages and tools to both. A
 private module, `flowgentic._agents`, carries the current agent and its state
 through asyncio's context, so the fleet and the tools count what each agent is
 doing without being passed the agent.
@@ -61,9 +63,10 @@ doing without being passed the agent.
 | `flowgentic.tools.service` | `serve`, `ToolServiceClient`, `ToolService`: one process that calls MCP tools for many agent processes; see [Tool service](features/tool-service.md) |
 | `flowgentic.tools.mcp` | `SupervisedMcpPool`: MCP clients whose failures stay their own |
 | `flowgentic.store` | `KeyValueStore`, `RadexStore`, `MemoryStore`: stores in the allocation's memory; see [Checkpointer](features/checkpointer.md) |
-| `flowgentic.fleet` | `Fleet`, admission, routing, `Recovery`, `FleetChatModel`: model calls to replicas; see [Fleet](features/fleet.md) |
+| `flowgentic.fleet` | `Fleet`, admission, routing, `Recovery`, `Transport`, `Reply`, `OpenAITransport`: model calls to replicas; see [Fleet](features/fleet.md) |
 | `flowgentic.langgraph` | `GraphRunner`, `route_tool_calls`, `bind_tools`, `KeyValueSaver`: LangGraph's runner, tool adapter and checkpointer |
-| `flowgentic.loop` | `LoopRunner`, `LoopOutput`, `Interrupt`: Flowgentic's own agent loop, on `langchain-core` alone; see [Agent loop](features/agent-loop.md) |
+| `flowgentic.loop` | `LoopRunner`, `LoopOutput`, `Interrupt`: Flowgentic's own agent loop, on OpenAI-format messages, with no extra; see [Agent loop](features/agent-loop.md) |
+| `flowgentic.langchain` | `ChatModelTransport`, `FleetChatModel`, `to_ai_message`, `inline_tool`: LangChain as an adapter to the fleet and the loop; the `langgraph` extra |
 | `flowgentic._agents` | Private: the current agent, its state, and the futures of the tasks it waits on |
 | `flowgentic._rhapsody` | Private: the one module that calls RHAPSODY. It submits task tools' tasks to the caller's session, in the caller's trace context. It never creates a backend |
 

@@ -15,7 +15,9 @@ client for model servers. [LangGraph agents at scale](guides/agents-at-scale.md)
 shows them together, in an example that runs on a laptop. Their interfaces
 may still change before 1.0, as the changelog will say. The next release adds
 Flowgentic's own [agent loop](features/agent-loop.md), a runner on
-`langchain-core` beside LangGraph's; it is new, and its names may change.
+OpenAI-format messages beside LangGraph's, and makes the fleet's replicas
+transports, with LangChain as an adapter; this breaks the fleet's API, and the
+new names may still change.
 
 ## AsyncFlow path: maintenance mode
 
@@ -71,20 +73,19 @@ and metrics. Each path is an extra:
 - `langgraph`: `langgraph>=1.1.5,<2.0`, `langgraph-checkpoint>=4.3,<5`, and
   `langchain-core`, `langchain`, `langchain-openai` and `langchain-ollama` at
   `>=1.0,<2.0`.
-- `langchain-core`: `langchain-core>=1.0,<2.0`, for Flowgentic's own agent
-  loop and the fleet, without LangGraph.
+- `openai`: `openai>=1.68,<4`, for the fleet's `OpenAITransport`.
 - `rhapsody`: `rhapsody-py>=0.7,<0.8`, for task tools.
 - `mcp`: `mcp>=2.3,<2.4`, for the tool service's MCP clients.
 - `asyncflow`: `radical-asyncflow>=0.6,<0.7`, because before 1.0 an AsyncFlow
   minor release may break.
 
 Agents at scale need `langgraph`, `rhapsody` and `mcp`:
-`flowgentic[langgraph,rhapsody,mcp]`, or `flowgentic[langchain-core,rhapsody,mcp]`
-with Flowgentic's own loop. The LangGraph integration on AsyncFlow
+`flowgentic[langgraph,rhapsody,mcp]`, or `flowgentic[openai,rhapsody,mcp]`
+with Flowgentic's own loop and OpenAI-compatible servers. The LangGraph integration on AsyncFlow
 needs `langgraph` and `asyncflow`, and `bind_agent` needs `asyncflow`. Without
 an extra it needs, importing a part raises an error that names the extra.
-`flowgentic.host`, `flowgentic.store` and `flowgentic.tools` import with no
-extra. The `examples` extra adds `langgraph` and `asyncflow`, with
+`flowgentic.host`, `flowgentic.store`, `flowgentic.tools`, `flowgentic.fleet` and
+`flowgentic.loop` import with no extra. The `examples` extra adds `langgraph` and `asyncflow`, with
 `academy-py>=1.0,<2` for the Academy example, and the OpenTelemetry SDK,
 OpenTelemetry's GenAI instrumentation for LangChain and OpenAI (1.3b0, below
 1.4) and `rhapsody-py[telemetry]` for the demos' traces.
