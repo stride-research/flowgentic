@@ -550,6 +550,26 @@ def test_a_clone_with_an_allowlist_counts_on_the_saver():
 	assert clone.stats() == stats
 
 
+def test_the_counters_can_be_reset():
+	"""As in 0.5.0, an application can set the counters, to reset them between
+	phases of a run; a copy of the saver sees the same counts."""
+	saver = KeyValueSaver(MemoryStore())
+	clone = saver.with_allowlist([("flowgentic.tests", "Nothing")])
+	config = checkpoint(saver, "c1")
+	saver.put_writes(config, [("x", 1)], "task")
+	saver.get_tuple(config)
+	saver.checkpoints_put = saver.writes_put = 0
+	saver.checkpoints_read = saver.checkpoint_bytes = 0
+	assert saver.stats() == {
+		"checkpoints_put": 0,
+		"writes_put": 0,
+		"checkpoints_read": 0,
+		"checkpoint_bytes_mean": None,
+	}
+	checkpoint(clone, "c2", parent="c1")
+	assert saver.checkpoints_put == 1 and saver.checkpoint_bytes > 0
+
+
 def test_a_strict_msgpack_graph_counts_on_the_saver():
 	"""The same, end to end, in an interpreter with LANGGRAPH_STRICT_MSGPACK."""
 	import subprocess

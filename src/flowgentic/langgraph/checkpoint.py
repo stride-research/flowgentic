@@ -142,6 +142,22 @@ class _Counts:
 		self.checkpoint_bytes = 0
 
 
+class _Count:
+	"""One of a saver's counters, read from and written to the counts its
+	copies share, so that setting one, as to reset it, reaches them all."""
+
+	def __set_name__(self, owner: type, name: str) -> None:
+		self.name = name
+
+	def __get__(self, saver: KeyValueSaver | None, owner: type | None = None) -> int:
+		if saver is None:
+			return self  # type: ignore[return-value]
+		return getattr(saver._counts, self.name)
+
+	def __set__(self, saver: KeyValueSaver, value: int) -> None:
+		setattr(saver._counts, self.name, value)
+
+
 class KeyValueSaver(BaseCheckpointSaver[str]):
 	"""Checkpoints in a ``KeyValueStore``; see the module's docstring."""
 
@@ -155,25 +171,14 @@ class KeyValueSaver(BaseCheckpointSaver[str]):
 		self.keep_last = keep_last
 		self._counts = _Counts()
 
-	@property
-	def checkpoints_put(self) -> int:
-		"""Checkpoints put, by this saver and its copies."""
-		return self._counts.checkpoints_put
-
-	@property
-	def writes_put(self) -> int:
-		"""Batches of pending writes put."""
-		return self._counts.writes_put
-
-	@property
-	def checkpoints_read(self) -> int:
-		"""Checkpoints read back."""
-		return self._counts.checkpoints_read
-
-	@property
-	def checkpoint_bytes(self) -> int:
-		"""Bytes of the checkpoints put."""
-		return self._counts.checkpoint_bytes
+	checkpoints_put = _Count()
+	"""Checkpoints put, by this saver and its copies."""
+	writes_put = _Count()
+	"""Batches of pending writes put."""
+	checkpoints_read = _Count()
+	"""Checkpoints read back."""
+	checkpoint_bytes = _Count()
+	"""Bytes of the checkpoints put."""
 
 	@staticmethod
 	def _prefix(thread_id: str, ns: str) -> str:
