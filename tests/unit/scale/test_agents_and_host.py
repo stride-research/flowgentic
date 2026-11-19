@@ -174,6 +174,27 @@ async def test_an_agents_registration_lasts_until_the_agent_ends():
     assert _agents.pending("task-a") is None
 
 
+async def test_a_forgotten_registration_is_gone_from_both_registries():
+    # As of a task withdrawn before it started: outside an agent, none took it.
+    register_pending("withdrawn/outside", done_future())
+    _agents.forget_pending("withdrawn/outside")
+    assert _agents.pending("withdrawn/outside") is None
+
+    seen = {}
+
+    class Forgets(FakeRunner):
+        async def start(self, agent):
+            key = f"withdrawn/{agent.id}"
+            register_pending(key, done_future())
+            _agents.forget_pending(key)
+            seen[agent.id] = (_agents.pending(key), _agents.registered(key))
+            return Finished(None)
+
+    report = await AgentHost(Forgets(), stagger=FAST, collector=None).run([Agent("a", None)])
+    assert report.outcomes == {"done": 1}, report.agents[0].error
+    assert seen == {"a": (None, None)}
+
+
 async def test_live_agents_stay_under_the_cap():
     runner = FakeRunner()
     host = AgentHost(runner, max_live_agents=10, stagger=FAST, collector=None)

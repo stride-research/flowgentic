@@ -381,6 +381,17 @@ def release_pending() -> None:
 		agent.registered.clear()
 
 
+def forget_pending(key: str) -> None:
+	"""Forget the registration under ``key``, as of a task withdrawn before it
+	started: the current agent's, or one made outside an agent that none took."""
+	_pending.pop(key, None)
+	with _unowned_lock:
+		_unowned.pop(key, None)
+	agent = _current.get()
+	if agent is not None:
+		agent.registered.pop(key, None)
+
+
 def pending(key: str) -> asyncio.Future | None:
 	"""The future of the task submitted under ``key`` in this process."""
 	future = _pending.get(key)

@@ -9,18 +9,20 @@ predate this changelog, so their changes are not listed here.
 
 ## [Unreleased]
 
-### Fixed
+### Changed
 
-- The `flowgentic.agents` gauge counts the agents of runs in progress only.
-  It counted the agents of every run that had ended too, for as long as its
-  host was alive: a cancelled run's agents stayed `pending`, and finished
-  ones `done`. With no run in progress, every state reads 0.
 - `flowgentic.agent.time` is a counter, as agent-seconds add up. It was a
   gauge that started from 0 at each run of a host and lost a host's time when
   the host was gone. It now adds up the agent-seconds of every run in the
   process, and an exporter reads it as a monotonic sum. A run's own
   agent-seconds stay in its report.
 
+### Fixed
+
+- The `flowgentic.agents` gauge counts the agents of runs in progress only.
+  It counted the agents of every run that had ended too, for as long as its
+  host was alive: a cancelled run's agents stayed `pending`, and finished
+  ones `done`. With no run in progress, every state reads 0.
 - `Collector` refuses a `threshold` below 1. CPython takes a first threshold
   of 0 to turn automatic collection off, so `Collector(threshold=0)` stopped
   the cyclic collector for as long as the host ran; below 0 it collected at
