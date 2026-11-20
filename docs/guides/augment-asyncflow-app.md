@@ -87,7 +87,9 @@ same way later in the cycle.
 ## Placement on a named backend
 
 The task runs on the backend named in `bind_agent`. This test binds a component
-to `ai` and checks that the task ran there and not on `compute`:
+to `ai` and checks that AsyncFlow submitted the task to `ai` and nothing to
+`compute`. Its `record_submissions` helper (`tests/_asyncflow_records.py`)
+records the tasks the engine hands each backend:
 
 ```python
 --8<-- "tests/unit/test_agent_adapter.py:bind-agent-on-backend"

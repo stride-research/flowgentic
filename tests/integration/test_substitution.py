@@ -21,6 +21,7 @@ from types import ModuleType
 from typing import Annotated, Any, AsyncIterator
 
 import pytest
+from _asyncflow_records import record_submissions, registered
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import BaseTool, tool
@@ -148,18 +149,19 @@ async def test_both_versions_submit_the_same_asyncflow_components() -> None:
             flow,
             _,
         ):
-            await application.graph.ainvoke(application.state)
-            census[integration] = Counter(
-                (
-                    component["type"],
-                    component["description"]["name"],
-                    component["description"]["target_backend"],
-                )
-                for component in flow.components.values()
+            async with registered(flow) as components:
+                await application.graph.ainvoke(application.state)
+        census[integration] = Counter(
+            (
+                component["type"],
+                component["description"]["name"],
+                component["description"]["target_backend"],
             )
+            for component in components.values()
+        )
 
     assert census["direct"] == census["flowgentic"]
-    # flow.components is keyed by uid: 14 distinct uids, 13 per cycle plus the
+    # Components are keyed by uid: 14 distinct uids, 13 per cycle plus the
     # resident service.
     assert sum(census["direct"].values()) == 14
     assert census["direct"][("task", "run_simulation", "compute")] == 4
@@ -170,16 +172,17 @@ async def test_both_versions_place_tasks_on_the_named_backends() -> None:
     placement = {}
     for integration in INTEGRATIONS:
         backends = await demo("campaign_common").create_local_backends(4)
+        submitted = record_submissions(*backends)
         async with await open_campaign(integration, one_cycle_settings(), backends) as (
             application,
             _,
             _,
         ):
             await application.graph.ainvoke(application.state)
-            placement[integration] = {
-                backend.name: Counter(task["name"] for task in backend.tasks.values())
-                for backend in backends
-            }
+        placement[integration] = {
+            backend: Counter(task["name"] for task in tasks)
+            for backend, tasks in submitted.items()
+        }
 
     assert placement["direct"] == placement["flowgentic"]
     assert placement["direct"]["compute"] == Counter({"run_simulation": 4})
@@ -392,15 +395,31 @@ async def test_asyncflow_telemetry_spans(integration: str) -> None:
 
     spans = exporter.get_finished_spans()
     names = Counter(span.name for span in spans)
-    tasks = [span for span in spans if span.name == "task"]
+    # A block span names its block's uid as its workflow. AsyncFlow also opens a
+    # "task" span for each block, as for any component: 0.7.0 leaves it open, and
+    # an AsyncFlow that ends every component's span exports it
+    # (radical-cybertools/radical.asyncflow#125). Only the tasks are counted here.
+    blocks = {
+        span.attributes["asyncflow.workflow_id"]
+        for span in spans
+        if span.name == "block"
+    }
+    tasks = [
+        span
+        for span in spans
+        if span.name == "task" and span.attributes["task_id"] not in blocks
+    ]
     labels = {
         span.attributes["executable"]: span.attributes["backend"] for span in tasks
     }
     print(f"\n{integration}: {dict(sorted(names.items()))}; task backends: {labels}")
 
     # One cycle: the workflow scope, 4 node blocks and 9 tasks (the resident
-    # service started before telemetry).
-    assert names == Counter({"workflow": 1, "block": 4, "task": 9})
+    # service started before telemetry). An AsyncFlow whose shutdown stops
+    # telemetry also exports the session's span, which is not counted.
+    assert names["workflow"] == 1
+    assert names["block"] == len(blocks) == 4
+    assert len(tasks) == 9
     for span in tasks:
         assert {"task_id", "executable", "status"} <= set(span.attributes)
         assert span.attributes["status"] == "completed"
@@ -544,16 +563,17 @@ async def test_llm_selected_tool_runs_as_an_asyncflow_task() -> None:
         )
         async with open_engine(integration) as (flow, adapter):
             graph = agent_graph(model, [science_tool(integration, flow, adapter)])
-            final = await graph.ainvoke(
-                {"messages": [HumanMessage(content="Evaluate x=2.75.")]}
-            )
-            census = Counter(
-                (
-                    component["description"]["name"],
-                    component["description"]["target_backend"],
+            async with registered(flow) as components:
+                final = await graph.ainvoke(
+                    {"messages": [HumanMessage(content="Evaluate x=2.75.")]}
                 )
-                for component in flow.components.values()
+        census = Counter(
+            (
+                component["description"]["name"],
+                component["description"]["target_backend"],
             )
+            for component in components.values()
+        )
         messages = final["messages"]
         assert [type(message).__name__ for message in messages] == [
             "HumanMessage",
@@ -615,15 +635,14 @@ async def test_supervisor_hands_off_to_a_worker(
         parent.add_node("researcher", researcher)
         parent.add_edge(START, "supervisor")
         parent.add_edge("researcher", END)
-        final = await parent.compile().ainvoke(
-            {"messages": [HumanMessage(content="Plan the study.")]}
-        )
-        # The handoff itself runs as one AsyncFlow task in both versions.
-        handoff_tasks = [
-            component
-            for component in flow.components.values()
-            if component["type"] == "task"
-        ]
+        async with registered(flow) as components:
+            final = await parent.compile().ainvoke(
+                {"messages": [HumanMessage(content="Plan the study.")]}
+            )
+    # The handoff itself runs as one AsyncFlow task in both versions.
+    handoff_tasks = [
+        component for component in components.values() if component["type"] == "task"
+    ]
 
     assert len(handoff_tasks) == 1
     assert received == [["Evaluate x=2.75."]]

@@ -143,6 +143,23 @@ implicit defaults do.
     decision model raise. A standalone direct application would define its
     own exception.
 
+!!! note "Changed after 0.5.1 (2026-11-20): how rows 2, 5, 7, 8 and 9 read AsyncFlow"
+    The tests behind these rows no longer read AsyncFlow's records after the
+    tasks ended. An AsyncFlow that releases a finished task's records
+    ([radical.asyncflow#128](https://github.com/radical-cybertools/radical.asyncflow/pull/128))
+    would leave them empty. The numbers they check are the same.
+
+    - Rows 2, 8 and 9 collect each component's record while AsyncFlow holds
+      it (`registered` in `tests/_asyncflow_records.py`).
+    - Row 5 records the tasks the engine submits to each backend
+      (`record_submissions`), not each backend's own task registry.
+    - Row 7 counts the spans of tasks only. An AsyncFlow that ends every
+      component's span
+      ([radical.asyncflow#125](https://github.com/radical-cybertools/radical.asyncflow/pull/125))
+      also exports a `task` span for each block, and a span for the session.
+      Since AsyncFlow 0.7, each task span names the backend the task ran on,
+      and the test checks it.
+
 ## LangGraph 1.x and AsyncFlow 0.6.0 (amendment A4, R8)
 
 Row 6 counts the LangGraph 1.x port as a maintenance cost. R5 first estimated

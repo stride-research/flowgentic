@@ -14,6 +14,7 @@ from concurrent.futures import Executor, ProcessPoolExecutor, ThreadPoolExecutor
 from typing import Any
 
 import pytest
+from _asyncflow_records import record_submissions
 from opentelemetry import trace
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
@@ -56,6 +57,7 @@ async def test_a_bound_decision_is_an_invoke_agent_span(
     span_exporter: InMemorySpanExporter,
 ) -> None:
     flow, ai = ai_flow
+    submitted = record_submissions(ai)
     agent = bind_agent(
         flow, Component(), identity="planner", framework="test", backend="ai"
     )
@@ -63,11 +65,12 @@ async def test_a_bound_decision_is_an_invoke_agent_span(
     await agent.ainvoke({"candidate": 1.0})
 
     (span,) = _spans_named(span_exporter, "invoke_agent planner")
+    (task,) = submitted["ai"]
     assert span.kind is SpanKind.INTERNAL
     assert dict(span.attributes) == {
         "gen_ai.operation.name": "invoke_agent",
         "gen_ai.agent.name": "planner",
-        "flowgentic.task.uid": next(iter(ai.tasks)),
+        "flowgentic.task.uid": task["uid"],
         "flowgentic.task.backend": "ai",
     }
 
