@@ -150,7 +150,7 @@ The AsyncFlow path:
   on RHAPSODY's thread-pool and process-pool backends and AsyncFlow's own
   `LocalExecutionBackend` only. Cancellation reaching in-flight
   AsyncFlow tasks is validated on local backends only.
-- Task tools on an AsyncFlow engine: AsyncFlow keeps every task, with its
+- Task tools on an AsyncFlow engine: AsyncFlow 0.7.0 keeps every task, with its
   arguments and value, or a failed task's exception and its traceback, until
   the engine shuts down, so a campaign's memory grows with the tasks its
   agents ask for.

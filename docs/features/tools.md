@@ -82,7 +82,7 @@ in one; the function itself is called as on a session, with no event loop
 running in its thread, so it may run one of its own, as `asyncio.run` does.
 
 The engine is the application's: Flowgentic neither starts it nor shuts it
-down. AsyncFlow keeps every task, with its arguments and value, or a failed
+down. AsyncFlow 0.7.0 keeps every task, with its arguments and value, or a failed
 task's exception and its traceback, until the engine shuts down, so a
 campaign's memory grows with the tasks its agents ask for. A task still
 running when the engine shuts down ends with `TaskCancelled`, and so does one

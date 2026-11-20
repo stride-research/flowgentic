@@ -316,7 +316,7 @@ class ToolRuntime:
 	when tasks are submitted, ``Immediate()`` by default. ``retained``: how
 	many ended tasks are kept, for repeat safety.
 
-	On an engine, AsyncFlow keeps each task, with its value, or its exception
+	On an engine, AsyncFlow 0.7.0 keeps each task, with its value, or its exception
 	and the frames it passed through, until the engine shuts down; a task
 	still running then ends with ``TaskCancelled``, as on a session that
 	closes.

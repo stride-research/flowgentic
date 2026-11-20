@@ -83,6 +83,36 @@ def slow(x: float) -> dict:
     return {"y": 2 * x}
 
 
+GATE = threading.Event()
+
+
+def held(x: float) -> dict:
+    """Run until the test opens the gate."""
+    GATE.wait(5)
+    return {"y": 2 * x}
+
+
+def tasks_running(flow) -> list[str]:
+    """The uids of the engine's tasks running on a backend, blocks left out."""
+    return sorted(uid for uid in flow.running if uid.startswith("task."))
+
+
+async def record_while_running(flow, submit) -> dict:
+    """Call ``submit()``, which asks for one ``held`` task, and return AsyncFlow's
+    record of the task, read while the task runs: AsyncFlow may release a
+    finished task's record. Then let the task end."""
+    GATE.clear()
+    before = set(tasks_running(flow))  # a task just ended can linger there
+    pending = submit()
+    try:
+        await until(lambda: set(tasks_running(flow)) - before)
+        (uid,) = set(tasks_running(flow)) - before
+        return {"uid": uid, **flow.components[uid]["description"]}
+    finally:
+        GATE.set()
+        await asyncio.wait([asyncio.ensure_future(pending)])
+
+
 async def until(condition, timeout: float = 5.0) -> None:
     """Wait until ``condition()`` holds, failing after ``timeout`` seconds."""
     end = time.monotonic() + timeout
@@ -104,7 +134,9 @@ async def test_a_task_tool_runs_on_the_named_backend_of_the_applications_engine(
         own = await runtime.submit(task_tool(where, backend="ai"), "planner-1", "call-2", {"x": 2.0})
         first, second = records
         # AsyncFlow knows the task by the function's name, under the record's uid
-        assert flow.components[first.uid]["description"]["name"] == "where"
+        named = await record_while_running(
+            flow, lambda: runtime.submit(task_tool(held), "planner-1", "call-3", {"x": 1.0})
+        )
     finally:
         await _asyncflow.close_engine(flow)
     assert value["y"] == 3.0 and value["thread"].startswith("pool-compute")
@@ -113,6 +145,7 @@ async def test_a_task_tool_runs_on_the_named_backend_of_the_applications_engine(
     assert first.uid.startswith("task.") and first.uid != second.uid
     assert (first.info.agent_id, first.info.call_id) == ("planner-1", "call-1")
     assert first.ok and first.value["y"] == 3.0
+    assert named["name"] == "held" and named["uid"] == records[2].uid
     assert RUNS == {"where": 2}
 
 
@@ -366,11 +399,6 @@ async def test_cancelling_the_task_cancels_it_on_the_engine():
     assert record.outcome == "cancelled" and record.uid == uid
 
 
-def tasks_running(flow) -> list[str]:
-    """The uids of the engine's tasks running on a backend, blocks left out."""
-    return sorted(uid for uid in flow.running if uid.startswith("task."))
-
-
 async def test_a_task_asked_for_inside_a_block_is_cancelled_with_the_block():
     """An agent that runs inside an AsyncFlow block asks for tasks that belong
     to the block: cancelling the block cancels them, as it does the block's
@@ -440,18 +468,31 @@ async def test_a_task_carries_the_workflow_it_was_asked_for_in():
     runtime.add_listener(records.append)
 
     async def in_block():
-        return await runtime.submit(task_tool(simulate), "a", "c2", {"x": 1.0})
+        return await runtime.submit(task_tool(held), "a", "c2", {"x": 1.0})
+
+    blocks = []
+
+    def run_block():
+        blocks.append(_asyncflow.block(flow, in_block)())
+        return blocks[-1]
 
     try:
         async with flow.workflow_scope("campaign-1"):
-            await runtime.submit(task_tool(simulate), "a", "c1", {"x": 1.0})
-        block = _asyncflow.block(flow, in_block)()
-        assert await block == {"y": 2.0}
-        await runtime.submit(task_tool(simulate), "a", "c3", {"x": 1.0})
-        labels = [flow.components[r.uid]["description"]["workflow_id"] for r in records]
+            scoped = await record_while_running(
+                flow, lambda: runtime.submit(task_tool(held), "a", "c1", {"x": 1.0})
+            )
+        blocked = await record_while_running(flow, run_block)
+        outside = await record_while_running(
+            flow, lambda: runtime.submit(task_tool(held), "a", "c3", {"x": 1.0})
+        )
     finally:
         await _asyncflow.close_engine(flow)
-    assert labels == ["campaign-1", block.uid, None]
+    assert [r["workflow_id"] for r in (scoped, blocked, outside)] == [
+        "campaign-1",
+        blocks[0].uid,
+        None,
+    ]
+    assert [r.uid for r in records] == [scoped["uid"], blocked["uid"], outside["uid"]]
 
 
 async def test_a_runtime_set_up_wrong_is_refused_before_any_agent_runs():
@@ -502,15 +543,17 @@ async def test_backend_specific_fields_reach_the_backend():
     runtime = ToolRuntime(engine=flow)
     records = []
     runtime.add_listener(records.append)
-    seen = {}
     try:
-        await runtime.submit(
-            task_tool(simulate, task_backend_specific_kwargs={"priority": 3}), "a", "c1", {"x": 1.0}
+        seen = await record_while_running(
+            flow,
+            lambda: runtime.submit(
+                task_tool(held, task_backend_specific_kwargs={"priority": 3}), "a", "c1", {"x": 1.0}
+            ),
         )
-        seen = flow.components[records[0].uid]["description"]["task_backend_specific_kwargs"]
     finally:
         await _asyncflow.close_engine(flow)
-    assert seen == {"priority": 3}
+    assert seen["task_backend_specific_kwargs"] == {"priority": 3}
+    assert seen["uid"] == records[0].uid
 
 
 # --- the decision record ---------------------------------------------------------
