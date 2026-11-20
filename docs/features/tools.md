@@ -77,10 +77,14 @@ session's backends. A tool called without being bound, on a runtime that
 cannot run it, raises `RuntimeError`, which fails its agent. A runtime has a
 session or an engine, not both.
 
+AsyncFlow runs only `async def` tasks, so the runtime wraps a sync function
+in one; the function itself is called as on a session, with no event loop
+running in its thread, so it may run one of its own, as `asyncio.run` does.
+
 The engine is the application's: Flowgentic neither starts it nor shuts it
-down. AsyncFlow keeps every task, with its arguments and value, until the
-engine shuts down, so a campaign's memory grows with the tasks its agents ask
-for. A task still running when the engine shuts down ends with
+down. AsyncFlow keeps every task, with its arguments and value, or a failed
+task's exception and its traceback, until the engine shuts down, so a
+campaign's memory grows with the tasks its agents ask for. A task still running when the engine shuts down ends with
 `TaskCancelled`, and so does one asked for after.
 
 ## Suspension
@@ -132,7 +136,10 @@ shuts down before it ends, ends with `TaskCancelled`: its place in its order is
 given back, and the model reads that the call failed. A task that its order
 admits after the session has closed, or the engine has shut down, fails at
 once, in the same way. On an engine, cancelling the future that
-`runtime.submit` returned also asks the task's backend to cancel it.
+`runtime.submit` returned also asks the task's backend to cancel it. A thread
+or process pool, on an engine or a session, cannot stop a function that has
+started: it runs to its end, while the task has already ended `cancelled` and
+given back its place in its order.
 
 A task's RHAPSODY uid is `flowgentic.` and its key, with `/` written `.`, `_`
 written `__`, and any character other than a letter, a digit or `-` written
@@ -180,11 +187,11 @@ call (`record.info.call_id`), and says where the task ran and when:
 | Field | What |
 | --- | --- |
 | `uid` | The task's uid in AsyncFlow or RHAPSODY; `None` if it was never submitted |
-| `backend` | The backend it was sent to: on an engine, the named one or the engine's default; on a session, the named one, if any |
+| `backend` | The backend it was for: the tool's, else the runtime's, else, on an engine, the engine's default, and on a session the one the session sent it to |
 | `t_commit` | When the agent committed to the call: when the model reply that made the call reached the agent, for a model run through a [fleet](fleet.md) in an agent the [host](agent-host.md) runs; otherwise `t_submit` |
 | `t_submit` | When the runtime got the call |
 | `t_admit` | When its order admitted it and the runtime submitted it; `None` if it never was |
-| `t_start` | When it started: AsyncFlow's `TaskStarted` event, from the telemetry the runtime was given |
+| `t_start` | When the backend reported it running: AsyncFlow's `TaskStarted` event, from the telemetry the runtime was given |
 | `t_finish` | When it ended: when the agent's process saw AsyncFlow resolve the task |
 | `t_end` | When the runtime saw it end, just before its agent is told |
 | `outcome` | `ok`, `error`, `refused` or `cancelled`, with its `value` or `error` |
@@ -194,7 +201,9 @@ engine's too. A withdrawn task is `cancelled` with no admission time.
 
 The fleet notes each reply with the ids of its tool calls, so a call that no
 reply made, such as one a graph node makes itself, commits when the runtime
-gets it.
+gets it. Some servers number the calls of each reply (`call_0`, `call_1`), so
+if one agent's parallel branches get replies that reuse an id, each such call
+is dated by the latest of those replies.
 
 `t_finish` is stamped on the event loop's first pass after AsyncFlow resolves
 the task's future, which it does as the backend reports the task's end, just
@@ -215,12 +224,17 @@ burst of thousands of tasks, has no `t_start` in its record; the event is still
 in the telemetry, under the record's `uid`, for a join after the run. A backend
 that never reports a task running, such as AsyncFlow's own
 `LocalExecutionBackend`, gives no `t_start`. Without telemetry, and on a
-session, `t_start` is `None`.
+session, `t_start` is `None`. `t_start` is when the backend reports the task
+running, which is not always when its function starts: RHAPSODY's thread and
+process pools report it when they hand the task to their pool, which runs it
+once a worker is free.
 
-From one agent's records: the time from a decision to its task's start is
-`t_start - t_commit`, of which `t_admit - t_commit` is Flowgentic's and its
-order's; the task runs for `t_finish - t_start`; and the runtime hands its
-result over `t_end - t_finish` after it ends. The time an agent takes to
+From one agent's records: the time from a decision to its task's
+submission is `t_admit - t_commit`, the framework's way from the model's reply
+to the tool call and then the order's wait; the backend holds the task for
+`t_finish - t_start`, which on RHAPSODY's pools includes its wait for a free
+worker; and the runtime hands its result over `t_end - t_finish` after it
+ends. The time an agent takes to
 decide again, once a task's result has reached it, is the next record's
 `t_commit` minus this one's `t_end`, less the host's resume when the agent
 suspended.

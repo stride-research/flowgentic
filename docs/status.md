@@ -151,16 +151,23 @@ The AsyncFlow path:
   `LocalExecutionBackend` only. Cancellation reaching in-flight
   AsyncFlow tasks is validated on local backends only.
 - Task tools on an AsyncFlow engine: AsyncFlow keeps every task, with its
-  arguments and value, until the engine shuts down, so a campaign's memory
-  grows with the tasks its agents ask for.
+  arguments and value, or a failed task's exception and its traceback, until
+  the engine shuts down, so a campaign's memory grows with the tasks its
+  agents ask for.
 - A task's record has a finish time only on an AsyncFlow engine, and a start
   time only when the application hands the runtime the engine's telemetry, on
   a backend that reports a task running (RHAPSODY's do; AsyncFlow's own
   `LocalExecutionBackend` does not), and if the start event arrives before the
   task ends: in a burst of thousands of tasks, some arrive later and are found
   in the telemetry by the record's uid. On a RHAPSODY session, both are
-  `None`. Its commitment time is a model reply's only when the model runs
-  through a fleet in an agent the host runs.
+  `None`. The start is when the backend reported the task running, which on
+  RHAPSODY's thread and process pools is when the pool got the task, not when
+  a worker began it. Its commitment time is a model reply's only when the
+  model runs through a fleet in an agent the host runs; parallel branches of
+  one agent whose replies reuse a call id are dated by the latest of them.
+- A cancelled task tool's function keeps running on a thread or process pool,
+  on an engine as on a session: the pool cannot stop it, and its order has
+  its place back at once.
 - The recipe for calling Academy agents from AsyncFlow tasks is tested with
   Academy's local exchange and AsyncFlow's local backend only; see
   [Academy actions as AsyncFlow tasks](guides/academy-on-asyncflow.md#limitations).

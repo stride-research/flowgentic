@@ -230,11 +230,23 @@ def starts(telemetry: Any) -> Starts:
 
 def _with_kwargs(func: Callable[..., Any]) -> Callable[..., Awaitable[Any]]:
 	"""An async function that runs ``func(**kwargs)``, given ``kwargs``: named
-	after ``func``, which is how AsyncFlow and its telemetry know the task."""
+	after ``func``, which is how AsyncFlow and its telemetry know the task.
+
+	AsyncFlow runs only ``async def`` tasks, each on an event loop of the
+	task's own in the backend's worker. ``func`` is called with that loop
+	hidden, so that a sync ``func`` runs as on a RHAPSODY session, with no
+	event loop running in its thread, and may run one itself, as
+	``asyncio.run`` does. An ``async def`` one only makes its coroutine then,
+	which runs on the task's loop."""
 
 	@functools.wraps(func)
 	async def run(kwargs: dict[str, Any]) -> Any:
-		value = func(**kwargs)
+		loop = asyncio.get_running_loop()
+		asyncio._set_running_loop(None)
+		try:
+			value = func(**kwargs)
+		finally:
+			asyncio._set_running_loop(loop)
 		if inspect.isawaitable(value):
 			value = await value
 		return value

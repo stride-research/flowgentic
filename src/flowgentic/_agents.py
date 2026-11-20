@@ -407,6 +407,9 @@ def release_pending() -> None:
 			if _pending.get(key) is future:
 				_pending.pop(key)
 		agent.registered.clear()
+		# The runtime keeps an ended task with the context it ran in, which
+		# holds this record: the replies' times go now, as the registrations do.
+		agent.replies.clear()
 		at_end, agent.at_end = agent.at_end, []
 		for callback in at_end:
 			callback()

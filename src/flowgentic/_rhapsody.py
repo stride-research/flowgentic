@@ -126,13 +126,14 @@ async def run_function(
 	kwargs: dict[str, Any],
 	*,
 	uid: str,
-	on_submitted: Callable[[], None] | None = None,
+	on_submitted: Callable[[str | None], None] | None = None,
 	**task: Any,
 ) -> Any:
 	"""Run ``func(**kwargs)`` as one RHAPSODY function task named ``uid``, and
 	return its value. A failure raises the task's exception. ``task`` adds
 	fields to the task's description, such as resources or a backend's name.
-	``on_submitted()`` is called once the session has accepted the task.
+	``on_submitted(backend)`` is called once the session has accepted the
+	task, with the name of the backend it sent the task to.
 
 	``TaskCancelled`` is raised if RHAPSODY cancels the task, or if the session
 	is closed or closes before the task ends.
@@ -153,7 +154,7 @@ async def run_function(
 	)
 	(future,) = await session.submit_tasks([description])
 	if on_submitted is not None:
-		on_submitted()
+		on_submitted(description.get("backend"))  # the session routed it
 	closed = asyncio.get_running_loop().create_future()
 	known.waits.add(closed)
 	try:

@@ -233,12 +233,16 @@ class TaskRecord:
 	``t_commit``: when the agent committed to the call: when the model reply
 	that made the call (by its id) reached the agent, if the model runs through
 	a ``flowgentic.fleet.Fleet`` and the agent in an ``AgentHost``; otherwise
-	``t_submit``. ``t_submit``: when the runtime got the call. ``t_admit``: when
+	``t_submit``. If one agent's parallel branches get replies that reuse a
+	call id, each such call is dated by the latest of them. ``t_submit``: when
+	the runtime got the call. ``t_admit``: when
 	the order policy admitted the task and the runtime submitted it to RHAPSODY
 	or AsyncFlow; ``None`` if it never was. ``t_start``: on an engine, when
-	AsyncFlow's ``TaskStarted`` event says the task started, from the telemetry
-	the runtime was given, if the event arrived before the task's record was
-	made; otherwise ``None``, as on a session. ``t_finish``: on an engine, when
+	the backend reported the task running, as AsyncFlow's ``TaskStarted``
+	event in the telemetry the runtime was given says, if the event arrived
+	before the task's record was made; otherwise ``None``, as on a session.
+	RHAPSODY's thread and process pools report a task running when they hand
+	it to the pool, which runs it once a worker is free. ``t_finish``: on an engine, when
 	the agent's process saw AsyncFlow resolve the task, one pass of the event
 	loop after AsyncFlow's own end event; ``None`` on a session. ``t_end``: when
 	the runtime saw the task end, before its agent is told.
@@ -247,8 +251,9 @@ class TaskRecord:
 	the task, or in RHAPSODY (``ToolRuntime.uid(info.key)``), once the session
 	has accepted the task; ``None`` if neither has it. It joins the record to
 	AsyncFlow's telemetry: a start that arrived too late is there. ``backend``:
-	the backend it was sent to: on an engine, the named one or the engine's
-	default; on a session, the named one, if any.
+	the backend the task was for: the tool's, else the runtime's, else, on an
+	engine, the engine's default, and on a session the one the session sent it
+	to, once it accepted the task.
 	"""
 
 	info: TaskInfo
@@ -311,9 +316,10 @@ class ToolRuntime:
 	when tasks are submitted, ``Immediate()`` by default. ``retained``: how
 	many ended tasks are kept, for repeat safety.
 
-	On an engine, AsyncFlow keeps each task, with its value, until the engine
-	shuts down; a task still running then ends with ``TaskCancelled``, as on a
-	session that closes.
+	On an engine, AsyncFlow keeps each task, with its value, or its exception
+	and the frames it passed through, until the engine shuts down; a task
+	still running then ends with ``TaskCancelled``, as on a session that
+	closes.
 
 	A runtime set up wrong for a tool, such as one naming a backend the session
 	or engine lacks, is refused when the tool is bound (``check``), and with
@@ -484,11 +490,21 @@ class ToolRuntime:
 		an engine how to submit them: ``tool``'s function, registered once per
 		backend. ``ValueError`` as ``check`` says."""
 		fields = dict(tool.task)
-		if self.backend is not None:
-			fields.setdefault("backend", self.backend)
+		own = fields.pop("backend", None)  # None names no backend
+		backend = own if own is not None else self.backend
+		if backend is not None:
+			fields["backend"] = backend
+		if fields.get("task_backend_specific_kwargs", {}) is None:
+			del fields["task_backend_specific_kwargs"]  # as none given
+		specific = fields.get("task_backend_specific_kwargs", {})
+		if not isinstance(specific, dict):
+			raise ValueError(
+				"task_backend_specific_kwargs holds the backend's own fields: a "
+				f"dict, not {type(specific).__name__}"
+			)
 		if self.engine is None:
-			if self.session is not None and "backend" in tool.task:
-				_rhapsody.check_backend(self.session, fields["backend"])
+			if self.session is not None and own is not None:
+				_rhapsody.check_backend(self.session, own)  # the runtime's: at init
 			return fields, None
 		from flowgentic import _asyncflow
 
@@ -498,7 +514,6 @@ class ToolRuntime:
 				f"a task on an AsyncFlow engine takes the fields "
 				f"{sorted(_ENGINE_FIELDS)} only, not {sorted(extra)}"
 			)
-		backend = fields.get("backend")
 		submit = self._on_engine.get((tool.fn, backend))
 		if submit is None:
 			submit = _asyncflow.function_task(self.engine, tool.fn, backend=backend)
@@ -558,9 +573,10 @@ class ToolRuntime:
 					if on_engine is None:
 						named = self.uid(info.key)
 
-						def submitted() -> None:
-							nonlocal uid
+						def submitted(sent_to: str | None) -> None:
+							nonlocal uid, backend
 							uid = named  # once the session has accepted the task
+							backend = sent_to or backend
 
 						value = await _rhapsody.run_function(
 							self.session,

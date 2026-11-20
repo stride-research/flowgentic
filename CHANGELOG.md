@@ -17,24 +17,29 @@ predate this changelog, so their changes are not listed here.
   passes in, so the tasks its agents ask for are tasks of the application.
   Suspension, repeat safety and the host's registrations work as on a RHAPSODY
   session. A tool may name its own backend (`task_tool(fn, backend="ai")`) and
-  give the backend's own fields (`task_backend_specific_kwargs`). A task still
-  running when the engine shuts down ends with `TaskCancelled`. A runtime
-  takes a session or an engine, not both.
+  give the backend's own fields (`task_backend_specific_kwargs`, a dict). A
+  sync function is called with no event loop running in its thread, as on a
+  session. A task still running when the engine shuts down ends with
+  `TaskCancelled`. A runtime takes a session or an engine, not both.
 - `ToolRuntime(..., backend=...)`: the backend task tools run on unless a tool
-  names its own, on a session as on an engine.
+  names its own, on a session as on an engine. A tool's `backend=None` names
+  none.
 - `ToolRuntime.check(tool)`, which `bind_tools` calls: a backend the session or
   engine lacks, or a field an engine cannot take, is a `ValueError` when the
   runtime is made or the tool is bound, and a `RuntimeError`, which fails the
   agent, when a tool that was not bound is called.
 - The decision record. `TaskRecord` gains `uid` (the task's uid in AsyncFlow,
-  or in RHAPSODY once the session has accepted it), `backend`, `t_commit`
+  or in RHAPSODY once the session has accepted it), `backend` (on a session,
+  the one it sent the task to), `t_commit`
   (when the agent committed to the call), `t_start` and `t_finish`. With a
   model run through a fleet in an agent the host runs, `t_commit` is when the
   reply that made the call, by its id, reached the agent; otherwise it is
   `t_submit`. On an engine, `t_finish` is when the agent's process saw
   AsyncFlow resolve the task, and `t_start` comes from AsyncFlow's
   `TaskStarted` events in the telemetry the application passes
-  (`ToolRuntime(engine=flow, telemetry=await flow.start_telemetry())`).
+  (`ToolRuntime(engine=flow, telemetry=await flow.start_telemetry())`): when
+  the backend reported the task running, which RHAPSODY's pools do when the
+  pool gets it.
 
 ### Changed
 
