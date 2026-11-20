@@ -1,5 +1,5 @@
 {
- "source": "a reply without usage, as some servers stream it; not recorded",
+ "source": "shaped after a reply without usage, as some servers stream it; not recorded",
  "response": {
   "id": "x",
   "object": "chat.completion",

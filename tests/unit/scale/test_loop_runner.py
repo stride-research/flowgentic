@@ -8,7 +8,7 @@ import asyncio
 import json
 import time
 from collections import Counter
-from typing import Any
+from typing import Annotated, Any
 
 import pytest
 from _support import (
@@ -24,8 +24,8 @@ from _support import (
     tool_results,
 )
 from langchain_core.messages import AIMessage, HumanMessage
-from langchain_core.tools import tool
-from pydantic import BaseModel
+from langchain_core.tools import InjectedToolCallId, tool
+from pydantic import BaseModel, ConfigDict, Field
 
 from flowgentic.fleet import Fleet
 from flowgentic.host import Agent, AgentHost, AgentState, Stagger
@@ -326,6 +326,55 @@ async def test_tool_errors_reach_the_model_and_the_agent_goes_on():
     assert runner.stats()["tool_errors"] == 6
 
 
+async def test_a_task_that_cannot_be_submitted_reaches_the_model():
+    """A ``prepare`` or a ``suspend`` that raises is the call's error, which
+    the model reads, as a tool that raises; the reply's other calls go on.
+    A runtime set up wrong (``RuntimeError``) still fails the agent."""
+    session = await thread_session()
+
+    def no_workdir(agent_id, call_id, args):
+        raise KeyError("workdir")
+
+    def no_queue(agent_id, args):
+        raise ValueError("no queue")
+
+    seen = []
+
+    def script(messages):
+        results = tool_results(messages)
+        if results:
+            seen.extend(results)
+            return reply("done")
+        return reply(
+            calls=[
+                ("a", "prepared", {"x": 1.0}),
+                ("b", "queued", {"x": 2.0}),
+                ("c", "wait_a_bit", {"name": "c"}),
+            ]
+        )
+
+    runner = LoopRunner(
+        ScriptedTransport(script),
+        [
+            task_tool(simulate, name="prepared", prepare=no_workdir),
+            task_tool(simulate, name="queued", suspend=no_queue),
+            wait_a_bit,
+        ],
+        runtime=ToolRuntime(session),
+    )
+    report = await AgentHost(runner, stagger=FAST).run(inputs(1))
+    await session.close()
+    assert report.finished == 1
+    by_id = {m["tool_call_id"]: m["content"] for m in seen}
+    assert by_id == {
+        "a": "Error: KeyError('workdir')\n Please fix your mistakes.",
+        "b": "Error: ValueError('no queue')\n Please fix your mistakes.",
+        "c": "c",  # not cancelled
+    }
+    assert "simulate" not in RUNS  # neither task was submitted
+    assert runner.stats()["tool_errors"] == 2
+
+
 async def test_an_agent_that_never_answers_fails_at_its_model_call_limit():
     """The count of model calls is saved with the agent's state, so the limit
     holds across suspensions."""
@@ -511,6 +560,50 @@ async def test_inputs_in_every_form_and_the_callers_list_unchanged():
     for out in outputs.values():
         assert out.messages == [{"role": "user", "content": "go"}, {"role": "assistant", "content": "2 go"}]
     assert given == [{"role": "user", "content": "go"}]
+
+
+async def test_an_input_that_is_not_messages_fails_its_agent_at_start():
+    model = ScriptedTransport(lambda m: reply("done"))
+    agents = [
+        Agent("a", {"task": "go"}),  # neither messages nor a role
+        Agent("b", [{"content": "go"}]),
+        Agent("c", {"messages": [{"text": "go"}]}),
+    ]
+    report = await AgentHost(LoopRunner(model), stagger=FAST).run(agents)
+    assert [a.status for a in report.agents] == ["failed"] * 3
+    assert all(a.error.startswith("TypeError: not a message: ") for a in report.agents)
+    assert model.calls == []
+
+
+class MoveArgs(BaseModel):
+    """Arguments the model gives under their aliases."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    from_: str = Field(alias="from")
+    to: str = "here"
+
+
+async def test_arguments_given_under_their_alias_reach_the_tool():
+    got = []
+
+    class Move:
+        name = "move"
+        description = "Move a sample."
+        args_schema = MoveArgs
+
+        async def __call__(self, from_: str, to: str = "there") -> str:
+            got.append((from_, to))
+            return f"{from_} -> {to}"
+
+    outputs = {}
+    model = transport(("move", {"from": "shelf"}), ("move", {"from": "bench", "to": "oven"}))
+    runner = LoopRunner(model, [Move()])
+    report = await AgentHost(runner, stagger=FAST, on_done=collect(outputs)).run(inputs(1))
+    assert report.finished == 1
+    assert got == [("shelf", "there"), ("bench", "oven")]  # a default not given stays the tool's
+    (schema,) = runner.tool_schemas
+    assert list(schema["function"]["parameters"]["properties"]) == ["from", "to"]
 
 
 # --- interrupts -------------------------------------------------------------------
@@ -792,3 +885,44 @@ async def test_a_reply_from_a_langchain_model_keeps_its_invalid_calls():
     assert report.finished == 1
     (result,) = tool_results(outputs["agent-0"].messages)
     assert "bad JSON" in result["content"] and result["tool_call_id"] == "f"
+
+
+@tool
+def lc_stamp(text: str, call_id: Annotated[str, InjectedToolCallId]) -> str:
+    """Stamp a text with the id of the call that asked for it."""
+    return f"{call_id}: {text}"
+
+
+async def test_a_langchain_tool_gets_the_id_of_its_call():
+    outputs = {}
+    runner = LoopRunner(transport(("lc_stamp", {"text": "hi"})), [lc_stamp])
+    report = await AgentHost(runner, stagger=FAST, on_done=collect(outputs)).run(inputs(1))
+    assert report.finished == 1
+    (result,) = tool_results(outputs["agent-0"].messages)
+    assert result == {"role": "tool", "tool_call_id": "call-0", "content": "call-0: hi"}
+    (schema,) = runner.tool_schemas
+    assert list(schema["function"]["parameters"]["properties"]) == ["text"]  # the model never sees it
+
+
+def test_a_langchain_tool_that_needs_a_graphs_state_is_refused():
+    from langgraph.prebuilt import InjectedState
+
+    @tool
+    def lc_peek(question: str, state: Annotated[dict, InjectedState]) -> str:
+        """Read the graph's state."""
+        return question
+
+    with pytest.raises(TypeError, match="lc_peek.*'state'"):
+        LoopRunner(transport(), [lc_peek])
+
+
+def test_tools_bound_for_langgraph_are_refused_for_their_declarations():
+    """``flowgentic.langgraph.bind_tools`` makes LangGraph's tools, which
+    suspend through LangGraph's interrupt: the loop takes the declarations."""
+    from flowgentic.langgraph import bind_tools
+
+    lookup = mcp_tool("lookup", description="Look up.", args_schema=LookupArgs)
+    for bound in bind_tools(ToolRuntime(), [task_tool(simulate), lookup]):
+        with pytest.raises(TypeError, match=f"{bound.name}.*task_tool or mcp_tool declaration"):
+            LoopRunner(transport(), [bound], runtime=ToolRuntime())
+

@@ -1,0 +1,131 @@
+{
+ "source": "recorded from vLLM 0.19.1's OpenAI-compatible server (Qwen3-8B on one GPU; hermes tool parser, qwen3 reasoning parser, prefix caching, prompt-token details on), 2026-11-19",
+ "request": {
+  "model": "Qwen3-8B",
+  "temperature": 0,
+  "messages": [
+   {
+    "role": "system",
+    "content": "You tune one candidate. Use the tools; answer with the best score."
+   },
+   {
+    "role": "user",
+    "content": "Find the best temperature for cand-000001. Look it up first."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "lookup",
+     "description": "Reference data for a candidate: a temperature to start from.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "candidate": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "candidate"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "simulate",
+     "description": "Simulate a candidate at a temperature; return its score.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "candidate": {
+        "type": "string"
+       },
+       "temperature": {
+        "type": "number"
+       }
+      },
+      "required": [
+       "candidate",
+       "temperature"
+      ]
+     }
+    }
+   }
+  ],
+  "max_tokens": 2048,
+  "chat_template_kwargs": {
+   "enable_thinking": true
+  }
+ },
+ "response": {
+  "id": "chatcmpl-9f0a785a8f530084",
+  "object": "chat.completion",
+  "created": 1795115867,
+  "model": "Qwen3-8B",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "refusal": null,
+     "annotations": null,
+     "audio": null,
+     "function_call": null,
+     "tool_calls": [
+      {
+       "id": "chatcmpl-tool-93c3d3fc5754a25c",
+       "type": "function",
+       "function": {
+        "name": "lookup",
+        "arguments": "{\"candidate\": \"cand-000001\"}"
+       }
+      }
+     ],
+     "reasoning": "\nOkay, the user wants to find the best temperature for candidate 000001. They mentioned to look it up first. Let me check the tools available.\n\nThe first tool is 'lookup', which gets reference data for a candidate, specifically the starting temperature. The parameters require the candidate ID. So I should call lookup with candidate \"cand-000001\" to get the initial temperature.\n\nOnce I have that temperature, I can then use the 'simulate' function with the same candidate and the obtained temperature to get the score. But the user's first step is to look up the temperature, so I'll start with the lookup function.\n"
+    },
+    "logprobs": null,
+    "finish_reason": "tool_calls",
+    "stop_reason": null,
+    "token_ids": null
+   }
+  ],
+  "service_tier": null,
+  "system_fingerprint": null,
+  "usage": {
+   "prompt_tokens": 258,
+   "total_tokens": 425,
+   "completion_tokens": 167,
+   "prompt_tokens_details": {
+    "cached_tokens": 256
+   }
+  },
+  "prompt_logprobs": null,
+  "prompt_token_ids": null,
+  "kv_transfer_params": null
+ },
+ "expect": {
+  "content": "",
+  "tool_calls": [
+   [
+    "chatcmpl-tool-93c3d3fc5754a25c",
+    "lookup",
+    {
+     "candidate": "cand-000001"
+    }
+   ]
+  ],
+  "invalid": [],
+  "reasoning": "\nOkay, the user wants to find the best temperature for candidate 000001. They mentioned to look it up first. Let me check the tools available.\n\nThe first tool is 'lookup', which gets reference data for a candidate, specifically the starting temperature. The parameters require the candidate ID. So I should call lookup with candidate \"cand-000001\" to get the initial temperature.\n\nOnce I have that temperature, I can then use the 'simulate' function with the same candidate and the obtained temperature to get the score. But the user's first step is to look up the temperature, so I'll start with the lookup function.\n",
+  "usage": [
+   258,
+   167,
+   256,
+   null
+  ],
+  "finish_reason": "tool_calls"
+ }
+}

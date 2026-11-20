@@ -1241,7 +1241,7 @@ async def test_recovery_may_return_a_transport_or_a_chat_model():
     from _support import ScriptedTransport
 
     server = {"up": True, "tag": "v1"}
-    down = Down(server, "v1")  # a LangChain-like model, as AUTONMI's replicas are
+    down = Down(server, "v1")  # a LangChain-like model
     back = ScriptedTransport(lambda m: "DONE v2")
 
     async def check(i):
@@ -1280,6 +1280,45 @@ async def test_the_chat_model_over_a_transport_converts_messages_tools_and_reply
 def note(text: str) -> str:
     """Take a note."""
     return text
+
+
+async def test_the_chat_model_maps_langchains_tool_options_for_a_transport():
+    """``bind_tools`` keywords as ``ChatOpenAI`` reads them, sent to a
+    transport as the OpenAI API's; any other is refused."""
+    from _support import ScriptedTransport, reply
+
+    transport = ScriptedTransport(lambda m: reply("ok"))
+    chat = Fleet([transport]).chat_model()
+    by_name = {"type": "function", "function": {"name": "note"}}
+    for given, sent in [
+        ({"tool_choice": "note"}, {"tool_choice": by_name}),
+        ({"tool_choice": "any"}, {"tool_choice": "required"}),
+        ({"tool_choice": True}, {"tool_choice": "required"}),
+        ({"tool_choice": "none", "parallel_tool_calls": False}, {"tool_choice": "none", "parallel_tool_calls": False}),
+        ({"tool_choice": by_name}, {"tool_choice": by_name}),
+        ({"strict": True}, {}),
+    ]:
+        await chat.bind_tools([note], **given).ainvoke("go", thread("t-1"))
+        assert transport.calls[-1][2] == sent, given
+    (schema,) = transport.calls[-1][1]
+    assert schema["function"]["strict"] is True
+    assert schema["function"]["parameters"]["additionalProperties"] is False
+    with pytest.raises(TypeError, match="'stop_sequences'"):
+        await chat.bind_tools([note], stop_sequences=["x"]).ainvoke("go", thread("t-1"))
+
+
+async def test_the_chat_model_gives_structured_output_over_a_transport():
+    from _support import ScriptedTransport, reply
+
+    class Verdict(BaseModel):
+        """A verdict."""
+
+        keep: bool
+
+    transport = ScriptedTransport(lambda m: reply(calls=[("c1", "Verdict", {"keep": True})]))
+    chat = Fleet([transport]).chat_model().with_structured_output(Verdict)
+    assert await chat.ainvoke("go", thread("t-1")) == Verdict(keep=True)
+    assert transport.calls[0][2] == {"tool_choice": "required"}
 
 
 # --- spans: last, as the instrumentation stays on for the rest of the module ------

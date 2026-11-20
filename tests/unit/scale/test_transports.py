@@ -3,6 +3,7 @@ JSON and as the openai SDK's objects, read into a Reply; the reply as the
 conversation keeps it; and OpenAITransport against a server on httpx's mock
 transport."""
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -55,6 +56,15 @@ def test_there_are_completions_of_each_server():
     names = [p.stem for p in COMPLETIONS]
     for server in ("vllm", "sglang", "openrouter"):
         assert any(n.startswith(server) for n in names), server
+
+
+def test_each_completion_says_whether_a_server_sent_it():
+    """Recordings, made with ``record.py`` beside them, and completions shaped
+    after a server's documented replies, for what a recording lacks."""
+    sources = {p.stem: load(p)["source"] for p in COMPLETIONS}
+    assert all(s.startswith(("recorded from ", "shaped after ")) for s in sources.values())
+    recorded = sorted(n for n, s in sources.items() if s.startswith("recorded from "))
+    assert len(recorded) == 9 and all(n.startswith("vllm-0.19.1-recorded-") for n in recorded)
 
 
 @pytest.mark.parametrize("path", COMPLETIONS, ids=lambda p: p.stem)
@@ -173,33 +183,77 @@ def test_the_openai_transport_makes_its_client(monkeypatch):
     assert transport.base_url == "http://node-2:8000/v1/"
 
 
-async def test_the_openai_transport_spreads_its_calls_over_its_pools(monkeypatch):
+class Pools:
+    """Stand-ins for ``AsyncOpenAI``: each counts its calls and the most it
+    held at once; a call returns once ``gate`` is set."""
+
+    def __init__(self):
+        self.made = []
+        self.gate = asyncio.Event()
+        made, gate = self.made, self.gate
+
+        class Client:
+            def __init__(self, **kwargs):
+                made.append(self)
+                self.kwargs, self.calls, self.now, self.most = kwargs, 0, 0, 0
+                self.base_url = kwargs["base_url"]
+                self.chat = self.completions = self
+
+            async def create(self, **params):
+                self.calls += 1
+                self.now += 1
+                self.most = max(self.most, self.now)
+                try:
+                    await gate.wait()
+                finally:
+                    self.now -= 1
+                return load(COMPLETIONS[0])["response"]
+
+        self.Client = Client
+
+
+HI = [{"role": "user", "content": "hi"}]
+
+
+async def test_the_openai_transport_opens_a_pool_for_every_64_calls_in_flight(monkeypatch):
     """At hundreds of calls in flight, one client's connection pool costs more
-    per call the more calls it holds; ``pools`` spreads them over clients."""
-    made = []
-
-    class Client:
-        def __init__(self, **kwargs):
-            made.append(self)
-            self.kwargs, self.calls = kwargs, 0
-            self.base_url = kwargs["base_url"]
-            self.chat = self
-            self.completions = self
-
-        async def create(self, **params):
-            self.calls += 1
-            return load(COMPLETIONS[0])["response"]
-
+    CPU per call the more calls it holds; a pool holds at most 64."""
     import openai
 
-    monkeypatch.setattr(openai, "AsyncOpenAI", Client)
-    transport = OpenAITransport("m", base_url="http://node-1:8000/v1", pools=3, max_retries=0)
-    for _ in range(7):
-        await transport.complete([{"role": "user", "content": "hi"}])
-    assert [c.calls for c in made] == [3, 2, 2]
-    assert all(c.kwargs["max_retries"] == 0 for c in made)
-    assert transport.client is made[0] and transport.clients == made
+    pools = Pools()
+    monkeypatch.setattr(openai, "AsyncOpenAI", pools.Client)
+    transport = OpenAITransport("m", base_url="http://node-1:8000/v1", max_retries=0)
+    assert len(pools.made) == 1 and transport.pools is None  # grows as needed
+    calls = [asyncio.create_task(transport.complete(HI)) for _ in range(130)]
+    while sum(c.now for c in pools.made) < 130:
+        await asyncio.sleep(0)
+    assert [c.most for c in pools.made] == [64, 64, 2]
+    assert all(c.kwargs["max_retries"] == 0 for c in pools.made)
+    pools.gate.set()
+    await asyncio.gather(*calls)
+    await transport.complete(HI)  # one call in flight: the first pool
+    assert [c.calls for c in pools.made] == [65, 64, 2]
+    assert transport.client is pools.made[0] and transport.clients == pools.made
+
+
+async def test_the_openai_transport_spreads_its_calls_over_a_fixed_number_of_pools(monkeypatch):
+    import openai
+
+    pools = Pools()
+    monkeypatch.setattr(openai, "AsyncOpenAI", pools.Client)
+    transport = OpenAITransport("m", base_url="http://node-1:8000/v1", pools=3, calls_per_pool=2)
+    assert len(pools.made) == 3 and transport.pools == 3
+    calls = [asyncio.create_task(transport.complete(HI)) for _ in range(7)]
+    while sum(c.now for c in pools.made) < 7:
+        await asyncio.sleep(0)
+    assert [c.most for c in pools.made] == [3, 2, 2]  # the least busy pool takes each call
+    pools.gate.set()
+    await asyncio.gather(*calls)
     with pytest.raises(ValueError, match="pools"):
         OpenAITransport("m", pools=0)
+    with pytest.raises(ValueError, match="calls_per_pool"):
+        OpenAITransport("m", calls_per_pool=0)
     with pytest.raises(ValueError, match="client"):
-        OpenAITransport("m", client=made[0], pools=2)
+        OpenAITransport("m", client=pools.made[0], pools=2)
+    given = OpenAITransport("m", client=pools.made[0])
+    assert given.clients == [pools.made[0]] and given.pools == 1  # never grows
