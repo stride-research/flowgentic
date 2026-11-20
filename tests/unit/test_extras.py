@@ -231,36 +231,49 @@ def test_the_agent_loop_needs_no_extra() -> None:
 
 
 def test_the_agents_path_imports_without_langgraph() -> None:
-	"""The parts of the agents-at-scale path import with LangGraph and LangChain
-	blocked, and load neither: the loop, the fleet and its transport, the tools,
-	the tool service, the host and the store."""
+	"""The parts of the agents-at-scale path import with LangGraph, LangChain and
+	the openai SDK blocked, and load none of them: the loop, the fleet and its
+	default transport, which calls a server, the tools, the tool service, the
+	host and the store."""
 	result = run_without(
-		LANGGRAPH,
+		LANGGRAPH + OPENAI,
 		"""
-		import sys
+		import asyncio, json, sys
+		from pathlib import Path
+		import httpx
 		import flowgentic.fleet, flowgentic.host, flowgentic.loop, flowgentic.store
 		import flowgentic.tools, flowgentic.tools.mcp, flowgentic.tools.service
-		from flowgentic.fleet import Fleet, OpenAITransport
+		from flowgentic.fleet import Fleet, HTTPTransport
 
-		Fleet([OpenAITransport("m", base_url="http://node-1:8000/v1")])
-		print(sorted(
+		Fleet([HTTPTransport("m", base_url="http://node-1:8000/v1")])
+		answer = {"choices": [{"message": {"role": "assistant", "content": "hi"}}]}
+		server = httpx.MockTransport(lambda request: httpx.Response(200, json=answer))
+		transport = HTTPTransport(
+			"m", base_url="http://node-1:8000/v1", client=httpx.AsyncClient(transport=server)
+		)
+		reply = asyncio.run(transport.complete([{"role": "user", "content": "hi"}]))
+		print(reply.content, sorted(
 			m for m in sys.modules
-			if m.split(".")[0] in {"langchain_core", "langgraph", "langchain"}
+			if m.split(".")[0] in {"langchain_core", "langgraph", "langchain", "openai"}
 		))
 		""",
 	)
 	assert result.returncode == 0, result.stderr
-	assert result.stdout.strip() == "[]"
+	assert result.stdout.strip() == "hi []"
 
 
 def test_the_agents_extra_installs_the_path_without_langgraph() -> None:
-	"""``flowgentic[agents]``: the openai SDK, RHAPSODY and MCP; LangGraph is the
-	``langgraph`` extra's, and the AsyncFlow demos' ``examples`` keep it."""
+	"""``flowgentic[agents]``: RHAPSODY and MCP. The fleet's default transport
+	needs httpx, which the core has; the openai SDK is the ``openai`` extra's,
+	for ``OpenAITransport``. LangGraph is the ``langgraph`` extra's, and the
+	AsyncFlow demos' ``examples`` keep it."""
 	import tomllib
 
 	pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
-	extras = tomllib.loads(pyproject.read_text())["project"]["optional-dependencies"]
-	assert extras["agents"] == ["flowgentic[openai,rhapsody,mcp]"]
+	project = tomllib.loads(pyproject.read_text())["project"]
+	extras = project["optional-dependencies"]
+	assert any(d.startswith("httpx") for d in project["dependencies"])
+	assert extras["agents"] == ["flowgentic[rhapsody,mcp]"]
 	assert extras["dev"][0] == "flowgentic[examples,agents]"
 	assert "langgraph" in extras["examples"][0]
 
