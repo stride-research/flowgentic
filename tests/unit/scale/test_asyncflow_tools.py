@@ -65,6 +65,17 @@ def echo(task_description: str, workflow_id: str) -> dict:
     return {"task_description": task_description, "workflow_id": workflow_id}
 
 
+async def _half(x: float) -> float:
+    await asyncio.sleep(0)
+    return x / 2
+
+
+def nested(x: float) -> dict:
+    """A sync function that runs an async library of its own, as a sync client
+    of one does."""
+    return {"y": asyncio.run(_half(x))}
+
+
 def slow(x: float) -> dict:
     """An action that takes a while."""
     count("slow")
@@ -118,6 +129,28 @@ async def test_without_a_backend_named_a_task_runs_on_the_engines_default():
     assert records[0].backend == "ai"
 
 
+async def test_a_tool_with_backend_none_runs_where_the_runtime_says():
+    """``backend=None`` on a tool names no backend: the runtime's applies, else
+    the engine's or the session's default."""
+    flow = await open_engine("ai", "compute")
+    session = await thread_session()
+    runtime = ToolRuntime(engine=flow, backend="compute")
+    on_session = ToolRuntime(session)
+    records = []
+    runtime.add_listener(records.append)
+    on_session.add_listener(records.append)
+    try:
+        bind_tools(runtime, [task_tool(where, backend=None)])
+        bind_tools(on_session, [task_tool(simulate, backend=None)])
+        value = await runtime.submit(task_tool(where, backend=None), "a", "c1", {"x": 1.0})
+        await on_session.submit(task_tool(simulate, backend=None), "a", "c2", {"x": 1.0})
+    finally:
+        await _asyncflow.close_engine(flow)
+        await session.close()
+    assert value["thread"].startswith("pool-compute")
+    assert [r.backend for r in records] == ["compute", "concurrent"]
+
+
 async def test_sync_and_async_functions_run_with_any_argument_names():
     """AsyncFlow reads some keywords of a call as its own; a tool's arguments
     reach its function whatever their names."""
@@ -132,6 +165,21 @@ async def test_sync_and_async_functions_run_with_any_argument_names():
         await _asyncflow.close_engine(flow)
     assert value["y"] == 2.0 and value["thread"].startswith("pool-compute")
     assert named == {"task_description": "plain text", "workflow_id": "mine"}
+
+
+async def test_a_sync_function_runs_with_no_event_loop_running_as_on_a_session():
+    """AsyncFlow runs only ``async def`` tasks, so the runtime wraps a sync
+    function in one; the function itself must still be called as on a
+    session, with no event loop running in its thread."""
+    flow = await open_engine("compute")
+    session = await thread_session()
+    try:
+        on_engine = await ToolRuntime(engine=flow).submit(task_tool(nested), "a", "c1", {"x": 3.0})
+        on_session = await ToolRuntime(session).submit(task_tool(nested), "a", "c1", {"x": 3.0})
+    finally:
+        await _asyncflow.close_engine(flow)
+        await session.close()
+    assert on_engine == on_session == {"y": 1.5}
 
 
 async def test_the_task_runs_in_its_callers_trace_context(span_exporter):
@@ -342,6 +390,9 @@ async def test_a_runtime_set_up_wrong_is_refused_before_any_agent_runs():
             bind_tools(runtime, [task_tool(simulate, ranks=4)])
         with pytest.raises(ValueError, match="no backend 'gpu'"):
             bind_tools(on_session, [task_tool(simulate, backend="gpu")])
+        for wrong in (runtime, on_session):
+            with pytest.raises(ValueError, match="task_backend_specific_kwargs"):
+                bind_tools(wrong, [task_tool(simulate, task_backend_specific_kwargs="cpus=4")])
         with pytest.raises(RuntimeError, match="Unknown backend 'gpu'"):
             runtime.submit(task_tool(simulate, backend="gpu"), "a", "c1", {"x": 1.0})
         with pytest.raises(RuntimeError, match="ranks"):
@@ -541,6 +592,35 @@ async def test_a_call_no_fleet_reply_made_commits_when_the_runtime_gets_it():
     assert by_hand.t_commit == by_hand.t_submit > reply.t_end
 
 
+async def test_an_agents_reply_times_go_when_the_agent_ends():
+    """The runtime keeps each ended task, with the context it ran in, for
+    repeat safety; that context holds its agent's record. The times of the
+    agent's replies are needed only while it runs."""
+    flow = await open_engine("compute")
+    runtime = ToolRuntime(engine=flow)
+    records, agents = [], []
+    runtime.add_listener(records.append)
+    noted = time.time()
+
+    class Runner:
+        async def start(self, agent):
+            _agents.note_reply(agent.id, noted, [f"call-{i}" for i in range(100)])
+            agents.append(_agents._current.get())  # what the kept task's context holds
+            await runtime.submit(task_tool(simulate), agent.id, "call-0", {"x": 1.0})
+            return Finished(None)
+
+        async def resume(self, agent, done):
+            raise AssertionError("never suspends")
+
+    try:
+        report = await AgentHost(Runner(), stagger=FAST).run(inputs(3))
+    finally:
+        await _asyncflow.close_engine(flow)
+    assert report.finished == 3 and all(r.t_commit == noted for r in records)
+    assert len(runtime._jobs) == 3 and len(agents) == 3
+    assert all(agent.replies == {} for agent in agents)
+
+
 async def test_a_model_outside_the_fleet_commits_when_the_runtime_gets_the_call():
     flow = await open_engine("compute")
     runtime = ToolRuntime(engine=flow)
@@ -608,7 +688,8 @@ async def test_on_a_session_the_record_names_the_rhapsody_task():
     finally:
         await session.close()
     default, chosen = records
-    assert default.uid == runtime.uid("a/c1") and default.backend is None
+    # the session's default, which it routed the task to
+    assert default.uid == runtime.uid("a/c1") and default.backend == "concurrent"
     assert chosen.uid == named.uid("a/c2") and chosen.backend == "concurrent"
     assert default.t_start is None and default.t_finish is None
     assert default.t_commit == default.t_submit
