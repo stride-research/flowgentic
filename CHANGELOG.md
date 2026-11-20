@@ -22,7 +22,10 @@ predate this changelog, so their changes are not listed here.
   session. A task still running when the engine shuts down ends with
   `TaskCancelled`. A runtime takes a session or an engine, not both.
 - `ToolRuntime(..., backend=...)`: the backend task tools run on unless a tool
-  names its own, on a session as on an engine. A tool's `backend=None` names
+  names its own, on a session as on an engine.
+- On an engine, a task belongs to the AsyncFlow workflow scope or block its
+  agent runs in: AsyncFlow labels it with the scope's id, and cancelling the
+  block cancels the task, which ends with `TaskCancelled`. A tool's `backend=None` names
   none.
 - `ToolRuntime.check(tool)`, which `bind_tools` calls: a backend the session or
   engine lacks, or a field an engine cannot take, is a `ValueError` when the

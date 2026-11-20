@@ -110,6 +110,17 @@ def uid(future: object) -> str | None:
 # --- task tools on an application's engine -------------------------------------
 
 
+def workflow(engine: WorkflowEngine) -> str | None:
+	"""The id of the workflow scope or block the caller runs in, on this
+	engine; ``None`` outside both.
+
+	AsyncFlow labels each task with it, and makes a task called in a block one
+	of the block's, cancelled with it. AsyncFlow 0.7 keeps it in a context
+	variable of the engine's, with no public accessor: this is the one place
+	that reads it."""
+	return engine._workflow_id_ctx.get()
+
+
 def check_backend(engine: WorkflowEngine, backend: str) -> None:
 	"""Raise ``ValueError`` unless ``backend`` names one of the engine's backends."""
 	engine.function_task(backend=backend)  # checks the name, registers nothing
@@ -125,7 +136,7 @@ def function_task(
 	func: Callable[..., Any],
 	*,
 	backend: str | None = None,
-) -> Callable[[dict[str, Any], dict[str, Any]], asyncio.Future]:
+) -> Callable[..., asyncio.Future]:
 	"""Register ``func`` as a function task, on the named backend or the
 	default one. ``ValueError`` if no backend has that name.
 
@@ -136,14 +147,30 @@ def function_task(
 	``async def``: its coroutine is run to its end. Its arguments travel as
 	one dictionary, so that none is read as one of AsyncFlow's own call
 	keywords, such as ``task_description`` or ``workflow_id``.
+
+	``submit(kwargs, description, within)`` submits the task as if called in
+	the workflow scope or block ``within`` (``workflow`` read where the task
+	was asked for): AsyncFlow labels the task with it, and a block's
+	cancellation cancels the task.
 	"""
 	registered = engine.function_task(
 		_in_callers_context(_with_kwargs(func)), backend=backend
 	)
 	submit = _passing_context(registered)
+	scope = engine._workflow_id_ctx
 
-	def call(kwargs: dict[str, Any], description: dict[str, Any]) -> asyncio.Future:
-		return submit(kwargs, task_description=description)
+	def call(
+		kwargs: dict[str, Any],
+		description: dict[str, Any],
+		within: str | None = None,
+	) -> asyncio.Future:
+		# AsyncFlow registers the task in a task of its own, which copies this
+		# context: the scope set here is the one it reads.
+		token = scope.set(within)
+		try:
+			return submit(kwargs, task_description=description)
+		finally:
+			scope.reset(token)
 
 	return call
 

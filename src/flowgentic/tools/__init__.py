@@ -455,11 +455,19 @@ class ToolRuntime:
 			kwargs=kwargs,
 		)
 		committed = _agents.reply_time(agent_id, call_id)
+		within = None
+		if self.engine is not None:
+			from flowgentic import _asyncflow
+
+			# The workflow scope or block the caller runs in, which the task's
+			# own context below drops: AsyncFlow labels the task with it, and
+			# cancels it with the block.
+			within = _asyncflow.workflow(self.engine)
 		# An asyncio task keeps the context it was created in, and the runtime
 		# keeps ended tasks: in the caller's context, a kept task would keep the
 		# framework's run, and with it the agent's whole state.
 		job = asyncio.get_running_loop().create_task(
-			self._run(tool, info, fields, on_engine, t_submit, committed),
+			self._run(tool, info, fields, on_engine, t_submit, committed, within),
 			context=_agents.task_context(),
 		)
 		self._jobs[key] = job
@@ -484,7 +492,7 @@ class ToolRuntime:
 		self, tool: TaskTool
 	) -> tuple[
 		dict[str, Any],
-		Callable[[dict[str, Any], dict[str, Any]], asyncio.Future] | None,
+		Callable[..., asyncio.Future] | None,
 	]:
 		"""The fields of ``tool``'s tasks, the runtime's backend included, and on
 		an engine how to submit them: ``tool``'s function, registered once per
@@ -535,9 +543,10 @@ class ToolRuntime:
 		tool: TaskTool,
 		info: TaskInfo,
 		fields: dict[str, Any],
-		on_engine: Callable[[dict[str, Any], dict[str, Any]], asyncio.Future] | None,
+		on_engine: Callable[..., asyncio.Future] | None,
 		t_submit: float,
 		committed: float | None,
+		within: str | None,
 	) -> Any:
 		t = time.monotonic()
 		t_admit: float | None = None
@@ -590,6 +599,7 @@ class ToolRuntime:
 						future = on_engine(
 							info.kwargs,
 							fields.get("task_backend_specific_kwargs") or {},
+							within,
 						)
 						uid = _asyncflow.uid(future)
 						finish = _asyncflow.Finish(future)

@@ -84,8 +84,16 @@ running in its thread, so it may run one of its own, as `asyncio.run` does.
 The engine is the application's: Flowgentic neither starts it nor shuts it
 down. AsyncFlow keeps every task, with its arguments and value, or a failed
 task's exception and its traceback, until the engine shuts down, so a
-campaign's memory grows with the tasks its agents ask for. A task still running when the engine shuts down ends with
-`TaskCancelled`, and so does one asked for after.
+campaign's memory grows with the tasks its agents ask for. A task still
+running when the engine shuts down ends with `TaskCancelled`, and so does one
+asked for after.
+
+A task belongs to the workflow scope or block its agent runs in, as if the
+agent had called it there: AsyncFlow labels the task with that scope's id,
+which its telemetry reports, and makes a task asked for in a block one of the
+block's. Cancelling the block cancels the task, which ends with
+`TaskCancelled`, whether its agent waits for it in memory or is suspended in a
+host the block runs.
 
 ## Suspension
 
@@ -125,7 +133,9 @@ call ids, as vLLM and OpenAI do.
 
 Cancelling an agent, or a task tool's wait, leaves a task that has started
 running: the task belongs to every call with its key, and RHAPSODY does not
-stop a task that has started. The task keeps its place in its `TaskOrder` until
+stop a task that has started. On an engine, cancelling the AsyncFlow block the
+agent runs in cancels its tasks too (see
+[In an AsyncFlow application](#in-an-asyncflow-application)). The task keeps its place in its `TaskOrder` until
 it ends, and the call made again gets its result. A task its order has not
 admitted yet is withdrawn once no call waits for it, such as when every agent
 that asked for it is cancelled or its host stops: it never reaches RHAPSODY,
