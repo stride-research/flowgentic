@@ -1,23 +1,25 @@
 # Project status
 
 Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as
-AsyncFlow workflow tasks, and, from 0.5.0, as LangGraph agents at scale whose
-tools run as RHAPSODY tasks and whose state lives in RaDEX. The two paths are
-at different stages.
+AsyncFlow workflow tasks, and, from 0.5.0, as agents at scale whose tools run
+as RHAPSODY tasks and whose state lives in RaDEX. Agents at scale run on
+Flowgentic's own agent loop and OpenAI-compatible model servers; LangGraph is
+optional. The two paths are at different stages.
 
 ## Agents at scale: in active development
 
-0.5.0 adds the parts that run many thousands of LangGraph agents per process
-on an HPC allocation: the [agent host](features/agent-host.md), the
+0.5.0 adds the parts that run many thousands of agents per process on an HPC
+allocation: the [agent host](features/agent-host.md), the
 [checkpointer](features/checkpointer.md), [tool placement](features/tools.md),
 the [tool service](features/tool-service.md) and the [fleet](features/fleet.md)
-client for model servers. [LangGraph agents at scale](guides/agents-at-scale.md)
-shows them together, in an example that runs on a laptop. Their interfaces
-may still change before 1.0, as the changelog will say. The next release adds
-Flowgentic's own [agent loop](features/agent-loop.md), a runner on
-OpenAI-format messages beside LangGraph's, and makes the fleet's replicas
-transports, with LangChain as an adapter; this breaks the fleet's API, and the
-new names may still change.
+client for model servers. The next release makes Flowgentic's own
+[agent loop](features/agent-loop.md), on OpenAI-format messages and the
+fleet's transports, the path's runner, and LangGraph optional: its graphs run
+on the same parts with the `langgraph` extra, through LangChain's adapter.
+This breaks the fleet's API, and the new names may still change.
+[Agents at scale](guides/agents-at-scale.md) shows the parts together, in an
+example that runs on a laptop, with or without LangGraph. Their interfaces
+may still change before 1.0, as the changelog will say.
 
 ## AsyncFlow path: maintenance mode
 
@@ -57,15 +59,17 @@ run, and a graph that should change between runs is built anew as a
 
 | Path | Agent framework | Runs tasks on | Python |
 | --- | --- | --- | --- |
-| Agents at scale | LangGraph 1.x | RHAPSODY 0.7 on a thread pool, in CI; RHAPSODY's native Dragon backend, not yet released, by hand | 3.11, 3.12, 3.13 |
+| Agents at scale | Flowgentic's agent loop; LangGraph 1.x, optional | RHAPSODY 0.7 on a thread pool, in CI; RHAPSODY's native Dragon backend, not yet released, by hand | 3.11, 3.12, 3.13 |
 | AsyncFlow | LangGraph 1.x | RADICAL AsyncFlow 0.6.0, local backends | 3.11, 3.12, 3.13 |
 
-Tested environment, from `uv.lock`: LangGraph 1.2.16, langgraph-checkpoint
-4.3.0, langchain-core 1.7.0, langchain 1.4.7, rhapsody-py 0.7.0, mcp 2.3.0,
-radical-asyncflow 0.6.0 and academy-py 1.0.0. CI runs the test suite on Python
-3.11, 3.12 and 3.13, and on Python 3.11 with the lowest versions the
-dependency ranges allow; a weekly workflow runs it, and builds the docs, on
-the newest releases within the ranges.
+Tested environment, from `uv.lock`: openai 3.36.1, LangGraph 1.2.16,
+langgraph-checkpoint 4.3.0, langchain-core 1.7.0, langchain 1.4.7, rhapsody-py
+0.7.0, mcp 2.3.0, radical-asyncflow 0.6.0 and academy-py 1.0.0. CI runs the
+test suite on Python 3.11, 3.12 and 3.13, and on Python 3.11 with the lowest
+versions the dependency ranges allow; it also installs the wheel with the
+`agents` extra alone, without LangGraph or LangChain, and runs the agent
+loop's tests and the agents-at-scale example there. A weekly workflow runs the
+suite, and builds the docs, on the newest releases within the ranges.
 
 The core requires `pydantic` and `opentelemetry-api>=1.43,<2`, for its spans
 and metrics. Each path is an extra:
@@ -78,14 +82,16 @@ and metrics. Each path is an extra:
 - `mcp`: `mcp>=2.3,<2.4`, for the tool service's MCP clients.
 - `asyncflow`: `radical-asyncflow>=0.6,<0.7`, because before 1.0 an AsyncFlow
   minor release may break.
+- `agents`: `openai`, `rhapsody` and `mcp`, for agents at scale.
 
-Agents at scale need `langgraph`, `rhapsody` and `mcp`:
-`flowgentic[langgraph,rhapsody,mcp]`, or `flowgentic[openai,rhapsody,mcp]`
-with Flowgentic's own loop and OpenAI-compatible servers. The LangGraph integration on AsyncFlow
-needs `langgraph` and `asyncflow`, and `bind_agent` needs `asyncflow`. Without
-an extra it needs, importing a part raises an error that names the extra.
+Agents at scale need `flowgentic[agents]`, and `flowgentic[agents,langgraph]`
+to run LangGraph graphs. The LangGraph integration on AsyncFlow needs
+`langgraph` and `asyncflow`, and `bind_agent` needs `asyncflow`. Without an
+extra it needs, importing a part raises an error that names the extra.
 `flowgentic.host`, `flowgentic.store`, `flowgentic.tools`, `flowgentic.fleet` and
-`flowgentic.loop` import with no extra. The `examples` extra adds `langgraph` and `asyncflow`, with
+`flowgentic.loop` import with no extra. The agents-at-scale example needs
+`agents` only. The `examples` extra, for the AsyncFlow path's demos, adds
+`langgraph` and `asyncflow`, with
 `academy-py>=1.0,<2` for the Academy example, and the OpenTelemetry SDK,
 OpenTelemetry's GenAI instrumentation for LangChain and OpenAI (1.3b0, below
 1.4) and `rhapsody-py[telemetry]` for the demos' traces.
@@ -105,12 +111,13 @@ Agents at scale:
   0.15.0 on Python 3.12, with RHAPSODY at commit `2523ead`, whose native
   Dragon backend is not in a release yet, and RaDEX at commit `9f9b0df`. The
   tests marked `dragon` make these checks, the last one with the example's
-  `--dragon` flag; the contributing guide says how to run them.
+  `--dragon` flag; the contributing guide says how to run them. That example
+  ran LangGraph's agents; the agent loop's have not run under Dragon yet.
 - RaDEX has no package: `RadexStore` needs RaDEX's Python client built from
   source with its C++ core.
 - An agent resumes only in the process that suspended it, because that
   process awaits the agent's tasks.
-- Checkpoints:
+- LangGraph's checkpoints:
     - A finished agent's last checkpoint stays in the store by default, so the
       store grows with the campaign, not with the agents live at once. On a
       Dragon dictionary, whose size is fixed when it is created, run the agents

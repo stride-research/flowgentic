@@ -30,7 +30,7 @@ from _basics import (
 from pydantic import BaseModel, ConfigDict, Field
 
 from flowgentic.fleet import Fleet
-from flowgentic.host import Agent, AgentHost, AgentState, Stagger
+from flowgentic.host import Agent, AgentHost, AgentState
 from flowgentic.loop import (
     Interrupt,
     Interruption,

@@ -9,13 +9,17 @@ predate this changelog, so their changes are not listed here.
 
 ## [Unreleased]
 
-The model path moves to OpenAI Chat Completions messages and transports, with
-LangChain as an adapter, and Flowgentic gains its own agent loop on them. The
-fleet's API breaks (under Changed), before 1.0; `GraphRunner` and its graphs
-work as before.
+Agents at scale run on Flowgentic's own agent loop, on OpenAI Chat Completions
+messages and transports to OpenAI-compatible model servers, and LangGraph
+becomes optional: LangChain is an adapter, in the `langgraph` extra, and
+LangGraph's graphs run on the same parts. The fleet's API breaks (under
+Changed), before 1.0; `GraphRunner` and its graphs work as before.
 
 ### Added
 
+- An `agents` extra, `flowgentic[openai,rhapsody,mcp]`: the agents-at-scale
+  path without LangGraph or LangChain. CI installs the wheel with it alone
+  and runs the agent loop's tests and the agents-at-scale example there.
 - `flowgentic.loop.LoopRunner`, Flowgentic's own agent loop: a runner for the
   agent host on OpenAI-format messages and transports, with no LangChain or
   LangGraph and no extra, beside `GraphRunner`, which stays. It runs a
@@ -62,6 +66,9 @@ work as before.
   one agent process with the loop, the loop through LangChain's adapter, or
   `GraphRunner`; `benchmarks/client_cost.py` measures a model client's CPU per
   call against a local OpenAI-compatible stub.
+- Contract tests read chat completions recorded from vLLM 0.19.1, beside
+  completions shaped after SGLang's and OpenRouter's documented replies;
+  `tests/unit/scale/completions/record.py` records a server's.
 
 ### Changed
 
@@ -83,8 +90,13 @@ work as before.
   - `flowgentic.fleet` imports no LangChain and needs no extra; the
     `langgraph` extra is needed only for LangChain replicas and
     `chat_model()`.
-- The agents-at-scale example's model node calls `fleet.ainvoke` with the
-  tools and returns `to_ai_message(reply)`.
+- The agents-at-scale example runs on `LoopRunner`, with its scripted model as
+  a transport and its inline tool a plain function, and needs the `agents`
+  extra only; `--runner graph` runs the LangGraph version,
+  `campaign_langgraph.py`, with the `langgraph` extra. The guide, "Agents at
+  scale", follows it, and LangGraph has a section of its own.
+- The `dev` extra is `flowgentic[examples,agents]` and the tools it needs.
+  The `examples` extra, for the AsyncFlow path's demos, keeps LangGraph.
 
 ## [0.5.1] - 2026-11-19
 

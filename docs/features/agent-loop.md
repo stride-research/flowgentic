@@ -38,7 +38,10 @@ report = await AgentHost(runner).run(
 )
 ```
 
-`flowgentic.loop` needs no extra; `OpenAITransport` needs the `openai` extra.
+`flowgentic.loop` needs no extra; `OpenAITransport` needs the `openai` extra,
+which the `agents` extra, the agents-at-scale path's, includes.
+[Agents at scale](../guides/agents-at-scale.md) runs a campaign of such agents
+on a laptop.
 
 ## What it does
 

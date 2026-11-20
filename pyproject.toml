@@ -1,7 +1,7 @@
 [project]
 name = "flowgentic"
 version = "0.5.1"
-description = "Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as AsyncFlow workflow tasks, and as LangGraph agents at scale whose tools run as RHAPSODY tasks and whose state lives in RaDEX."
+description = "Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as AsyncFlow workflow tasks, and as agents at scale, on its own agent loop and OpenAI-compatible model servers, whose tools run as RHAPSODY tasks and whose state lives in RaDEX; LangGraph is optional."
 readme = "README.md"
 authors = [
     { name = "Javier Dominguez", email = "jdominguez.ieu2023@student.ie.edu"},
@@ -26,11 +26,12 @@ classifiers = [
     "Typing :: Typed",
 ]
 # Core: what every path needs, Flowgentic's own agent loop and the model fleet
-# included. Each path adds an extra: `openai` for the fleet's transport to
-# OpenAI-compatible servers, `langgraph` for LangGraph graphs, LangChain
-# agents and LangChain's adapter, `asyncflow` for AsyncFlow workflows,
-# `rhapsody` for tools that run as RHAPSODY tasks, `mcp` for the tool service's
-# MCP clients.
+# included. Each path adds an extra: `agents` for agents at scale on
+# Flowgentic's loop (`openai` for the fleet's transport to OpenAI-compatible
+# servers, `rhapsody` for tools that run as RHAPSODY tasks, `mcp` for the tool
+# service's MCP clients); `langgraph` for LangGraph graphs, LangChain agents
+# and LangChain's adapter, optional on that path; `asyncflow` for AsyncFlow
+# workflows.
 dependencies = [
     "pydantic>=2.0.0",
     "opentelemetry-api>=1.43,<2",
@@ -57,6 +58,9 @@ rhapsody = [
 mcp = [
     "mcp>=2.3,<2.4",
 ]
+agents = [
+    "flowgentic[openai,rhapsody,mcp]",
+]
 examples = [
     "flowgentic[langgraph,asyncflow]",
     "python-dotenv>=1.0",
@@ -67,7 +71,7 @@ examples = [
     "rhapsody-py[telemetry]>=0.7,<0.8",
 ]
 dev = [
-    "flowgentic[examples,rhapsody,mcp,openai]",
+    "flowgentic[examples,agents]",
     "ruff>=0.12.11",
     "pre-commit>=4.0",
     "mkdocs-material>=9.6",

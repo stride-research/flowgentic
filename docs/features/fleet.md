@@ -209,11 +209,15 @@ OpenTelemetry's GenAI instrumentation see one model call with the replica's
 usage, LangGraph's `stream_mode="messages"` streams the replica's tokens, and
 the reply is the replica's own `AIMessage`. Over other transports it converts
 the messages and tools to OpenAI's format, and the `Reply` to an `AIMessage`
-(`flowgentic.langchain.to_ai_message`). It is asynchronous only: call
+(`flowgentic.langchain.to_ai_message`); of `bind_tools`' keywords it sends
+`tool_choice` and `parallel_tool_calls` as `ChatOpenAI` does (`"any"` is
+`"required"`, a tool's name a choice of that tool), applies `strict` to the
+tools' schemas, and refuses any other. It is asynchronous only: call
 `ainvoke`. Its cost per call, a LangChain call more than `fleet.ainvoke`, is
 why a graph's own model node may call the fleet directly, and turn the reply
 into a message with `to_ai_message`, as the
-[agents-at-scale](../guides/agents-at-scale.md) example does.
+[agents-at-scale](../guides/agents-at-scale.md#with-langgraph) example's
+LangGraph version does.
 
 ## Other admission policies
 

@@ -7,11 +7,15 @@ an in-memory store, and an agent host with all the agents live at once. Only
 the runner changes:
 
 - ``loop``: ``LoopRunner`` on OpenAI-format messages, with no LangChain on its
-  path: the example's script as a transport, and the note as a plain function;
-- ``loop-langchain``: ``LoopRunner`` through LangChain's adapter: the example's
-  scripted chat model as the replicas, and its LangChain tool;
-- ``graph``: ``GraphRunner`` over the example's graph with
-  ``delete_finished=True``, as the example runs it.
+  path, as the example runs it: its scripted model as a transport, and its
+  note as a plain function;
+- ``loop-langchain``: ``LoopRunner`` through LangChain's adapter: the
+  LangGraph version's scripted chat model as the replicas, and the note as a
+  LangChain tool;
+- ``graph``: ``GraphRunner`` over the LangGraph version's graph, with
+  ``delete_finished=True``, as ``--runner graph`` runs it.
+
+``loop-langchain`` and ``graph`` need the ``langgraph`` extra.
 
 A run prints one JSON line: the host's wall time, the process's CPU time, the
 event loop's lag, the collector's pauses, peak RSS, and the store's calls and
@@ -45,9 +49,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-from langchain_core.messages import HumanMessage
-
-from flowgentic.fleet import Fleet, Reply, TokenAdmission, ToolCall, Usage
+from flowgentic.fleet import Fleet, TokenAdmission
 from flowgentic.host import AgentHost, AgentResult, Stagger
 from flowgentic.store import MemoryStore
 from flowgentic.tools import ToolRuntime
@@ -103,45 +105,6 @@ class CountingStore(MemoryStore):
         return super().contains(key)
 
 
-class ScriptedTransport:
-    """The example's scripted model as a transport, on OpenAI-format messages:
-    the same calls, the same answer, the same latency and token counts."""
-
-    model = "scripted"
-    base_url = None
-    latency_s = 0.005
-
-    async def complete(self, messages: list, tools: Any = None, **kwargs: Any) -> Reply:
-        await asyncio.sleep(self.latency_s)
-        candidate = messages[0]["content"].split()[-1]
-        names = {
-            c["id"]: c["function"]["name"]
-            for m in messages
-            if m["role"] == "assistant"
-            for c in m.get("tool_calls") or ()
-        }
-        done = {names.get(m["tool_call_id"]): m["content"] for m in messages if m["role"] == "tool"}
-        calls: tuple = ()
-        content = ""
-        if "lookup" not in done:
-            calls = (ToolCall("c1", "lookup", {"candidate": candidate}),)
-        elif "simulate" not in done:
-            start = json.loads(done["lookup"])["start_temperature"]
-            calls = (
-                ToolCall("c2", "simulate", {"candidate": candidate, "temperature": start}),
-                ToolCall("c3", "note", {"text": f"simulating {candidate}"}),
-            )
-        else:
-            content = f"best score {json.loads(done['simulate'])['score']}"
-        prompt = 200 + sum(len(str(m.get("content") or "")) for m in messages) // 4
-        return Reply(content, calls, usage=Usage(prompt, 20))
-
-
-async def note(text: str) -> str:
-    """Write a note in the agent's log."""
-    return f"noted: {text}"
-
-
 def _mib(maxrss: int) -> float:
     return round(maxrss / (1024**2 if sys.platform == "darwin" else 1024), 1)
 
@@ -162,29 +125,26 @@ async def run_agents(
     backend = await example.task_backend(workers, False)
     session = Session(backends=[backend])
     runtime = ToolRuntime(session, client)
+    graph = None if kind == "loop" else example.langgraph_version()
     replicas: list = (
-        [ScriptedTransport(), ScriptedTransport()]
-        if kind == "loop"
-        else [example.ScriptedModel(), example.ScriptedModel()]
+        [example.ScriptedModel(), example.ScriptedModel()]
+        if graph is None
+        else graph.replicas()
     )
     fleet = Fleet(replicas, admission=TokenAdmission(tokens=40_000, requests=64))
     store = CountingStore()
     if kind in ("loop", "loop-langchain"):
         from flowgentic.loop import LoopRunner
 
-        # the example's task and MCP tools; its note, as a plain function or
-        # as its LangChain tool
-        tools = [*example.TOOLS[:2], note if kind == "loop" else example.TOOLS[2]]
+        tools = list(example.TOOLS)  # its note, a plain function
+        if kind == "loop-langchain":
+            from langchain_core.tools import tool
+
+            tools[-1] = tool(tools[-1])  # the note as a LangChain tool
         runner: Any = LoopRunner(fleet, tools, runtime=runtime, store=store)
         saver = None
     else:
-        from flowgentic.langgraph import GraphRunner, KeyValueSaver, bind_tools
-
-        saver = KeyValueSaver(store)
-        tools = bind_tools(runtime, example.TOOLS)
-        runner = GraphRunner(
-            example.build_graph(fleet, tools, saver), delete_finished=True
-        )
+        runner, saver = graph.graph_runner(fleet, runtime, store, example.TOOLS)
 
     answers: Counter[str] = Counter()
     suspensions = [0]
@@ -193,15 +153,10 @@ async def run_agents(
         fleet.agent_done(result.id)
         suspensions[0] += result.suspensions
         if output is not None:
-            if kind == "graph":
-                answers[output["messages"][-1].content] += 1
-            else:
-                answers[output.messages[-1]["content"]] += 1
+            answers[example.answer(output)] += 1
 
     def input_for(i: int) -> dict:
         task = f"Find the best temperature for cand-{i:06d}"
-        if kind == "graph":
-            return {"messages": [HumanMessage(task)]}
         return {"messages": [{"role": "user", "content": task}]}
 
     host = AgentHost(
