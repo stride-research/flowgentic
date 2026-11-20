@@ -230,6 +230,41 @@ def test_the_agent_loop_needs_no_extra() -> None:
 	assert result.stdout.strip() == "{'done': 3} 3 ['4.0', '4.0', '4.0'] []"
 
 
+def test_the_agents_path_imports_without_langgraph() -> None:
+	"""The parts of the agents-at-scale path import with LangGraph and LangChain
+	blocked, and load neither: the loop, the fleet and its transport, the tools,
+	the tool service, the host and the store."""
+	result = run_without(
+		LANGGRAPH,
+		"""
+		import sys
+		import flowgentic.fleet, flowgentic.host, flowgentic.loop, flowgentic.store
+		import flowgentic.tools, flowgentic.tools.mcp, flowgentic.tools.service
+		from flowgentic.fleet import Fleet, OpenAITransport
+
+		Fleet([OpenAITransport("m", base_url="http://node-1:8000/v1")])
+		print(sorted(
+			m for m in sys.modules
+			if m.split(".")[0] in {"langchain_core", "langgraph", "langchain"}
+		))
+		""",
+	)
+	assert result.returncode == 0, result.stderr
+	assert result.stdout.strip() == "[]"
+
+
+def test_the_agents_extra_installs_the_path_without_langgraph() -> None:
+	"""``flowgentic[agents]``: the openai SDK, RHAPSODY and MCP; LangGraph is the
+	``langgraph`` extra's, and the AsyncFlow demos' ``examples`` keep it."""
+	import tomllib
+
+	pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+	extras = tomllib.loads(pyproject.read_text())["project"]["optional-dependencies"]
+	assert extras["agents"] == ["flowgentic[openai,rhapsody,mcp]"]
+	assert extras["dev"][0] == "flowgentic[examples,agents]"
+	assert "langgraph" in extras["examples"][0]
+
+
 @pytest.mark.parametrize(
 	"missing", ["langchain_core", "langchain_openai", "langchain_ollama"]
 )

@@ -25,6 +25,8 @@ def load_benchmark() -> ModuleType:
 
 @pytest.mark.parametrize("runner", ["loop", "loop-langchain", "graph"])
 def test_both_runners_answer_every_agent_of_the_example(runner: str) -> None:
+    if runner != "loop":  # LangChain's adapter, and LangGraph
+        pytest.importorskip("langgraph")
     out = load_benchmark().run_once(runner, 100, 8, 0.0)
     assert out["outcomes"] == {"done": 100}
     assert out["correct"] == 100 and out["suspensions"] == 100
