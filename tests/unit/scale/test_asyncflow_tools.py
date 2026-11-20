@@ -366,6 +366,94 @@ async def test_cancelling_the_task_cancels_it_on_the_engine():
     assert record.outcome == "cancelled" and record.uid == uid
 
 
+def tasks_running(flow) -> list[str]:
+    """The uids of the engine's tasks running on a backend, blocks left out."""
+    return sorted(uid for uid in flow.running if uid.startswith("task."))
+
+
+async def test_a_task_asked_for_inside_a_block_is_cancelled_with_the_block():
+    """An agent that runs inside an AsyncFlow block asks for tasks that belong
+    to the block: cancelling the block cancels them, as it does the block's
+    own tasks, though the tool's wait alone leaves a started task running."""
+    flow = await open_engine("compute")
+    runtime = ToolRuntime(engine=flow)
+    records = []
+    runtime.add_listener(records.append)
+    (tool_,) = bind_tools(runtime, [task_tool(slow)])
+    call = {"name": "slow", "args": {"x": 1.0}, "id": "c1", "type": "tool_call"}
+
+    async def planner():
+        return await tool_.ainvoke(call, {"configurable": {"thread_id": "planner-1"}})
+
+    try:
+        block = _asyncflow.block(flow, planner)()
+        await until(lambda: tasks_running(flow))
+        (uid,) = tasks_running(flow)
+        task = flow.components[uid]["future"]
+        block.cancel()
+        await until(task.done)
+        assert task.cancelled()
+        await until(lambda: records)
+    finally:
+        await _asyncflow.close_engine(flow)
+    (record,) = records
+    assert record.uid == uid and record.outcome == "cancelled"
+    assert record.error == "TaskCancelled: AsyncFlow cancelled the task"
+
+
+async def test_the_tasks_of_a_host_run_inside_a_block_are_cancelled_with_the_block():
+    """The same for a population: an agent host run as a block, its agents
+    suspended on their tasks."""
+    flow = await open_engine("compute")
+    runtime = ToolRuntime(engine=flow)
+    records = []
+    runtime.add_listener(records.append)
+    graph = react_graph(
+        Scripted(script=calls_then_answer(("slow", {"x": 1.0}))),
+        bind_tools(runtime, [task_tool(slow, suspend=True)]),
+        KeyValueSaver(MemoryStore()),
+    )
+
+    async def population():
+        return await AgentHost(GraphRunner(graph), stagger=FAST).run(inputs(3))
+
+    try:
+        block = _asyncflow.block(flow, population)()
+        await until(lambda: len(tasks_running(flow)) == 3)
+        tasks = [flow.components[uid]["future"] for uid in tasks_running(flow)]
+        block.cancel()
+        await until(lambda: all(task.done() for task in tasks))
+        assert all(task.cancelled() for task in tasks)
+        await until(lambda: len(records) == 3)
+    finally:
+        await _asyncflow.close_engine(flow)
+    assert [r.outcome for r in records] == ["cancelled"] * 3
+
+
+async def test_a_task_carries_the_workflow_it_was_asked_for_in():
+    """AsyncFlow labels each task with the workflow scope or block it is
+    called in, and its telemetry reports the label: a task an agent asks for
+    gets the agent's."""
+    flow = await open_engine("compute")
+    runtime = ToolRuntime(engine=flow)
+    records = []
+    runtime.add_listener(records.append)
+
+    async def in_block():
+        return await runtime.submit(task_tool(simulate), "a", "c2", {"x": 1.0})
+
+    try:
+        async with flow.workflow_scope("campaign-1"):
+            await runtime.submit(task_tool(simulate), "a", "c1", {"x": 1.0})
+        block = _asyncflow.block(flow, in_block)()
+        assert await block == {"y": 2.0}
+        await runtime.submit(task_tool(simulate), "a", "c3", {"x": 1.0})
+        labels = [flow.components[r.uid]["description"]["workflow_id"] for r in records]
+    finally:
+        await _asyncflow.close_engine(flow)
+    assert labels == ["campaign-1", block.uid, None]
+
+
 async def test_a_runtime_set_up_wrong_is_refused_before_any_agent_runs():
     """A backend the engine or session lacks, or a field an engine cannot take,
     is refused when the runtime is made or its tools are bound, not told to a
