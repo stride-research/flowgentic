@@ -24,7 +24,9 @@ Clients:
 - ``httpx``: one ``httpx.AsyncClient`` POST and ``json.loads``, a floor under
   the SDK;
 - ``transport-8``: ``OpenAITransport`` over eight SDK clients taken in turn,
-  each with its own connection pool.
+  each with its own connection pool;
+- ``transport-auto``: ``OpenAITransport`` as it is made by default, opening
+  another client, with its own pool, for every 64 calls in flight.
 
     python benchmarks/client_cost.py --client transport --in-flight 64
     python benchmarks/client_cost.py --repeat 3   # every client, N = 1, 64, 512
@@ -250,6 +252,16 @@ def make_client(kind: str, url: str, in_flight: int) -> Any:
             return len(reply.tool_calls)
 
         return call
+    if kind == "transport-auto":
+        from flowgentic.fleet import OpenAITransport
+
+        auto = OpenAITransport("Qwen3-8B", base_url=url, max_retries=0, timeout=600)
+
+        async def call() -> int:
+            reply = await auto.complete(messages, TOOLS)
+            return len(reply.tool_calls)
+
+        return call
     if kind == "transport-8":
         # the same transport over 8 clients, each with its own connection
         # pool, taken in turn: whether the pool's cost grows with its calls
@@ -355,7 +367,7 @@ async def measure(kind: str, url: str, in_flight: int, calls: int) -> dict:
     }
 
 
-CLIENTS = ["transport", "asyncopenai", "chatopenai", "chatopenai-adapter", "httpx", "transport-8"]
+CLIENTS = ["transport", "asyncopenai", "chatopenai", "chatopenai-adapter", "httpx", "transport-8", "transport-auto"]
 
 
 # vLLM's mean time per call in G1, by calls in flight (Qwen3-8B, one GPU).

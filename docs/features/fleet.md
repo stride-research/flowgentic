@@ -60,13 +60,17 @@ prompt tokens from `usage.prompt_tokens_details`, and the reasoning tokens
 from `usage.completion_tokens_details`, when the server sends them (vLLM sends
 the first with `--enable-prompt-tokens-details`). Keywords given when it is
 made, such as `temperature=0`, go with every call; `max_retries=0` leaves
-retries to `Recovery`. A replica that holds hundreds of calls at once wants
-`pools=8`: the transport then makes eight clients, each with its own
-connection pool, and sends its calls to them in turn. One client's cost per
-call grows with the calls it holds in flight; against a local stub server, at
-512 calls in flight, one pool cost 31 ms of CPU per call (plain httpx too) and
-eight pools 3.5 ms, while at 64 in flight both cost about 3.5 ms. `parse_completion` reads such a server's completion,
+retries to `Recovery`. `parse_completion` reads such a server's completion,
 as the SDK's object or as its JSON, for a transport of your own.
+
+A client's CPU cost per call grows with the calls its connection pool holds
+in flight. Against a local stub server, one pool cost 3.5 ms of CPU per call
+at 64 calls in flight, and 24 to 31 ms at 512 (plain httpx too); the same 512
+calls spread over eight clients of 64 cost 3.5 ms. So `OpenAITransport` sends
+each call to its least busy client, and opens another client, with its own
+pool, whenever each one holds 64 calls (`calls_per_pool=64`): a replica with
+512 calls in flight has eight, one with a few calls has one. `pools=N` fixes
+the number of clients instead, and a `client` given is the only one.
 
 A LangChain chat model given as a replica, or returned by `Recovery`'s check,
 runs through LangChain's adapter, `flowgentic.langchain.ChatModelTransport`.

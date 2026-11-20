@@ -76,8 +76,8 @@ report = await AgentHost(runner).run(
   new call.
 - **It returns tool errors to the model.** A tool that raises, arguments its
   schema refuses, a tool that does not exist, arguments that are not valid
-  JSON, a failed task or MCP call: each becomes a tool result that says so,
-  and the agent goes on. A runtime set up wrong, without the
+  JSON, a task tool's `prepare` or `suspend` that raises, a failed task or MCP
+  call: each becomes a tool result that says so, and the agent goes on. A runtime set up wrong, without the
   RHAPSODY session or the service client a tool needs, fails the agent
   instead, as with LangGraph's tools.
 - **It limits model calls.** `max_model_calls` (25 by default) counts the
@@ -101,9 +101,10 @@ report = await AgentHost(runner).run(
 
 A finished agent's output, passed to the host's `on_done`, is a `LoopOutput`:
 `messages`, `structured_response` (or `None`) and `model_calls`. An agent's
-input is a string, a message, a list of messages, or a dict with `messages`,
-as a LangGraph graph takes it; the loop copies it and never changes the
-caller's list. `Agent.config` is not read.
+input is a string, a message (a dict with a `role`), a list of messages, or a
+dict with `messages`, as a LangGraph graph takes it; anything else fails the
+agent with a `TypeError` before its first model call. The loop copies the
+input and never changes the caller's list. `Agent.config` is not read.
 
 ## LangChain, through its adapter
 
@@ -114,7 +115,12 @@ The loop runs no LangChain code of its own. With the `langgraph` extra,
   as a transport (`ChatModelTransport`), and the fleet's `FleetChatModel` runs
   as its fleet;
 - a LangChain tool given as a tool runs inline (`inline_tool`), with its own
-  name, description and schema; an `Interrupt` it raises stops its agent;
+  name, description and schema, called with the call's id as LangGraph's
+  `ToolNode` calls it, so an `InjectedToolCallId` argument gets the id; an
+  `Interrupt` it raises stops its agent. A tool that needs what a graph
+  injects (`InjectedState`, `InjectedStore`) is refused, and so is a task or
+  MCP tool made by `flowgentic.langgraph.bind_tools`: give the loop the
+  `task_tool` or `mcp_tool` declaration itself;
 - LangChain messages given as an agent's input are converted.
 
 The loop's messages stay OpenAI-format dicts throughout. The adapter converts

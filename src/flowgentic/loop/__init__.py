@@ -61,8 +61,9 @@ LangGraph adds: streaming, middleware, human-in-the-loop resumes.
   ``invoke_agent`` span, and each suspension is the host's
   ``flowgentic.agent.suspend`` event.
 
-An agent's input is a string, a message, a list of messages or a dict with
-``messages``, as a LangGraph graph's input; LangChain messages are converted.
+An agent's input is a string, a message (a dict with a ``role``), a list of
+messages or a dict with ``messages``, as a LangGraph graph's input; LangChain
+messages are converted. Anything else fails the agent with ``TypeError``.
 ``Agent.config`` is not read. A finished agent's output is a ``LoopOutput``.
 The runner never changes the caller's messages.
 """
@@ -162,6 +163,7 @@ class _Inline:
 	description: str
 	schema: Any
 	fn: Callable[..., Any]
+	with_call_id: bool = False  # called with ``_call_id``, the call's id
 
 
 class _Result:
@@ -461,7 +463,10 @@ class LoopRunner:
 
 	async def _inline(self, call: _Call, tool: _Inline, args: dict) -> _Result:
 		try:
-			out = tool.fn(**args)
+			if tool.with_call_id:
+				out = tool.fn(**args, _call_id=call.id)
+			else:
+				out = tool.fn(**args)
 			if inspect.isawaitable(out):
 				out = await out
 		except Interrupt as stop:
@@ -476,10 +481,17 @@ class LoopRunner:
 	async def _task(
 		self, agent_id: str, scope: str, call: _Call, tool: TaskTool, args: dict
 	) -> _Result:
-		# A runtime without a session raises RuntimeError here: the agent fails.
-		job = self.runtime.submit(tool, agent_id, call.id, args, scope=scope)
+		try:
+			# Asked before the task is submitted, so a suspend that raises
+			# submits nothing.
+			suspends = tool.suspends(agent_id, args)
+			job = self.runtime.submit(tool, agent_id, call.id, args, scope=scope)
+		except RuntimeError:
+			raise  # set up wrong, such as without a session: the agent fails
+		except Exception as exc:  # a prepare that raises: the model reads it
+			return _error(call, ERROR.format(error=repr(exc)))
 		if not job.done():
-			if tool.suspends(agent_id, args):
+			if suspends:
 				return _Result(
 					wait=(call.id, self.runtime.key(agent_id, call.id, scope))
 				)
@@ -587,7 +599,7 @@ def _messages(value: object) -> list[dict]:
 	for m in value:
 		if isinstance(m, str):
 			out.append({"role": "user", "content": m})
-		elif isinstance(m, dict):
+		elif isinstance(m, dict) and "role" in m:
 			out.append(m)
 		elif isinstance(m, tuple) and len(m) == 2:
 			out.append({"role": _ROLES.get(m[0], m[0]), "content": m[1]})
@@ -690,7 +702,8 @@ def _inline(tool: object) -> _Inline:
 	schema = getattr(tool, "args_schema", None)
 	if schema is None:
 		schema = _signature_schema(name, tool)
-	return _Inline(name, description, schema, tool)
+	with_call_id = getattr(tool, "takes_call_id", False) is True
+	return _Inline(name, description, schema, tool, with_call_id)
 
 
 def _signature_schema(name: str, fn: Callable[..., Any]) -> type[BaseModel]:
@@ -736,9 +749,11 @@ def _tool_schema(name: str, description: str, schema: object) -> dict:
 
 def _validate(schema: object, args: dict) -> dict:
 	"""``args`` checked against a pydantic schema, as a LangChain tool checks
-	them: the arguments given, as the schema made them. A schema that is not a
-	pydantic model leaves them as they are."""
+	them: the arguments given, by their fields' names (one given under its
+	alias included), as the schema made them. A schema that is not a pydantic
+	model leaves them as they are."""
 	if not (isinstance(schema, type) and issubclass(schema, BaseModel)):
 		return dict(args)
 	model = schema.model_validate(args)
-	return {k: getattr(model, k) for k in type(model).model_fields if k in args}
+	given = model.model_fields_set
+	return {k: getattr(model, k) for k in type(model).model_fields if k in given}

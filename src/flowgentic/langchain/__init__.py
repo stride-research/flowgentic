@@ -27,8 +27,9 @@ It needs the ``langgraph`` extra, of which ``langchain-core`` is a part.
 from __future__ import annotations
 
 import sys
+import uuid
 from collections.abc import Sequence
-from typing import Any
+from typing import Annotated, Any, get_args, get_origin
 
 try:
 	from langchain_core.language_models import BaseChatModel, LanguageModelInput
@@ -42,7 +43,8 @@ try:
 	from langchain_core.outputs import ChatResult
 	from langchain_core.runnables import RunnableConfig
 	from langchain_core.runnables.config import ensure_config
-	from langchain_core.tools import BaseTool
+	from langchain_core.tools import BaseTool, InjectedToolCallId
+	from langchain_core.tools.base import get_all_basemodel_annotations
 	from langchain_core.utils.function_calling import convert_to_openai_tool
 except ModuleNotFoundError as exc:
 	if exc.name != "langchain_core":
@@ -51,6 +53,8 @@ except ModuleNotFoundError as exc:
 		"flowgentic.langchain needs LangChain: install flowgentic[langgraph]",
 		name=exc.name,
 	) from exc
+
+from pydantic import BaseModel
 
 from flowgentic import _agents
 from flowgentic.fleet import Fleet, InvalidToolCall, Reply, ToolCall, Usage
@@ -247,6 +251,41 @@ class ChatModelTransport:
 		return f"ChatModelTransport({type(self.chat_model).__name__})"
 
 
+# bind_tools' keywords that a transport takes, and those LangChain reads itself.
+_TOOL_OPTIONS = frozenset({"tool_choice", "parallel_tool_calls", "strict"})
+_LANGCHAINS = frozenset({"ls_structured_output_format", "structured_output_format"})
+
+
+def _openai_tools(
+	tools: Sequence[Any] | None, options: dict
+) -> tuple[list[dict] | None, dict]:
+	"""LangChain tools and ``bind_tools``' keywords as the OpenAI API takes
+	them, as ``ChatOpenAI.bind_tools`` maps them: ``strict`` goes into each
+	tool's schema; ``tool_choice`` ``"any"`` or ``True`` is ``"required"``, and
+	a tool's name a choice of that tool."""
+	unknown = sorted(set(options) - _TOOL_OPTIONS - _LANGCHAINS)
+	if unknown:
+		raise TypeError(
+			"over a transport, bind_tools takes tool_choice, parallel_tool_calls "
+			f"and strict, not {', '.join(map(repr, unknown))}"
+		)
+	strict = options.get("strict")
+	schemas = (
+		[convert_to_openai_tool(t, strict=strict) for t in tools] if tools else None
+	)
+	sent = {}
+	choice = options.get("tool_choice")
+	if choice:
+		if choice is True or choice == "any":
+			choice = "required"
+		elif isinstance(choice, str) and choice not in ("auto", "none", "required"):
+			choice = {"type": "function", "function": {"name": choice}}
+		sent["tool_choice"] = choice
+	if "parallel_tool_calls" in options:
+		sent["parallel_tool_calls"] = options["parallel_tool_calls"]
+	return schemas, sent
+
+
 class FleetChatModel(BaseChatModel):
 	"""A fleet as a LangChain chat model; see the module's docstring.
 
@@ -294,14 +333,12 @@ class FleetChatModel(BaseChatModel):
 				**kwargs,
 			)
 		else:
-			tools = (
-				[convert_to_openai_tool(t) for t in self.tools] if self.tools else None
-			)
+			tools, options = _openai_tools(self.tools, self.tool_kwargs)
 			reply = await fleet.ainvoke(
 				str(agent),
 				to_openai_messages(messages),
 				tools=tools,
-				**self.tool_kwargs,
+				**options,
 				**kwargs,
 			)
 		return to_ai_message(reply)
@@ -319,18 +356,67 @@ class FleetChatModel(BaseChatModel):
 class _InlineTool:
 	"""A LangChain tool as one of the agent loop's inline tools."""
 
+	takes_call_id = True  # the loop passes the call's id as ``_call_id``
+
 	def __init__(self, tool: BaseTool) -> None:
+		if getattr(getattr(tool, "coroutine", None), "__module__", None) == (
+			"flowgentic.langgraph.tools"
+		):
+			raise TypeError(
+				f"{tool.name} is a LangGraph tool made by "
+				"flowgentic.langgraph.bind_tools: give the loop its task_tool or "
+				"mcp_tool declaration, with the runtime"
+			)
+		graphs = [n for n, call_id in _injected(tool).items() if not call_id]
+		if graphs:
+			raise TypeError(
+				f"{tool.name} needs {', '.join(map(repr, graphs))}, which a "
+				"LangGraph graph injects: the loop has no graph to give it; only "
+				"the call's id (InjectedToolCallId) is given"
+			)
 		self.tool = tool
 		self.name = tool.name
 		self.description = tool.description
 		self.args_schema = tool.tool_call_schema
 
-	async def __call__(self, **kwargs: object) -> Any:  # noqa: ANN401
-		return await self.tool.ainvoke(kwargs)
+	async def __call__(self, *, _call_id: str | None = None, **kwargs: object) -> Any:  # noqa: ANN401
+		message = await self.tool.ainvoke(
+			{
+				"type": "tool_call",
+				"name": self.name,
+				"args": kwargs,
+				"id": _call_id or f"inline-{uuid.uuid4().hex}",
+			}
+		)
+		return message.content if isinstance(message, ToolMessage) else message
+
+
+def _injected(tool: BaseTool) -> dict[str, bool]:
+	"""The arguments LangChain injects into ``tool``, which the model never
+	sees, each with whether it is the call's id (``InjectedToolCallId``)."""
+	seen = tool.tool_call_schema
+	if not (isinstance(seen, type) and issubclass(seen, BaseModel)):
+		return {}  # a JSON schema: nothing injected
+	out = {}
+	for name, annotation in get_all_basemodel_annotations(
+		tool.get_input_schema()
+	).items():
+		if name not in seen.model_fields:
+			out[name] = get_origin(annotation) is Annotated and any(
+				m is InjectedToolCallId or isinstance(m, InjectedToolCallId)
+				for m in get_args(annotation)[1:]
+			)
+	return out
 
 
 def inline_tool(tool: BaseTool) -> _InlineTool:
 	"""A LangChain tool as an inline tool of the agent loop: an async callable
-	with the tool's ``name``, ``description`` and ``args_schema``. Its errors,
-	and an ``Interrupt``, reach the loop as the tool raises them."""
+	with the tool's ``name``, ``description`` and ``args_schema``, which the
+	loop calls with the call's arguments and its id, as LangGraph's
+	``ToolNode`` does: a tool's ``InjectedToolCallId`` argument gets the id.
+	Its errors, and an ``Interrupt``, reach the loop as the tool raises them.
+
+	A tool that needs what a LangGraph graph injects (its state, its store) is
+	refused, as is a task or MCP tool made by ``flowgentic.langgraph.bind_tools``,
+	whose declaration the loop runs itself."""
 	return _InlineTool(tool)

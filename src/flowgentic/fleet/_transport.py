@@ -229,14 +229,16 @@ class OpenAITransport:
 	and ``max_retries`` go to the client; pass ``max_retries=0`` to leave
 	retries to the fleet's ``Recovery``. Other keywords are sent with every
 	call, such as ``temperature=0`` or ``extra_body``; a call's own keywords
-	override them. ``client`` replaces the client the transport would make.
+	override them. Needs the ``openai`` extra.
 
-	``pools`` makes that many clients, each with its own connection pool, and
-	sends the calls to them in turn. One client's cost per call grows with the
-	calls it holds in flight: against a stub server, 31 ms of CPU per call at
-	512 in flight with one pool, plain httpx too, and 3.5 ms with eight; at 64
-	in flight, 3.5 ms either way. Give a replica that holds hundreds of calls
-	at once ``pools=8``. Needs the ``openai`` extra.
+	**Connection pools.** A client's CPU cost per call grows with the calls its
+	connection pool holds in flight: against a local stub, 3.5 ms per call at 64
+	in flight and 24 to 31 ms at 512, plain httpx too; the same 512 calls over
+	eight clients of 64 cost 3.5 ms. So the transport sends each call to its
+	least busy client, and opens another client, with its own pool, when each
+	holds ``calls_per_pool`` calls (64): at 512 calls in flight it has eight.
+	``pools`` fixes the number of clients instead. ``client`` replaces the
+	clients the transport would make, and is its only one.
 	"""
 
 	def __init__(
@@ -248,44 +250,61 @@ class OpenAITransport:
 		timeout: float | None = None,
 		max_retries: int | None = None,
 		client: Any = None,  # noqa: ANN401  # an AsyncOpenAI
-		pools: int = 1,
+		pools: int | None = None,
+		calls_per_pool: int = 64,
 		**params: object,
 	) -> None:
-		if pools < 1:
+		if pools is not None and pools < 1:
 			raise ValueError("pools must be at least 1")
-		if client is not None and pools != 1:
+		if calls_per_pool < 1:
+			raise ValueError("calls_per_pool must be at least 1")
+		if client is not None and pools not in (None, 1):
 			raise ValueError(
 				"pass a client, or pools: the transport makes a pool's client"
 			)
-		clients = [client] if client is not None else []
-		for _ in range(pools if client is None else 0):
-			try:
-				from openai import AsyncOpenAI
-			except ModuleNotFoundError as exc:
-				if exc.name != "openai":
-					raise
-				raise ModuleNotFoundError(
-					"OpenAITransport needs the openai SDK: install flowgentic[openai]",
-					name=exc.name,
-				) from exc
-			options: dict[str, Any] = {}
-			if timeout is not None:
-				options["timeout"] = timeout
-			if max_retries is not None:
-				options["max_retries"] = max_retries
-			clients.append(
-				AsyncOpenAI(
-					base_url=base_url,
-					api_key=api_key or os.environ.get("OPENAI_API_KEY") or "EMPTY",
-					**options,
-				)
-			)
-		self.clients = clients
-		self.client = clients[0]
-		self._next = 0
+		options: dict[str, Any] = {
+			"base_url": base_url,
+			"api_key": api_key or os.environ.get("OPENAI_API_KEY") or "EMPTY",
+		}
+		if timeout is not None:
+			options["timeout"] = timeout
+		if max_retries is not None:
+			options["max_retries"] = max_retries
+		self._options = options
+		if client is not None:
+			self.clients: list[Any] = [client]
+			self.pools: int | None = 1
+		else:
+			self.clients = [self._new_client() for _ in range(pools or 1)]
+			self.pools = pools
+		self.calls_per_pool = calls_per_pool
+		self._busy = [0] * len(self.clients)
+		self.client = self.clients[0]
 		self.model = model
 		self.base_url = str(getattr(self.client, "base_url", base_url) or "")
 		self.params = params
+
+	def _new_client(self) -> Any:  # noqa: ANN401  # an AsyncOpenAI
+		try:
+			from openai import AsyncOpenAI
+		except ModuleNotFoundError as exc:
+			if exc.name != "openai":
+				raise
+			raise ModuleNotFoundError(
+				"OpenAITransport needs the openai SDK: install flowgentic[openai]",
+				name=exc.name,
+			) from exc
+		return AsyncOpenAI(**self._options)
+
+	def _pick(self) -> int:
+		"""The least busy client; a new one if each holds ``calls_per_pool``."""
+		busy = self._busy
+		i = 0 if len(busy) == 1 else min(range(len(busy)), key=busy.__getitem__)
+		if busy[i] >= self.calls_per_pool and self.pools is None:
+			self.clients.append(self._new_client())
+			busy.append(0)
+			i = len(busy) - 1
+		return i
 
 	async def complete(
 		self,
@@ -296,13 +315,14 @@ class OpenAITransport:
 		params = {**self.params, **kwargs}
 		if tools:
 			params["tools"] = list(tools)
-		client = self.client
-		if len(self.clients) > 1:
-			client = self.clients[self._next]
-			self._next = (self._next + 1) % len(self.clients)
-		completion = await client.chat.completions.create(
-			model=self.model, messages=list(messages), **params
-		)
+		i = self._pick()
+		self._busy[i] += 1
+		try:
+			completion = await self.clients[i].chat.completions.create(
+				model=self.model, messages=list(messages), **params
+			)
+		finally:
+			self._busy[i] -= 1
 		return parse_completion(completion)
 
 	def __repr__(self) -> str:
