@@ -126,25 +126,25 @@ jobs:
         run: uv build --wheel
 
       # The lock's versions as constraints: they pin what is installed and
-      # install nothing themselves. httpx is the tests' (openai 3 uses httpx2).
+      # install nothing themselves.
       - name: Install the wheel with the agents extra
         run: |
           uv export --frozen --extra dev --no-emit-project --no-hashes -o constraints.txt
           uv venv --python 3.12 agents
           uv pip install --python agents/bin/python -c constraints.txt \
-            "$(ls dist/*.whl)[agents]" pytest pytest-asyncio opentelemetry-sdk httpx
+            "$(ls dist/*.whl)[agents]" pytest pytest-asyncio opentelemetry-sdk
 
-      - name: Check that LangGraph and LangChain are not installed
+      - name: Check that LangGraph, LangChain and the openai SDK are not installed
         run: >-
           agents/bin/python -c
-          "import importlib.util as u, sys; found = [m for m in ('langgraph', 'langchain', 'langchain_core', 'langchain_openai') if u.find_spec(m)]; print('found:', found); sys.exit(bool(found))"
+          "import importlib.util as u, sys; found = [m for m in ('langgraph', 'langchain', 'langchain_core', 'langchain_openai', 'openai') if u.find_spec(m)]; print('found:', found); sys.exit(bool(found))"
 
       - name: Run the loop's tests and the example
         run: >-
           agents/bin/python -m pytest -q -p no:cacheprovider
           tests/unit/scale/test_loop_runner.py
           tests/unit/scale/test_loop_langchain.py
-          tests/unit/scale/test_transports.py
+          tests/unit/scale/test_http_transport.py
           tests/integration/test_agents_at_scale.py
           tests/integration/test_agent_loop_benchmark.py
 

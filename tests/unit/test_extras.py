@@ -274,7 +274,7 @@ def test_the_agents_extra_installs_the_path_without_langgraph() -> None:
 	extras = project["optional-dependencies"]
 	assert any(d.startswith("httpx") for d in project["dependencies"])
 	assert extras["agents"] == ["flowgentic[rhapsody,mcp]"]
-	assert extras["dev"][0] == "flowgentic[examples,agents]"
+	assert extras["dev"][0] == "flowgentic[examples,agents,openai]"
 	assert "langgraph" in extras["examples"][0]
 
 

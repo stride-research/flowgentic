@@ -14,6 +14,11 @@ demo's do.
 
 Clients:
 
+- ``http``: Flowgentic's ``HTTPTransport``, the fleet's default, as it is made
+  by default: one httpx POST per call, the reply read into a ``Reply``, and
+  another client, with its own pool, for every ``calls_per_pool`` calls in
+  flight;
+- ``http-N``: the same with ``calls_per_pool=N``, such as ``http-8``;
 - ``transport``: Flowgentic's ``OpenAITransport`` (the openai SDK, and the
   reply read into a ``Reply``);
 - ``asyncopenai``: the openai SDK's ``AsyncOpenAI`` alone, the floor under it;
@@ -28,8 +33,10 @@ Clients:
 - ``transport-auto``: ``OpenAITransport`` as it is made by default, opening
   another client, with its own pool, for every 64 calls in flight.
 
-    python benchmarks/client_cost.py --client transport --in-flight 64
+    python benchmarks/client_cost.py --client http --in-flight 64
     python benchmarks/client_cost.py --repeat 3   # every client, N = 1, 64, 512
+    python benchmarks/client_cost.py --repeat 3 --sizes 64,512 \
+        --clients http-8,http-16,http-32,http-64   # the pool size
 
 The method follows G1's "a real client's cost per call", with a stub in place
 of the model server.
@@ -41,6 +48,7 @@ import argparse
 import asyncio
 import json
 import platform
+import re
 import socket
 import subprocess
 import sys
@@ -223,6 +231,17 @@ def make_client(kind: str, url: str, in_flight: int) -> Any:
             return len(json.loads(r.content)["choices"][0]["message"]["tool_calls"])
 
         return call
+    if kind == "http" or kind.startswith("http-"):
+        from flowgentic.fleet import HTTPTransport
+
+        per = {} if kind == "http" else {"calls_per_pool": int(kind.split("-")[1])}
+        http = HTTPTransport("Qwen3-8B", base_url=url, timeout=600, **per)
+
+        async def call() -> int:
+            reply = await http.complete(messages, TOOLS)
+            return len(reply.tool_calls)
+
+        return call
     import httpx
     from openai import AsyncOpenAI
 
@@ -367,17 +386,23 @@ async def measure(kind: str, url: str, in_flight: int, calls: int) -> dict:
     }
 
 
-CLIENTS = ["transport", "asyncopenai", "chatopenai", "chatopenai-adapter", "httpx", "transport-8", "transport-auto"]
+CLIENTS = [
+    "http",
+    "transport",
+    "asyncopenai",
+    "chatopenai",
+    "chatopenai-adapter",
+    "httpx",
+    "transport-8",
+    "transport-auto",
+]
 
 
-# vLLM's mean time per call in G1, by calls in flight (Qwen3-8B, one GPU).
-G1_SERVER_S = {1: 0.6, 64: 1.3, 512: 8.9}
-
-
-def delay_for(n: int, given: float) -> float:
-    if given:
-        return given
-    return G1_SERVER_S.get(n) or min(G1_SERVER_S.items(), key=lambda kv: abs(kv[0] - n))[1]
+def client(kind: str) -> str:
+    """A client's name: one of ``CLIENTS``, or ``http-N``."""
+    if kind not in CLIENTS and not re.fullmatch(r"http-[1-9][0-9]*", kind):
+        raise argparse.ArgumentTypeError(f"no client {kind!r}: {', '.join(CLIENTS)} or http-N")
+    return kind
 
 
 # vLLM's mean time per call in G1, by calls in flight (Qwen3-8B, one GPU).
@@ -392,14 +417,14 @@ def delay_for(n: int, given: float) -> float:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--client", choices=CLIENTS, default="transport")
+    p.add_argument("--client", type=client, default="http")
     p.add_argument("--in-flight", type=int, default=64)
     p.add_argument("--calls", type=int, default=0, help="calls in the window (default: 400 at N=1, else 2,000)")
     p.add_argument(
         "--delay", type=float, default=0.0, help="the stub's time per call, in seconds (default: G1's)"
     )
     p.add_argument("--repeat", type=int, default=0)
-    p.add_argument("--clients", type=lambda s: s.split(","), default=CLIENTS)
+    p.add_argument("--clients", type=lambda s: [client(k) for k in s.split(",")], default=CLIENTS)
     p.add_argument("--sizes", type=lambda s: [int(x) for x in s.split(",")], default=[1, 64, 512])
     p.add_argument("--url", help=argparse.SUPPRESS)
     p.add_argument("--serve", type=int, help=argparse.SUPPRESS)

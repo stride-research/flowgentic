@@ -52,8 +52,9 @@ characters later calls add count.
 **Replicas are transports** (``Transport``): each sends a conversation, as
 OpenAI Chat Completions messages, with the tools' JSON schemas, to one server,
 and returns a ``Reply``: its content and tool calls, the usage, and the
-reasoning text kept apart from the conversation. ``OpenAITransport`` calls an
-OpenAI-compatible server (vLLM, SGLang, OpenRouter) with the ``openai`` SDK.
+reasoning text kept apart from the conversation. ``HTTPTransport``, the
+default, calls an OpenAI-compatible server (vLLM, SGLang, OpenRouter) over
+httpx; ``OpenAITransport`` calls one with the ``openai`` SDK.
 A LangChain chat model given as a replica, or returned by ``Recovery``'s
 check, runs through LangChain's adapter (``flowgentic.langchain``), which
 also takes LangChain messages and tools as they are.
@@ -95,9 +96,14 @@ from opentelemetry.trace import SpanKind, Status, StatusCode
 
 from flowgentic import _agents, _telemetry
 from flowgentic.fleet._transport import (
+	AuthenticationFailed,
+	HTTPTransport,
 	InvalidToolCall,
+	ModelServerError,
 	OpenAITransport,
 	Reply,
+	RequestRejected,
+	ServerUnavailable,
 	ToolCall,
 	Transport,
 	Usage,
@@ -110,19 +116,24 @@ __all__ = [
 	"Admission",
 	"AdmissionGate",
 	"AgentAffinity",
+	"AuthenticationFailed",
 	"CallRecord",
 	"Fleet",
 	"FleetChatModel",
 	"Gate",
+	"HTTPTransport",
 	"InvalidToolCall",
 	"LeastLoaded",
+	"ModelServerError",
 	"OpenAITransport",
 	"Recovery",
 	"Reply",
 	"ReplicaLoad",
 	"RequestAdmission",
+	"RequestRejected",
 	"RoundRobin",
 	"Routing",
+	"ServerUnavailable",
 	"TokenAdmission",
 	"ToolCall",
 	"Transport",
@@ -467,7 +478,11 @@ MRO, so langchain-openai's own wrappers of them match too."""
 
 
 def _transient(exc: BaseException) -> bool:
-	"""Whether ``exc`` is a server's that is down, restarting or overloaded."""
+	"""Whether ``exc`` is a server's that is down, restarting or overloaded, or
+	came back with a new key: a transient ``ModelServerError``, or one of the
+	openai SDK's by name."""
+	if isinstance(exc, ModelServerError):
+		return exc.transient
 	return any(c.__name__ in _TRANSIENT for c in type(exc).__mro__)
 
 

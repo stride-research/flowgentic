@@ -8,9 +8,16 @@ LangChain messages. The reply keeps apart what the conversation keeps (its
 content and tool calls, as ``Reply.message()``) and what it does not: the
 model's reasoning text, its usage and the server's own response.
 
-``OpenAITransport`` calls an OpenAI-compatible server (vLLM, SGLang,
-OpenRouter, OpenAI) with the ``openai`` SDK. ``parse_completion`` reads any
-such server's chat completion, as the SDK's object or as its JSON.
+``HTTPTransport``, the default, calls an OpenAI-compatible server (vLLM,
+SGLang, OpenRouter, OpenAI) with one httpx POST per call; ``OpenAITransport``
+calls one with the ``openai`` SDK. ``parse_completion`` reads any such
+server's chat completion, as the SDK's object or as its JSON.
+
+A failed call to a server raises a ``ModelServerError``: ``ServerUnavailable``
+when it did not answer, timed out or answered with a 5xx, and
+``AuthenticationFailed`` for a 401, both ``transient``, so that the fleet's
+``Recovery`` waits for the server; ``RequestRejected`` for any other 4xx, the
+request's fault, which no wait mends.
 """
 
 from __future__ import annotations
@@ -22,9 +29,14 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 __all__ = [
+	"AuthenticationFailed",
+	"HTTPTransport",
 	"InvalidToolCall",
+	"ModelServerError",
 	"OpenAITransport",
 	"Reply",
+	"RequestRejected",
+	"ServerUnavailable",
 	"ToolCall",
 	"Transport",
 	"Usage",
@@ -113,9 +125,10 @@ class Transport(Protocol):
 
 	``complete`` sends ``messages`` with the tools' JSON schemas, ``tools``
 	(``None`` for none), and per-call keywords such as ``max_tokens`` or
-	``extra_body``, and returns the server's ``Reply``. It raises the client's
-	own errors: the fleet's ``Recovery`` knows the OpenAI client's transient
-	ones by name. A transport may also have ``model``, the model's name, and
+	``extra_body``, and returns the server's ``Reply``. A failed call raises a
+	``ModelServerError``, or the client's own error: the fleet's ``Recovery``
+	waits out a transient ``ModelServerError``, and knows the openai SDK's
+	transient errors by name. A transport may also have ``model``, the model's name, and
 	``base_url``, the server's, which the ``chat`` span records."""
 
 	async def complete(
@@ -217,6 +230,220 @@ def parse_completion(completion: object) -> Reply:
 		model=_get(completion, "model"),
 		raw=completion,
 	)
+
+
+class ModelServerError(Exception):
+	"""A call to a model server that failed: no answer, or an error status.
+
+	``status_code`` is the response's, ``None`` without one; ``body`` the
+	response's JSON, or its text. ``transient``: whether the server may serve
+	the same call later, as one that is down, restarting, overloaded or came
+	back with a new key does; the fleet's ``Recovery`` waits for those."""
+
+	transient = False
+
+	def __init__(
+		self,
+		message: str,
+		*,
+		status_code: int | None = None,
+		body: object = None,
+	) -> None:
+		super().__init__(message)
+		self.status_code = status_code
+		self.body = body
+
+
+class ServerUnavailable(ModelServerError):
+	"""The server did not answer (a refused or dropped connection, a timeout)
+	or answered with a 5xx. Transient."""
+
+	transient = True
+
+
+class AuthenticationFailed(ModelServerError):
+	"""The server refused the key (401), as a server restarted with a new key
+	does until the transport has it. Transient: ``Recovery``'s check can
+	return a transport with the new key."""
+
+	transient = True
+
+
+class RequestRejected(ModelServerError):
+	"""The server refused the request (a 4xx other than 401), such as a context
+	too long or a tool schema it cannot take. Not transient."""
+
+
+def _server_message(response: Any) -> tuple[str, object]:  # noqa: ANN401  # httpx
+	"""The error message of a server's response, and its JSON or text: an
+	OpenAI-style ``{"error": {"message": ...}}``, vLLM's ``{"message": ...}``,
+	or a web framework's ``{"detail": ...}``."""
+	text = response.text
+	try:
+		body: object = json.loads(response.content)
+	except ValueError:
+		return text[:500] or response.reason_phrase, text
+	if isinstance(body, dict):
+		error = body.get("error")
+		if isinstance(error, dict) and error.get("message"):
+			return str(error["message"]), body
+		if isinstance(error, str) and error:
+			return error, body
+		for key in ("message", "detail"):
+			if body.get(key):
+				return str(body[key]), body
+	return text[:500], body
+
+
+class HTTPTransport:
+	"""An OpenAI-compatible server over httpx: vLLM, SGLang, OpenRouter or
+	OpenAI. The fleet's default transport.
+
+	Each call is one POST to ``{base_url}/chat/completions``, its reply read
+	with ``parse_completion``. ``model`` is the served model's name;
+	``base_url`` the server's, such as ``http://node:8000/v1``. ``api_key``,
+	sent as a bearer token, defaults to ``OPENAI_API_KEY``, then to
+	``"EMPTY"``, which vLLM and SGLang accept when they set none. ``timeout``
+	bounds a call, 600 s by default as the ``openai`` SDK's; ``None`` waits
+	for ever. Other keywords are sent with every call, such as
+	``temperature=0``; a call's own keywords override them. ``extra_body``'s
+	keys go into the request's body and ``extra_headers``' into its headers,
+	as the SDK sends them; a call's ``timeout`` replaces the transport's.
+
+	It retries nothing: a failed call raises a ``ModelServerError``, and the
+	fleet's ``Recovery`` waits out a transient one.
+
+	**Connection pools.** A client's CPU per call grows with the calls its
+	connection pool holds in flight. So the transport sends each call to its
+	least busy client, and opens another client, with its own pool, when each
+	holds ``calls_per_pool`` calls. ``pools`` fixes the number of clients
+	instead. A pool's connections are not capped. ``client``, an
+	``httpx.AsyncClient``, replaces the clients the transport would make, and
+	is its only one.
+	"""
+
+	def __init__(
+		self,
+		model: str,
+		*,
+		base_url: str,
+		api_key: str | None = None,
+		timeout: float | None = 600.0,
+		client: Any = None,  # noqa: ANN401  # an httpx.AsyncClient
+		pools: int | None = None,
+		calls_per_pool: int = 64,
+		**params: object,
+	) -> None:
+		if pools is not None and pools < 1:
+			raise ValueError("pools must be at least 1")
+		if calls_per_pool < 1:
+			raise ValueError("calls_per_pool must be at least 1")
+		if client is not None and pools not in (None, 1):
+			raise ValueError(
+				"pass a client, or pools: the transport makes a pool's client"
+			)
+		import httpx
+
+		self._httpx = httpx
+		self.model = model
+		self.base_url = base_url.rstrip("/")
+		self.url = self.base_url + "/chat/completions"
+		key = api_key or os.environ.get("OPENAI_API_KEY") or "EMPTY"
+		self._auth = {"Authorization": f"Bearer {key}"}
+		self.timeout = timeout
+		self.calls_per_pool = calls_per_pool
+		self.params = params
+		if client is not None:
+			self.clients: list[Any] = [client]
+			self.pools: int | None = 1
+			self._headers: dict[str, str] | None = self._auth  # sent with each call
+		else:
+			self.clients = [self._new_client() for _ in range(pools or 1)]
+			self.pools = pools
+			self._headers = None  # the clients have them
+		self._busy = [0] * len(self.clients)
+
+	def _new_client(self) -> Any:  # noqa: ANN401  # an httpx.AsyncClient
+		httpx = self._httpx
+		return httpx.AsyncClient(
+			headers=self._auth,
+			timeout=self.timeout,
+			limits=httpx.Limits(max_connections=None, max_keepalive_connections=None),
+		)
+
+	def _pick(self) -> int:
+		"""The least busy client; a new one if each holds ``calls_per_pool``."""
+		busy = self._busy
+		i = 0 if len(busy) == 1 else min(range(len(busy)), key=busy.__getitem__)
+		if busy[i] >= self.calls_per_pool and self.pools is None:
+			self.clients.append(self._new_client())
+			busy.append(0)
+			i = len(busy) - 1
+		return i
+
+	async def complete(
+		self,
+		messages: Sequence[Any],
+		tools: Sequence[dict] | None = None,
+		**kwargs: object,
+	) -> Reply:
+		httpx = self._httpx
+		params = {**self.params, **kwargs}
+		extra_body = params.pop("extra_body", None)
+		extra_headers = params.pop("extra_headers", None)
+		request: dict[str, Any] = {}
+		if "timeout" in params:
+			request["timeout"] = params.pop("timeout")
+		body = {"model": self.model, "messages": list(messages), **params}
+		if tools:
+			body["tools"] = list(tools)
+		if extra_body:
+			body.update(extra_body)
+		headers = self._headers
+		if extra_headers:
+			headers = {**(headers or {}), **extra_headers}
+		if headers:
+			request["headers"] = headers
+		i = self._pick()
+		self._busy[i] += 1
+		try:
+			response = await self.clients[i].post(self.url, json=body, **request)
+		except httpx.TimeoutException as exc:
+			raise ServerUnavailable(
+				f"{self.url}: no answer in time ({type(exc).__name__})"
+			) from exc
+		except httpx.TransportError as exc:
+			raise ServerUnavailable(f"{self.url}: {type(exc).__name__}: {exc}") from exc
+		finally:
+			self._busy[i] -= 1
+		status = response.status_code
+		if status >= 400:
+			message, payload = _server_message(response)
+			kind = (
+				ServerUnavailable
+				if status >= 500
+				else AuthenticationFailed
+				if status == 401
+				else RequestRejected
+			)
+			raise kind(
+				f"{status} {response.reason_phrase} from {self.url}: {message}",
+				status_code=status,
+				body=payload,
+			)
+		try:
+			completion = json.loads(response.content)
+		except ValueError as exc:
+			raise ModelServerError(
+				f"{self.url} answered with not a JSON chat completion: "
+				f"{response.text[:200]!r}",
+				status_code=status,
+				body=response.text,
+			) from exc
+		return parse_completion(completion)
+
+	def __repr__(self) -> str:
+		return f"HTTPTransport({self.model!r}, base_url={self.base_url!r})"
 
 
 class OpenAITransport:

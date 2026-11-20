@@ -26,15 +26,16 @@ classifiers = [
     "Typing :: Typed",
 ]
 # Core: what every path needs, Flowgentic's own agent loop and the model fleet
-# included. Each path adds an extra: `agents` for agents at scale on
-# Flowgentic's loop (`openai` for the fleet's transport to OpenAI-compatible
-# servers, `rhapsody` for tools that run as RHAPSODY tasks, `mcp` for the tool
-# service's MCP clients); `langgraph` for LangGraph graphs, LangChain agents
-# and LangChain's adapter, optional on that path; `asyncflow` for AsyncFlow
-# workflows.
+# included, with httpx for the fleet's default transport to OpenAI-compatible
+# servers. Each path adds an extra: `agents` for agents at scale on
+# Flowgentic's loop (`rhapsody` for tools that run as RHAPSODY tasks, `mcp` for
+# the tool service's MCP clients); `openai` for the transport over the openai
+# SDK; `langgraph` for LangGraph graphs, LangChain agents and LangChain's
+# adapter, optional on that path; `asyncflow` for AsyncFlow workflows.
 dependencies = [
     "pydantic>=2.0.0",
     "opentelemetry-api>=1.43,<2",
+    "httpx>=0.27,<1",
 ]
 
 [project.optional-dependencies]
@@ -59,7 +60,7 @@ mcp = [
     "mcp>=2.3,<2.4",
 ]
 agents = [
-    "flowgentic[openai,rhapsody,mcp]",
+    "flowgentic[rhapsody,mcp]",
 ]
 examples = [
     "flowgentic[langgraph,asyncflow]",
@@ -71,7 +72,7 @@ examples = [
     "rhapsody-py[telemetry]>=0.7,<0.8",
 ]
 dev = [
-    "flowgentic[examples,agents]",
+    "flowgentic[examples,agents,openai]",
     "ruff>=0.12.11",
     "pre-commit>=4.0",
     "mkdocs-material>=9.6",

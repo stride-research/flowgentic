@@ -297,6 +297,8 @@ class Pools:
         real = httpx.AsyncClient
 
         def make(**kwargs):
+            if "transport" in kwargs:  # a test's own client, not the transport's
+                return real(**kwargs)
             count = {"calls": 0, "now": 0, "most": 0}
 
             async def handle(request: httpx.Request) -> httpx.Response:
