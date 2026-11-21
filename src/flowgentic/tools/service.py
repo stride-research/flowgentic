@@ -641,7 +641,9 @@ class ToolServiceClient:
 		if self._stopped:
 			raise ToolServiceError("tool service stopped")
 		if self._loop is None:
-			raise RuntimeError("ToolServiceClient.start() was not called")
+			from flowgentic._agents import ToolSetupError
+
+			raise ToolSetupError("ToolServiceClient.start() was not called")
 		future = self.pending.get(uid)
 		if future is None:
 			try:

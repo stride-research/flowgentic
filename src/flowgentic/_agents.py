@@ -311,6 +311,14 @@ class TaskCancelled(Exception):
 	engine shut down before the task ended."""
 
 
+class ToolSetupError(RuntimeError):
+	"""A tool's runtime is set up wrong: no session, engine or service client a
+	tool needs, a service client not started, a backend the session or engine
+	lacks, a task tool called off its engine's event loop. It fails the agent,
+	rather than tell its model that the call failed; any other error of a
+	tool, a ``RuntimeError`` of its own included, reaches the model."""
+
+
 def task_context() -> Context:
 	"""A context for a task an agent asks for: the agent and the trace context,
 	and nothing else of the caller's.

@@ -83,10 +83,11 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Any
 
+from opentelemetry.trace import Status, StatusCode
 from pydantic import BaseModel, ValidationError, create_model
 
 from flowgentic import _agents, _telemetry
-from flowgentic._agents import AgentState
+from flowgentic._agents import AgentState, ToolSetupError
 from flowgentic.fleet import Fleet, Reply, _as_transport, _complete
 from flowgentic.host import Agent, Finished, Interrupted, Step, Suspended
 from flowgentic.store import KeyValueStore, MemoryStore
@@ -166,6 +167,7 @@ class _Inline:
 	schema: Any
 	fn: Callable[..., Any]
 	with_call_id: bool = False  # called with ``_call_id``, the call's id
+	is_async: bool = True  # else run in a thread, off the event loop
 
 
 class _Result:
@@ -490,10 +492,14 @@ class LoopRunner:
 			},
 		) as span:
 			try:
-				if tool.with_call_id:
-					out = tool.fn(**args, _call_id=call.id)
+				kwargs = {**args, "_call_id": call.id} if tool.with_call_id else args
+				if tool.is_async:
+					out = tool.fn(**kwargs)
 				else:
-					out = tool.fn(**args)
+					# A sync tool runs in a thread, with the agent's context, as
+					# LangChain's ToolNode runs one: on the event loop it would
+					# hold every agent of the process while it runs.
+					out = await asyncio.to_thread(tool.fn, **kwargs)
 				if inspect.isawaitable(out):
 					out = await out
 				outcome = "ok"
@@ -505,10 +511,10 @@ class LoopRunner:
 				outcome = "cancelled"
 				raise
 			except ValidationError as exc:
-				span.set_attribute(_telemetry.ERROR_TYPE, type(exc).__qualname__)
+				_failed(span, exc)
 				return _error(call, ERROR.format(error=f"ValidationError: {exc}"))
 			except Exception as exc:  # the model reads what went wrong
-				span.set_attribute(_telemetry.ERROR_TYPE, type(exc).__qualname__)
+				_failed(span, exc)
 				return _error(call, ERROR.format(error=repr(exc)))
 			finally:
 				span.set_attribute(_telemetry.TOOL_OUTCOME, outcome)
@@ -530,9 +536,9 @@ class LoopRunner:
 			# submits nothing.
 			suspends = tool.suspends(agent_id, args)
 			job = self.runtime.submit(tool, agent_id, call.id, args, scope=scope)
-		except RuntimeError:
+		except ToolSetupError:
 			raise  # set up wrong, such as without a session: the agent fails
-		except Exception as exc:  # a prepare that raises: the model reads it
+		except Exception as exc:  # a prepare or suspend that raises: the model reads it
 			return _error(call, ERROR.format(error=repr(exc)))
 		if not job.done():
 			if suspends:
@@ -565,7 +571,7 @@ class LoopRunner:
 				value = await self.runtime.call_service(
 					tool, agent_id, call.id, args, scope=scope
 				)
-			except RuntimeError:
+			except ToolSetupError:
 				raise  # set up wrong: no service client, or one not started
 			except Exception as exc:  # the model reads the failure
 				return _error(
@@ -635,6 +641,7 @@ def _messages(value: object) -> list[dict]:
 		value = value["messages"]
 	if (
 		isinstance(value, (str, dict))
+		or _role_and_content(value)
 		or not isinstance(value, Iterable)
 		or _is_langchain(value, "langchain_core.messages", "BaseMessage")
 	):
@@ -654,6 +661,20 @@ def _messages(value: object) -> list[dict]:
 		else:
 			raise TypeError(f"not a message: {m!r}")
 	return out
+
+
+def _role_and_content(value: object) -> bool:
+	"""Whether ``value`` is one message as a ``(role, content)`` tuple, as
+	LangGraph reads one."""
+	return isinstance(value, tuple) and len(value) == 2 and isinstance(value[0], str)
+
+
+def _failed(span: Any, exc: BaseException) -> None:  # noqa: ANN401  # a span
+	"""Mark an inline tool's span failed, as a task's is: its error's type,
+	status ERROR and the exception."""
+	span.set_attribute(_telemetry.ERROR_TYPE, type(exc).__qualname__)
+	span.record_exception(exc)
+	span.set_status(Status(StatusCode.ERROR, f"{type(exc).__name__}: {exc}"[:200]))
 
 
 def _calls_of(reply: Reply, message: dict) -> list[_Call]:
@@ -688,7 +709,12 @@ def _pending(messages: list[dict]) -> tuple[int, list[_Call], list[_Call]]:
 			made.append(_Call(c["id"], function.get("name") or "", args, error, c))
 		if not made:
 			return i, [], []
-		answered = {x.get("tool_call_id") for x in messages[i + 1 :]}
+		after = messages[i + 1 :]
+		if any(x.get("role") != "tool" for x in after):
+			# The conversation moved past these calls, as when a user's message
+			# follows them in an input history: none is pending.
+			return i, made, []
+		answered = {x.get("tool_call_id") for x in after}
 		return i, made, [c for c in made if c.id not in answered]
 	return -1, [], []
 
@@ -712,7 +738,11 @@ def _error(call: _Call, content: str) -> _Result:
 
 
 def _ok(call: _Call, value: object) -> _Result:
-	text = value if isinstance(value, str) else json.dumps(value, default=str)
+	text = (
+		value
+		if isinstance(value, str)
+		else json.dumps(value, default=str, ensure_ascii=False)
+	)
 	return _Result(_result(call, text))
 
 
@@ -747,7 +777,10 @@ def _inline(tool: object) -> _Inline:
 	if schema is None:
 		schema = _signature_schema(name, tool)
 	with_call_id = getattr(tool, "takes_call_id", False) is True
-	return _Inline(name, description, schema, tool, with_call_id)
+	is_async = inspect.iscoroutinefunction(tool) or inspect.iscoroutinefunction(
+		getattr(tool, "__call__", None)
+	)
+	return _Inline(name, description, schema, tool, with_call_id, is_async)
 
 
 def _signature_schema(name: str, fn: Callable[..., Any]) -> type[BaseModel]:

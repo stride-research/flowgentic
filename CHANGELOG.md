@@ -170,6 +170,19 @@ decision record.
 - The fleet's `Recovery` also waits out the `openai` SDK's errors of a busy
   server, 408, 409 and 429, which the SDK retries itself unless given
   `max_retries=0`.
+- `flowgentic.tools.ToolSetupError`, a `RuntimeError`, is what a runtime set
+  up wrong raises: no session, engine or service client, a service client not
+  started, a backend the session or engine lacks, a task tool off its
+  engine's loop. The agent loop, and a graph's MCP tools, fail the agent on
+  it only; any other error of a tool, a `RuntimeError` of its own included,
+  reaches the model. An agent's error reads `ToolSetupError: ...` where it
+  read `RuntimeError: ...`.
+- On the agent loop, a sync inline tool runs in a thread, with the agent's
+  context, as LangChain's `ToolNode` runs one; an inline tool that raises has
+  an `execute_tool` span with status ERROR and its exception; tool results and
+  arguments keep non-ASCII text; a `(role, content)` tuple input is one
+  message; and tool calls in an input history run first only if nothing but
+  tool results follows them.
 - An agent host fails an agent whose runner suspends it 100 times in a row on
   the same tasks, all already ended: such a runner makes no progress, and was
   resumed at once, for ever. A suspended agent waits on the tasks it

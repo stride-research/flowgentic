@@ -70,7 +70,7 @@ Agents that use an engine's task tools run on the engine's event loop: in a
 coroutine, a block or an agent host the application runs there, not inside an
 AsyncFlow task (as `bind_agent` runs an agent), whose function runs on an event
 loop of its own in a pool thread. A task tool called off the engine's loop
-raises `RuntimeError`, which fails its agent: AsyncFlow would never register
+raises `ToolSetupError`, a `RuntimeError`, which fails its agent: AsyncFlow would never register
 the task.
 
 On an engine, a tool's task fields are `backend` and
@@ -81,7 +81,7 @@ runtime is made, for its own `backend`, or when the tool is bound
 (`bind_tools`, through `ToolRuntime.check`), for the tool's. On a session,
 `backend` names the RHAPSODY backend, checked in the same way against the
 session's backends. A tool called without being bound, on a runtime that
-cannot run it, raises `RuntimeError`, which fails its agent. A runtime has a
+cannot run it, raises `ToolSetupError`, which fails its agent. A runtime has a
 session or an engine, not both.
 
 AsyncFlow runs only `async def` tasks, so the runtime wraps a sync function
@@ -183,8 +183,10 @@ names a file after the call should not use `call_id` alone; a random part,
 such as a `uuid4()`, is safe, since `prepare` runs once. A failed, refused or lost
 call reaches the model as the tool's error, so the agent can read it and
 decide what to do. A runtime set up wrong, without the session or engine, or the
-started service client, that a tool needs, raises `RuntimeError` instead: with
-`ToolNode`'s default error handling, the agent fails.
+started service client, that a tool needs, raises `ToolSetupError`, a
+`RuntimeError`, instead: with `ToolNode`'s default error handling, the agent
+fails. The agent loop fails its agent on that error only; any other error of
+a tool, a `RuntimeError` of its own included, reaches the model.
 
 ## Order of tasks
 

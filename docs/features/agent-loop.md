@@ -58,12 +58,15 @@ on a laptop.
 - **Its tools' schemas come from pydantic**: a task or MCP tool's
   `args_schema`, or the function's signature and type hints. An inline tool is
   a plain function, `async` or not; one with `name`, `description` and
-  `args_schema` attributes uses them.
+  `args_schema` attributes uses them. A sync one runs in a thread, with the
+  agent's context, as LangChain's `ToolNode` runs one, so that a slow tool
+  does not hold the event loop, and every agent of the process with it.
 - **It runs the calls of one reply concurrently.** Task tools run as RHAPSODY
   tasks and MCP tools through the tool service, on the `ToolRuntime`; inline
   tools run in the agent's process. The results go back to the model in the
-  order of the calls. Each call is an `execute_tool` span, an inline tool's
-  too (`flowgentic.tool.kind` `inline`). A task's
+  order of the calls, their text as written, not escaped to ASCII. Each call
+  is an `execute_tool` span, an inline tool's too (`flowgentic.tool.kind`
+  `inline`), with status ERROR and its exception when the tool raised. A task's
   [decision record](tools.md#the-decision-record) commits at the reply that
   asked for it, through a fleet or a transport alone. A task tool the runtime
   cannot run, such as one naming a backend the session lacks, is refused when
@@ -89,9 +92,11 @@ on a laptop.
 - **It returns tool errors to the model.** A tool that raises, arguments its
   schema refuses, a tool that does not exist, arguments that are not valid
   JSON, a task tool's `prepare` or `suspend` that raises, a failed task or MCP
-  call: each becomes a tool result that says so, and the agent goes on. A runtime set up wrong, without the
-  RHAPSODY session or the service client a tool needs, fails the agent
-  instead, as with LangGraph's tools.
+  call: each becomes a tool result that says so, and the agent goes on, a
+  `RuntimeError` of the tool's own included, such as `NotImplementedError`.
+  A runtime set up wrong, without the RHAPSODY session or the service client
+  a tool needs, fails the agent instead with `ToolSetupError`, a
+  `RuntimeError`, as with LangGraph's tools.
 - **It limits model calls.** `max_model_calls` (25 by default) counts the
   agent's calls over its whole run, suspensions included. The call past it
   fails the agent with `ModelCallLimitExceeded`, which the host counts in
@@ -113,10 +118,13 @@ on a laptop.
 
 A finished agent's output, passed to the host's `on_done`, is a `LoopOutput`:
 `messages`, `structured_response` (or `None`) and `model_calls`. An agent's
-input is a string, a message (a dict with a `role`), a list of messages, or a
-dict with `messages`, as a LangGraph graph takes it; anything else fails the
-agent with a `TypeError` before its first model call. The loop copies the
-input and never changes the caller's list. `Agent.config` is not read.
+input is a string, a message (a dict with a `role`, or a `(role, content)`
+tuple), a list of messages, or a dict with `messages`, as a LangGraph graph
+takes it; anything else fails the agent with a `TypeError` before its first
+model call. The loop copies the input and never changes the caller's list.
+`Agent.config` is not read. Tool calls in an input history run first only if
+nothing but tool results follows them, as in a conversation cut at a tool
+call; calls that a later message moved past stay history.
 
 ## LangChain, through its adapter
 

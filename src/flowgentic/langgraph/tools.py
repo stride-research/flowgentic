@@ -37,7 +37,7 @@ from langgraph.types import interrupt
 from pydantic import create_model
 
 from flowgentic import _agents
-from flowgentic._agents import AgentState
+from flowgentic._agents import AgentState, ToolSetupError
 from flowgentic.langgraph.runner import PENDING_KEY, record_interrupt
 from flowgentic.tools import McpTool, TaskTool, ToolRuntime
 
@@ -156,7 +156,7 @@ def _mcp_tool(runtime: ToolRuntime, tool: McpTool) -> BaseTool:
 				value = await runtime.call_service(
 					tool, agent, call_id, kwargs, scope=scope
 				)
-			except RuntimeError:
+			except ToolSetupError:
 				# Set up wrong: no service client, or one not started. As with
 				# a task tool, the agent fails rather than tell its model.
 				raise

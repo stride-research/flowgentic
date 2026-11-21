@@ -1086,7 +1086,7 @@ async def test_a_call_that_fails_the_agent_stops_the_others_of_its_reply():
     t = time.perf_counter()
     report = await AgentHost(runner, stagger=FAST).run(inputs(1))
     assert time.perf_counter() - t < 5  # did not wait for the 10 s call
-    assert report.errors == {"RuntimeError": 1}
+    assert report.errors == {"ToolSetupError": 1}  # a RuntimeError
     assert RUNS == {"wait_long cancelled": 1}
 
 
