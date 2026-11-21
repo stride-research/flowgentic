@@ -375,37 +375,33 @@ async def test_text_reaches_the_model_as_written():
 
 async def test_a_sync_inline_tool_runs_off_the_event_loop():
     """In a thread, as ToolNode runs one, so that a slow tool does not stall
-    every agent; with the agent's context, so its accounting and spans hold."""
-    seen = {}
+    every agent; with the agent's context, so its accounting and spans hold.
+    On the event loop, four agents' calls would run one after another; in
+    threads, they overlap."""
+    seen, spans = {}, []
 
     def slow(x: int) -> int:
         """Slow."""
-        seen[x] = (threading.get_ident(), _agents.current_agent())
+        t0 = time.monotonic()
+        seen[threading.get_ident()] = _agents.current_agent()
         time.sleep(0.2)
+        spans.append((t0, time.monotonic()))
         return x
 
     async def fast(x: int) -> int:
         """Fast."""
-        seen[-x] = (threading.get_ident(), _agents.current_agent())
+        seen["fast"] = threading.get_ident()
         return x
 
     loop_thread = threading.get_ident()
-    ticks, done = [], asyncio.Event()
-
-    async def ticker():
-        while not done.is_set():
-            t0 = time.monotonic()
-            await asyncio.sleep(0.01)
-            ticks.append(time.monotonic() - t0)
-
-    tick = asyncio.create_task(ticker())
     model = ScriptedTransport(dict_calls_then_answer(("slow", {"x": 1}), ("fast", {"x": 1})))
-    await AgentHost(LoopRunner(model, [slow, fast]), stagger=FAST).run(inputs(4))
-    done.set()
-    await tick
-    assert seen[1][0] != loop_thread and seen[1][1] is not None
-    assert seen[-1] == (loop_thread, seen[-1][1])
-    assert max(ticks) < 0.15  # four agents' 0.2 s tools did not hold the loop
+    report = await AgentHost(LoopRunner(model, [slow, fast]), stagger=FAST).run(inputs(4))
+    assert report.finished == 4
+    assert seen.pop("fast") == loop_thread  # an async tool stays on the loop
+    assert loop_thread not in seen and all(agent is not None for agent in seen.values())
+    assert len(spans) == 4
+    starts, ends = sorted(s for s, _ in spans), sorted(e for _, e in spans)
+    assert starts[1] < ends[0]  # at least two ran at once
 
 
 # --- concurrency ----------------------------------------------------------------
