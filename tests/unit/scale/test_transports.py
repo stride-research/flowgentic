@@ -183,6 +183,16 @@ def test_the_openai_transport_makes_its_client(monkeypatch):
     assert transport.base_url == "http://node-2:8000/v1/"
 
 
+def test_only_openais_own_api_gets_the_openai_key_from_the_environment(monkeypatch):
+    """The SDK itself sends ``OPENAI_API_KEY`` to any server; this transport,
+    pointed at servers on an allocation, sends it only to OpenAI's own API."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
+    assert OpenAITransport("m", base_url="http://node-2:8000/v1").client.api_key == "EMPTY"
+    assert OpenAITransport("gpt-5").client.api_key == "sk-env"  # the SDK's default URL, OpenAI's
+    assert OpenAITransport("gpt-5", base_url="https://api.openai.com/v1").client.api_key == "sk-env"
+    assert OpenAITransport("m", base_url="http://node-2:8000/v1", api_key="k").client.api_key == "k"
+
+
 class Pools:
     """Stand-ins for ``AsyncOpenAI``: each counts its calls and the most it
     held at once; a call returns once ``gate`` is set."""

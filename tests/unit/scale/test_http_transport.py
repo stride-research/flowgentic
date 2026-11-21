@@ -142,20 +142,31 @@ async def test_the_transport_sends_the_tools_and_the_calls_keywords(monkeypatch)
 
 
 def test_the_transport_makes_its_client(monkeypatch):
-    """Its key from ``OPENAI_API_KEY``, else ``EMPTY``, as vLLM and SGLang take
-    when they set none; a timeout of 600 s, as the openai SDK's; a pool per 8
-    calls in flight, the cheapest per call of 4, 8, 16, 32 and 64 at 64 calls
-    in flight, and within 3% of the cheapest at 512."""
+    """Its key ``EMPTY``, as vLLM and SGLang take when they set none, unless
+    given one; a timeout of 600 s, as the openai SDK's; a pool per 8 calls in
+    flight, the cheapest per call of 4, 8, 16, 32 and 64 at 64 calls in
+    flight, and within 3% of the cheapest at 512."""
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     transport = HTTPTransport("m", base_url=URL)
     assert transport.calls_per_pool == 8 and transport.pools is None
     (client,) = transport.clients
     assert client.headers["authorization"] == "Bearer EMPTY"
     assert client.timeout == httpx.Timeout(600.0)
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
     transport = HTTPTransport("m", base_url=URL, timeout=5)
-    assert transport.clients[0].headers["authorization"] == "Bearer sk-env"
     assert transport.clients[0].timeout == httpx.Timeout(5.0)
+
+
+def test_only_openais_own_api_gets_the_openai_key_from_the_environment(monkeypatch):
+    """``OPENAI_API_KEY`` is OpenAI's: a server on an allocation, often over
+    plain HTTP, must never be sent it."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
+    for url in (URL, "https://openrouter.ai/api/v1", "http://api.openai.com.example:8000/v1"):
+        transport = HTTPTransport("m", base_url=url)
+        assert transport.clients[0].headers["authorization"] == "Bearer EMPTY", url
+    openai = HTTPTransport("gpt-5", base_url="https://api.openai.com/v1")
+    assert openai.clients[0].headers["authorization"] == "Bearer sk-env"
+    given = HTTPTransport("m", base_url=URL, api_key="sk-given")
+    assert given.clients[0].headers["authorization"] == "Bearer sk-given"
 
 
 # --- errors ------------------------------------------------------------------------
@@ -193,14 +204,18 @@ def raising(exc):
             "maximum context length",
         ),
         (failing(404, {"detail": "Not Found"}), RequestRejected, 404, "Not Found"),
-        (failing(429, {"error": "rate limited"}), RequestRejected, 429, "rate limited"),
+        (failing(422, {"detail": "bad tool schema"}), RequestRejected, 422, "bad tool schema"),
+        (failing(429, {"error": "rate limited"}), ServerUnavailable, 429, "rate limited"),
+        (failing(408, "Request Timeout"), ServerUnavailable, 408, "Request Timeout"),
+        (failing(409, {"error": {"message": "try again"}}), ServerUnavailable, 409, "try again"),
     ],
-    ids=["refused", "timeout", "dropped", "503", "500", "401", "400", "404", "429"],
+    ids=["refused", "timeout", "dropped", "503", "500", "401", "400", "404", "422", "429", "408", "409"],
 )
 async def test_a_failed_call_raises_flowgentics_error_with_the_servers_message(client, kind, status, says):
-    """No answer, a timeout or a 5xx is a server that is down or overloaded,
-    and a 401 one that came back with a new key: transient, so a fleet's
-    ``Recovery`` waits for it. Any other 4xx is the request's fault."""
+    """No answer, a timeout, a 5xx, or a 408, 409 or 429, which the openai
+    SDK retries too, is a server that is down or busy, and a 401 one that came
+    back with a new key: transient, so a fleet's ``Recovery`` waits for it.
+    Any other 4xx is the request's fault."""
     with pytest.raises(kind) as raised:
         await HTTPTransport("m", base_url=URL, client=client).complete(HI)
     error = raised.value

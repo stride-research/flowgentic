@@ -7,6 +7,7 @@ LangChain's models and tools, through its adapter: ``test_loop_langchain``."""
 
 import asyncio
 import json
+import re
 import time
 from collections import Counter
 from typing import Any
@@ -233,7 +234,9 @@ async def test_mcp_tools_go_through_the_service_keyed_by_agent_and_turn():
     runner = LoopRunner(transport(("lookup", {"material": "x"})), [lookup], runtime=ToolRuntime(service=service))
     report = await AgentHost(runner, stagger=FAST, on_done=collect(outputs)).run(inputs(1))
     assert report.finished == 1
-    assert service.calls == [("agent-0/1/call-0", "lookup", {"material": "x"}, True)]
+    ((key, *call),) = service.calls  # agent/turn/call, the turn with the runner's own token
+    assert re.fullmatch(r"agent-0/[0-9a-f]{8}-1/call-0", key)
+    assert call == ["lookup", {"material": "x"}, True]
     assert '"score": 0.5' in outputs["agent-0"].messages[-1]["content"]
 
 
@@ -700,6 +703,93 @@ async def test_an_inline_tools_span_says_how_it_ended(span_exporter):
     assert failed.attributes["flowgentic.tool.outcome"] == "error"
     assert failed.attributes["error.type"] == "ValueError"
     assert stopped.attributes["flowgentic.tool.outcome"] == "interrupted"
+
+
+# --- runners side by side ------------------------------------------------------------
+
+
+def pop_a(x: float) -> dict:
+    """Simulate, slowly, for population A."""
+    time.sleep(0.3)
+    return {"pop": "A"}
+
+
+def pop_b(x: float) -> dict:
+    """Simulate, quickly, for population B."""
+    time.sleep(0.02)
+    return {"pop": "B"}
+
+
+async def pause() -> str:
+    """Wait a moment."""
+    await asyncio.sleep(0.05)
+    return "paused"
+
+
+def same_calls(messages):
+    """The same call ids for every agent and population: a simulation and a
+    pause, then the simulation's result as the answer."""
+    results = {m["tool_call_id"]: m["content"] for m in tool_results(messages)}
+    if "c1" in results:
+        return reply(results["c1"])
+    return reply(calls=[("c1", "simulate", {"x": 1.0}), ("c2", "pause", {})])
+
+
+def bounded(runner, limit=50):
+    """Fail the agent, not the test run, if the runner is resumed without end."""
+    resume, count = runner.resume, [0]
+
+    async def guarded(agent, done):
+        count[0] += 1
+        if count[0] > limit:
+            raise AssertionError("resumed without end")
+        return await resume(agent, done)
+
+    runner.resume = guarded
+    return runner
+
+
+def answers(outputs):
+    return {json.loads(o.messages[-1]["content"])["pop"] for o in outputs.values()}
+
+
+async def test_two_hosts_whose_agents_share_ids_each_get_their_own_tasks():
+    """Two populations in one process, each with its own runtime and session,
+    whose agents share ids and call ids, and wait on a pause beside their
+    task: each agent resumes once, on its own task."""
+    sessions = [await thread_session(), await thread_session()]
+    outputs, hosts = [{}, {}], []
+    for fn, session, out in zip((pop_a, pop_b), sessions, outputs, strict=True):
+        tools = [task_tool(fn, name="simulate", suspend=True), pause]
+        runner = bounded(LoopRunner(ScriptedTransport(same_calls), tools, runtime=ToolRuntime(session)))
+        hosts.append(AgentHost(runner, stagger=FAST, on_done=collect(out)))
+    try:
+        reports = await asyncio.wait_for(asyncio.gather(*(h.run(inputs(3)) for h in hosts)), 20)
+    finally:
+        for session in sessions:
+            await session.close()
+    assert [r.finished for r in reports] == [3, 3]
+    assert [answers(out) for out in outputs] == [{"A"}, {"B"}]
+    assert all(a.suspensions == 1 for r in reports for a in r.agents)
+
+
+async def test_two_runners_sharing_a_runtime_do_not_share_tasks():
+    """A runtime shared by two runners whose agents share ids and call ids:
+    each runner's task is its own, not the other's asked for again."""
+    session = await thread_session()
+    runtime = ToolRuntime(session)
+    outputs, hosts = [{}, {}], []
+    for fn, out in zip((pop_a, pop_b), outputs, strict=True):
+        tools = [task_tool(fn, name="simulate", suspend=True), pause]
+        runner = bounded(LoopRunner(ScriptedTransport(same_calls), tools, runtime=runtime))
+        hosts.append(AgentHost(runner, stagger=FAST, on_done=collect(out)))
+    try:
+        reports = await asyncio.wait_for(asyncio.gather(*(h.run(inputs(2)) for h in hosts)), 20)
+    finally:
+        await session.close()
+    assert [r.finished for r in reports] == [2, 2]
+    assert [answers(out) for out in outputs] == [{"A"}, {"B"}]
+    assert runtime.stats()["submitted"] == 4
 
 
 # --- the decision record -------------------------------------------------------------
