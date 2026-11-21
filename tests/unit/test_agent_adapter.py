@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import pytest
+from _asyncflow_records import record_submissions
 from pydantic import BaseModel
 from radical.asyncflow import LocalExecutionBackend, WorkflowEngine
 
@@ -155,6 +156,7 @@ async def test_bind_agent_runs_on_the_named_asyncflow_backend() -> None:
         ThreadPoolExecutor(max_workers=1), name="compute"
     )
     ai = await LocalExecutionBackend(ThreadPoolExecutor(max_workers=1), name="ai")
+    submitted = record_submissions(compute, ai)
     flow = await WorkflowEngine.create(backend=[compute, ai])
     try:
         agent = bind_agent(
@@ -168,8 +170,8 @@ async def test_bind_agent_runs_on_the_named_asyncflow_backend() -> None:
         result = await agent.ainvoke({"cycle": 2, "candidate": 3.0})
 
         assert result["decision"] == {"choice": 3.0, "rationale": "bounded"}
-        assert [task["name"] for task in ai.tasks.values()] == ["agent_lead_planner"]
-        assert not compute.tasks
+        assert [task["name"] for task in submitted["ai"]] == ["agent_lead_planner"]
+        assert not submitted["compute"]
     finally:
         await flow.shutdown()
 # --8<-- [end:bind-agent-on-backend]

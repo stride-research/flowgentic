@@ -739,7 +739,7 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=1.2.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "python-dotenv", marker = "extra == 'examples'", specifier = ">=1.0" },
-    { name = "radical-asyncflow", marker = "extra == 'asyncflow'", specifier = ">=0.6,<0.7" },
+    { name = "radical-asyncflow", marker = "extra == 'asyncflow'", specifier = ">=0.7,<0.8" },
     { name = "rhapsody-py", marker = "extra == 'rhapsody'", specifier = ">=0.7,<0.8" },
     { name = "rhapsody-py", extras = ["telemetry"], marker = "extra == 'examples'", specifier = ">=0.7,<0.8" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12.11" },
@@ -2771,7 +2771,7 @@ wheels = [
 
 [[package]]
 name = "radical-asyncflow"
-version = "0.6.0"
+version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cloudpickle" },
@@ -2779,9 +2779,9 @@ dependencies = [
     { name = "requests" },
     { name = "typeguard" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b6/9f/74044943331c15c74fa2aeb41b9bbda6d577bba0416d656fd242e4d91645/radical_asyncflow-0.6.0.tar.gz", hash = "sha256:8422a1a6f729359bc6a1bb1c74192ebbe04f0f2851bd0d461419cbb8b3ba0e5a", size = 37759, upload-time = "2026-10-20T02:16:58.019Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5f/af/ac3214c66d09bbf752275a9a23fc153a46a317cf3904dc3d3e83edefd7af/radical_asyncflow-0.7.0.tar.gz", hash = "sha256:f52199ffc12caf6fa7668bb21b87064bd1e300e2f203abba6ed19c4fcf555216", size = 41709, upload-time = "2026-11-10T03:45:58.305Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2d/27/7d00956821363b8d1d816a2524eef94b60971fb3f678edf8b2e00dc2b7c8/radical_asyncflow-0.6.0-py3-none-any.whl", hash = "sha256:c0c07130d97a13ab22b2af173cccea139ea604a286573744f3dd6ab239bc0005", size = 35475, upload-time = "2026-10-20T02:16:57.021Z" },
+    { url = "https://files.pythonhosted.org/packages/82/4c/00b89bf60e77fa8735927b3a099a7dbd0b4a950212b2432a79ed91495887/radical_asyncflow-0.7.0-py3-none-any.whl", hash = "sha256:22a141887c6749bf991d474da33591a4ed9eb0d4266ec37f2c150797c2617a41", size = 39298, upload-time = "2026-11-10T03:45:57.068Z" },
 ]
 
 [[package]]

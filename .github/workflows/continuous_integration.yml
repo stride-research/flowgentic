@@ -73,7 +73,7 @@ jobs:
       - name: "Install dependencies"
         run: uv sync --frozen --extra dev --python ${{ matrix.python-version }}
 
-      # The lock pins LangGraph 1.x and AsyncFlow 0.6.0; record what was tested.
+      # The lock pins LangGraph 1.x and AsyncFlow 0.7.0; record what was tested.
       - name: "Show tested versions"
         run: >-
           uv run --frozen --python ${{ matrix.python-version }} --extra dev python -c

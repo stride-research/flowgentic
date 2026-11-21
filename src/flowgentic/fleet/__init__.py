@@ -975,6 +975,10 @@ class Fleet:
 		meta: Any,
 	) -> AIMessage:
 		t_end = time.time()
+		# when the agent committed to the reply's tool calls
+		_agents.note_reply(
+			agent_id, t_end, [c["id"] for c in reply.tool_calls if c.get("id")]
+		)
 		core.calls[i] += 1
 		usage = getattr(reply, "usage_metadata", None) or {}
 		prompt = usage.get("input_tokens", 0) or 0

@@ -69,7 +69,7 @@ Flowgentic tool does (`test_llm_selected_tool_runs_as_an_asyncflow_task`).
 
 ## 4. Retries
 
-AsyncFlow 0.6.0 has no per-task retry or timeout, so the application writes
+AsyncFlow 0.7 has no per-task retry or timeout, so the application writes
 the policy it needs. The demo retries a simulation once after a transient
 failure, with 5 s per attempt, and passes the policy to `asyncflow_tool` as
 `retry=retry_transient_simulation`:

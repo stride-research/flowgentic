@@ -9,7 +9,7 @@ can tell whether it is transient and can redo only the work that failed:
 | A model call: a rate limit, a server error, a lost connection | The provider SDK, through the chat model's `max_retries`; OpenAI's SDK retries twice by default. An agent built with `create_agent` can add `ModelRetryMiddleware` and `ModelFallbackMiddleware` | The chat model's `timeout` |
 | A tool in an agent loop | `ToolRetryMiddleware`, or the application around the tool call | The tool |
 | A graph node | LangGraph: `add_node(..., retry_policy=RetryPolicy(...))` | LangGraph: `add_node(..., timeout=...)`, from LangGraph 1.2 |
-| An AsyncFlow task | The application: AsyncFlow 0.6.0 has no per-task retry | The application: AsyncFlow 0.6.0 has no per-task timeout |
+| An AsyncFlow task | The application: AsyncFlow 0.7 has no per-task retry | The application: AsyncFlow 0.7 has no per-task timeout |
 
 `ToolNode(handle_tool_errors=...)` does not retry a tool. It returns the error
 to the model as a `ToolMessage`, and the model decides whether to call the
@@ -52,7 +52,7 @@ is awaiting; that cancellation is validated on local backends only.
 
 ## An AsyncFlow task
 
-AsyncFlow 0.6.0 has no per-task retry or timeout, so the application wraps the
+AsyncFlow 0.7 has no per-task retry or timeout, so the application wraps the
 calls that need them. The AI-HPC demos retry a simulation once after a
 transient failure, with 5 s per attempt:
 

@@ -225,12 +225,13 @@ def process_agent_seconds() -> dict[AgentState, float]:
 class _Agent:
 	"""The context variable's value: one live agent, with its open activities."""
 
-	__slots__ = ("id", "states", "_open", "registered", "finished", "at_end")
+	__slots__ = ("id", "states", "_open", "registered", "finished", "at_end", "replies")
 
 	def __init__(self, agent_id: str, states: AgentStates) -> None:
 		self.id = agent_id
 		self.states = states
 		self.finished = False
+		self.replies: dict[str, float] = {}
 		self._open = [0] * _N
 		self.registered: dict[str, asyncio.Future] = {}
 		self.at_end: list[Callable[[], None]] = []
@@ -268,6 +269,26 @@ def current_agent() -> str | None:
 	return None if agent is None else agent.id
 
 
+def note_reply(agent_id: str, t: float, call_ids: Iterable[str]) -> None:
+	"""Note that a model reply reached the agent ``agent_id`` at ``t``
+	(``time.time()``), with tool calls ``call_ids``, if the current task runs that
+	agent: the time the agent committed to each of those calls. Kept until the
+	agent ends."""
+	agent = _current.get()
+	if agent is not None and agent.id == agent_id:
+		for call_id in call_ids:
+			agent.replies[call_id] = t
+
+
+def reply_time(agent_id: str, call_id: str) -> float | None:
+	"""When the model reply that made the tool call ``call_id`` reached the agent
+	``agent_id``, if the current task runs that agent and the reply was noted."""
+	agent = _current.get()
+	if agent is None or agent.id != agent_id:
+		return None
+	return agent.replies.get(call_id)
+
+
 @contextmanager
 def activity(state: AgentState) -> Iterator[None]:
 	"""Count the current agent as in ``state`` for the duration of the block."""
@@ -283,6 +304,11 @@ def activity(state: AgentState) -> Iterator[None]:
 
 
 # --- tasks agents wait on --------------------------------------------------------
+
+
+class TaskCancelled(Exception):
+	"""RHAPSODY or AsyncFlow cancelled the task, or its session closed or its
+	engine shut down before the task ended."""
 
 
 def task_context() -> Context:
@@ -381,6 +407,9 @@ def release_pending() -> None:
 			if _pending.get(key) is future:
 				_pending.pop(key)
 		agent.registered.clear()
+		# The runtime keeps an ended task with the context it ran in, which
+		# holds this record: the replies' times go now, as the registrations do.
+		agent.replies.clear()
 		at_end, agent.at_end = agent.at_end, []
 		for callback in at_end:
 			callback()
