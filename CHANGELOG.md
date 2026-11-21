@@ -188,6 +188,10 @@ decision record.
   invalid tool calls, with `{}` as arguments, so the tool messages answering
   them answer a call; `parse_completion` reads `reasoning_content` when
   `reasoning` is empty.
+- `flowgentic.fleet.FleetChatModel` is no longer in the module's `__all__`, so
+  `from flowgentic.fleet import *` works without LangChain; without it,
+  naming `FleetChatModel` raises an `AttributeError` with the install hint.
+  The example's `--runner graph` without LangGraph stops with that hint too.
 - An agent host fails an agent whose runner suspends it 100 times in a row on
   the same tasks, all already ended: such a runner makes no progress, and was
   resumed at once, for ever. A suspended agent waits on the tasks it

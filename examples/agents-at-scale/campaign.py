@@ -296,8 +296,15 @@ def langgraph_version() -> ModuleType:
         path = Path(__file__).with_name("campaign_langgraph.py")
         spec = importlib.util.spec_from_file_location(name, path)
         module = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(module)
+        except ModuleNotFoundError as exc:
+            if (exc.name or "").split(".")[0] not in {"langchain", "langchain_core", "langgraph"}:
+                raise
+            raise ModuleNotFoundError(
+                "--runner graph runs LangGraph: install flowgentic[langgraph]", name=exc.name
+            ) from exc
         sys.modules[name] = module
-        spec.loader.exec_module(module)
     return sys.modules[name]
 
 
@@ -706,6 +713,8 @@ def main(argv: list[str] | None = None) -> None:
     if a.mcp_server:
         serve_mcp(a.mcp_server)
         return
+    if a.runner == "graph":
+        langgraph_version()  # without LangGraph, stop before anything starts
     summary = run_campaign(a.agents, a.processes, a.workers, a.dragon, a.runner)
     print(json.dumps(summary, indent=2) if a.json else report(summary))
 

@@ -119,7 +119,6 @@ __all__ = [
 	"AuthenticationFailed",
 	"CallRecord",
 	"Fleet",
-	"FleetChatModel",
 	"Gate",
 	"HTTPTransport",
 	"InvalidToolCall",
@@ -1234,11 +1233,19 @@ def _loads(kind: str) -> dict[tuple[str, int], int]:
 	return out
 
 
+class _NeedsExtra(AttributeError):
+	"""A name of another extra's: an ``AttributeError``, so that ``hasattr``
+	says it is not there and ``import *`` skips it, with the install hint."""
+
+
 def __getattr__(name: str) -> Any:  # noqa: ANN401
 	# FleetChatModel lives with LangChain's adapter; this name stays for the
-	# code that imports it from here.
+	# code that imports it from here. It is not in __all__: import * works
+	# without LangChain.
 	if name == "FleetChatModel":
-		from flowgentic.langchain import FleetChatModel
-
+		try:
+			from flowgentic.langchain import FleetChatModel
+		except ModuleNotFoundError as exc:
+			raise _NeedsExtra(str(exc), name=name, obj=__name__) from exc
 		return FleetChatModel
 	raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

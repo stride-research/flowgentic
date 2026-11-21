@@ -157,8 +157,8 @@ stands.
 The agent's states are counted as the host's other parts count them: model
 calls in `MODEL_QUEUED` and `MODEL_REQUEST` (through the fleet, or around a
 plain chat model's call), waits on tasks in `TOOL_WAIT`, tool service calls in
-`TOOL_CALL`, the loop and its inline tools in `WORKING`. Task and MCP calls are
-`execute_tool` spans under the agent's `invoke_agent` span, and each
+`TOOL_CALL`, the loop and its inline tools in `WORKING`. Task, MCP and inline
+tool calls are `execute_tool` spans under the agent's `invoke_agent` span, and each
 suspension is the host's `flowgentic.agent.suspend` event; see
 [Telemetry](telemetry.md).
 

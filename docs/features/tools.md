@@ -269,6 +269,7 @@ suspended.
   refused.
 - Each task or service call is an `execute_tool` span, inside its agent's
   trace, with `gen_ai.tool.name`, `gen_ai.tool.call.id`,
-  `flowgentic.tool.kind` (`task` or `service`) and `flowgentic.tool.outcome`.
+  `flowgentic.tool.kind` (`task` or `service`, and `inline` for an inline
+  tool on the [agent loop](agent-loop.md)) and `flowgentic.tool.outcome`.
 - `flowgentic.tool.duration` is a histogram of the time from a call's
   submission to its result, by tool, kind and outcome.
