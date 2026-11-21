@@ -417,9 +417,13 @@ async def test_asyncflow_telemetry_spans(integration: str) -> None:
     # One cycle: the workflow scope, 4 node blocks and 9 tasks (the resident
     # service started before telemetry). An AsyncFlow whose shutdown stops
     # telemetry also exports the session's span, which is not counted.
+    assert set(names) <= {"workflow", "block", "task", "session"}
     assert names["workflow"] == 1
     assert names["block"] == len(blocks) == 4
     assert len(tasks) == 9
+    # all the "task" spans: the 9 tasks, and with an AsyncFlow that ends every
+    # component's span, one for each block
+    assert names["task"] in (9, 9 + len(blocks))
     for span in tasks:
         assert {"task_id", "executable", "status"} <= set(span.attributes)
         assert span.attributes["status"] == "completed"
