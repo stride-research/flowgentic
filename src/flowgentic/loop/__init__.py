@@ -329,12 +329,9 @@ class LoopRunner:
 	def close(self) -> None:
 		"""End the threads that run sync inline tools, once their calls end; a
 		later run makes new ones. They end, too, when the runner is collected."""
-		executor, self._executor = self._executor, None
-		if self._finalizer is not None:
-			self._finalizer.detach()
-			self._finalizer = None
-		if executor is not None:
-			executor.shutdown(wait=False)
+		finalizer, self._finalizer, self._executor = self._finalizer, None, None
+		if finalizer is not None:
+			finalizer()  # shuts the pool down, without waiting, once
 
 	def _pool(self) -> ThreadPoolExecutor:
 		if self._executor is None:
