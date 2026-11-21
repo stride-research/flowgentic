@@ -33,7 +33,7 @@ from opentelemetry.trace import StatusCode
 from pydantic import BaseModel, ConfigDict, Field
 
 from flowgentic.fleet import Fleet
-from flowgentic.host import Agent, AgentHost, AgentState
+from flowgentic.host import Agent, AgentHost, AgentState, AgentStates, Finished, Suspended
 from flowgentic.loop import (
     Interrupt,
     Interruption,
@@ -344,7 +344,11 @@ async def test_calls_in_an_input_history_that_the_conversation_moved_past_do_not
     report = await AgentHost(LoopRunner(model, [act]), stagger=FAST).run([Agent("a", {"messages": history})])
     assert report.finished == 1 and ran == []
     (sent, _, _), *_ = model.calls
-    assert sent == history
+    # each such call gets a result that says it was not run, before the user's
+    # message, as a server requires a result for every call
+    assert sent[:2] == history[:2] and sent[3:] == history[2:]
+    assert sent[2]["role"] == "tool" and sent[2]["tool_call_id"] == "old"
+    assert sent[2]["content"].startswith("Error: ") and "not run" in sent[2]["content"]
     # with nothing but a result after it, the other call is pending, and runs first
     pending = [*history[:2], {"role": "tool", "tool_call_id": "other", "content": "x"}]
     pending[1] = {
@@ -395,13 +399,60 @@ async def test_a_sync_inline_tool_runs_off_the_event_loop():
 
     loop_thread = threading.get_ident()
     model = ScriptedTransport(dict_calls_then_answer(("slow", {"x": 1}), ("fast", {"x": 1})))
-    report = await AgentHost(LoopRunner(model, [slow, fast]), stagger=FAST).run(inputs(4))
+    runner = LoopRunner(model, [slow, fast])
+    report = await AgentHost(runner, stagger=FAST).run(inputs(4))
     assert report.finished == 4
     assert seen.pop("fast") == loop_thread  # an async tool stays on the loop
     assert loop_thread not in seen and all(agent is not None for agent in seen.values())
     assert len(spans) == 4
     starts, ends = sorted(s for s, _ in spans), sorted(e for _, e in spans)
     assert starts[1] < ends[0]  # at least two ran at once
+    runner.close()
+
+
+async def test_sync_inline_tools_run_on_the_runners_own_threads():
+    """Not on the event loop's default executor, which also resolves host
+    names for the model's connections: slow tools queued there would hold a
+    model call's connect. ``close()`` ends the threads; a later run makes
+    new ones."""
+    names = []
+
+    def where(x: int) -> int:
+        """Where."""
+        names.append(threading.current_thread().name)
+        return x
+
+    model = ScriptedTransport(dict_calls_then_answer(("where", {"x": 1})))
+    runner = LoopRunner(model, [where])
+    await AgentHost(runner, stagger=FAST).run(inputs(3))
+    assert len(names) == 3 and all(n.startswith("flowgentic-inline") for n in names)
+    runner.close()
+    runner.close()  # again: nothing
+    await AgentHost(runner, stagger=FAST).run(inputs(1, "again"))
+    assert len(names) == 4
+    runner.close()
+
+
+async def test_text_that_utf8_cannot_carry_does_not_stop_the_conversation():
+    """A lone surrogate, as in a file name Linux could not decode, goes to the
+    model as its escape, so neither this call nor any after it fails."""
+    name = b"run-\xff.dat".decode("utf-8", "surrogateescape")
+
+    def files() -> dict:
+        """List files."""
+        return {"files": [name]}
+
+    def first() -> str:
+        """The first file."""
+        return name
+
+    model = transport(("files", {}), ("first", {}))
+    report = await AgentHost(LoopRunner(model, [files, first]), stagger=FAST).run(inputs(1))
+    assert report.finished == 1
+    _, (second, _, _) = model.calls
+    json.dumps(second, ensure_ascii=False).encode("utf-8")  # sendable
+    results = [m["content"] for m in second if m["role"] == "tool"]
+    assert results == ['{"files": ["run-\\udcff.dat"]}', "run-\\udcff.dat"]
 
 
 # --- concurrency ----------------------------------------------------------------
@@ -939,6 +990,44 @@ async def test_two_runners_sharing_a_runtime_do_not_share_tasks():
     assert [r.finished for r in reports] == [2, 2]
     assert [answers(out) for out in outputs] == [{"A"}, {"B"}]
     assert runtime.stats()["submitted"] == 4
+
+
+async def as_agent(agent_id, step):
+    """Run ``step()`` as the host runs an agent: in a task of its own, with the
+    agent current."""
+
+    async def run():
+        _agents.set_current_agent(agent_id, AgentStates([agent_id]))
+        return await step()
+
+    return await asyncio.create_task(run())
+
+
+async def test_a_runner_resumes_an_agent_another_runner_suspended():
+    """The turn's token is saved with the agent's state, so a runner other
+    than the one that suspended it, sharing its runtime and store, finds the
+    agent's task instead of submitting it again, and ends the agent."""
+    session = await thread_session()
+    runtime, store = ToolRuntime(session), MemoryStore()
+    tool = task_tool(pop_b, name="simulate", suspend=True)
+
+    def runner():
+        model = ScriptedTransport(dict_calls_then_answer(("simulate", {"x": 1.0})))
+        return LoopRunner(model, [tool], runtime=runtime, store=store)
+
+    first, second = runner(), runner()
+    agent = Agent("x", "go")
+    try:
+        step = await as_agent("x", lambda: first.start(agent))
+        assert isinstance(step, Suspended)
+        ((rid, key),) = step.waits
+        await asyncio.wait_for(asyncio.shield(_agents.pending(key)), 5)
+        done = await as_agent("x", lambda: second.resume(agent, {rid: {"flowgentic_done": key}}))
+    finally:
+        await session.close()
+    assert isinstance(done, Finished) and '"pop": "B"' in done.output.messages[-1]["content"]
+    assert runtime.stats()["submitted"] == 1 and runtime.stats()["repeats"] == 1
+    assert store.keys() == []  # the second runner ended the agent
 
 
 # --- the decision record -------------------------------------------------------------
