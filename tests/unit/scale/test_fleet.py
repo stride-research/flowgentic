@@ -1097,8 +1097,9 @@ def test_the_fleet_module_names_only_its_api():
         and not inspect.ismodule(value)
         and getattr(value, "__module__", "").startswith(fleet_module.__name__)
     }
-    # FleetChatModel lives with LangChain's adapter; the fleet names it lazily.
-    assert public | {"FleetChatModel"} == set(fleet_module.__all__)
+    # FleetChatModel lives with LangChain's adapter; the fleet names it lazily,
+    # outside __all__, so import * works without LangChain.
+    assert public == set(fleet_module.__all__) and "FleetChatModel" not in public
     assert "Gate" in fleet_module.__all__ and "Transport" in fleet_module.__all__
     assert fleet_module.FleetChatModel.__module__ == "flowgentic.langchain"
 
