@@ -51,13 +51,19 @@ decision record.
   the conversation keeps.
 - `flowgentic.fleet.HTTPTransport`, the default transport, for vLLM, SGLang,
   OpenRouter and OpenAI: one httpx POST to `{base_url}/chat/completions` per
-  call, at about half the CPU per call of the `openai` SDK. It takes the
-  SDK's keywords (`extra_body` and `extra_headers` merged as the SDK merges
-  them, the key as a bearer token, a 600 s timeout) and retries nothing. A
-  failed call raises a `ModelServerError` with the server's message:
-  `ServerUnavailable` (no answer, a timeout, a 5xx) and `AuthenticationFailed`
-  (401) are transient, and the fleet's `Recovery` waits them out;
-  `RequestRejected` (any other 4xx) is not. httpx becomes a core dependency.
+  call, at about a quarter of the CPU per call of `OpenAITransport` (0.8
+  against 3.1 to 3.3 ms, against a local stub). It takes the SDK's keywords
+  (`extra_body` and `extra_headers` merged as the SDK merges them, the key as
+  a bearer token, a 600 s timeout) and retries nothing. A failed call raises
+  a `ModelServerError` with the server's message: `ServerUnavailable` (no
+  answer, a timeout, a 5xx, or a busy server's 408, 409 or 429, which the
+  SDK retries too) and `AuthenticationFailed` (401) are transient, and the
+  fleet's `Recovery` waits them out; `RequestRejected` (any other 4xx) is
+  not. httpx becomes a core dependency.
+- Neither transport sends the environment's `OPENAI_API_KEY` to any server but
+  OpenAI's own API (`api.openai.com`): a server on an allocation gets `EMPTY`
+  unless given a key, where the `openai` SDK alone sends that key to any
+  server.
 - `flowgentic.fleet.OpenAITransport`, over the `openai` SDK, for the same
   servers, in a new `openai` extra; and `parse_completion` for such a server's
   reply, which both transports read with. It reads the reasoning from
@@ -139,8 +145,11 @@ decision record.
     is the replica's own message.
   - `Fleet.bind_tools` is gone: pass `tools=` to `ainvoke`, or use
     `fleet.chat_model().bind_tools(tools)`.
-  - A listener gets `(record, reply)` with the `Reply`, which keeps
-    `content`, `tool_calls` and `invalid_tool_calls`.
+  - A listener gets `(record, reply)` with the `Reply`, which has
+    `content`, `tool_calls` and `invalid_tool_calls`, but its calls are
+    objects, not dicts: `ToolCall(id, name, args)`, so `call.id` where it
+    was `call["id"]`, and `InvalidToolCall(id, name, arguments, error)`,
+    whose raw text is `arguments`, not `args`.
   - `FleetChatModel` lives in `flowgentic.langchain`;
     `flowgentic.fleet.FleetChatModel` still names it.
   - `flowgentic.fleet` imports no LangChain and needs no extra; the
@@ -151,7 +160,16 @@ decision record.
   extra only; `--runner graph` runs the LangGraph version,
   `campaign_langgraph.py`, with the `langgraph` extra. The guide, "Agents at
   scale", follows it, and LangGraph has a section of its own.
-- The `dev` extra is `flowgentic[examples,agents]` and the tools it needs.
+- The `dev` extra is `flowgentic[examples,agents,openai]` and the tools it
+  needs.
+- The fleet's `Recovery` also waits out the `openai` SDK's errors of a busy
+  server, 408, 409 and 429, which the SDK retries itself unless given
+  `max_retries=0`.
+- An agent host fails an agent whose runner suspends it 100 times in a row on
+  the same tasks, all already ended: such a runner makes no progress, and was
+  resumed at once, for ever. A suspended agent waits on the tasks it
+  registered itself, before any other registration of the same key in the
+  process, so two hosts in one process can run agents with the same ids.
   The `examples` extra, for the AsyncFlow path's demos, keeps LangGraph.
 - The `asyncflow` extra is `radical-asyncflow>=0.7,<0.8` (was `>=0.6,<0.7`).
   AsyncFlow 0.7 sets a task's uid when the task is called, which the decision

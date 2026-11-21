@@ -366,10 +366,16 @@ def register_pending(key: str, future: asyncio.Future) -> None:
 
 def take_pending(key: str) -> asyncio.Future | None:
 	"""The future of the task submitted under ``key``, for the current agent to
-	wait on. One registered outside an agent becomes this agent's, released
-	when it ends."""
-	future = _pending.get(key)
+	wait on: its own registration first, then the process's. Two hosts in one
+	process can run agents with the same id, so a key's latest registration
+	in the process may be another host's agent's. One registered outside an
+	agent becomes this agent's, released when it ends."""
 	agent = _current.get()
+	if agent is not None:
+		own = agent.registered.get(key)
+		if own is not None:
+			return own
+	future = _pending.get(key)
 	if future is not None or agent is None:
 		return pending(key)
 	with _unowned_lock:

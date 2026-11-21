@@ -96,7 +96,11 @@ A `Runner` has two methods: `start(agent)` runs the agent until it ends,
 suspends or stops; `resume(agent, done)` resumes it after its tasks have
 ended. Each returns `Finished(output)`, `Suspended(waits)` or
 `Interrupted(interrupts)`. `waits` pairs a resume id with a task key, and each
-key names a future registered in the process with `register_pending`.
+key names a future registered in the process with `register_pending`: the
+agent's own registration first, so that two hosts in one process can run
+agents with the same ids. A runner that suspends an agent 100 times in a row
+on the same tasks, all already ended, makes no progress: the host fails the
+agent with a `RuntimeError`, rather than resume it at once for ever.
 
 `LoopRunner(model, tools)` runs a tool-calling agent as a loop, with no graph,
 and saves a suspended agent's messages to a key-value store; see

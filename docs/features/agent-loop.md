@@ -79,10 +79,13 @@ on a laptop.
   whose size is fixed, needs. An agent that never suspends never touches the
   store.
 - **It never runs a call twice.** A task or MCP call is keyed by the agent, the
-  turn (the number of the model call that made it) and the call's id. When the
-  agent resumes, its task is found, not run again. A later turn that reuses a
-  call id, as a model server that numbers its calls per reply does, makes a
-  new call.
+  turn (a token of the runner's own and the number of the model call that
+  made it) and the call's id. When the agent resumes, its task is found, not
+  run again. A later turn that reuses a call id, as a model server that
+  numbers its calls per reply does, makes a new call, and so does another
+  runner in the process whose agents have the same ids, through its own
+  runtime or a shared one. Runners that share a store need their own
+  `key_prefix` if their agents' ids can be the same.
 - **It returns tool errors to the model.** A tool that raises, arguments its
   schema refuses, a tool that does not exist, arguments that are not valid
   JSON, a task tool's `prepare` or `suspend` that raises, a failed task or MCP

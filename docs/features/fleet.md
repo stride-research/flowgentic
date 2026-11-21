@@ -54,9 +54,13 @@ message with the content and the tool calls, without the reasoning.
 
 `HTTPTransport(model, base_url=..., api_key=...)`, the default, calls an
 OpenAI-compatible server, vLLM, SGLang, OpenRouter or OpenAI, with one httpx
-POST to `{base_url}/chat/completions` per call. The key, by default
-`OPENAI_API_KEY` or else `EMPTY`, goes as a bearer token, and a call times out
-after `timeout`, 600 s by default. Keywords given when it is made, such as
+POST to `{base_url}/chat/completions` per call. The key goes as a bearer
+token: by default `EMPTY`, which vLLM and SGLang accept when they set none,
+and `OPENAI_API_KEY` from the environment for OpenAI's own API
+(`api.openai.com`) only, so that a server on an allocation, often reached over
+plain HTTP, is never sent an OpenAI key it was not given; `OpenAITransport`
+does the same, where the `openai` SDK alone sends that key to any server. A
+call times out after `timeout`, 600 s by default. Keywords given when it is made, such as
 `temperature=0`, go with every call, and a call's own override them;
 `extra_body`'s keys go into the request's body and `extra_headers`' into its
 headers, as the `openai` SDK sends them. It retries nothing: `Recovery` waits
@@ -64,7 +68,7 @@ out a server that went away.
 
 `OpenAITransport(model, base_url=..., api_key=...)` calls the same servers
 through the `openai` SDK's `AsyncOpenAI`, which retries a failed call itself
-unless given `max_retries=0`. It costs about twice the CPU per call of
+unless given `max_retries=0`. It costs about four times the CPU per call of
 `HTTPTransport` (below), and needs the `openai` extra.
 
 Both read the reply with `parse_completion`: the reasoning text from the
@@ -82,12 +86,13 @@ server's message, its `status_code` and its `body`:
 
 | Error | When | `transient` |
 | --- | --- | --- |
-| `ServerUnavailable` | no answer (a refused or dropped connection), a timeout, or a 5xx | yes |
+| `ServerUnavailable` | no answer (a refused or dropped connection), a timeout, a 5xx, or a busy server's 408, 409 or 429, which the `openai` SDK retries too | yes |
 | `AuthenticationFailed` | 401, as from a server restarted with a new key | yes |
 | `RequestRejected` | any other 4xx, such as a context too long | no |
 
 `Recovery` waits out a transient one, and the `openai` SDK's errors of the same
-kinds, which it knows by name.
+kinds. It sends the call again once its check finds the server, after
+`poll_s` at least; it does not read a `Retry-After` header.
 
 A client's CPU cost per call grows with the calls its connection pool holds
 in flight. So both transports send each call to their least busy client, and

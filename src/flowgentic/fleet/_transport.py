@@ -14,10 +14,13 @@ calls one with the ``openai`` SDK. ``parse_completion`` reads any such
 server's chat completion, as the SDK's object or as its JSON.
 
 A failed call to a server raises a ``ModelServerError``: ``ServerUnavailable``
-when it did not answer, timed out or answered with a 5xx, and
-``AuthenticationFailed`` for a 401, both ``transient``, so that the fleet's
-``Recovery`` waits for the server; ``RequestRejected`` for any other 4xx, the
-request's fault, which no wait mends.
+when it did not answer, timed out, or answered with a 5xx or a 408, 409 or
+429, and ``AuthenticationFailed`` for a 401, both ``transient``, so that the
+fleet's ``Recovery`` waits for the server; ``RequestRejected`` for any other
+4xx, the request's fault, which no wait mends.
+
+Neither transport sends the environment's ``OPENAI_API_KEY`` to any server but
+OpenAI's own API: a server on an allocation gets ``EMPTY`` unless given a key.
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ import os
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
+from urllib.parse import urlsplit
 
 __all__ = [
 	"AuthenticationFailed",
@@ -255,8 +259,12 @@ class ModelServerError(Exception):
 
 
 class ServerUnavailable(ModelServerError):
-	"""The server did not answer (a refused or dropped connection, a timeout)
-	or answered with a 5xx. Transient."""
+	"""The server did not answer (a refused or dropped connection, a timeout),
+	answered with a 5xx, or was busy: a 408 (it timed the request out), 409 or
+	429 (too many requests), which the ``openai`` SDK retries too. Transient:
+	the fleet's ``Recovery`` sends the call again once its check finds the
+	server, after ``poll_s`` at least; it does not read a ``Retry-After``
+	header, which ``body`` and ``status_code`` do not carry either."""
 
 	transient = True
 
@@ -270,8 +278,31 @@ class AuthenticationFailed(ModelServerError):
 
 
 class RequestRejected(ModelServerError):
-	"""The server refused the request (a 4xx other than 401), such as a context
-	too long or a tool schema it cannot take. Not transient."""
+	"""The server refused the request (a 4xx other than 401, 408, 409 and 429),
+	such as a context too long or a tool schema it cannot take. Not
+	transient."""
+
+
+_BUSY = frozenset({408, 409, 429})
+"""Statuses of a server too busy for the call now, which the ``openai`` SDK
+retries: a request timeout, a conflict, too many requests."""
+
+_OPENAI_HOST = "api.openai.com"
+
+
+def _api_key(api_key: str | None, base_url: object) -> str:
+	"""The key a transport sends: the one given; else ``OPENAI_API_KEY``, but
+	only to OpenAI's own API, as ``base_url`` (the ``openai`` SDK's default,
+	``OPENAI_BASE_URL`` or OpenAI's, when it is ``None``) names it; else
+	``EMPTY``. A server on an allocation, often reached over plain HTTP, is
+	never sent an OpenAI key it was not given."""
+	if api_key:
+		return api_key
+	if base_url is None:
+		base_url = os.environ.get("OPENAI_BASE_URL") or f"https://{_OPENAI_HOST}/v1"
+	if urlsplit(str(base_url)).hostname == _OPENAI_HOST:
+		return os.environ.get("OPENAI_API_KEY") or "EMPTY"
+	return "EMPTY"
 
 
 def _server_message(response: Any) -> tuple[str, object]:  # noqa: ANN401  # httpx
@@ -301,9 +332,10 @@ class HTTPTransport:
 
 	Each call is one POST to ``{base_url}/chat/completions``, its reply read
 	with ``parse_completion``. ``model`` is the served model's name;
-	``base_url`` the server's, such as ``http://node:8000/v1``. ``api_key``,
-	sent as a bearer token, defaults to ``OPENAI_API_KEY``, then to
-	``"EMPTY"``, which vLLM and SGLang accept when they set none. ``timeout``
+	``base_url`` the server's, such as ``http://node:8000/v1``. ``api_key`` is
+	sent as a bearer token; by default ``"EMPTY"``, which vLLM and SGLang
+	accept when they set none, and ``OPENAI_API_KEY`` for OpenAI's own API
+	(``api.openai.com``) only. ``timeout``
 	bounds a call, 600 s by default as the ``openai`` SDK's; ``None`` waits
 	for ever. Other keywords are sent with every call, such as
 	``temperature=0``; a call's own keywords override them. ``extra_body``'s
@@ -350,7 +382,7 @@ class HTTPTransport:
 		self.model = model
 		self.base_url = base_url.rstrip("/")
 		self.url = self.base_url + "/chat/completions"
-		key = api_key or os.environ.get("OPENAI_API_KEY") or "EMPTY"
+		key = _api_key(api_key, base_url)
 		self._auth = {"Authorization": f"Bearer {key}"}
 		self.timeout = timeout
 		self.calls_per_pool = calls_per_pool
@@ -423,7 +455,7 @@ class HTTPTransport:
 			message, payload = _server_message(response)
 			kind = (
 				ServerUnavailable
-				if status >= 500
+				if status >= 500 or status in _BUSY
 				else AuthenticationFailed
 				if status == 401
 				else RequestRejected
@@ -453,8 +485,10 @@ class OpenAITransport:
 	vLLM, SGLang, OpenRouter or OpenAI.
 
 	``model`` is the served model's name; ``base_url`` the server's, such as
-	``http://node:8000/v1``. ``api_key`` defaults to ``OPENAI_API_KEY``, then
-	to ``"EMPTY"``, which vLLM and SGLang accept when they set none. ``timeout``
+	``http://node:8000/v1``. ``api_key`` defaults to ``"EMPTY"``, which vLLM
+	and SGLang accept when they set none, and to ``OPENAI_API_KEY`` for
+	OpenAI's own API only: unlike the SDK alone, which sends that key to any
+	server. ``timeout``
 	and ``max_retries`` go to the client; pass ``max_retries=0`` to leave
 	retries to the fleet's ``Recovery``. Other keywords are sent with every
 	call, such as ``temperature=0`` or ``extra_body``; a call's own keywords
@@ -493,7 +527,7 @@ class OpenAITransport:
 			)
 		options: dict[str, Any] = {
 			"base_url": base_url,
-			"api_key": api_key or os.environ.get("OPENAI_API_KEY") or "EMPTY",
+			"api_key": _api_key(api_key, base_url),
 		}
 		if timeout is not None:
 			options["timeout"] = timeout

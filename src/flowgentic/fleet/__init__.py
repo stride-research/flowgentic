@@ -470,20 +470,26 @@ _TRANSIENT = frozenset(
 		"APITimeoutError",
 		"InternalServerError",
 		"AuthenticationError",
+		"RateLimitError",
+		"ConflictError",
 	}
 )
-"""Errors of a server that is down, restarting or overloaded, or that came back
-with a new key, by the OpenAI client's class names. Matched along the class's
-MRO, so langchain-openai's own wrappers of them match too."""
+"""Errors of a server that is down, restarting, overloaded or busy, or that came
+back with a new key, by the OpenAI client's class names. Matched along the
+class's MRO, so langchain-openai's own wrappers of them match too."""
 
 
 def _transient(exc: BaseException) -> bool:
-	"""Whether ``exc`` is a server's that is down, restarting or overloaded, or
-	came back with a new key: a transient ``ModelServerError``, or one of the
-	openai SDK's by name."""
+	"""Whether ``exc`` is a server's that is down, restarting, overloaded or
+	busy, or came back with a new key: a transient ``ModelServerError``, or
+	one of the openai SDK's, by name or, for a 408, which has no class of its
+	own, by the status of an ``APIStatusError``."""
 	if isinstance(exc, ModelServerError):
 		return exc.transient
-	return any(c.__name__ in _TRANSIENT for c in type(exc).__mro__)
+	names = {c.__name__ for c in type(exc).__mro__}
+	if names & _TRANSIENT:
+		return True
+	return "APIStatusError" in names and getattr(exc, "status_code", None) == 408
 
 
 class Recovery:

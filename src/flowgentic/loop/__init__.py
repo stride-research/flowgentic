@@ -77,6 +77,7 @@ import logging
 import sys
 import time
 import typing
+import uuid
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
 from functools import partial
@@ -228,6 +229,10 @@ class LoopRunner:
 		self.trim = trim
 		self.model_kwargs = dict(model_kwargs or {})
 		self.key_prefix = key_prefix
+		# In each task's turn, so that two runners in one process, whose agents
+		# may share ids and call ids, never share a task, through a runtime or
+		# the host's registrations.
+		self._token = uuid.uuid4().hex[:8]
 		self._system = (
 			None
 			if system_prompt is None
@@ -396,7 +401,7 @@ class LoopRunner:
 		made: list[_Call],
 		pending: list[_Call],
 	) -> Step | None:
-		scope = str(calls)  # the turn: the same when the agent resumes
+		scope = f"{self._token}-{calls}"  # the same when the agent resumes
 		alone = len(made) == 1
 		if len(pending) == 1:
 			results = [await self._call(agent_id, scope, pending[0], alone)]

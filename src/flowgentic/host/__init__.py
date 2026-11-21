@@ -64,6 +64,10 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
+# Suspensions in a row on the same tasks, all already ended, after which the
+# host fails the agent: its runner makes no progress.
+_STALLS = 100
+
 
 @dataclass(frozen=True, slots=True)
 class Agent:
@@ -359,9 +363,22 @@ class AgentHost:
 		) as span:
 			try:
 				step = await self.runner.start(agent)
+				stalled, last = 0, None
 				while isinstance(step, Suspended):
 					result.suspensions += 1
-					done = await self._wait(agent, step)
+					done, waited = await self._wait(agent, step)
+					# A runner that suspends again on the same tasks, all ended,
+					# makes no progress: resumed at once each time, it would
+					# keep the event loop busy for good.
+					keys = tuple(key for _, key in step.waits)
+					stalled = 0 if waited or keys != last else stalled + 1
+					last = keys
+					if stalled >= _STALLS:
+						raise RuntimeError(
+							f"agent {agent.id} suspended {_STALLS} times in a row "
+							f"on tasks that had already ended ({', '.join(keys)}): "
+							"its runner makes no progress"
+						)
 					step = await self.runner.resume(agent, done)
 				if isinstance(step, Interrupted):
 					result.status = "interrupted"
@@ -403,7 +420,9 @@ class AgentHost:
 			raise cancelled
 		return result
 
-	async def _wait(self, agent: Agent, step: Suspended) -> dict[str, Any]:
+	async def _wait(self, agent: Agent, step: Suspended) -> tuple[dict[str, Any], bool]:
+		"""Wait for the step's tasks; their results for the runner, and whether
+		any had not ended yet."""
 		self.states.enter(agent.id, AgentState.TOOL_WAIT)
 		_telemetry.emit_suspend(agent.id, len(step.waits))
 		futures = []
@@ -415,13 +434,14 @@ class AgentHost:
 					"did not submit"
 				)
 			futures.append(future)
+		waited = not all(f.done() for f in futures)
 		try:
 			# A stopped host withdraws the tasks that their order has not
 			# admitted yet, when no other call waits for them.
 			await _agents.wait(futures)
 		finally:
 			self.states.enter(agent.id, AgentState.WORKING)
-		return {rid: {"flowgentic_done": key} for rid, key in step.waits}
+		return {rid: {"flowgentic_done": key} for rid, key in step.waits}, waited
 
 	# --- the collector -----------------------------------------------------------
 
