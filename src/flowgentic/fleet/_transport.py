@@ -25,6 +25,7 @@ OpenAI's own API: a server on an allocation gets ``EMPTY`` unless given a key.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from collections.abc import Sequence
@@ -106,7 +107,10 @@ class Reply:
 			{
 				"id": c.id,
 				"type": "function",
-				"function": {"name": c.name, "arguments": json.dumps(c.args)},
+				"function": {
+					"name": c.name,
+					"arguments": json.dumps(c.args, ensure_ascii=False),
+				},
 			}
 			for c in self.tool_calls
 		]
@@ -172,13 +176,27 @@ def parse_completion(completion: object) -> Reply:
 	and reasoning tokens from ``usage.completion_tokens_details
 	.reasoning_tokens``, when the server sends them. A tool call's arguments
 	that are not a JSON object make an ``InvalidToolCall``; empty arguments
-	are an empty object."""
+	are an empty object. A completion with no choices raises a
+	``ModelServerError``, not transient."""
 	choices = _get(completion, "choices") or ()
-	choice = choices[0] if choices else None
+	if not choices:
+		# An error object a server sent with status 200, as some vLLM releases
+		# do, or an empty completion: not an empty answer.
+		said = _get(completion, "message") or _get(completion, "error")
+		said = _get(said, "message") or said
+		raise ModelServerError(
+			"the server's completion has no choices" + (f": {said}" if said else ""),
+			body=completion,
+		)
+	choice = choices[0]
 	message = _get(choice, "message")
 	content = _get(message, "content")
 	if not isinstance(content, str):
-		content = "" if content is None else json.dumps(content, default=str)
+		content = (
+			""
+			if content is None
+			else json.dumps(content, default=str, ensure_ascii=False)
+		)
 	calls: list[ToolCall] = []
 	invalid: list[InvalidToolCall] = []
 	for n, call in enumerate(_get(message, "tool_calls") or ()):
@@ -205,11 +223,10 @@ def parse_completion(completion: object) -> Reply:
 			invalid.append(
 				InvalidToolCall(call_id, name, arguments, "not a JSON object")
 			)
-	reasoning = _get(message, "reasoning")
-	if reasoning is None:
-		reasoning = _get(message, "reasoning_content")
+	# An empty ``reasoning`` does not hide ``reasoning_content``.
+	reasoning = _get(message, "reasoning") or _get(message, "reasoning_content")
 	if reasoning is not None and not isinstance(reasoning, str):
-		reasoning = json.dumps(reasoning, default=str)
+		reasoning = json.dumps(reasoning, default=str, ensure_ascii=False)
 	usage = None
 	raw_usage = _get(completion, "usage")
 	if raw_usage is not None:
@@ -289,6 +306,18 @@ retries: a request timeout, a conflict, too many requests."""
 
 _OPENAI_HOST = "api.openai.com"
 
+_UNSET: Any = object()
+"""A keyword not given."""
+
+
+def _timeout(httpx: Any, value: object) -> Any:  # noqa: ANN401  # httpx's Timeout
+	"""httpx's timeout for ``value`` seconds, ``None`` for none, connecting within
+	5 s at most, as the ``openai`` SDK does; an ``httpx.Timeout`` as it is."""
+	if isinstance(value, httpx.Timeout):
+		return value
+	connect = 5.0 if value is None else min(float(value), 5.0)
+	return httpx.Timeout(value, connect=connect)
+
 
 def _api_key(api_key: str | None, base_url: object) -> str:
 	"""The key a transport sends: the one given; else ``OPENAI_API_KEY``, but
@@ -335,9 +364,9 @@ class HTTPTransport:
 	``base_url`` the server's, such as ``http://node:8000/v1``. ``api_key`` is
 	sent as a bearer token; by default ``"EMPTY"``, which vLLM and SGLang
 	accept when they set none, and ``OPENAI_API_KEY`` for OpenAI's own API
-	(``api.openai.com``) only. ``timeout``
-	bounds a call, 600 s by default as the ``openai`` SDK's; ``None`` waits
-	for ever. Other keywords are sent with every call, such as
+	(``api.openai.com``) only. ``timeout`` bounds a call, 600 s by default as
+	the ``openai`` SDK's, ``None`` for none, and a connection takes at most
+	5 s, as with the SDK. Other keywords are sent with every call, such as
 	``temperature=0``; a call's own keywords override them. ``extra_body``'s
 	keys go into the request's body and ``extra_headers``' into its headers,
 	as the SDK sends them; a call's ``timeout`` replaces the transport's.
@@ -351,9 +380,15 @@ class HTTPTransport:
 	holds ``calls_per_pool`` calls, 8 by default. Against a local stub, at 64
 	calls in flight, 8 per pool cost 0.8 ms of CPU per call, 64 per pool
 	1.5 ms; at 512, 0.8 and 1.4 ms, and one pool 29 ms. ``pools`` fixes the
-	number of clients instead. A pool's connections are not capped.
+	number of clients instead. A pool's connections are not capped, and all
+	the pools share one SSL context. ``aclose()`` closes them once their
+	calls have ended; the fleet closes a transport that ``Recovery``
+	replaces.
+
 	``client``, an ``httpx.AsyncClient``, replaces the clients the transport
-	would make, and is its only one.
+	would make, and is its only one. It keeps its own timeout and headers
+	unless the transport is given a ``timeout`` or an ``api_key``, and the
+	transport never closes it.
 	"""
 
 	def __init__(
@@ -362,7 +397,7 @@ class HTTPTransport:
 		*,
 		base_url: str,
 		api_key: str | None = None,
-		timeout: float | None = 600.0,
+		timeout: Any = _UNSET,  # noqa: ANN401  # seconds, None, or an httpx.Timeout
 		client: Any = None,  # noqa: ANN401  # an httpx.AsyncClient
 		pools: int | None = None,
 		calls_per_pool: int = 8,
@@ -376,6 +411,12 @@ class HTTPTransport:
 			raise ValueError(
 				"pass a client, or pools: the transport makes a pool's client"
 			)
+		parts = urlsplit(base_url)
+		if parts.scheme not in ("http", "https") or not parts.netloc:
+			raise ValueError(
+				"base_url must be an http or https URL, such as "
+				f"http://node:8000/v1, not {base_url!r}"
+			)
 		import httpx
 
 		self._httpx = httpx
@@ -384,26 +425,55 @@ class HTTPTransport:
 		self.url = self.base_url + "/chat/completions"
 		key = _api_key(api_key, base_url)
 		self._auth = {"Authorization": f"Bearer {key}"}
-		self.timeout = timeout
+		self.timeout = 600.0 if timeout is _UNSET else timeout
+		self._timeout = _timeout(httpx, self.timeout)
 		self.calls_per_pool = calls_per_pool
 		self.params = params
+		self._closing = False
+		self._closer: asyncio.Task | None = None
+		self._owns = client is None
 		if client is not None:
 			self.clients: list[Any] = [client]
 			self.pools: int | None = 1
-			self._headers: dict[str, str] | None = self._auth  # sent with each call
+			# A given client keeps its own settings, but those given here.
+			self._headers: dict[str, str] | None = self._auth if api_key else None
+			self._request: dict[str, Any] = (
+				{} if timeout is _UNSET else {"timeout": self._timeout}
+			)
 		else:
+			# One SSL context for every pool: each would build its own, on the
+			# event loop, about 3 ms and 0.7 MiB.
+			self._ssl = httpx.create_ssl_context()
 			self.clients = [self._new_client() for _ in range(pools or 1)]
 			self.pools = pools
 			self._headers = None  # the clients have them
+			self._request = {}
 		self._busy = [0] * len(self.clients)
 
 	def _new_client(self) -> Any:  # noqa: ANN401  # an httpx.AsyncClient
 		httpx = self._httpx
 		return httpx.AsyncClient(
 			headers=self._auth,
-			timeout=self.timeout,
+			timeout=self._timeout,
+			verify=self._ssl,
 			limits=httpx.Limits(max_connections=None, max_keepalive_connections=None),
 		)
+
+	async def aclose(self) -> None:
+		"""Close the clients the transport made, once the calls they hold have
+		ended. A client it was given stays open: its owner closes it."""
+		self._closing = True
+		if not any(self._busy):
+			await self._close()
+
+	async def _close(self) -> None:
+		if self._owns:
+			await asyncio.gather(*(c.aclose() for c in self.clients if not c.is_closed))
+
+	def _ended(self) -> None:
+		"""A call ended: close the clients if ``aclose`` waits for it."""
+		if self._closing and not any(self._busy) and self._closer is None:
+			self._closer = asyncio.get_running_loop().create_task(self._close())
 
 	def _pick(self) -> int:
 		"""The least busy client; a new one if each holds ``calls_per_pool``."""
@@ -425,9 +495,9 @@ class HTTPTransport:
 		params = {**self.params, **kwargs}
 		extra_body = params.pop("extra_body", None)
 		extra_headers = params.pop("extra_headers", None)
-		request: dict[str, Any] = {}
+		request = dict(self._request)
 		if "timeout" in params:
-			request["timeout"] = params.pop("timeout")
+			request["timeout"] = _timeout(httpx, params.pop("timeout"))
 		body = {"model": self.model, "messages": list(messages), **params}
 		if tools:
 			body["tools"] = list(tools)
@@ -446,10 +516,15 @@ class HTTPTransport:
 			raise ServerUnavailable(
 				f"{self.url}: no answer in time ({type(exc).__name__})"
 			) from exc
+		except httpx.UnsupportedProtocol as exc:  # set up wrong: no wait mends it
+			raise ModelServerError(f"{self.url}: {exc}") from exc
 		except httpx.TransportError as exc:
 			raise ServerUnavailable(f"{self.url}: {type(exc).__name__}: {exc}") from exc
+		except httpx.RequestError as exc:  # a reply httpx cannot read, redirects
+			raise ModelServerError(f"{self.url}: {type(exc).__name__}: {exc}") from exc
 		finally:
 			self._busy[i] -= 1
+			self._ended()
 		status = response.status_code
 		if status >= 400:
 			message, payload = _server_message(response)

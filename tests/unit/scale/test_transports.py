@@ -96,7 +96,9 @@ def test_the_conversation_keeps_the_reply_without_its_reasoning(path):
 
 
 def test_a_reply_with_nothing_is_an_empty_answer():
-    reply = parse_completion({"choices": []})
+    # a choice with an empty message; no choice at all is an error
+    # (test_http_transport.py)
+    reply = parse_completion({"choices": [{"message": {}}]})
     assert reply == Reply() and reply.message() == {"role": "assistant", "content": ""}
 
 

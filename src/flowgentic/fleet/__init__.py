@@ -730,6 +730,27 @@ def _same_replica(model: object, transport: object) -> bool:
 	return model is transport or model is getattr(transport, "chat_model", None)
 
 
+_closing: set[asyncio.Task] = set()
+
+
+def _close_later(transport: object) -> None:
+	"""Close a replica's transport that ``Recovery`` replaced, if it can be
+	closed (``aclose``), once its calls in flight have ended: its connection
+	pools and their SSL context would otherwise stay with the process."""
+	close = getattr(transport, "aclose", None)
+	if not callable(close):
+		return
+	task = asyncio.ensure_future(close())
+	_closing.add(task)
+
+	def done(task: asyncio.Task) -> None:
+		_closing.discard(task)
+		if not task.cancelled() and task.exception() is not None:
+			log.warning("closing a replaced replica failed: %r", task.exception())
+
+	task.add_done_callback(done)
+
+
 def _server(base_url: str | None) -> tuple[str | None, int | None]:
 	if not base_url:
 		return None, None
@@ -1073,7 +1094,8 @@ class Fleet:
 				if model is None:
 					raise failed
 				if not _same_replica(model, core.replicas[i]):
-					core.replicas[i] = _as_transport(model)
+					old, core.replicas[i] = core.replicas[i], _as_transport(model)
+					_close_later(old)
 				core.retried += 1
 		_telemetry.MODEL_SERVICE.record(done - got, attrs)
 		return self._account(

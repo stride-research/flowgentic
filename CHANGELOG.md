@@ -59,7 +59,12 @@ decision record.
   answer, a timeout, a 5xx, or a busy server's 408, 409 or 429, which the
   SDK retries too) and `AuthenticationFailed` (401) are transient, and the
   fleet's `Recovery` waits them out; `RequestRejected` (any other 4xx) is
-  not. httpx becomes a core dependency.
+  not, nor is a completion with no choices or a reply httpx cannot read. A
+  connection takes at most 5 s; all of a transport's pools share one SSL
+  context, and `aclose()` closes them, as the fleet does for a transport
+  that `Recovery` replaces. A given `httpx.AsyncClient` keeps its own timeout
+  and headers unless the transport is given its own. httpx becomes a core
+  dependency.
 - Neither transport sends the environment's `OPENAI_API_KEY` to any server but
   OpenAI's own API (`api.openai.com`): a server on an allocation gets `EMPTY`
   unless given a key, where the `openai` SDK alone sends that key to any

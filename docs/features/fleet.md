@@ -60,7 +60,9 @@ and `OPENAI_API_KEY` from the environment for OpenAI's own API
 (`api.openai.com`) only, so that a server on an allocation, often reached over
 plain HTTP, is never sent an OpenAI key it was not given; `OpenAITransport`
 does the same, where the `openai` SDK alone sends that key to any server. A
-call times out after `timeout`, 600 s by default. Keywords given when it is made, such as
+call times out after `timeout`, 600 s by default (`None` for none), and a
+connection after 5 s at most, as with the SDK. `base_url` must be an http or
+https URL: anything else is a `ValueError` when the transport is made. Keywords given when it is made, such as
 `temperature=0`, go with every call, and a call's own override them;
 `extra_body`'s keys go into the request's body and `extra_headers`' into its
 headers, as the `openai` SDK sends them. It retries nothing: `Recovery` waits
@@ -89,6 +91,7 @@ server's message, its `status_code` and its `body`:
 | `ServerUnavailable` | no answer (a refused or dropped connection), a timeout, a 5xx, or a busy server's 408, 409 or 429, which the `openai` SDK retries too | yes |
 | `AuthenticationFailed` | 401, as from a server restarted with a new key | yes |
 | `RequestRejected` | any other 4xx, such as a context too long | no |
+| `ModelServerError` itself | a completion with no choices (an error object with status 200, as some vLLM releases send), a reply that is not JSON or that httpx cannot decode, too many redirects | no |
 
 `Recovery` waits out a transient one, and the `openai` SDK's errors of the same
 kinds. It sends the call again once its check finds the server, after
@@ -99,8 +102,12 @@ in flight. So both transports send each call to their least busy client, and
 open another client, with its own pool, whenever each one holds
 `calls_per_pool` calls: 8 for `HTTPTransport`, 64 for `OpenAITransport`. A
 replica with 512 calls in flight then has 64 clients of `HTTPTransport`, one
-with a few calls has one. `pools=N` fixes the number of clients instead, and
-a `client` given is the only one.
+with a few calls has one. `pools=N` fixes the number of clients instead.
+`HTTPTransport`'s pools share one SSL context, and `aclose()` closes them
+once their calls have ended; the fleet closes a transport that `Recovery`
+replaces. A `client` given, an `httpx.AsyncClient`, is the only one: it keeps
+its own timeout and headers unless the transport is given a `timeout` or an
+`api_key`, and the transport never closes it.
 
 Measured against a local stub server that answers after a vLLM server's time
 at each load (1.3 s at 64 calls in flight, 8.9 s at 512), on an AMD EPYC 7502P
