@@ -49,6 +49,20 @@ __all__ = [
 ]
 
 
+def _sendable(text: str) -> str:
+	"""``text`` as UTF-8 can carry it: a lone surrogate, as in a file name
+	Linux could not decode, written as its ``\\uXXXX`` escape, as
+	``json.dumps`` with ``ensure_ascii`` writes it, so that it does not fail
+	every later call of the conversation."""
+	if text.isascii():
+		return text
+	try:
+		text.encode("utf-8")
+	except UnicodeEncodeError:
+		return text.encode("utf-8", "backslashreplace").decode("utf-8")
+	return text
+
+
 @dataclass(frozen=True, slots=True)
 class ToolCall:
 	"""A tool call whose arguments parsed as a JSON object."""
@@ -109,7 +123,7 @@ class Reply:
 				"type": "function",
 				"function": {
 					"name": c.name,
-					"arguments": json.dumps(c.args, ensure_ascii=False),
+					"arguments": _sendable(json.dumps(c.args, ensure_ascii=False)),
 				},
 			}
 			for c in self.tool_calls
@@ -181,11 +195,21 @@ def parse_completion(completion: object) -> Reply:
 	choices = _get(completion, "choices") or ()
 	if not choices:
 		# An error object a server sent with status 200, as some vLLM releases
-		# do, or an empty completion: not an empty answer.
-		said = _get(completion, "message") or _get(completion, "error")
-		said = _get(said, "message") or said
-		raise ModelServerError(
+		# and OpenRouter do, or an empty completion: not an empty answer. Its
+		# code, if any, reads as an HTTP status: busy or a 5xx is transient.
+		error = _get(completion, "error")
+		said = _get(error, "message") or error or _get(completion, "message")
+		code = _get(error, "code") if isinstance(error, dict) else None
+		if code is None:
+			code = _get(completion, "code")
+		try:
+			status = int(code) if code is not None else None
+		except (TypeError, ValueError):
+			status = None
+		kind = _status_kind(status) if status is not None else ModelServerError
+		raise kind(
 			"the server's completion has no choices" + (f": {said}" if said else ""),
+			status_code=status,
 			body=completion,
 		)
 	choice = choices[0]
@@ -303,6 +327,31 @@ class RequestRejected(ModelServerError):
 _BUSY = frozenset({408, 409, 429})
 """Statuses of a server too busy for the call now, which the ``openai`` SDK
 retries: a request timeout, a conflict, too many requests."""
+
+
+def _status_kind(status: int) -> type[ModelServerError]:
+	"""The error for an HTTP status, or an error object's code: a 5xx or a busy
+	server's is transient, a 401 too; any other 4xx is not."""
+	if status >= 500 or status in _BUSY:
+		return ServerUnavailable
+	if status == 401:
+		return AuthenticationFailed
+	if status >= 400:
+		return RequestRejected
+	return ModelServerError
+
+
+def _check_headers(headers: dict[str, str]) -> None:
+	"""Refuse a header httpx cannot send: one with a line break or non-ASCII
+	text. Not a server's fault, so not transient."""
+	for name, value in headers.items():
+		ok = isinstance(value, str) and value.isascii()
+		if not ok or "\r" in value or "\n" in value:
+			raise ModelServerError(
+				f"the header {name!r} cannot be sent: its value must be ASCII "
+				f"text on one line, not {value!r}"
+			)
+
 
 _OPENAI_HOST = "api.openai.com"
 
@@ -423,6 +472,9 @@ class HTTPTransport:
 		self.model = model
 		self.base_url = base_url.rstrip("/")
 		self.url = self.base_url + "/chat/completions"
+		# Where a 401 can say why: no key was given, and the environment's
+		# goes to OpenAI's own API only.
+		self._keyless = not api_key and parts.hostname != _OPENAI_HOST
 		key = _api_key(api_key, base_url)
 		self._auth = {"Authorization": f"Bearer {key}"}
 		self.timeout = 600.0 if timeout is _UNSET else timeout
@@ -437,9 +489,13 @@ class HTTPTransport:
 			self.pools: int | None = 1
 			# A given client keeps its own settings, but those given here.
 			self._headers: dict[str, str] | None = self._auth if api_key else None
-			self._request: dict[str, Any] = (
-				{} if timeout is _UNSET else {"timeout": self._timeout}
-			)
+			if timeout is _UNSET and client.timeout != httpx.Timeout(5.0):
+				self.timeout = client.timeout  # its own, which its calls get
+				self._request: dict[str, Any] = {}
+			else:
+				# A timeout given here; or httpx's default of 5 s, which a model
+				# call outlasts: the transport's 600 s, as the openai SDK does.
+				self._request = {"timeout": self._timeout}
 		else:
 			# One SSL context for every pool: each would build its own, on the
 			# event loop, about 3 ms and 0.7 MiB.
@@ -460,8 +516,10 @@ class HTTPTransport:
 		)
 
 	async def aclose(self) -> None:
-		"""Close the clients the transport made, once the calls they hold have
-		ended. A client it was given stays open: its owner closes it."""
+		"""Refuse new calls, and close the clients the transport made once the
+		calls they hold have ended: it returns at once, before calls in flight
+		end, and those end as they would. A client it was given stays open:
+		its owner closes it."""
 		self._closing = True
 		if not any(self._busy):
 			await self._close()
@@ -491,6 +549,8 @@ class HTTPTransport:
 		tools: Sequence[dict] | None = None,
 		**kwargs: object,
 	) -> Reply:
+		if self._closing:
+			raise ModelServerError(f"{self.url}: the transport is closed")
 		httpx = self._httpx
 		params = {**self.params, **kwargs}
 		extra_body = params.pop("extra_body", None)
@@ -503,21 +563,30 @@ class HTTPTransport:
 			body["tools"] = list(tools)
 		if extra_body:
 			body.update(extra_body)
-		headers = self._headers
+		headers = {"Content-Type": "application/json", **(self._headers or {})}
 		if extra_headers:
-			headers = {**(headers or {}), **extra_headers}
-		if headers:
-			request["headers"] = headers
+			_check_headers(extra_headers)
+			headers.update(extra_headers)
+		request["headers"] = headers
+		# The JSON as UTF-8 can carry it: a lone surrogate, as in a file name
+		# Linux could not decode, goes as its escape, as ensure_ascii writes it.
+		content = json.dumps(body, ensure_ascii=False, separators=(",", ":"))
+		content = content.encode("utf-8", "backslashreplace")
 		i = self._pick()
 		self._busy[i] += 1
 		try:
-			response = await self.clients[i].post(self.url, json=body, **request)
+			response = await self.clients[i].post(self.url, content=content, **request)
 		except httpx.TimeoutException as exc:
 			raise ServerUnavailable(
 				f"{self.url}: no answer in time ({type(exc).__name__})"
 			) from exc
-		except httpx.UnsupportedProtocol as exc:  # set up wrong: no wait mends it
-			raise ModelServerError(f"{self.url}: {exc}") from exc
+		except (httpx.UnsupportedProtocol, httpx.LocalProtocolError) as exc:
+			# Set up wrong, such as a header httpx cannot send: no wait mends it.
+			raise ModelServerError(f"{self.url}: {type(exc).__name__}: {exc}") from exc
+		except UnicodeEncodeError as exc:  # a header that is not ASCII
+			raise ModelServerError(
+				f"{self.url}: a header cannot be sent: {exc}"
+			) from exc
 		except httpx.TransportError as exc:
 			raise ServerUnavailable(f"{self.url}: {type(exc).__name__}: {exc}") from exc
 		except httpx.RequestError as exc:  # a reply httpx cannot read, redirects
@@ -528,14 +597,12 @@ class HTTPTransport:
 		status = response.status_code
 		if status >= 400:
 			message, payload = _server_message(response)
-			kind = (
-				ServerUnavailable
-				if status >= 500 or status in _BUSY
-				else AuthenticationFailed
-				if status == 401
-				else RequestRejected
-			)
-			raise kind(
+			if status == 401 and self._keyless:
+				message += (
+					" (no api_key was given: OPENAI_API_KEY is sent to "
+					"api.openai.com only)"
+				)
+			raise _status_kind(status)(
 				f"{status} {response.reason_phrase} from {self.url}: {message}",
 				status_code=status,
 				body=payload,
@@ -609,6 +676,9 @@ class OpenAITransport:
 		if max_retries is not None:
 			options["max_retries"] = max_retries
 		self._options = options
+		self._owns = client is None
+		self._closing = False
+		self._closer: asyncio.Task | None = None
 		if client is not None:
 			self.clients: list[Any] = [client]
 			self.pools: int | None = 1
@@ -650,6 +720,8 @@ class OpenAITransport:
 		tools: Sequence[dict] | None = None,
 		**kwargs: object,
 	) -> Reply:
+		if self._closing:
+			raise ModelServerError(f"{self.base_url}: the transport is closed")
 		params = {**self.params, **kwargs}
 		if tools:
 			params["tools"] = list(tools)
@@ -661,7 +733,23 @@ class OpenAITransport:
 			)
 		finally:
 			self._busy[i] -= 1
+			if self._closing and not any(self._busy) and self._closer is None:
+				self._closer = asyncio.get_running_loop().create_task(self._close())
 		return parse_completion(completion)
+
+	async def aclose(self) -> None:
+		"""Refuse new calls, and close the clients the transport made once the
+		calls they hold have ended, as ``HTTPTransport.aclose`` does. A client
+		it was given stays open: its owner closes it."""
+		self._closing = True
+		if not any(self._busy):
+			await self._close()
+
+	async def _close(self) -> None:
+		if self._owns:
+			await asyncio.gather(
+				*(c.close() for c in self.clients if not c.is_closed())
+			)
 
 	def __repr__(self) -> str:
 		return f"OpenAITransport({self.model!r}, base_url={self.base_url!r})"

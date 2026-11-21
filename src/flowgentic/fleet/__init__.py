@@ -80,6 +80,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import inspect
 import itertools
 import json
 import logging
@@ -739,7 +740,14 @@ def _close_later(transport: object) -> None:
 	close = getattr(transport, "aclose", None)
 	if not callable(close):
 		return
-	task = asyncio.ensure_future(close())
+	try:
+		closing = close()  # a transport of one's own may close at once
+	except Exception as exc:
+		log.warning("closing a replaced replica failed: %r", exc)
+		return
+	if not inspect.isawaitable(closing):
+		return
+	task = asyncio.ensure_future(closing)
 	_closing.add(task)
 
 	def done(task: asyncio.Task) -> None:
