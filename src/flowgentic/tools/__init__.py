@@ -4,8 +4,10 @@ A tool declares where it runs by how it is made:
 
 - **Inline:** any tool of the agent's framework, such as a LangChain ``@tool``.
   It runs in the agent's process, on its event loop. For short Python.
-- **Task:** ``task_tool(fn)``. ``fn`` runs as a RHAPSODY function task in the
-  agent process's session: compute the agent waits for, such as a simulation.
+- **Task:** ``task_tool(fn)``. ``fn`` runs as a function task: compute the
+  agent waits for, such as a simulation. It runs in the agent process's
+  RHAPSODY session, or, in an AsyncFlow application, as an AsyncFlow task on a
+  named backend of the application's engine.
 - **Service:** ``mcp_tool(name, ...)``. The call goes to the tool service
   (``flowgentic.tools.service``), one process that calls MCP tools for many
   agent processes through a supervised pool of clients
@@ -26,13 +28,18 @@ keeps its own answers.
 A task may also **suspend** its agent: the agent's state is saved and dropped
 while the task runs, and the agent host resumes it when the task ends.
 
-When tasks reach RHAPSODY is a policy: ``TaskOrder``. ``Immediate()`` submits
-each task at once. Another policy can hold tasks and release them in an order
-of its choosing, such as a campaign's priorities, or refuse them, as a budget
-does.
+When tasks reach RHAPSODY or AsyncFlow is a policy: ``TaskOrder``.
+``Immediate()`` submits each task at once. Another policy can hold tasks and
+release them in an order of its choosing, such as a campaign's priorities, or
+refuse them, as a budget does.
 
-Task tools need the ``rhapsody`` extra when they run; declaring them, MCP
-tools and the agent processes' side of the tool service need no extra.
+Each task ends in a ``TaskRecord``, its decision record: the agent and the tool
+call that asked for it, its uid in RHAPSODY or AsyncFlow, and when the agent
+committed to it, when it was submitted, started and ended.
+
+Task tools need the ``rhapsody`` extra when they run on a session, and the
+``asyncflow`` extra on an engine; declaring them, MCP tools and the agent
+processes' side of the tool service need no extra.
 """
 
 from __future__ import annotations
@@ -44,10 +51,10 @@ import time
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from flowgentic import _agents, _rhapsody, _telemetry
-from flowgentic._rhapsody import TaskCancelled
+from flowgentic._agents import TaskCancelled
 
 __all__ = [
 	"Immediate",
@@ -62,7 +69,14 @@ __all__ = [
 	"task_tool",
 ]
 
+if TYPE_CHECKING:
+	from radical.asyncflow import WorkflowEngine
+
 log = logging.getLogger(__name__)
+
+# The fields a task tool may give a task on an AsyncFlow engine: its backend's
+# name, and the backend's own fields, AsyncFlow's ``task_description``.
+_ENGINE_FIELDS = frozenset({"backend", "task_backend_specific_kwargs"})
 
 # What a task uid keeps as it is; every other character is escaped.
 _ESCAPED = re.compile(r"[^A-Za-z0-9-]")
@@ -95,12 +109,17 @@ def _key_part(value: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class TaskTool:
-	"""A tool that runs ``fn`` as a RHAPSODY function task.
+	"""A tool that runs ``fn`` as a function task, on a RHAPSODY session or an
+	AsyncFlow engine (``ToolRuntime``).
 
 	``suspend``: whether the agent suspends while the task runs: a bool, or a
 	function of the agent's id and the call's arguments. It is asked again when
 	the agent resumes, so it must give the same answer for the same call.
-	``task``: fields added to the RHAPSODY task's description.
+	``task``: fields added to the task's description. ``backend`` names the
+	backend to run on, of the session or of the engine, and
+	``task_backend_specific_kwargs`` holds that backend's own fields, such as
+	resources. On a session any field of a RHAPSODY ``ComputeTask`` may be
+	given; on an engine only these two.
 
 	What the model sees can differ from what the worker runs:
 	``args_schema`` (a pydantic model) gives the arguments the model sees, by
@@ -140,7 +159,8 @@ def task_tool(
 	"""Declare ``fn`` a task tool; usable as ``@task_tool`` or
 	``@task_tool(suspend=True)``. ``fn`` must be importable by the workers: a
 	top-level function. It may be ``async def``: the worker runs it on an event
-	loop of its own, to its end. See ``TaskTool`` for the options."""
+	loop of its own, to its end. See ``TaskTool`` for the options, such as
+	``backend="compute"``."""
 
 	def make(f: Callable[..., Any]) -> TaskTool:
 		return TaskTool(
@@ -202,11 +222,38 @@ class TaskInfo:
 
 @dataclass(frozen=True, slots=True)
 class TaskRecord:
-	"""One task, for listeners: when it was asked for, admitted and ended
-	(``time.time()``), how it ended, and its value or error.
+	"""One task, for listeners: its decision record.
 
-	``outcome`` is ``ok``, ``error`` (the task failed), ``refused`` (the order
-	policy refused it; ``t_admit`` is ``None``) or ``cancelled``.
+	``info`` names the agent (``info.agent_id``) and the tool call that asked
+	for the task (``info.call_id``). ``outcome`` is ``ok``, ``error`` (the task
+	failed), ``refused`` (the order policy refused it) or ``cancelled``; with
+	the task's value or error.
+
+	Times are ``time.time()``, in the agent's process, in this order.
+	``t_commit``: when the agent committed to the call: when the model reply
+	that made the call (by its id) reached the agent, if the model runs through
+	a ``flowgentic.fleet.Fleet`` and the agent in an ``AgentHost``; otherwise
+	``t_submit``. If one agent's parallel branches get replies that reuse a
+	call id, each such call is dated by the latest of them. ``t_submit``: when
+	the runtime got the call. ``t_admit``: when
+	the order policy admitted the task and the runtime submitted it to RHAPSODY
+	or AsyncFlow; ``None`` if it never was. ``t_start``: on an engine, when
+	the backend reported the task running, as AsyncFlow's ``TaskStarted``
+	event in the telemetry the runtime was given says, if the event arrived
+	before the task's record was made; otherwise ``None``, as on a session.
+	RHAPSODY's thread and process pools report a task running when they hand
+	it to the pool, which runs it once a worker is free. ``t_finish``: on an engine, when
+	the agent's process saw AsyncFlow resolve the task, one pass of the event
+	loop after AsyncFlow's own end event; ``None`` on a session. ``t_end``: when
+	the runtime saw the task end, before its agent is told.
+
+	``uid``: the task's uid in AsyncFlow, which sets it when the runtime calls
+	the task, or in RHAPSODY (``ToolRuntime.uid(info.key)``), once the session
+	has accepted the task; ``None`` if neither has it. It joins the record to
+	AsyncFlow's telemetry: a start that arrived too late is there. ``backend``:
+	the backend the task was for: the tool's, else the runtime's, else, on an
+	engine, the engine's default, and on a session the one the session sent it
+	to, once it accepted the task.
 	"""
 
 	info: TaskInfo
@@ -216,6 +263,11 @@ class TaskRecord:
 	outcome: str
 	value: Any = None
 	error: str | None = None
+	uid: str | None = None
+	backend: str | None = None
+	t_commit: float | None = None
+	t_start: float | None = None
+	t_finish: float | None = None
 
 	@property
 	def ok(self) -> bool:
@@ -224,7 +276,7 @@ class TaskRecord:
 
 
 class TaskOrder(Protocol):
-	"""When, and whether, tasks reach RHAPSODY."""
+	"""When, and whether, tasks reach RHAPSODY or AsyncFlow."""
 
 	async def admit(self, info: TaskInfo) -> None:
 		"""Return when the task may be submitted, or raise to refuse it: the
@@ -252,10 +304,26 @@ class Immediate:
 class ToolRuntime:
 	"""Runs task and service tools for one agent process.
 
-	``session``: a RHAPSODY ``Session``, for task tools. ``service``: a started
+	Task tools run on ``session``, a RHAPSODY ``Session``, or on ``engine``, an
+	AsyncFlow ``WorkflowEngine``: the application's own, so that the tasks its
+	agents ask for are tasks of the application, beside those of its workflow.
+	Not both. ``backend``: the name of the session's or the engine's backend
+	that task tools run on, unless a tool names its own; by default the
+	session's or the engine's default. ``telemetry``: on an engine, the
+	telemetry ``engine.start_telemetry()`` returned, from which each task's
+	record takes its start. ``service``: a started
 	``flowgentic.tools.service.ToolServiceClient``, for MCP tools. ``order``:
-	when tasks reach RHAPSODY, ``Immediate()`` by default. ``retained``: how
+	when tasks are submitted, ``Immediate()`` by default. ``retained``: how
 	many ended tasks are kept, for repeat safety.
+
+	On an engine, AsyncFlow 0.7.0 keeps each task, with its value, or its exception
+	and the frames it passed through, until the engine shuts down; a task
+	still running then ends with ``TaskCancelled``, as on a session that
+	closes.
+
+	A runtime set up wrong for a tool, such as one naming a backend the session
+	or engine lacks, is refused when the tool is bound (``check``), and with
+	``RuntimeError`` when the tool is called.
 
 	A task asked for by an agent the host runs is registered for the host
 	(``flowgentic.host.register_pending``) until that agent ends, so the host
@@ -268,15 +336,44 @@ class ToolRuntime:
 		session: Any = None,
 		service: Any = None,
 		*,
+		engine: WorkflowEngine | None = None,
+		backend: str | None = None,
+		telemetry: Any = None,
 		order: TaskOrder | None = None,
 		retained: int = 100_000,
 	) -> None:
 		if retained < 1:
 			raise ValueError("retained must be at least 1")
+		if session is not None and engine is not None:
+			raise ValueError(
+				"a ToolRuntime runs task tools on a RHAPSODY session or on an "
+				"AsyncFlow engine, not both"
+			)
+		if telemetry is not None and engine is None:
+			raise ValueError(
+				"telemetry gives the start of tasks on an AsyncFlow engine: a "
+				"ToolRuntime with telemetry needs an engine"
+			)
+		self._starts = None
+		if engine is not None:
+			from flowgentic import _asyncflow
+
+			_asyncflow.check_engine(engine)
+			if backend is not None:
+				_asyncflow.check_backend(engine, backend)
+			if telemetry is not None:
+				_asyncflow.check_telemetry(engine, telemetry)
+				self._starts = _asyncflow.starts(telemetry)
+		elif session is not None and backend is not None:
+			_rhapsody.check_backend(session, backend)
 		self.session = session
 		self.service = service
+		self.engine = engine
+		self.backend = backend
+		self.telemetry = telemetry
 		self.order = order or Immediate()
 		self.retained = retained
+		self._on_engine: dict[tuple[Callable[..., Any], str | None], Callable] = {}
 		self._jobs: dict[str, asyncio.Future] = {}
 		self._ended: OrderedDict[str, None] = OrderedDict()
 		self.submitted = 0
@@ -324,7 +421,15 @@ class ToolRuntime:
 
 		A failed task keeps its exception for as long as it is kept. Read it
 		with ``exception()`` rather than raise it in a framework's code, whose
-		frames its traceback would then keep."""
+		frames its traceback would then keep.
+
+		On an engine, ``submit`` must run on the engine's event loop, where
+		AsyncFlow registers tasks: anywhere else it raises ``RuntimeError``, as
+		a runtime set up wrong does."""
+		if self.engine is not None:
+			from flowgentic import _asyncflow
+
+			_asyncflow.check_loop(self.engine)
 		key = self.key(agent_id, call_id, scope)
 		job = self._jobs.get(key)
 		if job is None:
@@ -334,8 +439,18 @@ class ToolRuntime:
 		if job is not None:
 			self.repeats += 1
 			return job
-		if self.session is None:
-			raise RuntimeError("task tools need a ToolRuntime with a RHAPSODY session")
+		t_submit = time.time()
+		if self.session is None and self.engine is None:
+			raise RuntimeError(
+				"task tools need a ToolRuntime with a RHAPSODY session or an "
+				"AsyncFlow engine"
+			)
+		try:
+			fields, on_engine = self._placed(tool)
+		except ValueError as exc:
+			# Set up wrong, as without a session: the agent fails, rather than
+			# tell its model that the call failed.
+			raise RuntimeError(f"task tool {tool.name}: {exc}") from exc
 		kwargs = (
 			dict(args)
 			if tool.prepare is None
@@ -349,11 +464,21 @@ class ToolRuntime:
 			args=dict(args),
 			kwargs=kwargs,
 		)
+		committed = _agents.reply_time(agent_id, call_id)
+		within = None
+		if self.engine is not None:
+			from flowgentic import _asyncflow
+
+			# The workflow scope or block the caller runs in, which the task's
+			# own context below drops: AsyncFlow labels the task with it, and
+			# cancels it with the block.
+			within = _asyncflow.workflow(self.engine)
 		# An asyncio task keeps the context it was created in, and the runtime
 		# keeps ended tasks: in the caller's context, a kept task would keep the
 		# framework's run, and with it the agent's whole state.
 		job = asyncio.get_running_loop().create_task(
-			self._run(tool, info), context=_agents.task_context()
+			self._run(tool, info, fields, on_engine, t_submit, committed, within),
+			context=_agents.task_context(),
 		)
 		self._jobs[key] = job
 		if _agents.current_agent() is not None:
@@ -365,6 +490,54 @@ class ToolRuntime:
 		self.submitted += 1
 		return job
 
+	def check(self, tool: TaskTool) -> None:
+		"""Raise ``ValueError`` if this runtime cannot run ``tool``'s tasks: a
+		backend its session or engine lacks, or, on an engine, a field AsyncFlow
+		cannot take. A framework's adapter calls it when it binds the tool
+		(``flowgentic.langgraph.bind_tools`` does), so that a runtime set up
+		wrong fails before any agent runs."""
+		self._placed(tool)
+
+	def _placed(
+		self, tool: TaskTool
+	) -> tuple[
+		dict[str, Any],
+		Callable[..., asyncio.Future] | None,
+	]:
+		"""The fields of ``tool``'s tasks, the runtime's backend included, and on
+		an engine how to submit them: ``tool``'s function, registered once per
+		backend. ``ValueError`` as ``check`` says."""
+		fields = dict(tool.task)
+		own = fields.pop("backend", None)  # None names no backend
+		backend = own if own is not None else self.backend
+		if backend is not None:
+			fields["backend"] = backend
+		if fields.get("task_backend_specific_kwargs", {}) is None:
+			del fields["task_backend_specific_kwargs"]  # as none given
+		specific = fields.get("task_backend_specific_kwargs", {})
+		if not isinstance(specific, dict):
+			raise ValueError(
+				"task_backend_specific_kwargs holds the backend's own fields: a "
+				f"dict, not {type(specific).__name__}"
+			)
+		if self.engine is None:
+			if self.session is not None and own is not None:
+				_rhapsody.check_backend(self.session, own)  # the runtime's: at init
+			return fields, None
+		from flowgentic import _asyncflow
+
+		extra = set(fields) - _ENGINE_FIELDS
+		if extra:
+			raise ValueError(
+				f"a task on an AsyncFlow engine takes the fields "
+				f"{sorted(_ENGINE_FIELDS)} only, not {sorted(extra)}"
+			)
+		submit = self._on_engine.get((tool.fn, backend))
+		if submit is None:
+			submit = _asyncflow.function_task(self.engine, tool.fn, backend=backend)
+			self._on_engine[(tool.fn, backend)] = submit
+		return fields, submit
+
 	def _forget(self, key: str, job: asyncio.Future, *, cancel: bool = False) -> None:
 		"""Forget a task that never reached RHAPSODY, so that the call made
 		again submits it afresh; ``cancel`` it too."""
@@ -375,13 +548,28 @@ class ToolRuntime:
 		if cancel:
 			job.cancel()
 
-	async def _run(self, tool: TaskTool, info: TaskInfo) -> Any:
+	async def _run(
+		self,
+		tool: TaskTool,
+		info: TaskInfo,
+		fields: dict[str, Any],
+		on_engine: Callable[..., asyncio.Future] | None,
+		t_submit: float,
+		committed: float | None,
+		within: str | None,
+	) -> Any:
 		t = time.monotonic()
-		t_submit = time.time()
 		t_admit: float | None = None
 		value: Any = None
 		error: str | None = None
 		outcome = "error"
+		uid: str | None = None
+		backend: str | None = fields.get("backend")
+		finish = None
+		if on_engine is not None:
+			from flowgentic import _asyncflow
+
+			backend = backend or _asyncflow.default_backend(self.engine)
 		with _telemetry.tracer.start_as_current_span(
 			f"{_telemetry.EXECUTE_TOOL} {tool.name}",
 			attributes={
@@ -401,13 +589,33 @@ class ToolRuntime:
 				t_admit = time.time()
 				_agents.withdrawable(asyncio.current_task(), None)
 				try:
-					value = await _rhapsody.run_function(
-						self.session,
-						tool.fn,
-						info.kwargs,
-						uid=self.uid(info.key),
-						**tool.task,
-					)
+					if on_engine is None:
+						named = self.uid(info.key)
+
+						def submitted(sent_to: str | None) -> None:
+							nonlocal uid, backend
+							uid = named  # once the session has accepted the task
+							backend = sent_to or backend
+
+						value = await _rhapsody.run_function(
+							self.session,
+							tool.fn,
+							info.kwargs,
+							uid=named,
+							on_submitted=submitted,
+							**fields,
+						)
+					else:
+						future = on_engine(
+							info.kwargs,
+							fields.get("task_backend_specific_kwargs") or {},
+							within,
+						)
+						uid = _asyncflow.uid(future)
+						finish = _asyncflow.Finish(future)
+						if self._starts is not None:
+							self._starts.add(uid)
+						value = await _asyncflow.result(future)
 				finally:
 					self.order.done(info)
 				outcome = "ok"
@@ -433,9 +641,23 @@ class ToolRuntime:
 				span.set_attribute(_telemetry.TOOL_OUTCOME, outcome)
 				if t_admit is not None or outcome != "cancelled":
 					self._ended_add(info.key)
+				t_start = None
+				if self._starts is not None and uid is not None:
+					t_start = self._starts.pop(uid)
 				self._tell(
 					TaskRecord(
-						info, t_submit, t_admit, time.time(), outcome, value, error
+						info,
+						t_submit,
+						t_admit,
+						time.time(),
+						outcome,
+						value,
+						error,
+						uid=uid,
+						backend=backend,
+						t_commit=t_submit if committed is None else committed,
+						t_start=t_start,
+						t_finish=None if finish is None else finish.time,
 					)
 				)
 				_telemetry.TOOL_DURATION.record(

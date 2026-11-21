@@ -48,10 +48,12 @@ _CALL_ID = "tool_call_id"
 
 def bind_tools(runtime: ToolRuntime, tools: Iterable[Any]) -> list[BaseTool]:
 	"""LangChain tools for ``tools``: task and MCP tools run on ``runtime``;
-	LangChain tools are returned as they are."""
+	LangChain tools are returned as they are. ``ValueError`` if ``runtime``
+	cannot run a task tool's tasks (``ToolRuntime.check``)."""
 	out: list[BaseTool] = []
 	for tool in tools:
 		if isinstance(tool, TaskTool):
+			runtime.check(tool)  # a runtime set up wrong fails here, not in an agent
 			out.append(_task_tool(runtime, tool))
 		elif isinstance(tool, McpTool):
 			out.append(_mcp_tool(runtime, tool))

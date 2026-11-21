@@ -115,3 +115,26 @@ def test_imports_in_except_handlers_are_found() -> None:
 
 def test_the_seam_calls_asyncflow() -> None:
 	assert _engine_calls(_parse(SEAM))  # noqa: S101
+
+
+def _imports_flowgentic_module(tree: ast.Module, name: str) -> list[int]:
+	"""Line numbers of imports of ``flowgentic.<name>``."""
+	lines = []
+	for node in ast.walk(tree):
+		if isinstance(node, ast.Import):
+			if any(alias.name == f"flowgentic.{name}" for alias in node.names):
+				lines.append(node.lineno)
+		elif isinstance(node, ast.ImportFrom):
+			if node.module == f"flowgentic.{name}" or (
+				node.module == "flowgentic"
+				and any(alias.name == name for alias in node.names)
+			):
+				lines.append(node.lineno)
+	return lines
+
+
+def test_the_two_seams_do_not_import_each_other() -> None:
+	"""AsyncFlow and RHAPSODY are separate extras, each behind its own seam."""
+	rhapsody_seam = SOURCE / "_rhapsody.py"
+	assert _imports_flowgentic_module(_parse(SEAM), "_rhapsody") == []  # noqa: S101
+	assert _imports_flowgentic_module(_parse(rhapsody_seam), "_asyncflow") == []  # noqa: S101

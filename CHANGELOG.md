@@ -13,7 +13,9 @@ Agents at scale run on Flowgentic's own agent loop, on OpenAI Chat Completions
 messages and transports to OpenAI-compatible model servers, and LangGraph
 becomes optional: LangChain is an adapter, in the `langgraph` extra, and
 LangGraph's graphs run on the same parts. The fleet's API breaks (under
-Changed), before 1.0; `GraphRunner` and its graphs work as before.
+Changed), before 1.0; `GraphRunner` and its graphs work as before. Task tools
+also run on an application's AsyncFlow engine, and each task ends in a
+decision record.
 
 ### Added
 
@@ -82,6 +84,44 @@ Changed), before 1.0; `GraphRunner` and its graphs work as before.
 - Contract tests read chat completions recorded from vLLM 0.19.1, beside
   completions shaped after SGLang's and OpenRouter's documented replies;
   `tests/unit/scale/completions/record.py` records a server's.
+- Task tools on the application's AsyncFlow engine.
+  `ToolRuntime(engine=flow, backend="compute")` runs each task tool as an
+  AsyncFlow function task on a named backend of the engine the application
+  passes in, so the tasks its agents ask for are tasks of the application.
+  Suspension, repeat safety and the host's registrations work as on a RHAPSODY
+  session. A tool may name its own backend (`task_tool(fn, backend="ai")`) and
+  give the backend's own fields (`task_backend_specific_kwargs`, a dict). A
+  sync function is called with no event loop running in its thread, as on a
+  session. A task still running when the engine shuts down ends with
+  `TaskCancelled`. A runtime takes a session or an engine, not both.
+- `ToolRuntime(..., backend=...)`: the backend task tools run on unless a tool
+  names its own, on a session as on an engine. A tool's `backend=None` names
+  none.
+- On an engine, a task belongs to the AsyncFlow workflow scope or block its
+  agent runs in: AsyncFlow labels it with the scope's id, and cancelling the
+  block cancels the task, which ends with `TaskCancelled`.
+- On an engine, a task tool must be called on the engine's event loop, where
+  AsyncFlow registers tasks; elsewhere, as inside an AsyncFlow task, it raises
+  `RuntimeError`, which fails its agent. `ToolRuntime(engine=..., telemetry=...)`
+  takes that engine's own telemetry only (`ValueError` otherwise), and an
+  AsyncFlow without the scope variable the runtime reads is a `RuntimeError`
+  that names the installed version.
+- `ToolRuntime.check(tool)`, which `bind_tools` calls: a backend the session or
+  engine lacks, or a field an engine cannot take, is a `ValueError` when the
+  runtime is made or the tool is bound, and a `RuntimeError`, which fails the
+  agent, when a tool that was not bound is called.
+- The decision record. `TaskRecord` gains `uid` (the task's uid in AsyncFlow,
+  or in RHAPSODY once the session has accepted it), `backend` (on a session,
+  the one it sent the task to), `t_commit`
+  (when the agent committed to the call), `t_start` and `t_finish`. With a
+  model run through a fleet in an agent the host runs, `t_commit` is when the
+  reply that made the call, by its id, reached the agent; otherwise it is
+  `t_submit`. On an engine, `t_finish` is when the agent's process saw
+  AsyncFlow resolve the task, and `t_start` comes from AsyncFlow's
+  `TaskStarted` events in the telemetry the application passes
+  (`ToolRuntime(engine=flow, telemetry=await flow.start_telemetry())`): when
+  the backend reported the task running, which RHAPSODY's pools do when the
+  pool gets it.
 
 ### Changed
 
@@ -110,6 +150,22 @@ Changed), before 1.0; `GraphRunner` and its graphs work as before.
   scale", follows it, and LangGraph has a section of its own.
 - The `dev` extra is `flowgentic[examples,agents]` and the tools it needs.
   The `examples` extra, for the AsyncFlow path's demos, keeps LangGraph.
+- The `asyncflow` extra is `radical-asyncflow>=0.7,<0.8` (was `>=0.6,<0.7`).
+  AsyncFlow 0.7 sets a task's uid when the task is called, which the decision
+  record needs, and its `task` spans name the backend each task ran on, where
+  0.6 labelled every one with the default backend.
+- The error of a task tool on a runtime with neither a session nor an engine
+  now reads "task tools need a ToolRuntime with a RHAPSODY session or an
+  AsyncFlow engine".
+- `TaskRecord.t_submit` is taken when `ToolRuntime.submit` gets the call, not
+  when the task's own coroutine first runs.
+- On a session, a task tool naming a backend the session lacks fails its agent
+  with `RuntimeError` when called, and `bind_tools` refuses it; before, the
+  session's error reached the model.
+- `flowgentic.tools.TaskCancelled` is now defined in `flowgentic._agents`, so
+  that neither seam imports the other; import it from `flowgentic.tools`, as
+  before.
+
 
 ## [0.5.1] - 2026-11-19
 

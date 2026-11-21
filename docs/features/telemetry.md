@@ -208,7 +208,7 @@ session                        backend=rhapsody
 ├─ task                        executable=load_surrogate  task_id=task.000001
 ├─ task                        executable=propose_candidates
 ├─ invoke_agent planner        flowgentic.task.uid=task.000003  flowgentic.task.backend=ai
-│  ├─ task                     executable=agent_planner  task_id=task.000003  backend=compute
+│  ├─ task                     executable=agent_planner  task_id=task.000003  backend=ai
 │  └─ invoke_workflow LangGraph
 ├─ task                        executable=simulate   (four, in parallel)
 ├─ task                        executable=update_surrogate
@@ -217,10 +217,10 @@ session                        backend=rhapsody
 ```
 
 The planner's LangGraph component runs inside its task, on the `ai` backend,
-and its spans nest under the decision. The `task` span's `backend` reads
-`compute` because AsyncFlow 0.6.0 labels every task span with the default
-backend. Flowgentic's `flowgentic.task.backend` gives the backend the task
-actually ran on.
+and its spans nest under the decision. The `task` span's `backend` and
+Flowgentic's `flowgentic.task.backend` both name the backend the task ran on.
+AsyncFlow 0.6.0 labelled every task span with the default backend, here
+`compute`; 0.7 names the right one.
 
 ## Token usage
 
@@ -316,7 +316,6 @@ and the changelog lists each one.
   so the caller cannot hand it to the task.
 - An AsyncFlow block's span hangs from RHAPSODY's `session` span, not from the
   span that called the block.
-- AsyncFlow 0.6.0 labels every `task` span with the default backend.
 - No cost reported by a provider is recorded.
 - Without the OpenAI instrumentation, `chat` spans carry no `server.address`.
 

@@ -60,11 +60,11 @@ run, and a graph that should change between runs is built anew as a
 | Path | Agent framework | Runs tasks on | Python |
 | --- | --- | --- | --- |
 | Agents at scale | Flowgentic's agent loop; LangGraph 1.x, optional | RHAPSODY 0.7 on a thread pool, in CI; RHAPSODY's native Dragon backend, not yet released, by hand | 3.11, 3.12, 3.13 |
-| AsyncFlow | LangGraph 1.x | RADICAL AsyncFlow 0.6.0, local backends | 3.11, 3.12, 3.13 |
+| AsyncFlow | LangGraph 1.x | RADICAL AsyncFlow 0.7, local backends | 3.11, 3.12, 3.13 |
 
 Tested environment, from `uv.lock`: httpx 0.28.1, openai 3.36.1, LangGraph 1.2.16,
 langgraph-checkpoint 4.3.0, langchain-core 1.7.0, langchain 1.4.7, rhapsody-py
-0.7.0, mcp 2.3.0, radical-asyncflow 0.6.0 and academy-py 1.0.0. CI runs the
+0.7.0, mcp 2.3.0, radical-asyncflow 0.7.0 and academy-py 1.0.0. CI runs the
 test suite on Python 3.11, 3.12 and 3.13, and on Python 3.11 with the lowest
 versions the dependency ranges allow; it also installs the wheel with the
 `agents` extra alone, without LangGraph, LangChain or the `openai` SDK, and
@@ -83,14 +83,17 @@ metrics, and `httpx>=0.27,<1`, for the fleet's default transport,
   `openai` SDK.
 - `rhapsody`: `rhapsody-py>=0.7,<0.8`, for task tools.
 - `mcp`: `mcp>=2.3,<2.4`, for the tool service's MCP clients.
-- `asyncflow`: `radical-asyncflow>=0.6,<0.7`, because before 1.0 an AsyncFlow
-  minor release may break.
+- `asyncflow`: `radical-asyncflow>=0.7,<0.8`, because before 1.0 an AsyncFlow
+  minor release may break. 0.7 is the floor: it sets a task's uid when the
+  task is called, which task tools on an engine record, and its task spans
+  name the backend each task ran on.
 - `agents`: `rhapsody` and `mcp`, for agents at scale.
 
 Agents at scale need `flowgentic[agents]`, and `flowgentic[agents,langgraph]`
 to run LangGraph graphs. The LangGraph integration on AsyncFlow needs
-`langgraph` and `asyncflow`, and `bind_agent` needs `asyncflow`. Without an
-extra it needs, importing a part raises an error that names the extra.
+`langgraph` and `asyncflow`, and `bind_agent` needs `asyncflow`, as do task
+tools on an AsyncFlow engine. Without an extra it needs, importing a part
+raises an error that names the extra.
 `flowgentic.host`, `flowgentic.store`, `flowgentic.tools`, `flowgentic.fleet` and
 `flowgentic.loop` import with no extra. The agents-at-scale example needs
 `agents` only. The `examples` extra, for the AsyncFlow path's demos, adds
@@ -156,20 +159,41 @@ The AsyncFlow path:
 
 - ADR mode is not supported. The demos' `--controller adr` needs an ADR source
   checkout (`ADR_SRC`), because ADR is not released.
-- Not validated: using an engine that the caller creates (the integration
-  always creates its own), and any remote or HPC backend. Cancellation reaching
-  in-flight AsyncFlow tasks is validated on local backends only.
+- Not validated: the LangGraph integration on an engine that the caller
+  creates (the integration always creates its own), and any remote or HPC
+  backend. Task tools on the application's engine
+  ([Tool placement](features/tools.md#in-an-asyncflow-application)) are tested
+  on RHAPSODY's thread-pool and process-pool backends and AsyncFlow's own
+  `LocalExecutionBackend` only. Cancellation reaching in-flight
+  AsyncFlow tasks is validated on local backends only.
+- Task tools on an AsyncFlow engine: AsyncFlow 0.7.0 keeps every task, with its
+  arguments and value, or a failed task's exception and its traceback, until
+  the engine shuts down, so a campaign's memory grows with the tasks its
+  agents ask for.
+- A task's record has a finish time only on an AsyncFlow engine, and a start
+  time only when the application hands the runtime the engine's telemetry, on
+  a backend that reports a task running (RHAPSODY's do; AsyncFlow's own
+  `LocalExecutionBackend` does not), and if the start event arrives before the
+  task ends: in a burst of thousands of tasks, some arrive later and are found
+  in the telemetry by the record's uid. On a RHAPSODY session, both are
+  `None`. The start is when the backend reported the task running, which on
+  RHAPSODY's thread and process pools is when the pool got the task, not when
+  a worker began it. Its commitment time is a model reply's only when the
+  model runs through a fleet in an agent the host runs; parallel branches of
+  one agent whose replies reuse a call id are dated by the latest of them.
+- A cancelled task tool's function keeps running on a thread or process pool,
+  on an engine as on a session: the pool cannot stop it, and its order has
+  its place back at once.
 - The recipe for calling Academy agents from AsyncFlow tasks is tested with
   Academy's local exchange and AsyncFlow's local backend only; see
   [Academy actions as AsyncFlow tasks](guides/academy-on-asyncflow.md#limitations).
-- AsyncFlow 0.6.0 has no per-task retry or timeout, so applications wrap the
+- AsyncFlow 0.7 has no per-task retry or timeout, so applications wrap the
   task calls that need them. See
   [Retries and timeouts](guides/retries-and-timeouts.md).
 - Tracing (see [Telemetry](features/telemetry.md)):
     - A model call inside an AsyncFlow task is a sibling of the task's span, not
       its child.
     - AsyncFlow block spans hang from the session span, not from the caller's.
-    - AsyncFlow 0.6.0 labels every task span with the default backend.
     - No cost that a provider reports is recorded.
     - Acceptance's evaluation events are log records, emitted through Python's
       OpenTelemetry Logs API, which still lives in the module

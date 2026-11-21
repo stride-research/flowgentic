@@ -9,7 +9,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.2
+        uses: astral-sh/setup-uv@v10.3.3
         with:
           enable-cache: true
 
@@ -40,7 +40,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.2
+        uses: astral-sh/setup-uv@v10.3.3
         with:
           enable-cache: true
 
@@ -66,14 +66,14 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.2
+        uses: astral-sh/setup-uv@v10.3.3
         with:
           enable-cache: true
 
       - name: "Install dependencies"
         run: uv sync --frozen --extra dev --python ${{ matrix.python-version }}
 
-      # The lock pins LangGraph 1.x and AsyncFlow 0.6.0; record what was tested.
+      # The lock pins LangGraph 1.x and AsyncFlow 0.7.0; record what was tested.
       - name: "Show tested versions"
         run: >-
           uv run --frozen --python ${{ matrix.python-version }} --extra dev python -c
@@ -166,7 +166,7 @@ jobs:
           python-version: '3.11'
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.2
+        uses: astral-sh/setup-uv@v10.3.3
         with:
           enable-cache: true
           cache-suffix: lowest

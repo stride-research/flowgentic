@@ -37,7 +37,7 @@ an extra.
 | Path | Agent framework | Runs tasks on | Python |
 | --- | --- | --- | --- |
 | Agents at scale | Flowgentic's agent loop; LangGraph 1.x, optional | RHAPSODY 0.7 | 3.11, 3.12, 3.13 |
-| AsyncFlow | LangGraph 1.x | RADICAL AsyncFlow 0.6.0, local backends | 3.11, 3.12, 3.13 |
+| AsyncFlow | LangGraph 1.x | RADICAL AsyncFlow 0.7, local backends | 3.11, 3.12, 3.13 |
 
 [Project status](status.md) lists the tested versions, the known limitations
 and the archived branches.
