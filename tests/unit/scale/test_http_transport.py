@@ -143,9 +143,12 @@ async def test_the_transport_sends_the_tools_and_the_calls_keywords(monkeypatch)
 
 def test_the_transport_makes_its_client(monkeypatch):
     """Its key from ``OPENAI_API_KEY``, else ``EMPTY``, as vLLM and SGLang take
-    when they set none; a timeout of 600 s, as the openai SDK's."""
+    when they set none; a timeout of 600 s, as the openai SDK's; a pool per 8
+    calls in flight, the cheapest per call of 4, 8, 16, 32 and 64 at 64 calls
+    in flight, and within 3% of the cheapest at 512."""
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     transport = HTTPTransport("m", base_url=URL)
+    assert transport.calls_per_pool == 8 and transport.pools is None
     (client,) = transport.clients
     assert client.headers["authorization"] == "Bearer EMPTY"
     assert client.timeout == httpx.Timeout(600.0)
