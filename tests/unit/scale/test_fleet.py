@@ -779,6 +779,25 @@ def test_which_errors_of_langchain_openai_are_transient():
         assert not matches(cls), cls
 
 
+def test_a_busy_server_is_transient_through_the_openai_sdk_too():
+    """The SDK retries 408, 409 and 429 itself, unless given max_retries=0, as
+    the docs advise with Recovery: then Recovery waits them out, as it does
+    HTTPTransport's."""
+    import httpx
+    import openai
+
+    def error(cls, status):
+        request = httpx.Request("POST", "http://node-1:8000/v1/chat/completions")
+        response = httpx.Response(status, request=request, json={"error": {"message": "busy"}})
+        return cls("busy", response=response, body=None)
+
+    assert fleet_module._transient(error(openai.RateLimitError, 429))
+    assert fleet_module._transient(error(openai.ConflictError, 409))
+    assert fleet_module._transient(error(openai.APIStatusError, 408))
+    assert not fleet_module._transient(error(openai.BadRequestError, 400))
+    assert not fleet_module._transient(error(openai.APIStatusError, 404))
+
+
 async def test_the_chat_model_routes_by_the_thread_id():
     model = Slow()
     fleet = Fleet([model, Slow(), Slow()])
