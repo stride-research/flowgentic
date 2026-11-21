@@ -495,6 +495,68 @@ async def test_a_task_carries_the_workflow_it_was_asked_for_in():
     assert [r.uid for r in records] == [scoped["uid"], blocked["uid"], outside["uid"]]
 
 
+async def test_a_task_tool_called_off_the_engines_event_loop_fails_its_agent():
+    """AsyncFlow registers a task on the engine's own event loop. An agent that
+    runs inside an AsyncFlow task, as ``bind_agent`` runs one, has a loop of its
+    own in a pool thread: its task tool raises ``RuntimeError``, which fails the
+    agent, rather than wait forever for a task the engine never registers."""
+    flow = await open_engine("compute")
+    runtime = ToolRuntime(engine=flow)
+
+    def in_a_thread_of_its_own():
+        async def agent():
+            return runtime.submit(task_tool(simulate), "a", "c1", {"x": 1.0})
+
+        return asyncio.run(agent())
+
+    try:
+        with pytest.raises(RuntimeError, match="event loop"):
+            await asyncio.wait_for(asyncio.to_thread(in_a_thread_of_its_own), 5)
+        # nothing was submitted, and the engine still runs tasks
+        assert runtime._jobs == {} and runtime.stats()["submitted"] == 0
+        assert await runtime.submit(task_tool(simulate), "a", "c2", {"x": 1.0}) == {"y": 2.0}
+    finally:
+        await asyncio.wait_for(_asyncflow.close_engine(flow), 10)
+
+
+async def test_an_asyncflow_without_the_scope_it_reads_is_refused_by_version(monkeypatch):
+    """The seam reads one private name of AsyncFlow's, the engine's scope
+    variable. An AsyncFlow without it is refused when the runtime is made, with
+    an error that names the installed version, not later with an
+    ``AttributeError``."""
+    from importlib.metadata import version
+
+    flow = await open_engine("compute")
+    try:
+        monkeypatch.delattr(flow, "_workflow_id_ctx")
+        with pytest.raises(RuntimeError, match=f"radical-asyncflow {version('radical-asyncflow')}"):
+            ToolRuntime(engine=flow)
+        monkeypatch.undo()
+        monkeypatch.setattr(flow, "_workflow_id_ctx", "not a context variable")
+        with pytest.raises(RuntimeError, match="radical-asyncflow"):
+            ToolRuntime(engine=flow)
+    finally:
+        monkeypatch.undo()
+        await _asyncflow.close_engine(flow)
+
+
+async def test_another_engines_telemetry_is_refused():
+    """An engine emits its events to its own telemetry only: with another
+    engine's, no record would get its start."""
+    pytest.importorskip("rhapsody.telemetry.manager", reason="AsyncFlow telemetry needs rhapsody-py[telemetry]")
+    first, second = await open_engine("compute"), await open_engine("compute")
+    own, other = await first.start_telemetry(), await second.start_telemetry()
+    try:
+        with pytest.raises(ValueError, match="another engine"):
+            ToolRuntime(engine=first, telemetry=other)
+        assert ToolRuntime(engine=first, telemetry=own).telemetry is own
+    finally:
+        await own.stop()
+        await other.stop()
+        await _asyncflow.close_engine(first)
+        await _asyncflow.close_engine(second)
+
+
 async def test_a_runtime_set_up_wrong_is_refused_before_any_agent_runs():
     """A backend the engine or session lacks, or a field an engine cannot take,
     is refused when the runtime is made or its tools are bound, not told to a
