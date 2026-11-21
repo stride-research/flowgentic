@@ -71,14 +71,18 @@ The runner never changes the caller's messages.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import inspect
 import json
 import logging
+import os
 import sys
 import time
 import typing
 import uuid
+import weakref
 from collections.abc import Awaitable, Callable, Iterable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import partial
 from typing import Any
@@ -89,6 +93,7 @@ from pydantic import BaseModel, ValidationError, create_model
 from flowgentic import _agents, _telemetry
 from flowgentic._agents import AgentState, ToolSetupError
 from flowgentic.fleet import Fleet, Reply, _as_transport, _complete
+from flowgentic.fleet._transport import _sendable
 from flowgentic.host import Agent, Finished, Interrupted, Step, Suspended
 from flowgentic.store import KeyValueStore, MemoryStore
 from flowgentic.tools import McpTool, TaskTool, ToolRuntime
@@ -107,6 +112,7 @@ log = logging.getLogger(__name__)
 ERROR = "Error: {error}\n Please fix your mistakes."
 NOT_A_TOOL = "Error: {name} is not a valid tool, try one of [{names}]."
 ANSWERED = "Answer recorded."
+NOT_RUN = "Error: this call was not run: the conversation went on without its result."
 
 Trim = Callable[[list[dict]], Sequence[dict] | Awaitable[Sequence[dict]]]
 
@@ -277,6 +283,12 @@ class LoopRunner:
 		self.tool_schemas: list[dict] = schemas
 
 		self._saved: set[str] = set()  # agents with an entry in the store
+		# Sync inline tools run on the runner's own threads: the event loop's
+		# default executor also resolves host names for the model's
+		# connections, which slow tools queued there would hold up.
+		self._threads = min(32, (os.cpu_count() or 1) + 4)
+		self._executor: ThreadPoolExecutor | None = None
+		self._finalizer: weakref.finalize | None = None
 		self.model_calls = 0
 		self.tool_calls = 0
 		self.tool_errors = 0
@@ -295,7 +307,8 @@ class LoopRunner:
 
 	async def start(self, agent: Agent) -> Step:
 		"""Run the agent from its input until it ends, suspends or stops."""
-		return await self._run(agent.id, _messages(agent.input), 0)
+		messages = _answer_skipped(_messages(agent.input))
+		return await self._run(agent.id, messages, 0, self._token)
 
 	async def resume(self, agent: Agent, done: dict[str, Any]) -> Step:
 		"""Read the agent's state back and run it on; its tasks have ended."""
@@ -305,7 +318,31 @@ class LoopRunner:
 			raise RuntimeError(
 				f"agent {agent.id!r} has no saved state under {self.key(agent.id)!r}"
 			)
-		return await self._run(agent.id, state["messages"], state["model_calls"])
+		# Its state is in the store, whichever runner saved it; its tasks are
+		# keyed by that runner's token, saved with it.
+		self._saved.add(agent.id)
+		token = state.get("token", self._token)
+		return await self._run(agent.id, state["messages"], state["model_calls"], token)
+
+	def close(self) -> None:
+		"""End the threads that run sync inline tools, once their calls end; a
+		later run makes new ones. They end, too, when the runner is collected."""
+		executor, self._executor = self._executor, None
+		if self._finalizer is not None:
+			self._finalizer.detach()
+			self._finalizer = None
+		if executor is not None:
+			executor.shutdown(wait=False)
+
+	def _pool(self) -> ThreadPoolExecutor:
+		if self._executor is None:
+			self._executor = ThreadPoolExecutor(
+				max_workers=self._threads, thread_name_prefix="flowgentic-inline"
+			)
+			self._finalizer = weakref.finalize(
+				self, self._executor.shutdown, wait=False
+			)
+		return self._executor
 
 	def stats(self) -> dict:
 		"""Model calls, tool calls and their errors, suspensions, interrupts, and
@@ -324,9 +361,11 @@ class LoopRunner:
 
 	# --- the loop --------------------------------------------------------------------
 
-	async def _run(self, agent_id: str, messages: list[dict], calls: int) -> Step:
+	async def _run(
+		self, agent_id: str, messages: list[dict], calls: int, token: str
+	) -> Step:
 		try:
-			step = await self._loop(agent_id, messages, calls)
+			step = await self._loop(agent_id, messages, calls, token)
 		except BaseException:
 			self._end(agent_id)
 			raise
@@ -334,12 +373,14 @@ class LoopRunner:
 			self._end(agent_id)
 		return step
 
-	async def _loop(self, agent_id: str, messages: list[dict], calls: int) -> Step:
+	async def _loop(
+		self, agent_id: str, messages: list[dict], calls: int, token: str
+	) -> Step:
 		i, made, pending = _pending(messages)
 		while True:
 			if pending:
 				step = await self._tools_turn(
-					agent_id, messages, calls, i, made, pending
+					agent_id, messages, calls, token, i, made, pending
 				)
 				if step is not None:
 					return step
@@ -399,11 +440,12 @@ class LoopRunner:
 		agent_id: str,
 		messages: list[dict],
 		calls: int,
+		token: str,
 		i: int,
 		made: list[_Call],
 		pending: list[_Call],
 	) -> Step | None:
-		scope = f"{self._token}-{calls}"  # the same when the agent resumes
+		scope = f"{token}-{calls}"  # the same when the agent resumes
 		alone = len(made) == 1
 		if len(pending) == 1:
 			results = [await self._call(agent_id, scope, pending[0], alone)]
@@ -442,7 +484,7 @@ class LoopRunner:
 			self.interrupts += 1
 			return Interrupted(tuple(stops))
 		if waits:
-			self._save(agent_id, messages, calls)
+			self._save(agent_id, messages, calls, token)
 			return Suspended(tuple(waits))
 		if answer is not None:
 			return Finished(LoopOutput(messages, answer, calls))
@@ -499,7 +541,10 @@ class LoopRunner:
 					# A sync tool runs in a thread, with the agent's context, as
 					# LangChain's ToolNode runs one: on the event loop it would
 					# hold every agent of the process while it runs.
-					out = await asyncio.to_thread(tool.fn, **kwargs)
+					run = partial(contextvars.copy_context().run, tool.fn, **kwargs)
+					out = await asyncio.get_running_loop().run_in_executor(
+						self._pool(), run
+					)
 				if inspect.isawaitable(out):
 					out = await out
 				outcome = "ok"
@@ -596,8 +641,11 @@ class LoopRunner:
 
 	# --- state -----------------------------------------------------------------------
 
-	def _save(self, agent_id: str, messages: list[dict], calls: int) -> None:
-		self.store.put(self.key(agent_id), {"messages": messages, "model_calls": calls})
+	def _save(
+		self, agent_id: str, messages: list[dict], calls: int, token: str
+	) -> None:
+		state = {"messages": messages, "model_calls": calls, "token": token}
+		self.store.put(self.key(agent_id), state)
 		self.store_puts += 1
 		self.suspensions += 1
 		self._saved.add(agent_id)
@@ -660,6 +708,38 @@ def _messages(value: object) -> list[dict]:
 			out.extend(to_openai_messages([m]))
 		else:
 			raise TypeError(f"not a message: {m!r}")
+	return out
+
+
+def _answer_skipped(messages: list[dict]) -> list[dict]:
+	"""An input history with a result for each tool call that a later message
+	moved past without one, saying the call was not run: a server requires a
+	result for every call, and a history cut there is still a conversation
+	the agent can go on with. Calls followed by nothing but tool results stay
+	pending: the loop runs them first, as when an agent resumes."""
+	if not any(m.get("tool_calls") for m in messages if isinstance(m, dict)):
+		return messages
+	out: list[dict] = []
+	i, n = 0, len(messages)
+	while i < n:
+		m = messages[i]
+		out.append(m)
+		i += 1
+		calls = m.get("tool_calls") if m.get("role") == "assistant" else None
+		if not calls:
+			continue
+		j = i
+		while j < n and messages[j].get("role") == "tool":
+			out.append(messages[j])
+			j += 1
+		if j < n:  # the conversation went on
+			answered = {x.get("tool_call_id") for x in messages[i:j]}
+			out.extend(
+				{"role": "tool", "tool_call_id": c.get("id"), "content": NOT_RUN}
+				for c in calls
+				if c.get("id") not in answered
+			)
+		i = j
 	return out
 
 
@@ -743,6 +823,7 @@ def _ok(call: _Call, value: object) -> _Result:
 		if isinstance(value, str)
 		else json.dumps(value, default=str, ensure_ascii=False)
 	)
+	text = _sendable(text)  # a lone surrogate, as its escape
 	return _Result(_result(call, text))
 
 
