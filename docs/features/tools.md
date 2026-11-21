@@ -66,6 +66,13 @@ AsyncFlow's own call keywords included. AsyncFlow knows the task by the
 function's name, and gives it its uid, such as `task.000007`, when the runtime
 submits it.
 
+Agents that use an engine's task tools run on the engine's event loop: in a
+coroutine, a block or an agent host the application runs there, not inside an
+AsyncFlow task (as `bind_agent` runs an agent), whose function runs on an event
+loop of its own in a pool thread. A task tool called off the engine's loop
+raises `RuntimeError`, which fails its agent: AsyncFlow would never register
+the task.
+
 On an engine, a tool's task fields are `backend` and
 `task_backend_specific_kwargs`, the backend's own fields such as resources,
 which AsyncFlow passes to the backend as the task's `task_description`. Any
@@ -227,6 +234,9 @@ hands to the runtime:
 telemetry = await flow.start_telemetry()  # needs rhapsody-py[telemetry]
 runtime = ToolRuntime(engine=flow, backend="compute", telemetry=telemetry)
 ```
+
+The telemetry must be that engine's own: the engine emits to no other, so
+another engine's is a `ValueError`.
 
 The telemetry delivers its events in batches, after the fact. A task whose
 `TaskStarted` event has not arrived when the task ends, as can happen in a

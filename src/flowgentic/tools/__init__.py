@@ -358,9 +358,11 @@ class ToolRuntime:
 		if engine is not None:
 			from flowgentic import _asyncflow
 
+			_asyncflow.check_engine(engine)
 			if backend is not None:
 				_asyncflow.check_backend(engine, backend)
 			if telemetry is not None:
+				_asyncflow.check_telemetry(engine, telemetry)
 				self._starts = _asyncflow.starts(telemetry)
 		elif session is not None and backend is not None:
 			_rhapsody.check_backend(session, backend)
@@ -419,7 +421,15 @@ class ToolRuntime:
 
 		A failed task keeps its exception for as long as it is kept. Read it
 		with ``exception()`` rather than raise it in a framework's code, whose
-		frames its traceback would then keep."""
+		frames its traceback would then keep.
+
+		On an engine, ``submit`` must run on the engine's event loop, where
+		AsyncFlow registers tasks: anywhere else it raises ``RuntimeError``, as
+		a runtime set up wrong does."""
+		if self.engine is not None:
+			from flowgentic import _asyncflow
+
+			_asyncflow.check_loop(self.engine)
 		key = self.key(agent_id, call_id, scope)
 		job = self._jobs.get(key)
 		if job is None:

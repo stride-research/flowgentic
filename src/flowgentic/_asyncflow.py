@@ -22,10 +22,12 @@ names the extra to install.
 """
 
 import asyncio
+import contextvars
 import functools
 import inspect
 import time
 import weakref
+from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Awaitable, Callable
 
 try:
@@ -108,6 +110,47 @@ def uid(future: object) -> str | None:
 
 
 # --- task tools on an application's engine -------------------------------------
+
+
+def check_engine(engine: WorkflowEngine) -> None:
+	"""Raise ``RuntimeError`` unless the engine has the one private name task
+	tools read of it: its workflow scope variable (see ``workflow``)."""
+	if not isinstance(
+		getattr(engine, "_workflow_id_ctx", None), contextvars.ContextVar
+	):
+		try:
+			installed = version("radical-asyncflow")
+		except PackageNotFoundError:  # a source checkout on the path
+			installed = "of unknown version"
+		raise RuntimeError(
+			"Flowgentic's task tools read the engine's workflow scope "
+			f"(WorkflowEngine._workflow_id_ctx), which radical-asyncflow "
+			f"{installed} lacks: Flowgentic supports radical-asyncflow>=0.7,<0.8"
+		)
+
+
+def check_loop(engine: WorkflowEngine) -> None:
+	"""Raise ``RuntimeError`` unless the caller runs on the engine's event loop,
+	where AsyncFlow registers tasks. An AsyncFlow task's function, such as an
+	agent ``bind_agent`` runs, runs on a loop of its own in a pool thread: a
+	task submitted from there would never be registered."""
+	if asyncio.get_running_loop() is not engine.loop:
+		raise RuntimeError(
+			"a task tool on an AsyncFlow engine must be called on the engine's "
+			"event loop: run the agent in a coroutine, a block or an agent host "
+			"on that loop, not inside an AsyncFlow task"
+		)
+
+
+def check_telemetry(engine: WorkflowEngine, telemetry: Any) -> None:
+	"""Raise ``ValueError`` unless ``telemetry`` is the engine's own, the one
+	``engine.start_telemetry()`` returned: the engine emits to no other."""
+	session = getattr(telemetry, "session_id", None)
+	if session != engine.uid:
+		raise ValueError(
+			f"the telemetry belongs to another engine ({session!r}, not "
+			f"{engine.uid!r}): pass the one engine.start_telemetry() returned"
+		)
 
 
 def workflow(engine: WorkflowEngine) -> str | None:
