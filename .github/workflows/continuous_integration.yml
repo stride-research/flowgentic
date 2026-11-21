@@ -77,7 +77,7 @@ jobs:
       - name: "Show tested versions"
         run: >-
           uv run --frozen --python ${{ matrix.python-version }} --extra dev python -c
-          "import importlib.metadata as m; print({p: m.version(p) for p in ('langgraph', 'langgraph-checkpoint', 'langchain-core', 'langchain', 'radical-asyncflow', 'rhapsody-py', 'mcp')})"
+          "import importlib.metadata as m; print({p: m.version(p) for p in ('httpx', 'openai', 'langgraph', 'langgraph-checkpoint', 'langchain-core', 'langchain', 'radical-asyncflow', 'rhapsody-py', 'mcp')})"
 
       - name: Run python tests with coverage
         run: |
@@ -101,6 +101,55 @@ jobs:
         with:
           path: ./coverage_report/
           name: codecoverage-py${{ matrix.python-version }}
+
+  # The agents-at-scale path as a user installs it: the wheel with the `agents`
+  # extra and no LangGraph or LangChain, at the lock's versions. The loop's
+  # tests and the example run; LangChain's and LangGraph's skip.
+  tests_without_langgraph:
+    runs-on: ubuntu-latest
+    needs: lint_and_format
+    steps:
+      - name: Fetch code
+        uses: actions/checkout@v7
+
+      - name: Set up python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.3.2
+        with:
+          enable-cache: true
+
+      - name: Build the wheel
+        run: uv build --wheel
+
+      # The lock's versions as constraints: they pin what is installed and
+      # install nothing themselves.
+      - name: Install the wheel with the agents extra
+        run: |
+          uv export --frozen --extra dev --no-emit-project --no-hashes -o constraints.txt
+          uv venv --python 3.12 agents
+          uv pip install --python agents/bin/python -c constraints.txt \
+            "$(ls dist/*.whl)[agents]" pytest pytest-asyncio opentelemetry-sdk
+
+      - name: Check that LangGraph, LangChain and the openai SDK are not installed
+        run: >-
+          agents/bin/python -c
+          "import importlib.util as u, sys; found = [m for m in ('langgraph', 'langchain', 'langchain_core', 'langchain_openai', 'openai') if u.find_spec(m)]; print('found:', found); sys.exit(bool(found))"
+
+      - name: Run the loop's tests and the example
+        run: >-
+          agents/bin/python -m pytest -q -p no:cacheprovider
+          tests/unit/scale/test_loop_runner.py
+          tests/unit/scale/test_loop_langchain.py
+          tests/unit/scale/test_http_transport.py
+          tests/integration/test_agents_at_scale.py
+          tests/integration/test_agent_loop_benchmark.py
+
+      - name: Run the example as a user runs it
+        run: agents/bin/python examples/agents-at-scale/campaign.py --agents 1000 --processes 2
 
   # The suite on the lowest versions the dependency ranges allow, so the
   # floors in pyproject.toml stay true. The changed lock is not kept.
@@ -131,7 +180,7 @@ jobs:
       - name: "Show tested versions"
         run: >-
           uv run --frozen --python 3.11 --extra dev python -c
-          "import importlib.metadata as m; print({p: m.version(p) for p in ('langgraph', 'langgraph-prebuilt', 'langchain-core', 'langchain', 'langchain-openai', 'langchain-ollama', 'pydantic', 'radical-asyncflow', 'academy-py', 'langgraph-checkpoint', 'rhapsody-py', 'mcp')})"
+          "import importlib.metadata as m; print({p: m.version(p) for p in ('httpx', 'openai', 'langgraph', 'langgraph-prebuilt', 'langchain-core', 'langchain', 'langchain-openai', 'langchain-ollama', 'pydantic', 'radical-asyncflow', 'academy-py', 'langgraph-checkpoint', 'rhapsody-py', 'mcp')})"
 
       - name: Run python tests
         run: uv run --frozen --python 3.11 --extra dev pytest -q tests/

@@ -70,7 +70,7 @@ Agents that use an engine's task tools run on the engine's event loop: in a
 coroutine, a block or an agent host the application runs there, not inside an
 AsyncFlow task (as `bind_agent` runs an agent), whose function runs on an event
 loop of its own in a pool thread. A task tool called off the engine's loop
-raises `RuntimeError`, which fails its agent: AsyncFlow would never register
+raises `ToolSetupError`, a `RuntimeError`, which fails its agent: AsyncFlow would never register
 the task.
 
 On an engine, a tool's task fields are `backend` and
@@ -81,7 +81,7 @@ runtime is made, for its own `backend`, or when the tool is bound
 (`bind_tools`, through `ToolRuntime.check`), for the tool's. On a session,
 `backend` names the RHAPSODY backend, checked in the same way against the
 session's backends. A tool called without being bound, on a runtime that
-cannot run it, raises `RuntimeError`, which fails its agent. A runtime has a
+cannot run it, raises `ToolSetupError`, which fails its agent. A runtime has a
 session or an engine, not both.
 
 AsyncFlow runs only `async def` tasks, so the runtime wraps a sync function
@@ -183,8 +183,10 @@ names a file after the call should not use `call_id` alone; a random part,
 such as a `uuid4()`, is safe, since `prepare` runs once. A failed, refused or lost
 call reaches the model as the tool's error, so the agent can read it and
 decide what to do. A runtime set up wrong, without the session or engine, or the
-started service client, that a tool needs, raises `RuntimeError` instead: with
-`ToolNode`'s default error handling, the agent fails.
+started service client, that a tool needs, raises `ToolSetupError`, a
+`RuntimeError`, instead: with `ToolNode`'s default error handling, the agent
+fails. The agent loop fails its agent on that error only; any other error of
+a tool, a `RuntimeError` of its own included, reaches the model.
 
 ## Order of tasks
 
@@ -205,7 +207,7 @@ call (`record.info.call_id`), and says where the task ran and when:
 | --- | --- |
 | `uid` | The task's uid in AsyncFlow or RHAPSODY; `None` if it was never submitted |
 | `backend` | The backend it was for: the tool's, else the runtime's, else, on an engine, the engine's default, and on a session the one the session sent it to |
-| `t_commit` | When the agent committed to the call: when the model reply that made the call reached the agent, for a model run through a [fleet](fleet.md) in an agent the [host](agent-host.md) runs; otherwise `t_submit` |
+| `t_commit` | When the agent committed to the call: when the model reply that made the call reached the agent, for a model run through a [fleet](fleet.md), or through the [agent loop](agent-loop.md)'s transport, in an agent the [host](agent-host.md) runs; otherwise `t_submit` |
 | `t_submit` | When the runtime got the call |
 | `t_admit` | When its order admitted it and the runtime submitted it; `None` if it never was |
 | `t_start` | When the backend reported it running: AsyncFlow's `TaskStarted` event, from the telemetry the runtime was given |
@@ -267,6 +269,7 @@ suspended.
   refused.
 - Each task or service call is an `execute_tool` span, inside its agent's
   trace, with `gen_ai.tool.name`, `gen_ai.tool.call.id`,
-  `flowgentic.tool.kind` (`task` or `service`) and `flowgentic.tool.outcome`.
+  `flowgentic.tool.kind` (`task` or `service`, and `inline` for an inline
+  tool on the [agent loop](agent-loop.md)) and `flowgentic.tool.outcome`.
 - `flowgentic.tool.duration` is a histogram of the time from a call's
   submission to its result, by tool, kind and outcome.

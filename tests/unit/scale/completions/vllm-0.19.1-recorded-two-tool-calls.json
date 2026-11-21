@@ -1,0 +1,147 @@
+{
+ "source": "recorded from vLLM 0.19.1's OpenAI-compatible server (Qwen3-8B on one GPU; hermes tool parser, qwen3 reasoning parser, prefix caching, prompt-token details on), 2026-11-19",
+ "request": {
+  "model": "Qwen3-8B",
+  "temperature": 0,
+  "messages": [
+   {
+    "role": "system",
+    "content": "You tune one candidate. Use the tools; answer with the best score."
+   },
+   {
+    "role": "user",
+    "content": "Simulate cand-000001 at 400 and at 500, both at once, in one reply."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "lookup",
+     "description": "Reference data for a candidate: a temperature to start from.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "candidate": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "candidate"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "simulate",
+     "description": "Simulate a candidate at a temperature; return its score.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "candidate": {
+        "type": "string"
+       },
+       "temperature": {
+        "type": "number"
+       }
+      },
+      "required": [
+       "candidate",
+       "temperature"
+      ]
+     }
+    }
+   }
+  ],
+  "chat_template_kwargs": {
+   "enable_thinking": false
+  }
+ },
+ "response": {
+  "id": "chatcmpl-984ea7dec3de77be",
+  "object": "chat.completion",
+  "created": 1795115865,
+  "model": "Qwen3-8B",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "refusal": null,
+     "annotations": null,
+     "audio": null,
+     "function_call": null,
+     "tool_calls": [
+      {
+       "id": "chatcmpl-tool-af9588351d98f4e3",
+       "type": "function",
+       "function": {
+        "name": "simulate",
+        "arguments": "{\"candidate\": \"cand-000001\", \"temperature\": 400}"
+       }
+      },
+      {
+       "id": "chatcmpl-tool-885b60b0de26e2a9",
+       "type": "function",
+       "function": {
+        "name": "simulate",
+        "arguments": "{\"candidate\": \"cand-000001\", \"temperature\": 500}"
+       }
+      }
+     ],
+     "reasoning": null
+    },
+    "logprobs": null,
+    "finish_reason": "tool_calls",
+    "stop_reason": null,
+    "token_ids": null
+   }
+  ],
+  "service_tier": null,
+  "system_fingerprint": null,
+  "usage": {
+   "prompt_tokens": 273,
+   "total_tokens": 343,
+   "completion_tokens": 70,
+   "prompt_tokens_details": {
+    "cached_tokens": 224
+   }
+  },
+  "prompt_logprobs": null,
+  "prompt_token_ids": null,
+  "kv_transfer_params": null
+ },
+ "expect": {
+  "content": "",
+  "tool_calls": [
+   [
+    "chatcmpl-tool-af9588351d98f4e3",
+    "simulate",
+    {
+     "candidate": "cand-000001",
+     "temperature": 400
+    }
+   ],
+   [
+    "chatcmpl-tool-885b60b0de26e2a9",
+    "simulate",
+    {
+     "candidate": "cand-000001",
+     "temperature": 500
+    }
+   ]
+  ],
+  "invalid": [],
+  "reasoning": null,
+  "usage": [
+   273,
+   70,
+   224,
+   null
+  ],
+  "finish_reason": "tool_calls"
+ }
+}

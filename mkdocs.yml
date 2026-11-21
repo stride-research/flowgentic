@@ -1,6 +1,6 @@
 site_name: Flowgentic
 site_url: https://stride-research.github.io/flowgentic/
-site_description: "Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as AsyncFlow workflow tasks, and as LangGraph agents at scale whose tools run as RHAPSODY tasks and whose state lives in RaDEX."
+site_description: "Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as AsyncFlow workflow tasks, and as agents at scale, on its own agent loop and OpenAI-compatible model servers, whose tools run as RHAPSODY tasks and whose state lives in RaDEX; LangGraph is optional."
 repo_url: https://github.com/stride-research/flowgentic
 repo_name: stride-research/flowgentic
 
@@ -8,7 +8,7 @@ nav:
   - Home: index.md
   - Getting started: getting-started.md
   - Guides:
-      - LangGraph agents at scale: guides/agents-at-scale.md
+      - Agents at scale: guides/agents-at-scale.md
       - Augment an AsyncFlow application: guides/augment-asyncflow-app.md
       - LangGraph on AsyncFlow with Flowgentic: guides/langgraph-on-asyncflow.md
       - LangGraph on AsyncFlow directly: guides/langgraph-direct.md
@@ -18,6 +18,7 @@ nav:
   - Features:
       - Acceptance: features/acceptance.md
       - Agent host: features/agent-host.md
+      - Agent loop: features/agent-loop.md
       - Services: features/services.md
       - Checkpointer: features/checkpointer.md
       - Tool placement: features/tools.md

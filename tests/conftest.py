@@ -1,14 +1,15 @@
-"""Fixtures shared by the unit and integration suites."""
+"""Fixtures shared by the unit and integration suites.
+
+They import no LangChain and no instrumentation until a test asks for them, so
+the agent loop's tests run where only ``flowgentic[agents]`` is installed.
+"""
 
 from collections.abc import Callable, Iterator
 from typing import Any
 
 import httpx
 import pytest
-from langchain_openai import ChatOpenAI
 from opentelemetry import _logs, metrics, trace
-from opentelemetry.instrumentation.genai.langchain import LangChainInstrumentor
-from opentelemetry.instrumentation.genai.openai import OpenAIInstrumentor
 from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import (
     InMemoryLogRecordExporter,
@@ -100,6 +101,9 @@ def genai_instrumentation() -> Iterator[None]:
     The LangChain one records each model call; the OpenAI one, nested inside
     it, adds the server's address and port to the same span.
     """
+    from opentelemetry.instrumentation.genai.langchain import LangChainInstrumentor
+    from opentelemetry.instrumentation.genai.openai import OpenAIInstrumentor
+
     instrumentors = [LangChainInstrumentor(), OpenAIInstrumentor()]
     for instrumentor in instrumentors:
         instrumentor.instrument()
@@ -108,7 +112,7 @@ def genai_instrumentation() -> Iterator[None]:
         instrumentor.uninstrument()
 
 
-ScriptedChatModel = Callable[..., ChatOpenAI]
+ScriptedChatModel = Callable[..., Any]  # builds a langchain_openai.ChatOpenAI
 
 
 @pytest.fixture
@@ -123,7 +127,9 @@ def scripted_chat_model() -> ScriptedChatModel:
         refusal: str | None = None,
         base_url: str = "http://scripted.invalid/v1",
         requests: list[httpx.Request] | None = None,
-    ) -> ChatOpenAI:
+    ) -> Any:
+        from langchain_openai import ChatOpenAI
+
         def answer(request: httpx.Request) -> httpx.Response:
             if requests is not None:
                 requests.append(request)

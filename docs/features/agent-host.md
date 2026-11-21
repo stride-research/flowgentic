@@ -4,7 +4,9 @@ A campaign of agents on an HPC allocation runs thousands of them per Python
 process. `flowgentic.host.AgentHost` runs them: it starts them, keeps the
 process responsive while they run, resumes the ones that wait on tasks, and
 counts what each is doing. It works with any agent framework through a small
-`Runner`; `flowgentic.langgraph.GraphRunner` is LangGraph's.
+`Runner`; `flowgentic.langgraph.GraphRunner` is LangGraph's, and
+`flowgentic.loop.LoopRunner` is Flowgentic's own [agent loop](agent-loop.md),
+on OpenAI-format messages, with no LangChain.
 
 ```python
 from flowgentic.host import Agent, AgentHost
@@ -94,7 +96,15 @@ A `Runner` has two methods: `start(agent)` runs the agent until it ends,
 suspends or stops; `resume(agent, done)` resumes it after its tasks have
 ended. Each returns `Finished(output)`, `Suspended(waits)` or
 `Interrupted(interrupts)`. `waits` pairs a resume id with a task key, and each
-key names a future registered in the process with `register_pending`.
+key names a future registered in the process with `register_pending`: the
+agent's own registration first, so that two hosts in one process can run
+agents with the same ids. A runner that suspends an agent 100 times in a row
+on the same tasks, all already ended, makes no progress: the host fails the
+agent with a `RuntimeError`, rather than resume it at once for ever.
+
+`LoopRunner(model, tools)` runs a tool-calling agent as a loop, with no graph,
+and saves a suspended agent's messages to a key-value store; see
+[Agent loop](agent-loop.md). The rest of this section is about `GraphRunner`.
 
 `GraphRunner(graph)` runs each agent as one thread of a compiled graph, with
 the agent's id as `thread_id` and LangGraph's `exit` durability by default, so

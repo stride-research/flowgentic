@@ -1,0 +1,114 @@
+{
+ "source": "recorded from vLLM 0.19.1's OpenAI-compatible server (Qwen3-8B on one GPU; hermes tool parser, qwen3 reasoning parser, prefix caching, prompt-token details on), 2026-11-19",
+ "request": {
+  "model": "Qwen3-8B",
+  "temperature": 0,
+  "messages": [
+   {
+    "role": "system",
+    "content": "You tune one candidate. Use the tools; answer with the best score."
+   },
+   {
+    "role": "user",
+    "content": "Find the best temperature for cand-000001. Look it up first."
+   }
+  ],
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "lookup",
+     "description": "Reference data for a candidate: a temperature to start from.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "candidate": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "candidate"
+      ]
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "simulate",
+     "description": "Simulate a candidate at a temperature; return its score.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "candidate": {
+        "type": "string"
+       },
+       "temperature": {
+        "type": "number"
+       }
+      },
+      "required": [
+       "candidate",
+       "temperature"
+      ]
+     }
+    }
+   }
+  ],
+  "max_tokens": 6,
+  "chat_template_kwargs": {
+   "enable_thinking": false
+  }
+ },
+ "response": {
+  "id": "chatcmpl-b1136f0a41be330c",
+  "object": "chat.completion",
+  "created": 1795115873,
+  "model": "Qwen3-8B",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "<tool_call>\n{\"name\": \"",
+     "refusal": null,
+     "annotations": null,
+     "audio": null,
+     "function_call": null,
+     "tool_calls": [],
+     "reasoning": null
+    },
+    "logprobs": null,
+    "finish_reason": "length",
+    "stop_reason": null,
+    "token_ids": null
+   }
+  ],
+  "service_tier": null,
+  "system_fingerprint": null,
+  "usage": {
+   "prompt_tokens": 262,
+   "total_tokens": 268,
+   "completion_tokens": 6,
+   "prompt_tokens_details": {
+    "cached_tokens": 256
+   }
+  },
+  "prompt_logprobs": null,
+  "prompt_token_ids": null,
+  "kv_transfer_params": null
+ },
+ "expect": {
+  "content": "<tool_call>\n{\"name\": \"",
+  "tool_calls": [],
+  "invalid": [],
+  "reasoning": null,
+  "usage": [
+   262,
+   6,
+   256,
+   null
+  ],
+  "finish_reason": "length"
+ }
+}

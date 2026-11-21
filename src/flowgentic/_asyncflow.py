@@ -41,7 +41,7 @@ except ModuleNotFoundError as exc:
 	) from exc
 
 from flowgentic import _telemetry
-from flowgentic._agents import TaskCancelled
+from flowgentic._agents import TaskCancelled, ToolSetupError
 
 Submitter = Callable[..., Awaitable[Any]]
 
@@ -113,7 +113,7 @@ def uid(future: object) -> str | None:
 
 
 def check_engine(engine: WorkflowEngine) -> None:
-	"""Raise ``RuntimeError`` unless the engine has the one private name task
+	"""Raise ``ToolSetupError`` unless the engine has the one private name task
 	tools read of it: its workflow scope variable (see ``workflow``)."""
 	if not isinstance(
 		getattr(engine, "_workflow_id_ctx", None), contextvars.ContextVar
@@ -122,7 +122,7 @@ def check_engine(engine: WorkflowEngine) -> None:
 			installed = version("radical-asyncflow")
 		except PackageNotFoundError:  # a source checkout on the path
 			installed = "of unknown version"
-		raise RuntimeError(
+		raise ToolSetupError(
 			"Flowgentic's task tools read the engine's workflow scope "
 			f"(WorkflowEngine._workflow_id_ctx), which radical-asyncflow "
 			f"{installed} lacks: Flowgentic supports radical-asyncflow>=0.7,<0.8"
@@ -130,12 +130,12 @@ def check_engine(engine: WorkflowEngine) -> None:
 
 
 def check_loop(engine: WorkflowEngine) -> None:
-	"""Raise ``RuntimeError`` unless the caller runs on the engine's event loop,
+	"""Raise ``ToolSetupError`` unless the caller runs on the engine's event loop,
 	where AsyncFlow registers tasks. An AsyncFlow task's function, such as an
 	agent ``bind_agent`` runs, runs on a loop of its own in a pool thread: a
 	task submitted from there would never be registered."""
 	if asyncio.get_running_loop() is not engine.loop:
-		raise RuntimeError(
+		raise ToolSetupError(
 			"a task tool on an AsyncFlow engine must be called on the engine's "
 			"event loop: run the agent in a coroutine, a block or an agent host "
 			"on that loop, not inside an AsyncFlow task"

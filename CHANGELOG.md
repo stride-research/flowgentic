@@ -9,8 +9,95 @@ predate this changelog, so their changes are not listed here.
 
 ## [Unreleased]
 
+Agents at scale run on Flowgentic's own agent loop, on OpenAI Chat Completions
+messages and transports to OpenAI-compatible model servers, and LangGraph
+becomes optional: LangChain is an adapter, in the `langgraph` extra, and
+LangGraph's graphs run on the same parts. The fleet's API breaks (under
+Changed), before 1.0; `GraphRunner` and its graphs work as before. Task tools
+also run on an application's AsyncFlow engine, and each task ends in a
+decision record.
+
 ### Added
 
+- An `agents` extra, `flowgentic[rhapsody,mcp]`: the agents-at-scale path
+  without LangGraph, LangChain or the `openai` SDK. CI installs the wheel with
+  it alone and runs the agent loop's tests, the default transport's and the
+  agents-at-scale example there.
+- `flowgentic.loop.LoopRunner`, Flowgentic's own agent loop: a runner for the
+  agent host on OpenAI-format messages and transports, with no LangChain or
+  LangGraph and no extra, beside `GraphRunner`, which stays. It runs a
+  tool-calling agent as a loop over a fleet or a transport, with task tools,
+  MCP tools and inline tools (plain functions, their schemas through
+  pydantic); the calls of one reply run concurrently. A task tool that
+  suspends saves the agent's messages to a `KeyValueStore` with one put, read
+  back with one get on resume; the entry is deleted when the agent ends,
+  however it ends. Tool errors go back to the model, `max_model_calls` limits
+  the agent's model calls over its whole run (`ModelCallLimitExceeded`),
+  `response_format` gives a validated structured answer in
+  `LoopOutput.structured_response`, a `trim` hook shapes the history before
+  each model call, and an inline tool that raises `Interrupt(value)` ends its
+  agent as interrupted, with an `Interruption`. The agent's states and spans
+  are counted as the host's other parts count them, and each tool call,
+  inline ones included, is an `execute_tool` span. A task's decision record
+  commits at the reply that asked for it, and a task tool the runtime cannot
+  run is refused when the runner is made. See the agent loop page.
+- `flowgentic.fleet.Transport`: what a fleet's replica, or the loop's model,
+  is. Its `async complete(messages, tools=None, **kwargs)` takes OpenAI-format
+  messages, the tools' JSON schemas and the call's keywords, and returns a
+  `Reply`: its `content`, `tool_calls` (`ToolCall`, arguments parsed),
+  `invalid_tool_calls` (`InvalidToolCall`, for the model to read why), `usage`
+  (`Usage`: prompt, completion, cached prompt and reasoning tokens) and the
+  `reasoning` text, kept out of the conversation; `Reply.message()` is what
+  the conversation keeps.
+- `flowgentic.fleet.HTTPTransport`, the default transport, for vLLM, SGLang,
+  OpenRouter and OpenAI: one httpx POST to `{base_url}/chat/completions` per
+  call, at about a quarter of the CPU per call of `OpenAITransport` (0.8
+  against 3.1 to 3.3 ms, against a local stub). It takes the SDK's keywords
+  (`extra_body` and `extra_headers` merged as the SDK merges them, the key as
+  a bearer token, a 600 s timeout) and retries nothing. A failed call raises
+  a `ModelServerError` with the server's message: `ServerUnavailable` (no
+  answer, a timeout, a 5xx, or a busy server's 408, 409 or 429, which the
+  SDK retries too) and `AuthenticationFailed` (401) are transient, and the
+  fleet's `Recovery` waits them out; `RequestRejected` (any other 4xx) is
+  not, nor is a completion with no choices or a reply httpx cannot read. A
+  connection takes at most 5 s; all of a transport's pools share one SSL
+  context, and `aclose()` closes them, as the fleet does for a transport
+  that `Recovery` replaces. A given `httpx.AsyncClient` keeps its own timeout
+  and headers unless the transport is given its own. httpx becomes a core
+  dependency.
+- Neither transport sends the environment's `OPENAI_API_KEY` to any server but
+  OpenAI's own API (`api.openai.com`): a server on an allocation gets `EMPTY`
+  unless given a key, where the `openai` SDK alone sends that key to any
+  server.
+- `flowgentic.fleet.OpenAITransport`, over the `openai` SDK, for the same
+  servers, in a new `openai` extra; and `parse_completion` for such a server's
+  reply, which both transports read with. It reads the reasoning from
+  `reasoning`, and from `reasoning_content` for older vLLM and SGLang; the
+  cached tokens from `usage.prompt_tokens_details`, the reasoning tokens from
+  `usage.completion_tokens_details`.
+- Both transports open another client, with its own connection pool, as the
+  calls they hold in flight grow, since one pool's CPU cost per call grows
+  with its calls: `HTTPTransport` for every 8 calls, the cheapest per call
+  of 4 to 64 against a local stub, `OpenAITransport` for every 64
+  (`calls_per_pool=`, `pools=` to fix their number).
+- `flowgentic.langchain`, LangChain as an adapter, in the `langgraph` extra:
+  `ChatModelTransport` (any LangChain chat model as a transport; it takes
+  LangChain messages and tools as they are, too), `FleetChatModel` (moved
+  here), `to_ai_message` and `reply_from_message`, `from_openai_messages` and
+  `to_openai_messages`, and `inline_tool` (a LangChain tool as an inline tool
+  of the loop, which the loop applies itself).
+- Each try of a model call through the fleet, or the loop's transport, is a
+  GenAI `chat` span with the usage the server reported, recorded by
+  Flowgentic. With LangChain replicas and OpenTelemetry's LangChain
+  instrumentation on, the instrumentation's span is the call's, and Flowgentic
+  records none.
+- `benchmarks/agent_loop.py` runs the agents-at-scale example's workload in
+  one agent process with the loop, the loop through LangChain's adapter, or
+  `GraphRunner`; `benchmarks/client_cost.py` measures a model client's CPU per
+  call against a local OpenAI-compatible stub.
+- Contract tests read chat completions recorded from vLLM 0.19.1, beside
+  completions shaped after SGLang's and OpenRouter's documented replies;
+  `tests/unit/scale/completions/record.py` records a server's.
 - Task tools on the application's AsyncFlow engine.
   `ToolRuntime(engine=flow, backend="compute")` runs each task tool as an
   AsyncFlow function task on a named backend of the engine the application
@@ -52,6 +139,79 @@ predate this changelog, so their changes are not listed here.
 
 ### Changed
 
+- **The fleet's API breaks.** A replica is a `Transport`. A LangChain chat
+  model given as a replica, or returned by `Recovery`'s check, is wrapped in
+  `ChatModelTransport`, so a fleet built from `ChatOpenAI` replicas keeps
+  working, and its calls reach the models unchanged. But:
+  - `Fleet.ainvoke(agent_id, messages, tools=None, ...)` returns a `Reply`,
+    not an `AIMessage`. Pass the tools' schemas, or LangChain tools to
+    LangChain replicas, as `tools=`. For an `AIMessage`, call
+    `flowgentic.langchain.to_ai_message(reply)`: with a LangChain replica it
+    is the replica's own message.
+  - `Fleet.bind_tools` is gone: pass `tools=` to `ainvoke`, or use
+    `fleet.chat_model().bind_tools(tools)`.
+  - A listener gets `(record, reply)` with the `Reply`, which has
+    `content`, `tool_calls` and `invalid_tool_calls`, but its calls are
+    objects, not dicts: `ToolCall(id, name, args)`, so `call.id` where it
+    was `call["id"]`, and `InvalidToolCall(id, name, arguments, error)`,
+    whose raw text is `arguments`, not `args`.
+  - `FleetChatModel` lives in `flowgentic.langchain`;
+    `flowgentic.fleet.FleetChatModel` still names it.
+  - `flowgentic.fleet` imports no LangChain and needs no extra; the
+    `langgraph` extra is needed only for LangChain replicas and
+    `chat_model()`.
+- The agents-at-scale example runs on `LoopRunner`, with its scripted model as
+  a transport and its inline tool a plain function, and needs the `agents`
+  extra only; `--runner graph` runs the LangGraph version,
+  `campaign_langgraph.py`, with the `langgraph` extra. The guide, "Agents at
+  scale", follows it, and LangGraph has a section of its own.
+- The `dev` extra is `flowgentic[examples,agents,openai]` and the tools it
+  needs.
+- The fleet's `Recovery` also waits out the `openai` SDK's errors of a busy
+  server, 408, 409 and 429, which the SDK retries itself unless given
+  `max_retries=0`.
+- `flowgentic.tools.ToolSetupError`, a `RuntimeError`, is what a runtime set
+  up wrong raises: no session, engine or service client, a service client not
+  started, a backend the session or engine lacks, a task tool off its
+  engine's loop. The agent loop, and a graph's MCP tools, fail the agent on
+  it only; any other error of a tool, a `RuntimeError` of its own included,
+  reaches the model. An agent's error reads `ToolSetupError: ...` where it
+  read `RuntimeError: ...`.
+- On the agent loop, a sync inline tool runs in a thread, with the agent's
+  context, as LangChain's `ToolNode` runs one; an inline tool that raises has
+  an `execute_tool` span with status ERROR and its exception; tool results and
+  arguments keep non-ASCII text; a `(role, content)` tuple input is one
+  message; and tool calls in an input history run first only if nothing but
+  tool results follows them.
+- LangChain's adapter: `reply_from_message` reads the reasoning that
+  `to_ai_message` writes, and `to_openai_messages` keeps an `AIMessage`'s
+  invalid tool calls, with `{}` as arguments, so the tool messages answering
+  them answer a call; `parse_completion` reads `reasoning_content` when
+  `reasoning` is empty.
+- `flowgentic.fleet.FleetChatModel` is no longer in the module's `__all__`, so
+  `from flowgentic.fleet import *` works without LangChain; without it,
+  naming `FleetChatModel` raises an `AttributeError` with the install hint.
+  The example's `--runner graph` without LangGraph stops with that hint too.
+- An agent host fails an agent whose runner suspends it 100 times in a row on
+  the same tasks, all already ended: such a runner makes no progress, and was
+  resumed at once, for ever. A suspended agent waits on the tasks it
+  registered itself, before any other registration of the same key in the
+  process, so two hosts in one process can run agents with the same ids.
+- The `examples` extra, for the AsyncFlow path's demos, keeps LangGraph.
+- The agent loop saves its turn's token with a suspended agent's state, so a
+  runner that resumes an agent another runner suspended, on a shared runtime
+  and store, finds its task; sync inline tools run on the runner's own
+  threads (`runner.close()` ends them), and must be thread-safe; tool calls
+  in an input history that a later message moved past get a result saying
+  they were not run; text that UTF-8 cannot carry, a lone surrogate, goes as
+  its escape.
+- The transports: a given client left at httpx's default 5 s gets 600 s, as
+  with the SDK, and `transport.timeout` is the timeout calls get; `aclose()`,
+  on both, refuses new calls and returns at once, the clients closing when
+  their calls end; an error object with status 200 is read by its `code`, so
+  OpenRouter's 429 and 502 are transient; a header with a line break or
+  non-ASCII text is a non-transient error; a 401 without a key says where
+  `OPENAI_API_KEY` goes.
 - The `asyncflow` extra is `radical-asyncflow>=0.7,<0.8` (was `>=0.6,<0.7`).
   AsyncFlow 0.7 sets a task's uid when the task is called, which the decision
   record needs, and its `task` spans name the backend each task ran on, where
@@ -67,6 +227,7 @@ predate this changelog, so their changes are not listed here.
 - `flowgentic.tools.TaskCancelled` is now defined in `flowgentic._agents`, so
   that neither seam imports the other; import it from `flowgentic.tools`, as
   before.
+
 
 ## [0.5.1] - 2026-11-19
 

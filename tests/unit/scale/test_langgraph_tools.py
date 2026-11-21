@@ -751,7 +751,7 @@ async def test_a_runtime_set_up_wrong_fails_the_agent(setup):
     )
     report = await AgentHost(GraphRunner(graph), stagger=FAST).run(inputs(1))
     (agent,) = report.agents
-    assert agent.status == "failed" and agent.error.startswith("RuntimeError: ")
+    assert agent.status == "failed" and agent.error.startswith("ToolSetupError: ")
     assert expected in agent.error
 
 

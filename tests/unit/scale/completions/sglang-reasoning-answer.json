@@ -1,0 +1,47 @@
+{
+ "source": "shaped after SGLang's OpenAI-compatible server (--tool-call-parser qwen25, --reasoning-parser qwen3, --enable-cache-report); not recorded",
+ "response": {
+  "id": "4f9d0c5e8a7b4d2c",
+  "object": "chat.completion",
+  "created": 1794826800,
+  "model": "Qwen/Qwen3-8B",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "The best score is 0.98.",
+     "reasoning_content": "The simulation returned 0.98, so I answer.",
+     "tool_calls": null
+    },
+    "logprobs": null,
+    "finish_reason": "stop",
+    "matched_stop": null
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 410,
+   "total_tokens": 452,
+   "completion_tokens": 42,
+   "prompt_tokens_details": {
+    "cached_tokens": 384
+   }
+  },
+  "metadata": {
+   "weight_version": "default"
+  }
+ },
+ "expect": {
+  "content": "The best score is 0.98.",
+  "tool_calls": [],
+  "invalid": [],
+  "reasoning": "The simulation returned 0.98, so I answer.",
+  "usage": [
+   410,
+   42,
+   384,
+   null
+  ],
+  "finish_reason": "stop"
+ }
+}

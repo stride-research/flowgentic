@@ -311,6 +311,14 @@ class TaskCancelled(Exception):
 	engine shut down before the task ended."""
 
 
+class ToolSetupError(RuntimeError):
+	"""A tool's runtime is set up wrong: no session, engine or service client a
+	tool needs, a service client not started, a backend the session or engine
+	lacks, a task tool called off its engine's event loop. It fails the agent,
+	rather than tell its model that the call failed; any other error of a
+	tool, a ``RuntimeError`` of its own included, reaches the model."""
+
+
 def task_context() -> Context:
 	"""A context for a task an agent asks for: the agent and the trace context,
 	and nothing else of the caller's.
@@ -366,10 +374,16 @@ def register_pending(key: str, future: asyncio.Future) -> None:
 
 def take_pending(key: str) -> asyncio.Future | None:
 	"""The future of the task submitted under ``key``, for the current agent to
-	wait on. One registered outside an agent becomes this agent's, released
-	when it ends."""
-	future = _pending.get(key)
+	wait on: its own registration first, then the process's. Two hosts in one
+	process can run agents with the same id, so a key's latest registration
+	in the process may be another host's agent's. One registered outside an
+	agent becomes this agent's, released when it ends."""
 	agent = _current.get()
+	if agent is not None:
+		own = agent.registered.get(key)
+		if own is not None:
+			return own
+	future = _pending.get(key)
 	if future is not None or agent is None:
 		return pending(key)
 	with _unowned_lock:

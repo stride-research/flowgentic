@@ -1,0 +1,71 @@
+{
+ "source": "recorded from vLLM 0.19.1's OpenAI-compatible server (Qwen3-8B on one GPU; hermes tool parser, qwen3 reasoning parser, prefix caching, prompt-token details on), 2026-11-19",
+ "request": {
+  "model": "Qwen3-8B",
+  "temperature": 0,
+  "messages": [
+   {
+    "role": "system",
+    "content": "You tune one candidate. Use the tools; answer with the best score."
+   },
+   {
+    "role": "user",
+    "content": "Say hello in three words."
+   }
+  ],
+  "chat_template_kwargs": {
+   "enable_thinking": false
+  }
+ },
+ "response": {
+  "id": "chatcmpl-83025161cba061b9",
+  "object": "chat.completion",
+  "created": 1795115873,
+  "model": "Qwen3-8B",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "Hello! How can I help?",
+     "refusal": null,
+     "annotations": null,
+     "audio": null,
+     "function_call": null,
+     "tool_calls": [],
+     "reasoning": null
+    },
+    "logprobs": null,
+    "finish_reason": "stop",
+    "stop_reason": null,
+    "token_ids": null
+   }
+  ],
+  "service_tier": null,
+  "system_fingerprint": null,
+  "usage": {
+   "prompt_tokens": 38,
+   "total_tokens": 46,
+   "completion_tokens": 8,
+   "prompt_tokens_details": {
+    "cached_tokens": 16
+   }
+  },
+  "prompt_logprobs": null,
+  "prompt_token_ids": null,
+  "kv_transfer_params": null
+ },
+ "expect": {
+  "content": "Hello! How can I help?",
+  "tool_calls": [],
+  "invalid": [],
+  "reasoning": null,
+  "usage": [
+   38,
+   8,
+   16,
+   null
+  ],
+  "finish_reason": "stop"
+ }
+}

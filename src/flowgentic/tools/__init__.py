@@ -54,7 +54,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
 from flowgentic import _agents, _rhapsody, _telemetry
-from flowgentic._agents import TaskCancelled
+from flowgentic._agents import TaskCancelled, ToolSetupError
 
 __all__ = [
 	"Immediate",
@@ -65,6 +65,7 @@ __all__ = [
 	"TaskRecord",
 	"TaskTool",
 	"ToolRuntime",
+	"ToolSetupError",
 	"mcp_tool",
 	"task_tool",
 ]
@@ -232,7 +233,8 @@ class TaskRecord:
 	Times are ``time.time()``, in the agent's process, in this order.
 	``t_commit``: when the agent committed to the call: when the model reply
 	that made the call (by its id) reached the agent, if the model runs through
-	a ``flowgentic.fleet.Fleet`` and the agent in an ``AgentHost``; otherwise
+	a ``flowgentic.fleet.Fleet``, or through ``flowgentic.loop``'s transport, and
+	the agent in an ``AgentHost``; otherwise
 	``t_submit``. If one agent's parallel branches get replies that reuse a
 	call id, each such call is dated by the latest of them. ``t_submit``: when
 	the runtime got the call. ``t_admit``: when
@@ -323,7 +325,7 @@ class ToolRuntime:
 
 	A runtime set up wrong for a tool, such as one naming a backend the session
 	or engine lacks, is refused when the tool is bound (``check``), and with
-	``RuntimeError`` when the tool is called.
+	``ToolSetupError``, a ``RuntimeError``, when the tool is called.
 
 	A task asked for by an agent the host runs is registered for the host
 	(``flowgentic.host.register_pending``) until that agent ends, so the host
@@ -424,7 +426,7 @@ class ToolRuntime:
 		frames its traceback would then keep.
 
 		On an engine, ``submit`` must run on the engine's event loop, where
-		AsyncFlow registers tasks: anywhere else it raises ``RuntimeError``, as
+		AsyncFlow registers tasks: anywhere else it raises ``ToolSetupError``, as
 		a runtime set up wrong does."""
 		if self.engine is not None:
 			from flowgentic import _asyncflow
@@ -441,7 +443,7 @@ class ToolRuntime:
 			return job
 		t_submit = time.time()
 		if self.session is None and self.engine is None:
-			raise RuntimeError(
+			raise ToolSetupError(
 				"task tools need a ToolRuntime with a RHAPSODY session or an "
 				"AsyncFlow engine"
 			)
@@ -450,7 +452,7 @@ class ToolRuntime:
 		except ValueError as exc:
 			# Set up wrong, as without a session: the agent fails, rather than
 			# tell its model that the call failed.
-			raise RuntimeError(f"task tool {tool.name}: {exc}") from exc
+			raise ToolSetupError(f"task tool {tool.name}: {exc}") from exc
 		kwargs = (
 			dict(args)
 			if tool.prepare is None
@@ -695,10 +697,10 @@ class ToolRuntime:
 	) -> Any:
 		"""Call an MCP tool through the tool service, with the call's key as its
 		uid; a repeated key gets the service's kept answer. ``scope``: see
-		``key``. ``RuntimeError`` means the runtime is set up wrong: no service
+		``key``. ``ToolSetupError`` means the runtime is set up wrong: no service
 		client, or one not started."""
 		if self.service is None:
-			raise RuntimeError(
+			raise ToolSetupError(
 				"MCP tools need a ToolRuntime with a tool service client"
 			)
 		t = time.monotonic()

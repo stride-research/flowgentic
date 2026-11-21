@@ -113,6 +113,35 @@ class WaitsOnPre:
         return Finished(done)
 
 
+class NoProgress:
+    """A runner that suspends again on the same ended task at every resume:
+    a runner's bug, which would keep the event loop busy for good."""
+
+    def __init__(self):
+        self.resumes = 0
+
+    async def start(self, agent):
+        register_pending(f"stuck/{agent.id}", done_future(1))
+        return Suspended((("i1", f"stuck/{agent.id}"),))
+
+    async def resume(self, agent, done):
+        self.resumes += 1
+        if self.resumes > 5_000:  # bounds the test if the host does not stop it
+            raise AssertionError("the host kept resuming")
+        return Suspended((("i1", f"stuck/{agent.id}"),))
+
+
+async def test_a_runner_that_suspends_again_on_ended_tasks_fails_its_agent():
+    """Rather than resume it at once for ever, the host fails the agent after
+    100 suspensions in a row on the same tasks, all already ended."""
+    runner = NoProgress()
+    report = await asyncio.wait_for(AgentHost(runner).run([Agent("a0", None)]), 10)
+    (result,) = report.agents
+    assert result.status == "failed"
+    assert "already ended" in result.error and "stuck/a0" in result.error
+    assert runner.resumes == 100
+
+
 async def test_a_task_registered_before_the_run_is_found_after_it_ends():
     # Submitted up front, outside any agent, by code that keeps no reference
     # to the future: the task ends before its agent asks for it.

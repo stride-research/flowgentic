@@ -1,9 +1,11 @@
-"""The agents-at-scale example, offline: a campaign of LangGraph agents in agent
-hosts, with a scripted fleet, RHAPSODY on a thread pool, an in-memory store,
-the tool service, and a real MCP server on 127.0.0.1.
+"""The agents-at-scale example, offline: a campaign of agents on Flowgentic's
+own loop in agent hosts, with a scripted fleet, RHAPSODY on a thread pool, an
+in-memory store, the tool service, and a real MCP server on 127.0.0.1; and
+the same campaign on LangGraph, with the ``langgraph`` extra.
 
 The guide at docs/guides/agents-at-scale.md walks through this example and
-quotes its output, so it runs here, in CI.
+quotes its output, so it runs here, in CI, with and without LangGraph
+installed.
 """
 
 # ruff: noqa: S101
@@ -31,8 +33,9 @@ def load_example() -> ModuleType:
     return module
 
 
-def check(summary: dict, agents: int) -> None:
+def check(summary: dict, agents: int, runner: str = "loop") -> None:
     """What every campaign of the example must show, in any number of processes."""
+    assert summary["runner"] == runner
     # Every agent finishes, with the right answer, after one suspension.
     assert summary["outcomes"] == {"done": agents}
     assert summary["answers"] == {"best score 0.98": agents}
@@ -42,8 +45,10 @@ def check(summary: dict, agents: int) -> None:
     assert summary["tasks"]["submitted"] == agents
     assert summary["tasks"]["repeats"] == agents
     assert summary["tasks"]["failed"] == 0
-    # A checkpoint at the suspension and one at the end.
-    assert summary["checkpoints_put"] == 2 * agents
+    # The loop puts an agent's state in the store once, when it suspends, and
+    # deletes it when the agent ends; LangGraph puts a checkpoint at the
+    # suspension and one at the end.
+    assert summary["state_puts"] == (1 if runner == "loop" else 2) * agents
     # One lookup each, through the one tool service.
     assert summary["tool_service"]["unique"] == agents
     assert summary["tool_service"]["ok"] == {"lookup": agents}
@@ -62,6 +67,16 @@ def test_a_campaign_in_one_agent_process() -> None:
     assert process["model_calls_per_replica"] == [300, 300]
     assert process["collector"]["freeze"]["frozen"] > 0
     assert process["tool_service_client"]["errors"] == 0
+
+
+def test_the_campaign_on_langgraph() -> None:
+    """``--runner graph``: the same agents as a LangGraph graph, with the
+    ``langgraph`` extra."""
+    pytest.importorskip("langgraph")
+    summary = load_example().run_campaign(agents=200, runner="graph")
+    check(summary, 200, runner="graph")
+    (process,) = summary["per_process"]
+    assert process["model_calls_per_replica"] == [300, 300]
 
 
 def test_two_agent_processes_share_one_tool_service() -> None:

@@ -1,7 +1,7 @@
 [project]
 name = "flowgentic"
 version = "0.5.1"
-description = "Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as AsyncFlow workflow tasks, and as LangGraph agents at scale whose tools run as RHAPSODY tasks and whose state lives in RaDEX."
+description = "Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as AsyncFlow workflow tasks, and as agents at scale, on its own agent loop and OpenAI-compatible model servers, whose tools run as RHAPSODY tasks and whose state lives in RaDEX; LangGraph is optional."
 readme = "README.md"
 authors = [
     { name = "Javier Dominguez", email = "jdominguez.ieu2023@student.ie.edu"},
@@ -25,13 +25,17 @@ classifiers = [
     "Topic :: System :: Distributed Computing",
     "Typing :: Typed",
 ]
-# Core: what every path needs. Each path adds an extra: `langgraph` for
-# LangGraph graphs and LangChain agents, `asyncflow` for AsyncFlow workflows,
-# `rhapsody` for tools that run as RHAPSODY tasks, `mcp` for the tool service's
-# MCP clients.
+# Core: what every path needs, Flowgentic's own agent loop and the model fleet
+# included, with httpx for the fleet's default transport to OpenAI-compatible
+# servers. Each path adds an extra: `agents` for agents at scale on
+# Flowgentic's loop (`rhapsody` for tools that run as RHAPSODY tasks, `mcp` for
+# the tool service's MCP clients); `openai` for the transport over the openai
+# SDK; `langgraph` for LangGraph graphs, LangChain agents and LangChain's
+# adapter, optional on that path; `asyncflow` for AsyncFlow workflows.
 dependencies = [
     "pydantic>=2.0.0",
     "opentelemetry-api>=1.43,<2",
+    "httpx>=0.27,<1",
 ]
 
 [project.optional-dependencies]
@@ -43,6 +47,9 @@ langgraph = [
     "langchain-openai>=1.0,<2.0",
     "langchain-ollama>=1.0,<2.0",
 ]
+openai = [
+    "openai>=1.109,<4",
+]
 asyncflow = [
     "radical-asyncflow>=0.7,<0.8",
 ]
@@ -51,6 +58,9 @@ rhapsody = [
 ]
 mcp = [
     "mcp>=2.3,<2.4",
+]
+agents = [
+    "flowgentic[rhapsody,mcp]",
 ]
 examples = [
     "flowgentic[langgraph,asyncflow]",
@@ -62,7 +72,7 @@ examples = [
     "rhapsody-py[telemetry]>=0.7,<0.8",
 ]
 dev = [
-    "flowgentic[examples,rhapsody,mcp]",
+    "flowgentic[examples,agents,openai]",
     "ruff>=0.12.11",
     "pre-commit>=4.0",
     "mkdocs-material>=9.6",

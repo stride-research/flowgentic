@@ -1,4 +1,5 @@
-"""A campaign of LangGraph agents in agent hosts, offline, on a laptop.
+"""A campaign of agents on Flowgentic's own loop, in agent hosts, offline, on a
+laptop.
 
 Each agent looks its candidate up through an MCP tool, runs a simulation as a
 RHAPSODY task and suspends while it runs, takes a note inline, and answers.
@@ -6,9 +7,10 @@ RHAPSODY task and suspends while it runs, takes a note inline, and answers.
 The parts are Flowgentic's, and everything around them stands in for an HPC
 allocation:
 
-- a scripted model behind a ``Fleet`` of two replicas, for model servers;
+- a scripted model, as a transport, behind a ``Fleet`` of two replicas, for
+  model servers (``HTTPTransport`` replicas);
 - RHAPSODY on a thread pool, for a RHAPSODY session on Dragon;
-- ``KeyValueSaver(MemoryStore())``, for ``KeyValueSaver(RadexStore.attach(...))``;
+- ``MemoryStore()``, for ``RadexStore.attach(...)``;
 - the tool service in a thread of this process, for the tool service in a
   process of its own;
 - an MCP server in a process of its own, on 127.0.0.1, for MCP servers on the
@@ -23,8 +25,11 @@ processes share it over Dragon's queues on an allocation.
     python examples/agents-at-scale/campaign.py --agents 1000
     python examples/agents-at-scale/campaign.py --agents 1000 --processes 2
 
-It needs the ``langgraph``, ``rhapsody`` and ``mcp`` extras; the ``dev`` extra
-has them all.
+It needs the ``agents`` extra, and no LangGraph. With ``--runner graph`` the
+same agents run as a LangGraph graph, ``campaign_langgraph.py`` beside this
+file, with the ``langgraph`` extra too:
+
+    python examples/agents-at-scale/campaign.py --runner graph --agents 1000
 
 With ``--dragon``, under ``dragon``, the same campaign runs on Dragon's
 resources: the agents' state in RaDEX, on a Dragon distributed dictionary from
@@ -40,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import importlib.util
 import json
 import multiprocessing
 import os
@@ -51,25 +57,15 @@ import threading
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from types import ModuleType
 from typing import Any
 
-from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from langchain_core.outputs import ChatGeneration, ChatResult
-from langchain_core.runnables import RunnableConfig
-from langchain_core.tools import tool
-from langgraph.graph import START, MessagesState, StateGraph
-from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel
 
-from flowgentic.fleet import Fleet, TokenAdmission
+from flowgentic.fleet import Fleet, Reply, TokenAdmission, ToolCall, Usage
 from flowgentic.host import AgentHost, AgentResult, Stagger
-from flowgentic.langgraph import (
-    GraphRunner,
-    KeyValueSaver,
-    bind_tools,
-    route_tool_calls,
-)
+from flowgentic.loop import LoopRunner
 from flowgentic.store import MemoryStore, RadexStore
 from flowgentic.tools import ToolRuntime, mcp_tool, task_tool
 from flowgentic.tools.mcp import SupervisedMcpPool
@@ -89,8 +85,7 @@ class LookupArgs(BaseModel):
     candidate: str
 
 
-@tool
-def note(text: str) -> str:
+async def note(text: str) -> str:
     """Write a note in the agent's log."""
     return f"noted: {text}"
 
@@ -106,7 +101,7 @@ TOOLS = [
         args_schema=LookupArgs,
         idempotent=True,
     ),
-    # Inline, in the agent's process.
+    # Inline, in the agent's process: a plain function.
     note,
 ]
 # --8<-- [end:tools]
@@ -249,84 +244,71 @@ class ToolServiceProcess:
 # --- a scripted model, standing in for the model servers -----------------------
 
 
-class ScriptedModel(BaseChatModel):
-    """Looks the candidate up; simulates it at the reference temperature and
-    notes that, in one turn; then answers with the score."""
+class ScriptedModel:
+    """A transport that looks the candidate up; simulates it at the reference
+    temperature and notes that, in one turn; then answers with the score. On
+    an allocation each replica is an ``HTTPTransport`` of a model server."""
 
-    latency_s: float = 0.005
+    model = "scripted"
+    base_url = None
 
-    @property
-    def _llm_type(self) -> str:
-        return "scripted"
+    def __init__(self, latency_s: float = 0.005) -> None:
+        self.latency_s = latency_s
 
-    def bind_tools(self, tools: Any, **kwargs: Any) -> ScriptedModel:
-        return self
-
-    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-        raise NotImplementedError("the scripted model is asynchronous")
-
-    async def _agenerate(
-        self, messages: list[BaseMessage], stop=None, run_manager=None, **kwargs
-    ) -> ChatResult:
+    async def complete(
+        self, messages: list[dict], tools: Any = None, **kwargs: Any
+    ) -> Reply:
         await asyncio.sleep(self.latency_s)
-        candidate = messages[0].content.split()[-1]
-        done = {m.name: m.content for m in messages if m.type == "tool"}
+        candidate = messages[0]["content"].split()[-1]
+        names = {
+            c["id"]: c["function"]["name"]
+            for m in messages
+            if m["role"] == "assistant"
+            for c in m.get("tool_calls") or ()
+        }
+        done = {
+            names.get(m["tool_call_id"]): m["content"]
+            for m in messages
+            if m["role"] == "tool"
+        }
+        calls: tuple = ()
+        content = ""
         if "lookup" not in done:
-            reply = AIMessage(
-                "",
-                tool_calls=[
-                    {"name": "lookup", "args": {"candidate": candidate}, "id": "c1"}
-                ],
-            )
+            calls = (ToolCall("c1", "lookup", {"candidate": candidate}),)
         elif "simulate" not in done:
             start = json.loads(done["lookup"])["start_temperature"]
-            reply = AIMessage(
-                "",
-                tool_calls=[
-                    {
-                        "name": "simulate",
-                        "args": {"candidate": candidate, "temperature": start},
-                        "id": "c2",
-                    },
-                    {
-                        "name": "note",
-                        "args": {"text": f"simulating {candidate}"},
-                        "id": "c3",
-                    },
-                ],
+            calls = (
+                ToolCall("c2", "simulate", {"candidate": candidate, "temperature": start}),
+                ToolCall("c3", "note", {"text": f"simulating {candidate}"}),
             )
         else:
-            reply = AIMessage(f"best score {json.loads(done['simulate'])['score']}")
+            content = f"best score {json.loads(done['simulate'])['score']}"
         # What a server would count: the prompt's size, and a short reply.
-        prompt = 200 + sum(len(str(m.content)) for m in messages) // 4
-        reply.usage_metadata = {
-            "input_tokens": prompt,
-            "output_tokens": 20,
-            "total_tokens": prompt + 20,
-        }
-        return ChatResult(generations=[ChatGeneration(message=reply)])
+        prompt = 200 + sum(len(str(m.get("content") or "")) for m in messages) // 4
+        return Reply(content, calls, usage=Usage(prompt, 20))
+
+
+def langgraph_version() -> ModuleType:
+    """The campaign's LangGraph version, ``campaign_langgraph.py`` beside this
+    file: it needs the ``langgraph`` extra."""
+    name = "agents_at_scale_langgraph"
+    if name not in sys.modules:
+        path = Path(__file__).with_name("campaign_langgraph.py")
+        spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(module)
+        except ModuleNotFoundError as exc:
+            if (exc.name or "").split(".")[0] not in {"langchain", "langchain_core", "langgraph"}:
+                raise
+            raise ModuleNotFoundError(
+                "--runner graph runs LangGraph: install flowgentic[langgraph]", name=exc.name
+            ) from exc
+        sys.modules[name] = module
+    return sys.modules[name]
 
 
 # --- one agent process ----------------------------------------------------------
-
-
-# --8<-- [start:graph]
-def build_graph(fleet: Fleet, tools: list, saver: KeyValueSaver):
-    """model -> each tool call as its own task -> model, until it answers."""
-    fleet = fleet.bind_tools(tools)
-
-    async def model(state: MessagesState, config: RunnableConfig) -> dict:
-        agent = config["configurable"]["thread_id"]
-        return {"messages": [await fleet.ainvoke(agent, state["messages"])]}
-
-    g = StateGraph(MessagesState)
-    g.add_node("model", model)
-    g.add_node("tools", ToolNode(tools, handle_tool_errors=True))
-    g.add_edge(START, "model")
-    g.add_conditional_edges("model", route_tool_calls, ["tools", "__end__"])
-    g.add_edge("tools", "model")
-    return g.compile(checkpointer=saver)
-# --8<-- [end:graph]
 
 
 async def task_backend(workers: int, dragon: bool) -> Any:
@@ -355,48 +337,60 @@ async def run_agents(
     replies: Any,
     workers: int = 8,
     descriptor: str | None = None,
+    runner: str = "loop",
 ) -> dict:
     """Run agent process ``index``'s share of the campaign: agents ``index``,
     ``index + processes``, and so on. With a dictionary's ``descriptor``, on
-    Dragon: the store is RaDEX, the tasks run on the native Dragon backend."""
+    Dragon: the store is RaDEX, the tasks run on the native Dragon backend.
+    ``runner="graph"``: the LangGraph version."""
     from rhapsody import Session
 
     dragon = descriptor is not None
+    graph = langgraph_version() if runner == "graph" else None
     # --8<-- [start:process]
     client = ToolServiceClient(requests, replies, index=index)
     client.start()
     backend = await task_backend(workers, dragon)
     session = Session(backends=[backend])
     runtime = ToolRuntime(session, client)
-    tools = bind_tools(runtime, TOOLS)
     # Every process routes by the same hash, so each takes an equal share of
-    # every replica's caps.
+    # every replica's caps. On an allocation, one per model server:
+    # [HTTPTransport("Qwen3-8B", base_url=url) for url in servers]
+    replicas = [ScriptedModel(), ScriptedModel()] if graph is None else graph.replicas()
     fleet = Fleet(
-        [ScriptedModel(), ScriptedModel()],
+        replicas,
         admission=TokenAdmission(tokens=40_000, requests=64),
         share=1 / processes,
     )
     # The agents' state: RaDEX on Dragon, this process's memory on a laptop.
     store = RadexStore.attach(descriptor) if dragon else MemoryStore()
-    saver = KeyValueSaver(store)
     # --8<-- [end:process]
+    if graph is None:
+        # --8<-- [start:runner]
+        # The loop puts an agent's state in the store when the agent suspends,
+        # reads it back when it resumes, and deletes it when it ends.
+        agent_runner = LoopRunner(fleet, TOOLS, runtime=runtime, store=store)
+        # --8<-- [end:runner]
+        state = agent_runner.stats
+    else:
+        agent_runner, saver = graph.graph_runner(fleet, runtime, store, TOOLS)
+        state = saver.stats
 
     answers: Counter[str] = Counter()
     lifetimes = [0.0]
     suspensions = [0]
 
     def on_done(result: AgentResult, output: Any) -> None:
-        fleet.agent_done(result.id)  # the agent makes no more model calls
+        if graph is not None:  # the loop tells the fleet itself
+            fleet.agent_done(result.id)  # the agent makes no more model calls
         lifetimes[0] += result.t_end - result.t_start
         suspensions[0] += result.suspensions
         if output is not None:
-            answers[output["messages"][-1].content] += 1
+            answers[answer(output)] += 1
 
     # --8<-- [start:host]
     host = AgentHost(
-        # A Dragon dictionary's size is fixed: keep the agents still running,
-        # not every agent of the campaign.
-        GraphRunner(build_graph(fleet, tools, saver), delete_finished=True),
+        agent_runner,
         max_live_agents=5_000,
         stagger=Stagger(batch=100, interval_s=0.05),
         on_done=on_done,
@@ -404,7 +398,7 @@ async def run_agents(
 
     def input_for(i: int) -> dict:
         task = f"Find the best temperature for cand-{i:06d}"
-        return {"messages": [HumanMessage(task)]}
+        return {"messages": [{"role": "user", "content": task}]}
 
     try:
         report = await host.run_indexed(
@@ -420,6 +414,7 @@ async def run_agents(
         "pid": os.getpid(),
         "store": type(store).__name__,
         "task_backend": type(backend).__name__,
+        "runner": runner,
         "agents": len(range(index, agents, processes)),
         "outcomes": report.outcomes,
         "errors": report.errors,
@@ -438,9 +433,17 @@ async def run_agents(
         "model_calls": fleet_stats["calls"],
         "model_calls_per_replica": fleet_stats["calls_per_replica"],
         "tasks": runtime.stats(),
-        "checkpoints": saver.stats(),
+        "state": state(),
         "tool_service_client": client.stats(),
     }
+
+
+def answer(output: Any) -> str:
+    """A finished agent's answer: the last message of the loop's ``LoopOutput``,
+    or of a LangGraph graph's state."""
+    if isinstance(output, dict):  # a graph's state, of LangChain messages
+        return output["messages"][-1].content
+    return output.messages[-1]["content"]
 
 
 def agent_process(
@@ -452,11 +455,14 @@ def agent_process(
     results: Any,
     workers: int,
     descriptor: str | None = None,
+    runner: str = "loop",
 ) -> None:
     """An agent process's entry point: its share, reported on ``results``."""
     try:
         out = asyncio.run(
-            run_agents(index, processes, agents, requests, replies, workers, descriptor)
+            run_agents(
+                index, processes, agents, requests, replies, workers, descriptor, runner
+            )
         )
     except BaseException as exc:
         results.put({"index": index, "error": f"{type(exc).__name__}: {exc}"})
@@ -468,15 +474,22 @@ def agent_process(
 
 
 def run_campaign(
-    agents: int = 200, processes: int = 1, workers: int = 8, dragon: bool = False
+    agents: int = 200,
+    processes: int = 1,
+    workers: int = 8,
+    dragon: bool = False,
+    runner: str = "loop",
 ) -> dict:
     """Run ``agents`` agents in ``processes`` agent processes against one tool
     service; return the campaign's summary. ``dragon=True`` runs it on Dragon,
-    under ``dragon``."""
+    under ``dragon``. ``runner``: ``"loop"``, Flowgentic's own, or ``"graph"``,
+    the LangGraph version."""
     if agents < 1 or processes < 1:
         raise ValueError("a campaign needs at least one agent and one process")
+    if runner not in ("loop", "graph"):
+        raise ValueError(f"no runner {runner!r}: loop or graph")
     if dragon:
-        return run_campaign_on_dragon(agents, processes, workers)
+        return run_campaign_on_dragon(agents, processes, workers, runner)
     t0 = time.monotonic()
     with McpServer() as mcp:
         if processes == 1:
@@ -488,14 +501,21 @@ def run_campaign(
         with ToolService(mcp.url, requests, replies) as service:
             if processes == 1:
                 parts = [
-                    asyncio.run(run_agents(0, 1, agents, requests, replies[0], workers))
+                    asyncio.run(
+                        run_agents(
+                            0, 1, agents, requests, replies[0], workers, None, runner
+                        )
+                    )
                 ]
             else:
                 results = ctx.Queue()
                 procs = [
                     ctx.Process(
                         target=agent_process,
-                        args=(i, processes, agents, requests, replies[i], results, workers),
+                        args=(
+                            i, processes, agents, requests, replies[i], results,
+                            workers, None, runner,
+                        ),  # fmt: skip
                         name=f"agent-process-{i}",
                     )
                     for i in range(processes)
@@ -507,22 +527,24 @@ def run_campaign(
     return summarize(parts, service.stats, agents, wall)
 
 
-def run_campaign_on_dragon(agents: int, processes: int, workers: int) -> dict:
+def run_campaign_on_dragon(
+    agents: int, processes: int, workers: int, runner: str = "loop"
+) -> dict:
     """The campaign on Dragon: a dictionary for RaDEX, and the tool service and
     each agent process in a Dragon process, over Dragon's queues."""
     import dragon  # noqa: F401  # adds Dragon's start method to multiprocessing
 
-    # Make "dragon" the start method, as Dragon's processes inherit it. Importing
-    # LangGraph has already fixed the platform's default, hence force.
+    # Make "dragon" the start method, as Dragon's processes inherit it. An
+    # import may have fixed the platform's default already, hence force.
     previous = multiprocessing.get_start_method(allow_none=True)
     multiprocessing.set_start_method("dragon", force=True)
     try:
-        return _campaign_on_dragon(agents, processes, workers)
+        return _campaign_on_dragon(agents, processes, workers, runner)
     finally:
         multiprocessing.set_start_method(previous, force=True)
 
 
-def _campaign_on_dragon(agents: int, processes: int, workers: int) -> dict:
+def _campaign_on_dragon(agents: int, processes: int, workers: int, runner: str) -> dict:
     from rhapsody.backends.data.dragon import DragonDataBackend
 
     # Importing RHAPSODY's backends loads Dragon's LLM engine, which clears
@@ -547,7 +569,7 @@ def _campaign_on_dragon(agents: int, processes: int, workers: int) -> dict:
                         target=agent_process,
                         args=(
                             i, processes, agents, requests, replies[i], results,
-                            workers, descriptor,
+                            workers, descriptor, runner,
                         ),  # fmt: skip
                         name=f"agent-process-{i}",
                     )
@@ -600,6 +622,7 @@ def summarize(parts: list[dict], service: dict, agents: int, wall_s: float) -> d
     by_state = merged("agent_seconds_by_state")
     lifetimes = sum(p["lifetimes_s"] for p in parts)
     return {
+        "runner": parts[0]["runner"],
         "agents": agents,
         "processes": len(parts),
         "wall_s": round(wall_s, 3),
@@ -615,7 +638,11 @@ def summarize(parts: list[dict], service: dict, agents: int, wall_s: float) -> d
         "accounted": round(sum(seconds.values()) / lifetimes, 6) if lifetimes else None,
         "model_calls": total("model_calls"),
         "tasks": merged("tasks"),
-        "checkpoints_put": sum(p["checkpoints"]["checkpoints_put"] for p in parts),
+        # Puts of an agent's state: the loop's, or LangGraph's checkpoints.
+        "state_puts": sum(
+            p["state"].get("store_puts", p["state"].get("checkpoints_put", 0))
+            for p in parts
+        ),
         "tool_service": {
             k: service.get(k) for k in ("received", "unique", "ok", "failed")
         },
@@ -651,7 +678,7 @@ def report(summary: dict) -> str:
             f"{summary['tasks']['submitted']} submitted, "
             f"{summary['tasks']['repeats']} asked for again on resume; "
             f"suspensions: {summary['suspensions']}; "
-            f"checkpoints: {summary['checkpoints_put']}; "
+            f"state puts: {summary['state_puts']}; "
             f"tool service calls: {summary['tool_service']['unique']}",
             f"event loop lag at most {lag:.1f} ms; collector pauses {pauses:.3f} s",
         ]
@@ -669,6 +696,12 @@ def main(argv: list[str] | None = None) -> None:
         help="RHAPSODY's workers: threads per agent process, or with --dragon "
         "the native backend's workers per node",
     )
+    p.add_argument(
+        "--runner",
+        choices=["loop", "graph"],
+        default="loop",
+        help="Flowgentic's own loop, or the LangGraph version (the langgraph extra)",
+    )
     p.add_argument("--json", action="store_true", help="print the whole summary as JSON")
     p.add_argument(
         "--dragon",
@@ -680,7 +713,9 @@ def main(argv: list[str] | None = None) -> None:
     if a.mcp_server:
         serve_mcp(a.mcp_server)
         return
-    summary = run_campaign(a.agents, a.processes, a.workers, a.dragon)
+    if a.runner == "graph":
+        langgraph_version()  # without LangGraph, stop before anything starts
+    summary = run_campaign(a.agents, a.processes, a.workers, a.dragon, a.runner)
     print(json.dumps(summary, indent=2) if a.json else report(summary))
 
 

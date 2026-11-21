@@ -6,10 +6,9 @@ chooses the replica and when the call is sent. It records each call, and
 waits out a replica whose server went away.
 
 ```python
-from langchain_openai import ChatOpenAI
-from flowgentic.fleet import Fleet, Recovery, TokenAdmission
+from flowgentic.fleet import Fleet, HTTPTransport, Recovery, TokenAdmission
 
-replicas = [ChatOpenAI(model=model, base_url=url, api_key=key) for url in urls]
+replicas = [HTTPTransport(model, base_url=url, api_key=key) for url in urls]
 fleet = Fleet(
     replicas,
     admission=TokenAdmission(tokens=200_000, requests=96),
@@ -17,13 +16,135 @@ fleet = Fleet(
     name=model,
 )
 
-reply = await fleet.ainvoke(agent_id, messages)          # a graph's own model node
-chat = fleet.chat_model().bind_tools(tools)              # a LangChain chat model
+messages = [{"role": "user", "content": "Find the best temperature for cand-000042."}]
+reply = await fleet.ainvoke(agent_id, messages, tools=schemas)   # a Reply
+chat = fleet.chat_model().bind_tools(tools)                       # a LangChain chat model
 ```
 
-`flowgentic.fleet` needs the `langgraph` extra, for LangChain. The replicas
-are LangChain chat models: anything with `ainvoke(messages, **kwargs)` that
-returns an `AIMessage`, and `bind_tools` if the agents call tools.
+`flowgentic.fleet` needs no extra, and neither does its default transport,
+`HTTPTransport`: httpx is one of Flowgentic's own dependencies.
+`OpenAITransport` needs the `openai` extra; LangChain chat models as
+replicas, and `chat_model()`, need the `langgraph` extra.
+
+## Replicas are transports
+
+A replica is a `Transport`: an object with one method,
+
+```python
+async def complete(self, messages, tools=None, **kwargs) -> Reply: ...
+```
+
+that sends a conversation, as OpenAI Chat Completions messages (`role`,
+`content`, `tool_calls` with JSON-string arguments, `tool_call_id`), with the
+tools' JSON schemas and the call's own keywords (`max_tokens`, `extra_body`,
+...), to one model server, and returns its `Reply`:
+
+| `Reply` | |
+| --- | --- |
+| `content` | the answer's text |
+| `tool_calls` | `ToolCall(id, name, args)`, the arguments parsed |
+| `invalid_tool_calls` | `InvalidToolCall(id, name, arguments, error)`: calls whose arguments are not a JSON object, for the model to read why |
+| `usage` | `Usage(prompt_tokens, completion_tokens, cached_tokens, reasoning_tokens)`; the last two are `None` when the server does not say |
+| `reasoning` | the thinking the server split out of the answer |
+| `finish_reason`, `id`, `model` | the server's |
+| `raw` | the transport's own response |
+
+`reply.message()` is the reply as the conversation keeps it: an assistant
+message with the content and the tool calls, without the reasoning.
+
+`HTTPTransport(model, base_url=..., api_key=...)`, the default, calls an
+OpenAI-compatible server, vLLM, SGLang, OpenRouter or OpenAI, with one httpx
+POST to `{base_url}/chat/completions` per call. The key goes as a bearer
+token: by default `EMPTY`, which vLLM and SGLang accept when they set none,
+and `OPENAI_API_KEY` from the environment for OpenAI's own API
+(`api.openai.com`) only, so that a server on an allocation, often reached over
+plain HTTP, is never sent an OpenAI key it was not given; `OpenAITransport`
+does the same, where the `openai` SDK alone sends that key to any server. A
+call times out after `timeout`, 600 s by default (`None` for none), and a
+connection after 5 s at most, as with the SDK. `base_url` must be an http or
+https URL: anything else is a `ValueError` when the transport is made. Keywords given when it is made, such as
+`temperature=0`, go with every call, and a call's own override them;
+`extra_body`'s keys go into the request's body and `extra_headers`' into its
+headers, as the `openai` SDK sends them. It retries nothing: `Recovery` waits
+out a server that went away.
+
+`OpenAITransport(model, base_url=..., api_key=...)` calls the same servers
+through the `openai` SDK's `AsyncOpenAI`, which retries a failed call itself
+unless given `max_retries=0`. It costs about four times the CPU per call of
+`HTTPTransport` (below), and needs the `openai` extra.
+
+Both read the reply with `parse_completion`: the reasoning text from the
+message's `reasoning`, which vLLM uses since it [renamed the
+field](https://docs.vllm.ai/en/latest/features/reasoning_outputs/), and from
+`reasoning_content`, which older vLLM and SGLang use; the cached prompt tokens
+from `usage.prompt_tokens_details`, and the reasoning tokens from
+`usage.completion_tokens_details`, when the server sends them (vLLM sends the
+first with `--enable-prompt-tokens-details`). `parse_completion` reads such a
+server's completion, as the SDK's object or as its JSON, for a transport of
+your own.
+
+A failed call through `HTTPTransport` raises a `ModelServerError`, with the
+server's message, its `status_code` and its `body`:
+
+| Error | When | `transient` |
+| --- | --- | --- |
+| `ServerUnavailable` | no answer (a refused or dropped connection), a timeout, a 5xx, or a busy server's 408, 409 or 429, which the `openai` SDK retries too | yes |
+| `AuthenticationFailed` | 401, as from a server restarted with a new key | yes |
+| `RequestRejected` | any other 4xx, such as a context too long | no |
+| `ModelServerError` itself | a completion with no choices and no error code, a reply that is not JSON or that httpx cannot decode, too many redirects, a header that cannot be sent (a line break, non-ASCII text), a call after `aclose()` | no |
+
+An error object that a server sends with status 200 and no choices, as some
+vLLM releases and OpenRouter do, is read by its `code` as an HTTP status: an
+OpenRouter 429 or 502 is `ServerUnavailable`, vLLM's 400 `RequestRejected`;
+`status_code` carries the code. A 401 from a server that is not OpenAI's,
+with no `api_key` given, says that `OPENAI_API_KEY` is sent to
+api.openai.com only. Text that UTF-8 cannot carry, such as a lone surrogate
+in a file name Linux could not decode, goes as its escape, as `ensure_ascii`
+writes it, rather than failing every later call.
+
+`Recovery` waits out a transient one, and the `openai` SDK's errors of the same
+kinds. It sends the call again once its check finds the server, after
+`poll_s` at least; it does not read a `Retry-After` header.
+
+A client's CPU cost per call grows with the calls its connection pool holds
+in flight. So both transports send each call to their least busy client, and
+open another client, with its own pool, whenever each one holds
+`calls_per_pool` calls: 8 for `HTTPTransport`, 64 for `OpenAITransport`. A
+replica with 512 calls in flight then has 64 clients of `HTTPTransport`, one
+with a few calls has one. `pools=N` fixes the number of clients instead.
+`HTTPTransport`'s pools share one SSL context. `aclose()`, on both
+transports, refuses new calls at once and returns, and the clients the
+transport made close as soon as their calls in flight end; the fleet closes a
+transport that `Recovery` replaces. A `client` given (an `httpx.AsyncClient`;
+for `OpenAITransport`, an `AsyncOpenAI`) is the only one, and the transport
+never closes it. It keeps its own headers unless the transport is given an
+`api_key`, and its own timeout unless the transport is given a `timeout`, or
+the client has httpx's default of 5 s, which a model call outlasts: it then
+gets the transport's 600 s, as the `openai` SDK does with a bare
+`http_client`. `transport.timeout` is the timeout its calls get.
+
+Measured against a local stub server that answers after a vLLM server's time
+at each load (1.3 s at 64 calls in flight, 8.9 s at 512), on an AMD EPYC 7502P
+pinned to 8 cores, the client's CPU per call, median of three runs:
+
+| Client | 64 in flight | 512 in flight |
+| --- | --- | --- |
+| plain httpx, one pool | 1.50 ms | 29.0 ms, and behind the server |
+| `HTTPTransport`, 64 calls per pool | 1.47 ms | 1.41 ms |
+| `HTTPTransport`, 32 calls per pool | 1.08 ms | 1.00 ms |
+| `HTTPTransport`, 16 calls per pool | 0.89 ms | 0.85 ms |
+| `HTTPTransport`, 8 calls per pool, the default | 0.81 ms | 0.79 ms |
+| `HTTPTransport`, 4 calls per pool | 0.88 ms | 0.77 ms |
+| `OpenAITransport`, as made by default | 3.30 ms | 3.07 ms |
+
+The 4-per-pool row ran on another day, with 8 per pool beside it (0.82 and
+0.79 ms). `benchmarks/client_cost.py` measures a client this way.
+
+A LangChain chat model given as a replica, or returned by `Recovery`'s check,
+runs through LangChain's adapter, `flowgentic.langchain.ChatModelTransport`.
+It takes OpenAI-format messages and JSON schemas, and also LangChain messages
+and tools as they are, so a LangGraph graph's calls reach the model
+unchanged, and the reply's `raw` is the model's own `AIMessage`.
 
 ## What the fleet does
 
@@ -53,14 +174,15 @@ returns an `AIMessage`, and `bind_tools` if the agents call tools.
   once for all its replicas. Choose the cap and `share` so that the largest
   context fits in one share.
 - **It waits out a server that went away.** With `Recovery(check)`, a call
-  that fails because its server is down, restarting or overloaded (a
-  connection error, a timeout, a 5xx, or a 401 after a new key) gives up its
-  place, waits for the replica to come back, and is sent again. Other errors
-  fail at once.
+  that fails because its server is down, restarting, overloaded or busy (a
+  connection error, a timeout, a 5xx, a busy server's 408, 409 or 429, or a
+  401 after a new key: a transient `ModelServerError`, or the `openai` SDK's
+  error of that kind) gives up its place, waits for the replica to come back,
+  and is sent again. Other errors fail at once.
 
-  `check` is an `async def`: `check(i)` returns replica `i`'s model once its
-  server serves again (a new one if its address or key changed), or `None`
-  while it is down. The first failing call on a replica starts one watch,
+  `check` is an `async def`: `check(i)` returns replica `i`'s transport once
+  its server serves again (a new one if its address or key changed), or
+  `None` while it is down. The first failing call on a replica starts one watch,
   which calls `check(i)` every `poll_s` seconds until the replica serves
   again or `outage_s` has passed; later failing calls wait on the same watch.
   A call whose watch gives up, because it started earlier for another call,
@@ -78,11 +200,17 @@ returns an `AIMessage`, and `bind_tools` if the agents call tools.
   `check` did not answer.
 
 ```python
+endpoints = {i: (url, key) for i, (url, key) in enumerate(servers)}
+
 async def check(i: int):
     url, key = read_endpoint(i)            # the application's: where replica i serves now
     if not await healthy(url):             # for example, GET /health with its own timeout
         return None
-    return ChatOpenAI(model=model, base_url=url, api_key=key)
+    if endpoints[i] == (url, key):         # the same server: keep its transport and pools
+        return replicas[i]
+    endpoints[i] = (url, key)              # moved or rekeyed: a new transport;
+    replicas[i] = HTTPTransport(model, base_url=url, api_key=key)
+    return replicas[i]                     # the fleet closes the one it replaces
 
 fleet = Fleet(replicas, recovery=Recovery(check, outage_s=1_800, poll_s=5))
 ```
@@ -110,6 +238,7 @@ within a budget. `ainvoke` and the chat model take them per call:
 reply = await fleet.ainvoke(
     agent_id,
     messages,
+    tools=schemas,             # the tools' JSON schemas
     extra_body={...},          # any keyword: to the replica, for this call only
     max_tokens=1_024,
     reserve=512,               # tokens added to this call's admission estimate
@@ -118,19 +247,26 @@ reply = await fleet.ainvoke(
 reply = await chat.ainvoke(messages, reserve=512, meta={"budget": 512}, extra_body={...})
 ```
 
-The keywords reach the replica's `ainvoke` for that call only, through a
-`bind_tools` view too, and again if `Recovery` rebuilt the replica's model.
+The keywords reach the transport's `complete` for that call only, and again
+if `Recovery` rebuilt the replica.
 The chat model takes them wherever it can tell the agent (see below), and
 also bound in advance, as in `chat.bind(reserve=512)`.
 Which settings make a model think is the model's business: the fleet passes
 them on. When the server reports a reply's reasoning tokens
-(`usage_metadata["output_token_details"]["reasoning"]`), the call's record
+(`Reply.usage.reasoning_tokens`), the call's record
 carries them, and the agent's size leaves them out: the conversation keeps the
 reply, not the thinking.
 
 ## The chat model
 
-`fleet.chat_model()` is the fleet as a LangChain chat model, for prebuilt
+`fleet.chat_model()` is the fleet as a LangChain chat model
+(`flowgentic.langchain.FleetChatModel`, which `flowgentic.fleet` still
+names; without LangChain, `flowgentic.fleet.FleetChatModel` raises an
+`AttributeError` that names the `langgraph` extra, so that `hasattr` and
+`import *` work, and `from flowgentic.fleet import FleetChatModel` a plain
+`ImportError`: Python turns a module's `AttributeError` into that, without
+its message, for a `from` import. `from flowgentic.langchain import
+FleetChatModel` names the extra), for prebuilt
 agents such as LangChain's `create_agent` and LangGraph's
 `create_react_agent`, and for graphs that expect one. Its `bind_tools` and
 `with_structured_output` work as a chat model's do.
@@ -146,13 +282,22 @@ await chat.ainvoke(messages, config={"configurable": {"thread_id": sub_agent}})
 Without a `thread_id`, it uses the agent the [agent host](agent-host.md) is
 running, and without either it raises `ValueError`.
 
-The chat model opens no LangChain run of its own. It hands the caller's
-config to the replica, so the replica's run is the call's only one:
-callbacks, LangSmith and OpenTelemetry's GenAI instrumentation see one model
-call with the replica's usage, and LangGraph's `stream_mode="messages"`
-streams the replica's tokens. It is asynchronous only: call `ainvoke`. Its
-cost per call, a LangChain call more than `fleet.ainvoke`, is why a graph's
-own model node should call the fleet directly.
+The chat model opens no LangChain run of its own. Over LangChain replicas it
+hands the caller's messages, tools and config to the replica as they are, so
+the replica's run is the call's only one: callbacks, LangSmith and
+OpenTelemetry's GenAI instrumentation see one model call with the replica's
+usage, LangGraph's `stream_mode="messages"` streams the replica's tokens, and
+the reply is the replica's own `AIMessage`. Over other transports it converts
+the messages and tools to OpenAI's format, and the `Reply` to an `AIMessage`
+(`flowgentic.langchain.to_ai_message`); of `bind_tools`' keywords it sends
+`tool_choice` and `parallel_tool_calls` as `ChatOpenAI` does (`"any"` is
+`"required"`, a tool's name a choice of that tool), applies `strict` to the
+tools' schemas, and refuses any other. It is asynchronous only: call
+`ainvoke`. Its cost per call, a LangChain call more than `fleet.ainvoke`, is
+why a graph's own model node may call the fleet directly, and turn the reply
+into a message with `to_ai_message`, as the
+[agents-at-scale](../guides/agents-at-scale.md#with-langgraph) example's
+LangGraph version does.
 
 ## Other admission policies
 
@@ -191,7 +336,7 @@ calls; a call of that agent may still be in flight.
 ## What it reports
 
 `fleet.add_listener(listener)` calls `listener(record, reply)` after each
-call that returns. The `CallRecord` holds the agent and replica, the
+call that returns, with the call's `Reply`. The `CallRecord` holds the agent and replica, the
 prompt, cached and completion tokens, the reasoning tokens if reported, the
 admission estimate, the gap since the agent's previous call, the tool whose
 result came just before, and the caller's `meta`. Its times add up to the
@@ -205,6 +350,14 @@ the recovery's outages.
 Through the OpenTelemetry API, and only once the application configures an
 SDK:
 
+- each try is a GenAI `chat` span, with the request's and the response's
+  model, the server's address and port, the finish reason, and the usage the
+  server reported (`gen_ai.usage.input_tokens`, `output_tokens`,
+  `cache_read.input_tokens`, `reasoning.output_tokens`; a breakdown of zero, or
+  one not reported, is left out). A failed try's span has status ERROR and
+  `error.type`. With LangChain replicas and OpenTelemetry's LangChain
+  instrumentation on, the instrumentation's span is the call's, and the fleet
+  records none, so no usage is counted twice;
 - `flowgentic.fleet.admission.wait` and `flowgentic.fleet.request.duration`
   record each try's wait for admission and its time at the replica, so a
   retried call records one of each per try; a try that failed, retried or
