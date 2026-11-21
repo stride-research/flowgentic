@@ -316,7 +316,9 @@ class LoopRunner:
 		self.store_gets += 1
 		if state is None:
 			raise RuntimeError(
-				f"agent {agent.id!r} has no saved state under {self.key(agent.id)!r}"
+				f"agent {agent.id!r} has no saved state under {self.key(agent.id)!r}: "
+				"if another runner uses this store, and its agents can have the "
+				"same ids, give each runner its own key_prefix"
 			)
 		# Its state is in the store, whichever runner saved it; its tasks are
 		# keyed by that runner's token, saved with it.
