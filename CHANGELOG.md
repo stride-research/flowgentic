@@ -66,9 +66,9 @@ decision record.
   `usage.completion_tokens_details`.
 - Both transports open another client, with its own connection pool, as the
   calls they hold in flight grow, since one pool's CPU cost per call grows
-  with its calls: `HTTPTransport` for every 8 calls,
-  `OpenAITransport` for every 64 (`calls_per_pool=`, `pools=` to fix their
-  number).
+  with its calls: `HTTPTransport` for every 8 calls, the cheapest per call
+  of 4 to 64 against a local stub, `OpenAITransport` for every 64
+  (`calls_per_pool=`, `pools=` to fix their number).
 - `flowgentic.langchain`, LangChain as an adapter, in the `langgraph` extra:
   `ChatModelTransport` (any LangChain chat model as a transport; it takes
   LangChain messages and tools as they are, too), `FleetChatModel` (moved

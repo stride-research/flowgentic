@@ -316,10 +316,12 @@ class HTTPTransport:
 	**Connection pools.** A client's CPU per call grows with the calls its
 	connection pool holds in flight. So the transport sends each call to its
 	least busy client, and opens another client, with its own pool, when each
-	holds ``calls_per_pool`` calls. ``pools`` fixes the number of clients
-	instead. A pool's connections are not capped. ``client``, an
-	``httpx.AsyncClient``, replaces the clients the transport would make, and
-	is its only one.
+	holds ``calls_per_pool`` calls, 8 by default. Against a local stub, at 64
+	calls in flight, 8 per pool cost 0.8 ms of CPU per call, 64 per pool
+	1.5 ms; at 512, 0.8 and 1.4 ms, and one pool 29 ms. ``pools`` fixes the
+	number of clients instead. A pool's connections are not capped.
+	``client``, an ``httpx.AsyncClient``, replaces the clients the transport
+	would make, and is its only one.
 	"""
 
 	def __init__(
@@ -331,7 +333,7 @@ class HTTPTransport:
 		timeout: float | None = 600.0,
 		client: Any = None,  # noqa: ANN401  # an httpx.AsyncClient
 		pools: int | None = None,
-		calls_per_pool: int = 64,
+		calls_per_pool: int = 8,
 		**params: object,
 	) -> None:
 		if pools is not None and pools < 1:

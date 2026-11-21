@@ -90,13 +90,29 @@ server's message, its `status_code` and its `body`:
 kinds, which it knows by name.
 
 A client's CPU cost per call grows with the calls its connection pool holds
-in flight. Against a local stub server, one pool cost 3.5 ms of CPU per call
-at 64 calls in flight, and 24 to 31 ms at 512 (plain httpx too); the same 512
-calls spread over eight clients of 64 cost 3.5 ms. So `OpenAITransport` sends
-each call to its least busy client, and opens another client, with its own
-pool, whenever each one holds 64 calls (`calls_per_pool=64`): a replica with
-512 calls in flight has eight, one with a few calls has one. `pools=N` fixes
-the number of clients instead, and a `client` given is the only one.
+in flight. So both transports send each call to their least busy client, and
+open another client, with its own pool, whenever each one holds
+`calls_per_pool` calls: 8 for `HTTPTransport`, 64 for `OpenAITransport`. A
+replica with 512 calls in flight then has 64 clients of `HTTPTransport`, one
+with a few calls has one. `pools=N` fixes the number of clients instead, and
+a `client` given is the only one.
+
+Measured against a local stub server that answers after a vLLM server's time
+at each load (1.3 s at 64 calls in flight, 8.9 s at 512), on an AMD EPYC 7502P
+pinned to 8 cores, the client's CPU per call, median of three runs:
+
+| Client | 64 in flight | 512 in flight |
+| --- | --- | --- |
+| plain httpx, one pool | 1.50 ms | 29.0 ms, and behind the server |
+| `HTTPTransport`, 64 calls per pool | 1.47 ms | 1.41 ms |
+| `HTTPTransport`, 32 calls per pool | 1.08 ms | 1.00 ms |
+| `HTTPTransport`, 16 calls per pool | 0.89 ms | 0.85 ms |
+| `HTTPTransport`, 8 calls per pool, the default | 0.81 ms | 0.79 ms |
+| `HTTPTransport`, 4 calls per pool | 0.88 ms | 0.77 ms |
+| `OpenAITransport`, as made by default | 3.30 ms | 3.07 ms |
+
+The 4-per-pool row ran on another day, with 8 per pool beside it (0.82 and
+0.79 ms). `benchmarks/client_cost.py` measures a client this way.
 
 A LangChain chat model given as a replica, or returned by `Recovery`'s check,
 runs through LangChain's adapter, `flowgentic.langchain.ChatModelTransport`.
