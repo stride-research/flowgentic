@@ -8,6 +8,7 @@ LangChain's models and tools, through its adapter: ``test_loop_langchain``."""
 import asyncio
 import json
 import re
+import threading
 import time
 from collections import Counter
 from typing import Any
@@ -28,6 +29,7 @@ from _basics import (
     tool_results,
     transport,
 )
+from opentelemetry.trace import StatusCode
 from pydantic import BaseModel, ConfigDict, Field
 
 from flowgentic.fleet import Fleet
@@ -40,7 +42,8 @@ from flowgentic.loop import (
     ModelCallLimitExceeded,
 )
 from flowgentic.store import MemoryStore
-from flowgentic.tools import ToolRuntime, mcp_tool, task_tool
+from flowgentic import _agents
+from flowgentic.tools import ToolRuntime, ToolSetupError, mcp_tool, task_tool
 
 @pytest.fixture(autouse=True)
 def clear_runs():
@@ -254,8 +257,155 @@ async def test_a_runtime_set_up_wrong_fails_the_agent(setup):
     runner = LoopRunner(transport(call), [tool_], runtime=ToolRuntime())
     report = await AgentHost(runner, stagger=FAST).run(inputs(1))
     (agent,) = report.agents
-    assert agent.status == "failed" and agent.error.startswith("RuntimeError: ")
+    assert agent.status == "failed" and agent.error.startswith("ToolSetupError: ")
     assert expected in agent.error
+    assert issubclass(ToolSetupError, RuntimeError)
+
+
+class RefusingService(FakeService):
+    async def call(self, uid, tool, args, *, idempotent=False):
+        raise RuntimeError("the server refused the call")
+
+
+async def test_a_tools_own_runtime_error_reaches_the_model():
+    """Only a runtime set up wrong (``ToolSetupError``) fails the agent; a
+    ``RuntimeError`` of the tool's own, such as ``NotImplementedError`` from a
+    ``suspend``, a ``prepare`` out of slots or an MCP server's refusal, is the
+    call's error, which the model reads."""
+    session = await thread_session()
+
+    def no_slot(agent_id, call_id, args):
+        raise RuntimeError("no slot left")
+
+    def not_yet(agent_id, args):
+        raise NotImplementedError("no policy for this")
+
+    seen = []
+
+    def script(messages):
+        results = tool_results(messages)
+        if results:
+            seen.extend(results)
+            return reply("done")
+        return reply(calls=[("a", "prepared", {"x": 1.0}), ("b", "queued", {"x": 2.0}), ("c", "lookup", {"material": "x"})])
+
+    lookup = mcp_tool("lookup", description="Look up.", args_schema=LookupArgs)
+    runner = LoopRunner(
+        ScriptedTransport(script),
+        [task_tool(simulate, name="prepared", prepare=no_slot), task_tool(simulate, name="queued", suspend=not_yet), lookup],
+        runtime=ToolRuntime(session, RefusingService()),
+    )
+    report = await AgentHost(runner, stagger=FAST).run(inputs(1))
+    await session.close()
+    assert report.finished == 1
+    by_id = {m["tool_call_id"]: m["content"] for m in seen}
+    assert by_id["a"] == "Error: RuntimeError('no slot left')\n Please fix your mistakes."
+    assert by_id["b"] == "Error: NotImplementedError('no policy for this')\n Please fix your mistakes."
+    assert by_id["c"] == "lookup failed: RuntimeError: the server refused the call"
+
+
+# --- inputs ------------------------------------------------------------------------
+
+
+async def test_a_role_and_content_tuple_is_one_message():
+    """As LangGraph reads it."""
+    model = ScriptedTransport(lambda messages: reply("ok"))
+    runner = LoopRunner(model)
+    await AgentHost(runner, stagger=FAST).run(
+        [Agent("a", ("user", "hello")), Agent("b", [("system", "be brief"), ("human", "hi")])]
+    )
+    sent = sorted((m for m, _, _ in model.calls), key=len)
+    assert sent[0] == [{"role": "user", "content": "hello"}]
+    assert sent[1] == [{"role": "system", "content": "be brief"}, {"role": "user", "content": "hi"}]
+
+
+async def test_calls_in_an_input_history_that_the_conversation_moved_past_do_not_run():
+    """A history whose assistant message has calls with no results, followed
+    by a user's message: those calls are history, not pending work; only
+    calls followed by nothing but tool results are, as when an agent
+    resumes."""
+    ran = []
+
+    def act(x: int) -> str:
+        """Act."""
+        ran.append(x)
+        return "did"
+
+    model = ScriptedTransport(lambda messages: reply("ok"))
+    history = [
+        {"role": "user", "content": "hi"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{"id": "old", "type": "function", "function": {"name": "act", "arguments": '{"x": 9}'}}],
+        },
+        {"role": "user", "content": "a new question"},
+    ]
+    report = await AgentHost(LoopRunner(model, [act]), stagger=FAST).run([Agent("a", {"messages": history})])
+    assert report.finished == 1 and ran == []
+    (sent, _, _), *_ = model.calls
+    assert sent == history
+    # with nothing but a result after it, the other call is pending, and runs first
+    pending = [*history[:2], {"role": "tool", "tool_call_id": "other", "content": "x"}]
+    pending[1] = {
+        **pending[1],
+        "tool_calls": [
+            {"id": "other", "type": "function", "function": {"name": "act", "arguments": '{"x": 1}'}},
+            pending[1]["tool_calls"][0],
+        ],
+    }
+    await AgentHost(LoopRunner(model, [act]), stagger=FAST).run([Agent("b", {"messages": pending})])
+    assert ran == [9]
+
+
+async def test_text_reaches_the_model_as_written():
+    """A tool's result and the reply's arguments keep non-ASCII text, as
+    LangChain's ToolNode and langchain-openai send them."""
+
+    def city(name: str) -> dict:
+        """A city's note."""
+        return {"name": name, "note": "Zürich ✓"}
+
+    model = transport(("city", {"name": "Zürich"}))
+    await AgentHost(LoopRunner(model, [city]), stagger=FAST).run(inputs(1))
+    _, (second, _, _) = model.calls
+    assert second[1]["tool_calls"][0]["function"]["arguments"] == '{"name": "Zürich"}'
+    assert second[2]["content"] == '{"name": "Zürich", "note": "Zürich ✓"}'
+
+
+async def test_a_sync_inline_tool_runs_off_the_event_loop():
+    """In a thread, as ToolNode runs one, so that a slow tool does not stall
+    every agent; with the agent's context, so its accounting and spans hold."""
+    seen = {}
+
+    def slow(x: int) -> int:
+        """Slow."""
+        seen[x] = (threading.get_ident(), _agents.current_agent())
+        time.sleep(0.2)
+        return x
+
+    async def fast(x: int) -> int:
+        """Fast."""
+        seen[-x] = (threading.get_ident(), _agents.current_agent())
+        return x
+
+    loop_thread = threading.get_ident()
+    ticks, done = [], asyncio.Event()
+
+    async def ticker():
+        while not done.is_set():
+            t0 = time.monotonic()
+            await asyncio.sleep(0.01)
+            ticks.append(time.monotonic() - t0)
+
+    tick = asyncio.create_task(ticker())
+    model = ScriptedTransport(dict_calls_then_answer(("slow", {"x": 1}), ("fast", {"x": 1})))
+    await AgentHost(LoopRunner(model, [slow, fast]), stagger=FAST).run(inputs(4))
+    done.set()
+    await tick
+    assert seen[1][0] != loop_thread and seen[1][1] is not None
+    assert seen[-1] == (loop_thread, seen[-1][1])
+    assert max(ticks) < 0.15  # four agents' 0.2 s tools did not hold the loop
 
 
 # --- concurrency ----------------------------------------------------------------
@@ -702,7 +852,10 @@ async def test_an_inline_tools_span_says_how_it_ended(span_exporter):
     failed, stopped = spans["execute_tool fails"], spans["execute_tool stops"]
     assert failed.attributes["flowgentic.tool.outcome"] == "error"
     assert failed.attributes["error.type"] == "ValueError"
+    assert failed.status.status_code == StatusCode.ERROR  # as a task's
+    assert [e.name for e in failed.events] == ["exception"]
     assert stopped.attributes["flowgentic.tool.outcome"] == "interrupted"
+    assert stopped.status.status_code != StatusCode.ERROR
 
 
 # --- runners side by side ------------------------------------------------------------
