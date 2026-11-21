@@ -58,9 +58,16 @@ on a laptop.
 - **Its tools' schemas come from pydantic**: a task or MCP tool's
   `args_schema`, or the function's signature and type hints. An inline tool is
   a plain function, `async` or not; one with `name`, `description` and
-  `args_schema` attributes uses them. A sync one runs in a thread, with the
-  agent's context, as LangChain's `ToolNode` runs one, so that a slow tool
-  does not hold the event loop, and every agent of the process with it.
+  `args_schema` attributes uses them. A sync one runs in a worker thread of
+  the runner's own (up to `min(32, CPUs + 4)`), with the agent's context, as
+  LangChain's `ToolNode` runs one, so that a slow tool does not hold the
+  event loop, and every agent of the process with it; not on the loop's
+  default executor, which also resolves host names for the model's
+  connections. So a sync inline tool must be thread-safe: a `sqlite3`
+  connection made on another thread, for one, refuses to work there; make it
+  in the tool, or with `check_same_thread=False` and a lock, or make the tool
+  `async def`, which runs on the loop. `runner.close()` ends the threads,
+  once their calls end, as collecting the runner does.
 - **It runs the calls of one reply concurrently.** Task tools run as RHAPSODY
   tasks and MCP tools through the tool service, on the `ToolRuntime`; inline
   tools run in the agent's process. The results go back to the model in the
@@ -87,8 +94,16 @@ on a laptop.
   run again. A later turn that reuses a call id, as a model server that
   numbers its calls per reply does, makes a new call, and so does another
   runner in the process whose agents have the same ids, through its own
-  runtime or a shared one. Runners that share a store need their own
-  `key_prefix` if their agents' ids can be the same.
+  runtime or a shared one. The token is saved with a suspended agent's state,
+  so a runner that resumes an agent another runner suspended, through a
+  shared runtime and store, finds the agent's task too.
+- **Runners that share a store share its keys.** A suspended agent's state is
+  under `key_prefix` and its id, so two runners on one store whose agents can
+  have the same ids, as two populations numbered from `agent-0`, must each
+  have their own `key_prefix`: otherwise one's suspension overwrites the
+  other's state. The runner cannot tell this from a hand-over, in which a
+  second runner resumes the first's agents on purpose, so it does not check
+  it.
 - **It returns tool errors to the model.** A tool that raises, arguments its
   schema refuses, a tool that does not exist, arguments that are not valid
   JSON, a task tool's `prepare` or `suspend` that raises, a failed task or MCP
@@ -124,7 +139,12 @@ takes it; anything else fails the agent with a `TypeError` before its first
 model call. The loop copies the input and never changes the caller's list.
 `Agent.config` is not read. Tool calls in an input history run first only if
 nothing but tool results follows them, as in a conversation cut at a tool
-call; calls that a later message moved past stay history.
+call. A call that a later message moved past without a result gets one that
+says it was not run, before that message: a server requires a result for
+every call, and such a history, as when a user asked something else instead,
+is still a conversation the agent can go on with, which failing the agent
+would refuse. Text that UTF-8 cannot carry, such as a lone surrogate in a
+file name Linux could not decode, reaches the model as its escape.
 
 ## LangChain, through its adapter
 

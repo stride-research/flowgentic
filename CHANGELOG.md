@@ -197,7 +197,21 @@ decision record.
   resumed at once, for ever. A suspended agent waits on the tasks it
   registered itself, before any other registration of the same key in the
   process, so two hosts in one process can run agents with the same ids.
-  The `examples` extra, for the AsyncFlow path's demos, keeps LangGraph.
+- The `examples` extra, for the AsyncFlow path's demos, keeps LangGraph.
+- The agent loop saves its turn's token with a suspended agent's state, so a
+  runner that resumes an agent another runner suspended, on a shared runtime
+  and store, finds its task; sync inline tools run on the runner's own
+  threads (`runner.close()` ends them), and must be thread-safe; tool calls
+  in an input history that a later message moved past get a result saying
+  they were not run; text that UTF-8 cannot carry, a lone surrogate, goes as
+  its escape.
+- The transports: a given client left at httpx's default 5 s gets 600 s, as
+  with the SDK, and `transport.timeout` is the timeout calls get; `aclose()`,
+  on both, refuses new calls and returns at once, the clients closing when
+  their calls end; an error object with status 200 is read by its `code`, so
+  OpenRouter's 429 and 502 are transient; a header with a line break or
+  non-ASCII text is a non-transient error; a 401 without a key says where
+  `OPENAI_API_KEY` goes.
 - The `asyncflow` extra is `radical-asyncflow>=0.7,<0.8` (was `>=0.6,<0.7`).
   AsyncFlow 0.7 sets a task's uid when the task is called, which the decision
   record needs, and its `task` spans name the backend each task ran on, where

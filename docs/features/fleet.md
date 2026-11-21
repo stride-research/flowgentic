@@ -91,7 +91,16 @@ server's message, its `status_code` and its `body`:
 | `ServerUnavailable` | no answer (a refused or dropped connection), a timeout, a 5xx, or a busy server's 408, 409 or 429, which the `openai` SDK retries too | yes |
 | `AuthenticationFailed` | 401, as from a server restarted with a new key | yes |
 | `RequestRejected` | any other 4xx, such as a context too long | no |
-| `ModelServerError` itself | a completion with no choices (an error object with status 200, as some vLLM releases send), a reply that is not JSON or that httpx cannot decode, too many redirects | no |
+| `ModelServerError` itself | a completion with no choices and no error code, a reply that is not JSON or that httpx cannot decode, too many redirects, a header that cannot be sent (a line break, non-ASCII text), a call after `aclose()` | no |
+
+An error object that a server sends with status 200 and no choices, as some
+vLLM releases and OpenRouter do, is read by its `code` as an HTTP status: an
+OpenRouter 429 or 502 is `ServerUnavailable`, vLLM's 400 `RequestRejected`;
+`status_code` carries the code. A 401 from a server that is not OpenAI's,
+with no `api_key` given, says that `OPENAI_API_KEY` is sent to
+api.openai.com only. Text that UTF-8 cannot carry, such as a lone surrogate
+in a file name Linux could not decode, goes as its escape, as `ensure_ascii`
+writes it, rather than failing every later call.
 
 `Recovery` waits out a transient one, and the `openai` SDK's errors of the same
 kinds. It sends the call again once its check finds the server, after
@@ -103,11 +112,16 @@ open another client, with its own pool, whenever each one holds
 `calls_per_pool` calls: 8 for `HTTPTransport`, 64 for `OpenAITransport`. A
 replica with 512 calls in flight then has 64 clients of `HTTPTransport`, one
 with a few calls has one. `pools=N` fixes the number of clients instead.
-`HTTPTransport`'s pools share one SSL context, and `aclose()` closes them
-once their calls have ended; the fleet closes a transport that `Recovery`
-replaces. A `client` given, an `httpx.AsyncClient`, is the only one: it keeps
-its own timeout and headers unless the transport is given a `timeout` or an
-`api_key`, and the transport never closes it.
+`HTTPTransport`'s pools share one SSL context. `aclose()`, on both
+transports, refuses new calls at once and returns, and the clients the
+transport made close as soon as their calls in flight end; the fleet closes a
+transport that `Recovery` replaces. A `client` given (an `httpx.AsyncClient`;
+for `OpenAITransport`, an `AsyncOpenAI`) is the only one, and the transport
+never closes it. It keeps its own headers unless the transport is given an
+`api_key`, and its own timeout unless the transport is given a `timeout`, or
+the client has httpx's default of 5 s, which a model call outlasts: it then
+gets the transport's 600 s, as the `openai` SDK does with a bare
+`http_client`. `transport.timeout` is the timeout its calls get.
 
 Measured against a local stub server that answers after a vLLM server's time
 at each load (1.3 s at 64 calls in flight, 8.9 s at 512), on an AMD EPYC 7502P
@@ -160,11 +174,11 @@ unchanged, and the reply's `raw` is the model's own `AIMessage`.
   once for all its replicas. Choose the cap and `share` so that the largest
   context fits in one share.
 - **It waits out a server that went away.** With `Recovery(check)`, a call
-  that fails because its server is down, restarting or overloaded (a
-  connection error, a timeout, a 5xx, or a 401 after a new key: a transient
-  `ModelServerError`, or the `openai` SDK's error of that kind) gives up its
-  place, waits for the replica to come back, and is sent again. Other errors
-  fail at once.
+  that fails because its server is down, restarting, overloaded or busy (a
+  connection error, a timeout, a 5xx, a busy server's 408, 409 or 429, or a
+  401 after a new key: a transient `ModelServerError`, or the `openai` SDK's
+  error of that kind) gives up its place, waits for the replica to come back,
+  and is sent again. Other errors fail at once.
 
   `check` is an `async def`: `check(i)` returns replica `i`'s transport once
   its server serves again (a new one if its address or key changed), or
@@ -186,11 +200,17 @@ unchanged, and the reply's `raw` is the model's own `AIMessage`.
   `check` did not answer.
 
 ```python
+endpoints = {i: (url, key) for i, (url, key) in enumerate(servers)}
+
 async def check(i: int):
     url, key = read_endpoint(i)            # the application's: where replica i serves now
     if not await healthy(url):             # for example, GET /health with its own timeout
         return None
-    return HTTPTransport(model, base_url=url, api_key=key)
+    if endpoints[i] == (url, key):         # the same server: keep its transport and pools
+        return replicas[i]
+    endpoints[i] = (url, key)              # moved or rekeyed: a new transport;
+    replicas[i] = HTTPTransport(model, base_url=url, api_key=key)
+    return replicas[i]                     # the fleet closes the one it replaces
 
 fleet = Fleet(replicas, recovery=Recovery(check, outage_s=1_800, poll_s=5))
 ```
@@ -241,7 +261,12 @@ reply, not the thinking.
 
 `fleet.chat_model()` is the fleet as a LangChain chat model
 (`flowgentic.langchain.FleetChatModel`, which `flowgentic.fleet` still
-names), for prebuilt
+names; without LangChain, `flowgentic.fleet.FleetChatModel` raises an
+`AttributeError` that names the `langgraph` extra, so that `hasattr` and
+`import *` work, and `from flowgentic.fleet import FleetChatModel` a plain
+`ImportError`: Python turns a module's `AttributeError` into that, without
+its message, for a `from` import. `from flowgentic.langchain import
+FleetChatModel` names the extra), for prebuilt
 agents such as LangChain's `create_agent` and LangGraph's
 `create_react_agent`, and for graphs that expect one. Its `bind_tools` and
 `with_structured_output` work as a chat model's do.
