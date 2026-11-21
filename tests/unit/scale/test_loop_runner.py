@@ -1207,4 +1207,6 @@ async def test_an_agent_whose_state_is_lost_fails_on_resume():
     await session.close()
     (agent,) = report.agents
     assert agent.status == "failed"
-    assert agent.error == "RuntimeError: agent 'agent-0' has no saved state under 'loop/agent-0'"
+    assert agent.error.startswith("RuntimeError: agent 'agent-0' has no saved state under 'loop/agent-0'")
+    # the likeliest cause: another runner on the store, with the same ids and key_prefix
+    assert "key_prefix" in agent.error
