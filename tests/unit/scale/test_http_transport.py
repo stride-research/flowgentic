@@ -8,6 +8,7 @@ import asyncio
 import json
 import re
 import socket
+import ssl
 from pathlib import Path
 
 import httpx
@@ -21,9 +22,11 @@ from flowgentic.fleet import (
     Recovery,
     RequestRejected,
     ServerUnavailable,
+    Reply,
     ToolCall,
     Transport,
     Usage,
+    parse_completion,
 )
 
 COMPLETIONS = sorted((Path(__file__).parent / "completions").glob("*.json"))
@@ -151,9 +154,12 @@ def test_the_transport_makes_its_client(monkeypatch):
     assert transport.calls_per_pool == 8 and transport.pools is None
     (client,) = transport.clients
     assert client.headers["authorization"] == "Bearer EMPTY"
-    assert client.timeout == httpx.Timeout(600.0)
-    transport = HTTPTransport("m", base_url=URL, timeout=5)
-    assert transport.clients[0].timeout == httpx.Timeout(5.0)
+    # a server that does not take the connection fails in 5 s, as with the SDK
+    assert client.timeout == httpx.Timeout(600.0, connect=5.0)
+    transport = HTTPTransport("m", base_url=URL, timeout=2)
+    assert transport.clients[0].timeout == httpx.Timeout(2.0, connect=2.0)
+    transport = HTTPTransport("m", base_url=URL, timeout=None)  # waits for ever
+    assert transport.clients[0].timeout == httpx.Timeout(None, connect=5.0)
 
 
 def test_only_openais_own_api_gets_the_openai_key_from_the_environment(monkeypatch):
@@ -170,6 +176,130 @@ def test_only_openais_own_api_gets_the_openai_key_from_the_environment(monkeypat
 
 
 # --- errors ------------------------------------------------------------------------
+
+
+async def test_a_given_client_keeps_its_own_settings_unless_told_otherwise():
+    """A client the caller gives keeps its timeout and its Authorization,
+    unless the transport is given a timeout or a key of its own."""
+    seen = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        seen.append((request.headers.get("authorization"), request.extensions["timeout"]))
+        return httpx.Response(200, json=ANSWER)
+
+    def client():
+        return httpx.AsyncClient(
+            transport=httpx.MockTransport(handle),
+            headers={"Authorization": "Bearer MINE"},
+            timeout=7.0,
+        )
+
+    await HTTPTransport("m", base_url=URL, client=client()).complete(HI)
+    await HTTPTransport("m", base_url=URL, client=client(), timeout=30, api_key="k").complete(HI)
+    (mine, mine_timeout), (given, given_timeout) = seen
+    assert mine == "Bearer MINE" and mine_timeout["read"] == 7.0
+    assert given == "Bearer k" and given_timeout["read"] == 30 and given_timeout["connect"] == 5.0
+
+
+async def test_all_its_pools_share_one_ssl_context_and_close(monkeypatch):
+    """Each pool would otherwise build an SSL context of its own, on the event
+    loop; ``aclose`` closes the clients the transport made, once their calls
+    have ended, and never a client it was given."""
+    pools = Pools(monkeypatch)  # records each made client's options
+    transport = HTTPTransport("m", base_url="https://node-1:8443/v1", calls_per_pool=2)
+    calls = [asyncio.create_task(transport.complete(HI)) for _ in range(5)]
+    while pools.now() < 5:
+        await asyncio.sleep(0)
+    contexts = {id(k["verify"]) for k in pools.kwargs}
+    assert len(pools.kwargs) == 3 and len(contexts) == 1
+    assert isinstance(pools.kwargs[0]["verify"], ssl.SSLContext)
+    await transport.aclose()  # calls in flight: they end first
+    pools.gate.set()
+    await asyncio.gather(*calls)
+    await asyncio.sleep(0)
+    assert all(c.is_closed for c in transport.clients)
+    given = mocked(lambda request: httpx.Response(200, json=ANSWER))
+    alone = HTTPTransport("m", base_url=URL, client=given)
+    await alone.aclose()
+    assert not given.is_closed
+
+
+async def test_recovery_closes_the_transport_it_replaces():
+    """A replica that Recovery replaces, with a new address or key, is closed,
+    so its pools and their SSL contexts do not pile up."""
+    port = free_port()
+    old = HTTPTransport("m", base_url=f"http://127.0.0.1:{free_port()}/v1")
+    servers = []
+
+    async def check(i):
+        if not servers:
+            servers.append(await answering(port, ANSWER))
+        return HTTPTransport("m", base_url=f"http://127.0.0.1:{port}/v1")
+
+    fleet = Fleet([old], recovery=Recovery(check, poll_s=0.02))
+    try:
+        await asyncio.wait_for(fleet.ainvoke("a", HI), 5)
+        for _ in range(20):
+            if all(c.is_closed for c in old.clients):
+                break
+            await asyncio.sleep(0.01)
+    finally:
+        for server in servers:
+            server.close()
+            await server.wait_closed()
+    assert fleet._core.replicas[0] is not old
+    assert all(c.is_closed for c in old.clients)
+
+
+def test_a_base_url_must_be_an_http_url():
+    """A ``base_url`` without a scheme is a set-up error, refused when the
+    transport is made, not a server down for ``Recovery`` to wait out."""
+    for url in ("127.0.0.1:9/v1", "localhost:8000/v1", "node-1/v1", "ftp://node-1/v1"):
+        with pytest.raises(ValueError, match="base_url"):
+            HTTPTransport("m", base_url=url)
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [httpx.UnsupportedProtocol("no scheme"), httpx.DecodingError("bad gzip"), httpx.TooManyRedirects("loop")],
+    ids=["protocol", "decoding", "redirects"],
+)
+async def test_a_request_httpx_cannot_make_or_read_is_not_transient(exc):
+    with pytest.raises(ModelServerError) as raised:
+        await HTTPTransport("m", base_url=URL, client=raising(exc)).complete(HI)
+    assert raised.value.transient is False and type(raised.value) is ModelServerError
+    assert isinstance(raised.value.__cause__, httpx.RequestError)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [{"object": "error", "message": "boom", "code": 400}, {"choices": []}, {"id": "x"}],
+    ids=["vllm-error", "no-choices", "nothing"],
+)
+async def test_a_completion_without_choices_is_an_error_not_an_empty_answer(body):
+    """An error object with status 200, or a completion with no choices, would
+    otherwise end the agent with an empty answer."""
+    with pytest.raises(ModelServerError, match="no choices") as raised:
+        await HTTPTransport("m", base_url=URL, client=recorded([body], [])).complete(HI)
+    assert raised.value.transient is False and raised.value.body == body
+    if "message" in body:
+        assert "boom" in str(raised.value)
+    with pytest.raises(ModelServerError, match="no choices"):
+        parse_completion(body)
+
+
+def test_the_conversation_keeps_text_as_written():
+    """Arguments and text reach the model as written, not escaped to ASCII,
+    as LangChain's ToolNode and langchain-openai send them."""
+    reply = Reply("Grüße", (ToolCall("a", "city", {"name": "Zürich ✓"}),))
+    assert reply.message()["tool_calls"][0]["function"]["arguments"] == '{"name": "Zürich ✓"}'
+    parsed = parse_completion({"choices": [{"message": {"content": [{"type": "text", "text": "Zürich"}]}}]})
+    assert "Zürich" in parsed.content
+
+
+def test_an_empty_reasoning_field_does_not_hide_reasoning_content():
+    completion = {"choices": [{"message": {"content": "x", "reasoning": "", "reasoning_content": "think"}}]}
+    assert parse_completion(completion).reasoning == "think"
 
 
 def failing(status, body):
