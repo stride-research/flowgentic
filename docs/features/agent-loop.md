@@ -62,7 +62,12 @@ on a laptop.
 - **It runs the calls of one reply concurrently.** Task tools run as RHAPSODY
   tasks and MCP tools through the tool service, on the `ToolRuntime`; inline
   tools run in the agent's process. The results go back to the model in the
-  order of the calls.
+  order of the calls. Each call is an `execute_tool` span, an inline tool's
+  too (`flowgentic.tool.kind` `inline`). A task's
+  [decision record](tools.md#the-decision-record) commits at the reply that
+  asked for it, through a fleet or a transport alone. A task tool the runtime
+  cannot run, such as one naming a backend the session lacks, is refused when
+  the runner is made (`ToolRuntime.check`).
 - **It suspends an agent on a task tool that suspends.** The loop saves the
   agent's state, its messages and its count of model calls, to the store with
   one put, and returns `Suspended`. The host awaits the task; the loop reads

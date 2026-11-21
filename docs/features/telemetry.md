@@ -22,7 +22,7 @@ LangChain instrumentation; see the end of this section.
 | --- | --- |
 | `invoke_agent <identity>`, one per call of an agent bound with `bind_agent` | Flowgentic |
 | `invoke_agent`, one per agent an agent host runs, with a `flowgentic.agent.suspend` event per suspension; see [the agent host's spans](#the-agent-hosts-spans) | Flowgentic |
-| `execute_tool <tool>`, one per call of a task or MCP tool from `flowgentic.tools`; see [Tool placement](tools.md#what-it-reports) | Flowgentic |
+| `execute_tool <tool>`, one per call of a task or MCP tool from `flowgentic.tools`, and of an inline tool on the [agent loop](agent-loop.md); see [Tool placement](tools.md#what-it-reports) | Flowgentic |
 | `chat <model>`, one per try of a model call through the fleet or the agent loop's transport, with the usage the server reported; see [Fleet](fleet.md#what-it-reports). With LangChain replicas and the LangChain instrumentation on, the instrumentation's `chat` span takes its place | Flowgentic |
 | `accept <name>`, one per call of `accept`, with an `accept.attempt <name>` span per attempt and a `gen_ai.evaluation.result` event per check that ran; see [Acceptance](acceptance.md) | Flowgentic |
 | `chat <model>`, `execute_tool <tool>`, `invoke_workflow <graph>` | OpenTelemetry's GenAI instrumentation for LangChain, with its OpenAI instrumentation |

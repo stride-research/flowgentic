@@ -232,7 +232,8 @@ class TaskRecord:
 	Times are ``time.time()``, in the agent's process, in this order.
 	``t_commit``: when the agent committed to the call: when the model reply
 	that made the call (by its id) reached the agent, if the model runs through
-	a ``flowgentic.fleet.Fleet`` and the agent in an ``AgentHost``; otherwise
+	a ``flowgentic.fleet.Fleet``, or through ``flowgentic.loop``'s transport, and
+	the agent in an ``AgentHost``; otherwise
 	``t_submit``. If one agent's parallel branches get replies that reuse a
 	call id, each such call is dated by the latest of them. ``t_submit``: when
 	the runtime got the call. ``t_admit``: when

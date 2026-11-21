@@ -37,7 +37,10 @@ decision record.
   `LoopOutput.structured_response`, a `trim` hook shapes the history before
   each model call, and an inline tool that raises `Interrupt(value)` ends its
   agent as interrupted, with an `Interruption`. The agent's states and spans
-  are counted as the host's other parts count them. See the agent loop page.
+  are counted as the host's other parts count them, and each tool call,
+  inline ones included, is an `execute_tool` span. A task's decision record
+  commits at the reply that asked for it, and a task tool the runtime cannot
+  run is refused when the runner is made. See the agent loop page.
 - `flowgentic.fleet.Transport`: what a fleet's replica, or the loop's model,
   is. Its `async complete(messages, tools=None, **kwargs)` takes OpenAI-format
   messages, the tools' JSON schemas and the call's keywords, and returns a

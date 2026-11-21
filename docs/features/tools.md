@@ -205,7 +205,7 @@ call (`record.info.call_id`), and says where the task ran and when:
 | --- | --- |
 | `uid` | The task's uid in AsyncFlow or RHAPSODY; `None` if it was never submitted |
 | `backend` | The backend it was for: the tool's, else the runtime's, else, on an engine, the engine's default, and on a session the one the session sent it to |
-| `t_commit` | When the agent committed to the call: when the model reply that made the call reached the agent, for a model run through a [fleet](fleet.md) in an agent the [host](agent-host.md) runs; otherwise `t_submit` |
+| `t_commit` | When the agent committed to the call: when the model reply that made the call reached the agent, for a model run through a [fleet](fleet.md), or through the [agent loop](agent-loop.md)'s transport, in an agent the [host](agent-host.md) runs; otherwise `t_submit` |
 | `t_submit` | When the runtime got the call |
 | `t_admit` | When its order admitted it and the runtime submitted it; `None` if it never was |
 | `t_start` | When the backend reported it running: AsyncFlow's `TaskStarted` event, from the telemetry the runtime was given |

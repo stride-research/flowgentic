@@ -1104,9 +1104,7 @@ class Fleet:
 	) -> Reply:
 		t_end = time.time()
 		# when the agent committed to the reply's tool calls
-		_agents.note_reply(
-			agent_id, t_end, [c["id"] for c in reply.tool_calls if c.get("id")]
-		)
+		_agents.note_reply(agent_id, t_end, [c.id for c in reply.tool_calls if c.id])
 		core.calls[i] += 1
 		usage = reply.usage or Usage()
 		prompt = usage.prompt_tokens or 0

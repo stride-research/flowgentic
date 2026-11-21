@@ -75,6 +75,7 @@ import inspect
 import json
 import logging
 import sys
+import time
 import typing
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
@@ -83,7 +84,7 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError, create_model
 
-from flowgentic import _agents
+from flowgentic import _agents, _telemetry
 from flowgentic._agents import AgentState
 from flowgentic.fleet import Fleet, Reply, _as_transport, _complete
 from flowgentic.host import Agent, Finished, Interrupted, Step, Suspended
@@ -243,6 +244,8 @@ class LoopRunner:
 						f"{tool.name} is a task or MCP tool: the runner needs a "
 						"ToolRuntime (runtime=...)"
 					)
+				if isinstance(tool, TaskTool):
+					runtime.check(tool)  # set up wrong: fails here, not in an agent
 				schema = tool.args_schema
 				if schema is None and isinstance(tool, TaskTool):
 					schema = _signature_schema(tool.name, tool.fn)
@@ -366,11 +369,17 @@ class LoopRunner:
 		sent = messages if self._system is None else [self._system, *messages]
 		tools = self.tool_schemas or None
 		if self._fleet is not None:
+			# the fleet notes the reply's tool calls for the tasks' records
 			return await self._fleet.ainvoke(
 				agent_id, sent, tools=tools, **self.model_kwargs
 			)
 		with _agents.activity(AgentState.MODEL_REQUEST):
-			return await _complete(self._transport, sent, tools, self.model_kwargs)
+			reply = await _complete(self._transport, sent, tools, self.model_kwargs)
+		# when the agent committed to the reply's tool calls
+		_agents.note_reply(
+			agent_id, time.time(), [c.id for c in reply.tool_calls if c.id]
+		)
+		return reply
 
 	def _parse(self, reply: Reply) -> BaseModel | None:
 		try:
@@ -462,20 +471,50 @@ class LoopRunner:
 		return await self._inline(call, tool, args)
 
 	async def _inline(self, call: _Call, tool: _Inline, args: dict) -> _Result:
-		try:
-			if tool.with_call_id:
-				out = tool.fn(**args, _call_id=call.id)
-			else:
-				out = tool.fn(**args)
-			if inspect.isawaitable(out):
-				out = await out
-		except Interrupt as stop:
-			stop.__traceback__ = None  # keeps no frame of the tool's run
-			return _Result(interrupt=stop)
-		except ValidationError as exc:
-			return _error(call, ERROR.format(error=f"ValidationError: {exc}"))
-		except Exception as exc:  # the model reads what went wrong
-			return _error(call, ERROR.format(error=repr(exc)))
+		"""Run an inline tool in an ``execute_tool`` span, as a task's and an
+		MCP tool's calls are."""
+		t = time.monotonic()
+		outcome = "error"
+		with _telemetry.tracer.start_as_current_span(
+			f"{_telemetry.EXECUTE_TOOL} {tool.name}",
+			attributes={
+				_telemetry.GEN_AI_OPERATION_NAME: _telemetry.EXECUTE_TOOL,
+				_telemetry.GEN_AI_TOOL_NAME: tool.name,
+				_telemetry.GEN_AI_TOOL_CALL_ID: call.id,
+				_telemetry.TOOL_KIND: "inline",
+			},
+		) as span:
+			try:
+				if tool.with_call_id:
+					out = tool.fn(**args, _call_id=call.id)
+				else:
+					out = tool.fn(**args)
+				if inspect.isawaitable(out):
+					out = await out
+				outcome = "ok"
+			except Interrupt as stop:
+				outcome = "interrupted"
+				stop.__traceback__ = None  # keeps no frame of the tool's run
+				return _Result(interrupt=stop)
+			except asyncio.CancelledError:
+				outcome = "cancelled"
+				raise
+			except ValidationError as exc:
+				span.set_attribute(_telemetry.ERROR_TYPE, type(exc).__qualname__)
+				return _error(call, ERROR.format(error=f"ValidationError: {exc}"))
+			except Exception as exc:  # the model reads what went wrong
+				span.set_attribute(_telemetry.ERROR_TYPE, type(exc).__qualname__)
+				return _error(call, ERROR.format(error=repr(exc)))
+			finally:
+				span.set_attribute(_telemetry.TOOL_OUTCOME, outcome)
+				_telemetry.TOOL_DURATION.record(
+					time.monotonic() - t,
+					{
+						_telemetry.GEN_AI_TOOL_NAME: tool.name,
+						_telemetry.TOOL_KIND: "inline",
+						_telemetry.TOOL_OUTCOME: outcome,
+					},
+				)
 		return _ok(call, out)
 
 	async def _task(
