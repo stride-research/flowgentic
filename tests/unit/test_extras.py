@@ -278,6 +278,54 @@ def test_the_agents_extra_installs_the_path_without_langgraph() -> None:
 	assert "langgraph" in extras["examples"][0]
 
 
+def test_the_fleet_imports_with_a_star_without_langchain() -> None:
+	"""``from flowgentic.fleet import *`` works on the agents extra.
+	``FleetChatModel``, LangChain's, is not there, ``hasattr`` says so, and
+	naming it says which extra to install."""
+	result = run_without(
+		LANGGRAPH,
+		"""
+		import flowgentic.fleet as fleet
+		from flowgentic.fleet import *
+		print(hasattr(fleet, "FleetChatModel"), "FleetChatModel" in fleet.__all__)
+		try:
+			fleet.FleetChatModel
+		except AttributeError as exc:
+			print(exc)
+		""",
+	)
+	assert result.returncode == 0, result.stderr
+	first, second = result.stdout.strip().splitlines()
+	assert first == "False False"
+	assert "install flowgentic[langgraph]" in second
+
+
+def test_the_fleet_still_names_fleet_chat_model_with_langchain() -> None:
+	pytest.importorskip("langchain_core")
+	import flowgentic.fleet
+	import flowgentic.langchain
+
+	assert flowgentic.fleet.FleetChatModel is flowgentic.langchain.FleetChatModel
+
+
+def test_the_examples_graph_version_names_its_extra() -> None:
+	"""``campaign.py --runner graph`` on the agents extra stops at once, saying
+	which extra to install."""
+	example = Path(__file__).resolve().parents[2] / "examples" / "agents-at-scale" / "campaign.py"
+	result = run_without(
+		LANGGRAPH,
+		f"""
+		import importlib.util
+		spec = importlib.util.spec_from_file_location("campaign", {str(example)!r})
+		module = importlib.util.module_from_spec(spec)
+		spec.loader.exec_module(module)
+		module.main(["--runner", "graph", "--agents", "1"])
+		""",
+	)
+	assert result.returncode != 0
+	assert "install flowgentic[langgraph]" in result.stderr.strip().splitlines()[-1]
+
+
 @pytest.mark.parametrize(
 	"missing", ["langchain_core", "langchain_openai", "langchain_ollama"]
 )
