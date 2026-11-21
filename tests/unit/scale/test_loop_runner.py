@@ -668,13 +668,98 @@ async def test_the_host_records_the_loops_spans_and_suspensions(span_exporter, l
     assert len(agents) == 3 and len(tools) == 3 and len(chats) == 6
     assert all(s.parent.span_id in agents for s in tools + chats)  # each under its agent
     assert all(t.attributes["gen_ai.tool.call.id"] == "call-0" for t in tools)
+    # an inline tool's call is an execute_tool span too, as a task's and an MCP tool's are
+    notes = [s for s in spans if s.name == "execute_tool note"]
+    assert len(notes) == 3 and all(s.parent.span_id in agents for s in notes)
+    for span in notes:
+        assert span.attributes["gen_ai.operation.name"] == "execute_tool"
+        assert span.attributes["gen_ai.tool.name"] == "note"
+        assert span.attributes["gen_ai.tool.call.id"] == "call-1"
+        assert span.attributes["flowgentic.tool.kind"] == "inline"
+        assert span.attributes["flowgentic.tool.outcome"] == "ok"
     assert all(c.attributes["gen_ai.usage.input_tokens"] == 10 for c in chats)
     assert {c.attributes["server.address"] for c in chats} == {"node-1"}
     suspends = [r for r in log_exporter.get_finished_logs() if r.log_record.event_name == "flowgentic.agent.suspend"]
     assert len(suspends) == 3
 
 
+async def test_an_inline_tools_span_says_how_it_ended(span_exporter):
+    def fails(x: float) -> float:
+        """Fail."""
+        raise ValueError("no")
+
+    def stops(x: float) -> float:
+        """Stop for a person."""
+        raise Interrupt({"ask": "approve?"})
+
+    model = transport(("fails", {"x": 1.0}), ("stops", {"x": 1.0}))
+    report = await AgentHost(LoopRunner(model, [fails, stops]), stagger=FAST).run(inputs(1))
+    assert report.outcomes == {"interrupted": 1}
+    spans = {s.name: s for s in span_exporter.get_finished_spans()}
+    failed, stopped = spans["execute_tool fails"], spans["execute_tool stops"]
+    assert failed.attributes["flowgentic.tool.outcome"] == "error"
+    assert failed.attributes["error.type"] == "ValueError"
+    assert stopped.attributes["flowgentic.tool.outcome"] == "interrupted"
+
+
+# --- the decision record -------------------------------------------------------------
+
+
+async def test_a_task_commits_when_the_model_reply_that_made_it_reached_the_agent():
+    """Each task's record commits at the reply that asked for it, not when the
+    runtime got the call: through a fleet, the end of the fleet's call
+    record; with a transport alone, when the loop got the reply."""
+    session = await thread_session()
+    calls, through_fleet, alone, answered = [], [], [], []
+    fleet = Fleet([transport(("simulate", {"x": 1.5}))])
+    fleet.add_listener(lambda record, reply: calls.append((record, reply)))
+    runtime = ToolRuntime(session)
+    runtime.add_listener(through_fleet.append)
+    await AgentHost(LoopRunner(fleet, [task_tool(simulate, suspend=True)], runtime=runtime), stagger=FAST).run(
+        inputs(3)
+    )
+
+    class Timed(ScriptedTransport):
+        async def complete(self, messages, tools=None, **kwargs):
+            out = await super().complete(messages, tools, **kwargs)
+            if out.tool_calls:
+                answered.append(time.time())
+            return out
+
+    own = ToolRuntime(session)
+    own.add_listener(alone.append)
+    model = Timed(dict_calls_then_answer(("simulate", {"x": 1.5})))
+    await AgentHost(LoopRunner(model, [task_tool(simulate, suspend=True)], runtime=own), stagger=FAST).run(
+        inputs(3, "solo")
+    )
+    await session.close()
+    replies = {record.agent_id: record.t_end for record, reply in calls if reply.tool_calls}
+    assert len(through_fleet) == 3 and len(replies) == 3
+    for record in through_fleet:
+        assert record.t_commit == replies[record.info.agent_id] < record.t_submit
+    assert len(alone) == 3 and len(answered) == 3
+    for record in alone:
+        assert min(answered) <= record.t_commit < record.t_submit
+
+
 # --- construction ------------------------------------------------------------------
+
+
+async def test_a_task_tool_the_runtime_cannot_run_is_refused_when_the_runner_is_made():
+    """As ``bind_tools`` does for a graph: a backend the session lacks fails
+    before any agent runs, not at an agent's first call."""
+    session = await thread_session()
+    try:
+        with pytest.raises(ValueError, match="no backend 'gpu'"):
+            LoopRunner(transport(), [task_tool(simulate, backend="gpu")], runtime=ToolRuntime(session))
+        with pytest.raises(ValueError, match="task_backend_specific_kwargs"):
+            LoopRunner(
+                transport(),
+                [task_tool(simulate, task_backend_specific_kwargs="cpus=4")],
+                runtime=ToolRuntime(session),
+            )
+    finally:
+        await session.close()
 
 
 def test_a_task_or_mcp_tool_needs_a_runtime():
