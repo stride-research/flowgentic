@@ -183,6 +183,11 @@ decision record.
   arguments keep non-ASCII text; a `(role, content)` tuple input is one
   message; and tool calls in an input history run first only if nothing but
   tool results follows them.
+- LangChain's adapter: `reply_from_message` reads the reasoning that
+  `to_ai_message` writes, and `to_openai_messages` keeps an `AIMessage`'s
+  invalid tool calls, with `{}` as arguments, so the tool messages answering
+  them answer a call; `parse_completion` reads `reasoning_content` when
+  `reasoning` is empty.
 - An agent host fails an agent whose runner suspends it 100 times in a row on
   the same tasks, all already ended: such a runner makes no progress, and was
   resumed at once, for ever. A suspended agent waits on the tasks it

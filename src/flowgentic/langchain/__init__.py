@@ -109,8 +109,12 @@ def reply_from_message(message: AIMessage) -> Reply:
 			),
 		)
 	extra = message.additional_kwargs or {}
-	reasoning = extra.get("reasoning_content") or extra.get("reasoning")
 	response = message.response_metadata or {}
+	reasoning = (
+		extra.get("reasoning_content")
+		or extra.get("reasoning")
+		or response.get("reasoning")  # where to_ai_message writes it
+	)
 	return Reply(
 		content=message.text,
 		tool_calls=calls,
@@ -175,8 +179,30 @@ def to_ai_message(reply: Reply) -> AIMessage:
 
 def to_openai_messages(messages: Sequence[Any]) -> list[dict]:
 	"""LangChain messages, or anything LangChain reads as messages, as
-	OpenAI-format dicts."""
-	return list(convert_to_openai_messages(list(messages)))
+	OpenAI-format dicts. An ``AIMessage``'s invalid tool calls stay in its tool
+	calls, with ``{}`` as arguments, as ``Reply.message()`` keeps them: the
+	tool messages that answer them must answer a call the server knows, and
+	servers parse the arguments of the calls they are sent."""
+	messages = list(messages)
+	out = list(convert_to_openai_messages(messages))
+	if len(out) != len(messages):  # not one dict per message: as converted
+		return out
+	for message, converted in zip(messages, out, strict=True):
+		invalid = getattr(message, "invalid_tool_calls", None)
+		if not isinstance(message, AIMessage) or not invalid:
+			continue
+		calls = converted.setdefault("tool_calls", [])
+		known = {c.get("id") for c in calls}
+		calls.extend(
+			{
+				"id": c.get("id"),
+				"type": "function",
+				"function": {"name": c.get("name") or "", "arguments": "{}"},
+			}
+			for c in invalid
+			if c.get("id") and c.get("id") not in known
+		)
+	return out
 
 
 def from_openai_messages(messages: Sequence[Any]) -> list[BaseMessage]:
