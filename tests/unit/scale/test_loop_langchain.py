@@ -142,3 +142,46 @@ def test_tools_bound_for_langgraph_are_refused_for_their_declarations():
         with pytest.raises(TypeError, match=f"{bound.name}.*task_tool or mcp_tool declaration"):
             LoopRunner(transport(), [bound], runtime=ToolRuntime())
 
+
+
+# --- the adapter's round trips -------------------------------------------------------
+
+
+def test_a_reply_keeps_its_reasoning_through_a_langchain_message():
+    from flowgentic.fleet import InvalidToolCall, Reply, ToolCall, Usage
+    from flowgentic.langchain import reply_from_message, to_ai_message
+
+    reply = Reply(
+        "hi",
+        (ToolCall("c1", "f", {"x": 1}),),
+        (InvalidToolCall("c2", "g", "{bad", "nope"),),
+        Usage(10, 5, 3, 2),
+        reasoning="think first",
+        finish_reason="tool_calls",
+        id="r1",
+        model="m",
+    )
+    assert reply_from_message(to_ai_message(reply)) == reply
+
+
+def test_a_tool_result_keeps_the_call_it_answers():
+    """An assistant message's invalid calls stay in its tool calls, with
+    ``{}`` as arguments as ``Reply.message()`` keeps them, so that the tool
+    messages answering them answer a call a server knows."""
+    from langchain_core.messages import AIMessage, ToolMessage
+
+    from flowgentic.langchain import to_openai_messages
+
+    messages = [
+        AIMessage(
+            "",
+            tool_calls=[{"name": "f", "args": {"x": "Zürich"}, "id": "c1"}],
+            invalid_tool_calls=[{"name": "g", "args": "{bad", "id": "c2", "error": "bad", "type": "invalid_tool_call"}],
+        ),
+        ToolMessage("r", tool_call_id="c1", name="f"),
+        ToolMessage("error: bad", tool_call_id="c2", name="g", status="error"),
+    ]
+    assistant, *results = to_openai_messages(messages)
+    calls = {c["id"]: c["function"] for c in assistant["tool_calls"]}
+    assert calls == {"c1": {"name": "f", "arguments": '{"x": "Zürich"}'}, "c2": {"name": "g", "arguments": "{}"}}
+    assert {r["tool_call_id"] for r in results} <= set(calls)
