@@ -194,11 +194,29 @@ async def test_a_given_client_keeps_its_own_settings_unless_told_otherwise():
             timeout=7.0,
         )
 
-    await HTTPTransport("m", base_url=URL, client=client()).complete(HI)
+    own = HTTPTransport("m", base_url=URL, client=client())
+    await own.complete(HI)
     await HTTPTransport("m", base_url=URL, client=client(), timeout=30, api_key="k").complete(HI)
     (mine, mine_timeout), (given, given_timeout) = seen
     assert mine == "Bearer MINE" and mine_timeout["read"] == 7.0
+    assert own.timeout == httpx.Timeout(7.0)  # what the calls get
     assert given == "Bearer k" and given_timeout["read"] == 30 and given_timeout["connect"] == 5.0
+
+
+async def test_a_bare_given_client_gets_the_transports_timeout():
+    """A client left at httpx's default timeout, 5 s, gets the transport's 600 s,
+    as the openai SDK does with a bare http_client: a model call takes longer
+    than 5 s."""
+    seen = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        seen.append(request.extensions["timeout"])
+        return httpx.Response(200, json=ANSWER)
+
+    bare = HTTPTransport("m", base_url=URL, client=httpx.AsyncClient(transport=httpx.MockTransport(handle)))
+    await bare.complete(HI)
+    assert bare.timeout == 600.0
+    assert seen == [{"connect": 5.0, "read": 600.0, "write": 600.0, "pool": 600.0}]
 
 
 async def test_all_its_pools_share_one_ssl_context_and_close(monkeypatch):
@@ -261,8 +279,13 @@ def test_a_base_url_must_be_an_http_url():
 
 @pytest.mark.parametrize(
     "exc",
-    [httpx.UnsupportedProtocol("no scheme"), httpx.DecodingError("bad gzip"), httpx.TooManyRedirects("loop")],
-    ids=["protocol", "decoding", "redirects"],
+    [
+        httpx.UnsupportedProtocol("no scheme"),
+        httpx.DecodingError("bad gzip"),
+        httpx.TooManyRedirects("loop"),
+        httpx.LocalProtocolError("bad header"),
+    ],
+    ids=["protocol", "decoding", "redirects", "local-protocol"],
 )
 async def test_a_request_httpx_cannot_make_or_read_is_not_transient(exc):
     with pytest.raises(ModelServerError) as raised:
@@ -272,20 +295,108 @@ async def test_a_request_httpx_cannot_make_or_read_is_not_transient(exc):
 
 
 @pytest.mark.parametrize(
-    "body",
-    [{"object": "error", "message": "boom", "code": 400}, {"choices": []}, {"id": "x"}],
-    ids=["vllm-error", "no-choices", "nothing"],
+    ("body", "kind", "code"),
+    [
+        ({"object": "error", "message": "boom", "code": 400}, RequestRejected, 400),
+        ({"choices": []}, ModelServerError, None),
+        ({"id": "x"}, ModelServerError, None),
+        ({"error": {"code": 429, "message": "boom: rate limited upstream"}}, ServerUnavailable, 429),
+        ({"error": {"code": "502", "message": "boom: provider down"}}, ServerUnavailable, 502),
+        ({"error": {"code": 401, "message": "boom: key"}}, AuthenticationFailed, 401),
+    ],
+    ids=["vllm-error", "no-choices", "nothing", "openrouter-429", "openrouter-502", "401"],
 )
-async def test_a_completion_without_choices_is_an_error_not_an_empty_answer(body):
+async def test_a_completion_without_choices_is_an_error_not_an_empty_answer(body, kind, code):
     """An error object with status 200, or a completion with no choices, would
-    otherwise end the agent with an empty answer."""
+    otherwise end the agent with an empty answer. Its ``code``, as OpenRouter
+    sends one, is read as an HTTP status: busy or a 5xx is transient."""
     with pytest.raises(ModelServerError, match="no choices") as raised:
         await HTTPTransport("m", base_url=URL, client=recorded([body], [])).complete(HI)
-    assert raised.value.transient is False and raised.value.body == body
-    if "message" in body:
-        assert "boom" in str(raised.value)
-    with pytest.raises(ModelServerError, match="no choices"):
+    error = raised.value
+    assert type(error) is kind and error.body == body and error.status_code == code
+    assert error.transient is (kind in (ServerUnavailable, AuthenticationFailed))
+    if "message" in str(body):
+        assert "boom" in str(error)
+    with pytest.raises(kind, match="no choices"):
         parse_completion(body)
+
+
+async def test_a_closed_transport_refuses_calls_with_its_own_error():
+    """After ``aclose()`` a call is a ``ModelServerError``, not transient, not
+    httpx's own ``RuntimeError``; on a given client too, which it leaves open."""
+    made = HTTPTransport("m", base_url=URL)
+    given = HTTPTransport("m", base_url=URL, client=mocked(lambda request: httpx.Response(200, json=ANSWER)))
+    for transport in (made, given):
+        await transport.aclose()
+        with pytest.raises(ModelServerError, match="closed") as raised:
+            await transport.complete(HI)
+        assert raised.value.transient is False
+    assert not given.clients[0].is_closed
+
+
+async def test_recovery_closes_a_replaced_replica_whose_aclose_is_sync():
+    """A transport of one's own may close synchronously."""
+
+    class Closing:
+        model, base_url, closed = "m", None, False
+
+        def __init__(self, fail):
+            self.fail = fail
+
+        async def complete(self, messages, tools=None, **kwargs):
+            if self.fail:
+                raise ServerUnavailable("down")
+            return Reply("ok")
+
+        def aclose(self):
+            self.closed = True
+
+    old = Closing(fail=True)
+
+    async def check(i):
+        return Closing(fail=False)
+
+    fleet = Fleet([old], recovery=Recovery(check, poll_s=0.02))
+    reply = await asyncio.wait_for(fleet.ainvoke("a", HI), 5)
+    assert reply.content == "ok" and old.closed
+
+
+@pytest.mark.parametrize(
+    ("headers", "says"),
+    [({"X-Bad": "a\nb"}, "header"), ({"X-Bad": "é"}, "header")],
+    ids=["newline", "non-ascii"],
+)
+async def test_a_header_httpx_cannot_send_is_a_set_up_error(headers, says):
+    """Not a server that is down: nothing a wait mends."""
+    transport = HTTPTransport("m", base_url=URL, client=mocked(lambda request: httpx.Response(200, json=ANSWER)))
+    with pytest.raises(ModelServerError, match=says) as raised:
+        await transport.complete(HI, extra_headers=headers)
+    assert raised.value.transient is False
+
+
+async def test_a_lone_surrogate_does_not_stop_the_conversation():
+    """An undecodable file name, as Linux gives one, reaches the server
+    escaped, as ``ensure_ascii`` would escape it, instead of failing every
+    later call with ``UnicodeEncodeError``."""
+    name = b"run-\xff.dat".decode("utf-8", "surrogateescape")
+    requests = []
+    transport = HTTPTransport("m", base_url=URL, client=recorded([ANSWER], requests))
+    await transport.complete([{"role": "user", "content": f"look at {name}"}])
+    assert "\\udcff" in requests[0].content.decode("utf-8")
+    arguments = Reply("", (ToolCall("a", "ls", {"path": name}),)).message()["tool_calls"][0]["function"]["arguments"]
+    arguments.encode("utf-8")  # sendable
+    assert "\\udcff" in arguments
+
+
+async def test_a_401_without_a_key_says_where_the_environments_key_goes(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
+    transport = HTTPTransport("m", base_url=URL, client=failing(401, {"error": {"message": "no key"}}))
+    with pytest.raises(AuthenticationFailed, match="OPENAI_API_KEY is sent to api.openai.com only"):
+        await transport.complete(HI)
+    keyed = HTTPTransport("m", base_url=URL, api_key="k", client=failing(401, {"error": {"message": "bad key"}}))
+    with pytest.raises(AuthenticationFailed) as raised:
+        await keyed.complete(HI)
+    assert "OPENAI_API_KEY" not in str(raised.value)
 
 
 def test_the_conversation_keeps_text_as_written():

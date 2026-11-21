@@ -195,6 +195,23 @@ def test_only_openais_own_api_gets_the_openai_key_from_the_environment(monkeypat
     assert OpenAITransport("m", base_url="http://node-2:8000/v1", api_key="k").client.api_key == "k"
 
 
+async def test_the_openai_transport_closes_the_clients_it_made():
+    """As HTTPTransport: ``aclose()`` closes its own clients, never a given one,
+    and a call after it is a ``ModelServerError``, not transient."""
+    from flowgentic.fleet import ModelServerError
+
+    made = OpenAITransport("m", base_url="http://node-2:8000/v1", pools=2)
+    await made.aclose()
+    assert all(c.is_closed() for c in made.clients)
+    with pytest.raises(ModelServerError, match="closed") as raised:
+        await made.complete([{"role": "user", "content": "hi"}])
+    assert raised.value.transient is False
+    client = server([], [])
+    given = OpenAITransport("m", client=client)
+    await given.aclose()
+    assert not client.is_closed()
+
+
 class Pools:
     """Stand-ins for ``AsyncOpenAI``: each counts its calls and the most it
     held at once; a call returns once ``gate`` is set."""
