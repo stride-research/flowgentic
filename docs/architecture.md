@@ -66,7 +66,7 @@ doing without being passed the agent.
 | `flowgentic.tools.service` | `serve`, `ToolServiceClient`, `ToolService`: one process that calls MCP tools for many agent processes; see [Tool service](features/tool-service.md) |
 | `flowgentic.tools.mcp` | `SupervisedMcpPool`: MCP clients whose failures stay their own |
 | `flowgentic.store` | `KeyValueStore`, `RadexStore`, `MemoryStore`: stores in the allocation's memory; see [Checkpointer](features/checkpointer.md) |
-| `flowgentic.fleet` | `Fleet`, admission, routing, `Recovery`, `Transport`, `Reply`, `OpenAITransport`: model calls to replicas; see [Fleet](features/fleet.md) |
+| `flowgentic.fleet` | `Fleet`, admission, routing, `Recovery`, `Transport`, `Reply`, `HTTPTransport`, `OpenAITransport`: model calls to replicas; see [Fleet](features/fleet.md) |
 | `flowgentic.langgraph` | `GraphRunner`, `route_tool_calls`, `bind_tools`, `KeyValueSaver`: LangGraph's runner, tool adapter and checkpointer |
 | `flowgentic.loop` | `LoopRunner`, `LoopOutput`, `Interrupt`: Flowgentic's own agent loop, on OpenAI-format messages, with no extra; see [Agent loop](features/agent-loop.md) |
 | `flowgentic.langchain` | `ChatModelTransport`, `FleetChatModel`, `to_ai_message`, `inline_tool`: LangChain as an adapter to the fleet and the loop; the `langgraph` extra |

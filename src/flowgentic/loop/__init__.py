@@ -13,7 +13,7 @@ LangGraph adds: streaming, middleware, human-in-the-loop resumes.
   messages, the state a suspension saves and ``trim`` all use them.
 - **The model** is a ``flowgentic.fleet.Fleet``, which routes and admits each
   call by agent, or a transport (``flowgentic.fleet.Transport``), such as
-  ``OpenAITransport``. Each model call is a GenAI ``chat`` span with its usage.
+  ``HTTPTransport``. Each model call is a GenAI ``chat`` span with its usage.
   A LangChain chat model, or the fleet's ``FleetChatModel``, is accepted too,
   through LangChain's adapter (``flowgentic.langchain``).
 - **Tools** are ``flowgentic.tools`` declarations, which run on a

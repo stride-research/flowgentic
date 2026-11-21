@@ -98,7 +98,7 @@ so the same agent code runs on a laptop and on an allocation.
 - **[Fleet](../features/fleet.md)** (`flowgentic.fleet`). Sends each agent's
   model calls to one replica, so its prompt stays in that replica's prefix
   cache, and admits calls while the tokens of live context in flight stay under
-  a cap. A replica is a transport: `OpenAITransport` for an OpenAI-compatible
+  a cap. A replica is a transport: `HTTPTransport` for an OpenAI-compatible
   server, such as vLLM, SGLang or OpenRouter.
 
 ## A worked example
@@ -132,7 +132,7 @@ Each agent process builds its parts. With `--dragon` (see
 [Running under Dragon](#running-under-dragon)), the session runs on RHAPSODY's
 native Dragon backend, the store is `RadexStore.attach(descriptor)` and the
 queues are Dragon's; on an allocation each replica is an
-`OpenAITransport(model, base_url=...)` of a model server:
+`HTTPTransport(model, base_url=...)` of a model server:
 
 ```python
 --8<-- "examples/agents-at-scale/campaign.py:process"
@@ -229,7 +229,7 @@ on Dragon's resources:
   (`run_indexed`), and a fleet with `share=1/processes` over the model
   servers' replicas.
 - **The model servers** run on the allocation's GPUs, and each replica is an
-  `OpenAITransport` of one server.
+  `HTTPTransport` of one server.
 
 Flowgentic imports nothing from Dragon: the application passes in the queues,
 the session and the store.
@@ -296,7 +296,7 @@ as the loop deletes its state; see the
 ```
 
 Its replicas are LangChain chat models, which the fleet runs through
-LangChain's adapter (`flowgentic.langchain`); `OpenAITransport` replicas work
+LangChain's adapter (`flowgentic.langchain`); `HTTPTransport` replicas work
 too, through `fleet.chat_model()`. [Agent loop](../features/agent-loop.md)
 compares the two runners, and measures them on this example's workload.
 

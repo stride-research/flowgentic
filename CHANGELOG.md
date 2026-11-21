@@ -17,9 +17,10 @@ Changed), before 1.0; `GraphRunner` and its graphs work as before.
 
 ### Added
 
-- An `agents` extra, `flowgentic[openai,rhapsody,mcp]`: the agents-at-scale
-  path without LangGraph or LangChain. CI installs the wheel with it alone
-  and runs the agent loop's tests and the agents-at-scale example there.
+- An `agents` extra, `flowgentic[rhapsody,mcp]`: the agents-at-scale path
+  without LangGraph, LangChain or the `openai` SDK. CI installs the wheel with
+  it alone and runs the agent loop's tests, the default transport's and the
+  agents-at-scale example there.
 - `flowgentic.loop.LoopRunner`, Flowgentic's own agent loop: a runner for the
   agent host on OpenAI-format messages and transports, with no LangChain or
   LangGraph and no extra, beside `GraphRunner`, which stays. It runs a
@@ -43,14 +44,26 @@ Changed), before 1.0; `GraphRunner` and its graphs work as before.
   (`Usage`: prompt, completion, cached prompt and reasoning tokens) and the
   `reasoning` text, kept out of the conversation; `Reply.message()` is what
   the conversation keeps.
-- `flowgentic.fleet.OpenAITransport`, over the `openai` SDK, for vLLM, SGLang,
-  OpenRouter and OpenAI, and `parse_completion` for such a server's reply. It
-  reads the reasoning from `reasoning`, and from `reasoning_content` for older
-  vLLM and SGLang; the cached tokens from `usage.prompt_tokens_details`, the
-  reasoning tokens from `usage.completion_tokens_details`. It opens another
-  client, with its own connection pool, for every 64 calls it holds in flight,
-  as one pool's CPU cost per call grows with its calls (`calls_per_pool=`,
-  `pools=` to fix their number). It needs a new `openai` extra.
+- `flowgentic.fleet.HTTPTransport`, the default transport, for vLLM, SGLang,
+  OpenRouter and OpenAI: one httpx POST to `{base_url}/chat/completions` per
+  call, at about half the CPU per call of the `openai` SDK. It takes the
+  SDK's keywords (`extra_body` and `extra_headers` merged as the SDK merges
+  them, the key as a bearer token, a 600 s timeout) and retries nothing. A
+  failed call raises a `ModelServerError` with the server's message:
+  `ServerUnavailable` (no answer, a timeout, a 5xx) and `AuthenticationFailed`
+  (401) are transient, and the fleet's `Recovery` waits them out;
+  `RequestRejected` (any other 4xx) is not. httpx becomes a core dependency.
+- `flowgentic.fleet.OpenAITransport`, over the `openai` SDK, for the same
+  servers, in a new `openai` extra; and `parse_completion` for such a server's
+  reply, which both transports read with. It reads the reasoning from
+  `reasoning`, and from `reasoning_content` for older vLLM and SGLang; the
+  cached tokens from `usage.prompt_tokens_details`, the reasoning tokens from
+  `usage.completion_tokens_details`.
+- Both transports open another client, with its own connection pool, as the
+  calls they hold in flight grow, since one pool's CPU cost per call grows
+  with its calls: `HTTPTransport` for every 8 calls,
+  `OpenAITransport` for every 64 (`calls_per_pool=`, `pools=` to fix their
+  number).
 - `flowgentic.langchain`, LangChain as an adapter, in the `langgraph` extra:
   `ChatModelTransport` (any LangChain chat model as a transport; it takes
   LangChain messages and tools as they are, too), `FleetChatModel` (moved

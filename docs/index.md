@@ -66,7 +66,7 @@ Agents at scale (see [Agents at scale](guides/agents-at-scale.md)):
   [Tool service](features/tool-service.md).
 - **`Fleet`** (`flowgentic.fleet`) sends each agent's model calls to one
   replica of a model server, under caps on tokens and requests in flight. A
-  replica is a transport, such as `OpenAITransport` for vLLM, SGLang or
+  replica is a transport, such as `HTTPTransport` for vLLM, SGLang or
   OpenRouter. See [Fleet](features/fleet.md).
 
 The AsyncFlow path:

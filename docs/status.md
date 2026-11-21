@@ -62,27 +62,30 @@ run, and a graph that should change between runs is built anew as a
 | Agents at scale | Flowgentic's agent loop; LangGraph 1.x, optional | RHAPSODY 0.7 on a thread pool, in CI; RHAPSODY's native Dragon backend, not yet released, by hand | 3.11, 3.12, 3.13 |
 | AsyncFlow | LangGraph 1.x | RADICAL AsyncFlow 0.6.0, local backends | 3.11, 3.12, 3.13 |
 
-Tested environment, from `uv.lock`: openai 3.36.1, LangGraph 1.2.16,
+Tested environment, from `uv.lock`: httpx 0.28.1, openai 3.36.1, LangGraph 1.2.16,
 langgraph-checkpoint 4.3.0, langchain-core 1.7.0, langchain 1.4.7, rhapsody-py
 0.7.0, mcp 2.3.0, radical-asyncflow 0.6.0 and academy-py 1.0.0. CI runs the
 test suite on Python 3.11, 3.12 and 3.13, and on Python 3.11 with the lowest
 versions the dependency ranges allow; it also installs the wheel with the
-`agents` extra alone, without LangGraph or LangChain, and runs the agent
-loop's tests and the agents-at-scale example there. A weekly workflow runs the
+`agents` extra alone, without LangGraph, LangChain or the `openai` SDK, and
+runs the agent loop's tests, the default transport's and the agents-at-scale
+example there. A weekly workflow runs the
 suite, and builds the docs, on the newest releases within the ranges.
 
-The core requires `pydantic` and `opentelemetry-api>=1.43,<2`, for its spans
-and metrics. Each path is an extra:
+The core requires `pydantic`, `opentelemetry-api>=1.43,<2`, for its spans and
+metrics, and `httpx>=0.27,<1`, for the fleet's default transport,
+`HTTPTransport`. Each path is an extra:
 
 - `langgraph`: `langgraph>=1.1.5,<2.0`, `langgraph-checkpoint>=4.3,<5`, and
   `langchain-core`, `langchain`, `langchain-openai` and `langchain-ollama` at
   `>=1.0,<2.0`.
-- `openai`: `openai>=1.109,<4`, for the fleet's `OpenAITransport`.
+- `openai`: `openai>=1.109,<4`, for `OpenAITransport`, the transport over the
+  `openai` SDK.
 - `rhapsody`: `rhapsody-py>=0.7,<0.8`, for task tools.
 - `mcp`: `mcp>=2.3,<2.4`, for the tool service's MCP clients.
 - `asyncflow`: `radical-asyncflow>=0.6,<0.7`, because before 1.0 an AsyncFlow
   minor release may break.
-- `agents`: `openai`, `rhapsody` and `mcp`, for agents at scale.
+- `agents`: `rhapsody` and `mcp`, for agents at scale.
 
 Agents at scale need `flowgentic[agents]`, and `flowgentic[agents,langgraph]`
 to run LangGraph graphs. The LangGraph integration on AsyncFlow needs

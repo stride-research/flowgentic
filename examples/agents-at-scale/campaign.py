@@ -8,7 +8,7 @@ The parts are Flowgentic's, and everything around them stands in for an HPC
 allocation:
 
 - a scripted model, as a transport, behind a ``Fleet`` of two replicas, for
-  model servers (``OpenAITransport`` replicas);
+  model servers (``HTTPTransport`` replicas);
 - RHAPSODY on a thread pool, for a RHAPSODY session on Dragon;
 - ``MemoryStore()``, for ``RadexStore.attach(...)``;
 - the tool service in a thread of this process, for the tool service in a
@@ -247,7 +247,7 @@ class ToolServiceProcess:
 class ScriptedModel:
     """A transport that looks the candidate up; simulates it at the reference
     temperature and notes that, in one turn; then answers with the score. On
-    an allocation each replica is an ``OpenAITransport`` of a model server."""
+    an allocation each replica is an ``HTTPTransport`` of a model server."""
 
     model = "scripted"
     base_url = None
@@ -347,7 +347,8 @@ async def run_agents(
     session = Session(backends=[backend])
     runtime = ToolRuntime(session, client)
     # Every process routes by the same hash, so each takes an equal share of
-    # every replica's caps.
+    # every replica's caps. On an allocation, one per model server:
+    # [HTTPTransport("Qwen3-8B", base_url=url) for url in servers]
     replicas = [ScriptedModel(), ScriptedModel()] if graph is None else graph.replicas()
     fleet = Fleet(
         replicas,

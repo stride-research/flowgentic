@@ -13,7 +13,7 @@ tools](tools.md), the [tool service](tool-service.md) and a
 what LangGraph adds.
 
 ```python
-from flowgentic.fleet import Fleet, OpenAITransport, TokenAdmission
+from flowgentic.fleet import Fleet, HTTPTransport, TokenAdmission
 from flowgentic.host import Agent, AgentHost
 from flowgentic.loop import LoopRunner
 from flowgentic.store import MemoryStore
@@ -25,7 +25,7 @@ async def note(text: str) -> str:
     return f"noted: {text}"
 
 
-replicas = [OpenAITransport("Qwen3-8B", base_url=url) for url in urls]
+replicas = [HTTPTransport("Qwen3-8B", base_url=url) for url in urls]
 fleet = Fleet(replicas, admission=TokenAdmission(tokens=40_000, requests=64))
 runner = LoopRunner(
     fleet,
@@ -38,8 +38,9 @@ report = await AgentHost(runner).run(
 )
 ```
 
-`flowgentic.loop` needs no extra; `OpenAITransport` needs the `openai` extra,
-which the `agents` extra, the agents-at-scale path's, includes.
+`flowgentic.loop` needs no extra, and neither does `HTTPTransport`, the
+fleet's default transport; the `agents` extra, the agents-at-scale path's,
+adds RHAPSODY and MCP for the tools.
 [Agents at scale](../guides/agents-at-scale.md) runs a campaign of such agents
 on a laptop.
 
@@ -49,7 +50,7 @@ on a laptop.
   `tool_calls` with JSON-string arguments, `tool_call_id`. The output's
   messages, the state a suspension saves and the trim hook all use them.
 - **It calls the model through the fleet**, which routes and admits each call
-  by agent, or through a transport, such as `OpenAITransport`; see
+  by agent, or through a transport, such as `HTTPTransport`; see
   [Fleet](fleet.md#replicas-are-transports). Each call sends the tools' JSON
   schemas, built once, and `model_kwargs`, such as `max_tokens`.
   `system_prompt` goes first in every call; it is not part of the agent's
@@ -151,7 +152,7 @@ suspension is the host's `flowgentic.agent.suspend` event; see
 | --- | --- | --- |
 | The agent | a `while` loop over a model and tools | any compiled LangGraph graph |
 | Messages | OpenAI-format dicts | LangChain messages |
-| Needs | no extra (`openai` for `OpenAITransport`) | LangGraph |
+| Needs | no extra | LangGraph |
 | A suspension writes | one put of the messages | a checkpoint and its pending writes |
 | A resume reads | one get | the checkpoint and its writes |
 | A finished agent's state | deleted | kept, or deleted with `delete_finished=True` |
@@ -174,5 +175,5 @@ same agents through LangChain's adapter) or `graph`. Each run prints one JSON
 line: wall and CPU time, the event loop's lag, the collector's pauses, peak
 RSS, and the store's calls and bytes. `benchmarks/client_cost.py` measures a
 model client's CPU per call against a local OpenAI-compatible stub, for
-`OpenAITransport`, the `openai` SDK alone, LangChain's `ChatOpenAI` and the
-adapter.
+`HTTPTransport`, `OpenAITransport`, the `openai` SDK alone, LangChain's
+`ChatOpenAI` and the adapter.

@@ -40,7 +40,7 @@ class ScriptedChatModel(BaseChatModel):
     """The campaign's scripted model as a LangChain chat model: it looks the
     candidate up; simulates it at the reference temperature and notes that, in
     one turn; then answers with the score. On an allocation each replica is a
-    chat model of a model server, or an ``OpenAITransport``."""
+    chat model of a model server, or an ``HTTPTransport``."""
 
     latency_s: float = 0.005
 

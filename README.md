@@ -68,7 +68,7 @@ Agents at scale (see [Agents at scale](https://stride-research.github.io/flowgen
   (`flowgentic.tools.service`), which calls MCP tools for many agent processes.
 - **`Fleet`** (`flowgentic.fleet`) sends each agent's model calls to one
   replica of a model server, under caps on tokens and requests in flight. A
-  replica is a transport, such as `OpenAITransport` for vLLM, SGLang or
+  replica is a transport, such as `HTTPTransport` for vLLM, SGLang or
   OpenRouter.
 
 The AsyncFlow path:

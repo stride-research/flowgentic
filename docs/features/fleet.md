@@ -6,9 +6,9 @@ chooses the replica and when the call is sent. It records each call, and
 waits out a replica whose server went away.
 
 ```python
-from flowgentic.fleet import Fleet, OpenAITransport, Recovery, TokenAdmission
+from flowgentic.fleet import Fleet, HTTPTransport, Recovery, TokenAdmission
 
-replicas = [OpenAITransport(model, base_url=url, api_key=key) for url in urls]
+replicas = [HTTPTransport(model, base_url=url, api_key=key) for url in urls]
 fleet = Fleet(
     replicas,
     admission=TokenAdmission(tokens=200_000, requests=96),
@@ -21,9 +21,10 @@ reply = await fleet.ainvoke(agent_id, messages, tools=schemas)   # a Reply
 chat = fleet.chat_model().bind_tools(tools)                       # a LangChain chat model
 ```
 
-`flowgentic.fleet` needs no extra. `OpenAITransport` needs the `openai` extra;
-LangChain chat models as replicas, and `chat_model()`, need the `langgraph`
-extra.
+`flowgentic.fleet` needs no extra, and neither does its default transport,
+`HTTPTransport`: httpx is one of Flowgentic's own dependencies.
+`OpenAITransport` needs the `openai` extra; LangChain chat models as
+replicas, and `chat_model()`, need the `langgraph` extra.
 
 ## Replicas are transports
 
@@ -51,17 +52,42 @@ tools' JSON schemas and the call's own keywords (`max_tokens`, `extra_body`,
 `reply.message()` is the reply as the conversation keeps it: an assistant
 message with the content and the tool calls, without the reasoning.
 
-`OpenAITransport(model, base_url=..., api_key=...)` calls an OpenAI-compatible
-server through the `openai` SDK's `AsyncOpenAI`: vLLM, SGLang, OpenRouter or
-OpenAI. It reads the reasoning text from the message's `reasoning`, which vLLM
-uses since it [renamed the field](https://docs.vllm.ai/en/latest/features/reasoning_outputs/),
-and from `reasoning_content`, which older vLLM and SGLang use; the cached
-prompt tokens from `usage.prompt_tokens_details`, and the reasoning tokens
-from `usage.completion_tokens_details`, when the server sends them (vLLM sends
-the first with `--enable-prompt-tokens-details`). Keywords given when it is
-made, such as `temperature=0`, go with every call; `max_retries=0` leaves
-retries to `Recovery`. `parse_completion` reads such a server's completion,
-as the SDK's object or as its JSON, for a transport of your own.
+`HTTPTransport(model, base_url=..., api_key=...)`, the default, calls an
+OpenAI-compatible server, vLLM, SGLang, OpenRouter or OpenAI, with one httpx
+POST to `{base_url}/chat/completions` per call. The key, by default
+`OPENAI_API_KEY` or else `EMPTY`, goes as a bearer token, and a call times out
+after `timeout`, 600 s by default. Keywords given when it is made, such as
+`temperature=0`, go with every call, and a call's own override them;
+`extra_body`'s keys go into the request's body and `extra_headers`' into its
+headers, as the `openai` SDK sends them. It retries nothing: `Recovery` waits
+out a server that went away.
+
+`OpenAITransport(model, base_url=..., api_key=...)` calls the same servers
+through the `openai` SDK's `AsyncOpenAI`, which retries a failed call itself
+unless given `max_retries=0`. It costs about twice the CPU per call of
+`HTTPTransport` (below), and needs the `openai` extra.
+
+Both read the reply with `parse_completion`: the reasoning text from the
+message's `reasoning`, which vLLM uses since it [renamed the
+field](https://docs.vllm.ai/en/latest/features/reasoning_outputs/), and from
+`reasoning_content`, which older vLLM and SGLang use; the cached prompt tokens
+from `usage.prompt_tokens_details`, and the reasoning tokens from
+`usage.completion_tokens_details`, when the server sends them (vLLM sends the
+first with `--enable-prompt-tokens-details`). `parse_completion` reads such a
+server's completion, as the SDK's object or as its JSON, for a transport of
+your own.
+
+A failed call through `HTTPTransport` raises a `ModelServerError`, with the
+server's message, its `status_code` and its `body`:
+
+| Error | When | `transient` |
+| --- | --- | --- |
+| `ServerUnavailable` | no answer (a refused or dropped connection), a timeout, or a 5xx | yes |
+| `AuthenticationFailed` | 401, as from a server restarted with a new key | yes |
+| `RequestRejected` | any other 4xx, such as a context too long | no |
+
+`Recovery` waits out a transient one, and the `openai` SDK's errors of the same
+kinds, which it knows by name.
 
 A client's CPU cost per call grows with the calls its connection pool holds
 in flight. Against a local stub server, one pool cost 3.5 ms of CPU per call
@@ -107,7 +133,8 @@ unchanged, and the reply's `raw` is the model's own `AIMessage`.
   context fits in one share.
 - **It waits out a server that went away.** With `Recovery(check)`, a call
   that fails because its server is down, restarting or overloaded (a
-  connection error, a timeout, a 5xx, or a 401 after a new key) gives up its
+  connection error, a timeout, a 5xx, or a 401 after a new key: a transient
+  `ModelServerError`, or the `openai` SDK's error of that kind) gives up its
   place, waits for the replica to come back, and is sent again. Other errors
   fail at once.
 
@@ -135,7 +162,7 @@ async def check(i: int):
     url, key = read_endpoint(i)            # the application's: where replica i serves now
     if not await healthy(url):             # for example, GET /health with its own timeout
         return None
-    return OpenAITransport(model, base_url=url, api_key=key)
+    return HTTPTransport(model, base_url=url, api_key=key)
 
 fleet = Fleet(replicas, recovery=Recovery(check, outage_s=1_800, poll_s=5))
 ```
