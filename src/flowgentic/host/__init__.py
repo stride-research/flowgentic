@@ -26,6 +26,12 @@ LangGraph). It owns what makes thousands of agents in one Python process work:
   campaign reports how many agents are working, waiting, and making model
   requests. One agent's failure never stops the others. When ``run`` is
   cancelled, each live agent ends as ``cancelled``.
+
+A runner of the application's own, such as one whose code, not a model, picks
+each step, uses what Flowgentic's runners use: ``current_agent()``, the agent
+the current coroutine works for, which an inline tool reads too;
+``activity(state)``, which counts that agent in a state for a block; ``wait``,
+for the tasks of a ``ToolRuntime``; and ``register_pending``.
 """
 
 from __future__ import annotations
@@ -43,7 +49,14 @@ from typing import Any, Protocol
 from opentelemetry.trace import Status, StatusCode
 
 from flowgentic import _agents, _telemetry
-from flowgentic._agents import AgentState, AgentStates, register_pending
+from flowgentic._agents import (
+	AgentState,
+	AgentStates,
+	activity,
+	current_agent,
+	register_pending,
+	wait,
+)
 from flowgentic.host._probes import CollectorPauses, LoopLag
 
 __all__ = [
@@ -59,7 +72,10 @@ __all__ = [
 	"Runner",
 	"Stagger",
 	"Suspended",
+	"activity",
+	"current_agent",
 	"register_pending",
+	"wait",
 ]
 
 log = logging.getLogger(__name__)

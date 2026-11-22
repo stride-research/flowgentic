@@ -33,7 +33,7 @@ from opentelemetry.trace import StatusCode
 from pydantic import BaseModel, ConfigDict, Field
 
 from flowgentic.fleet import Fleet
-from flowgentic.host import Agent, AgentHost, AgentState, AgentStates, Finished, Suspended
+from flowgentic.host import Agent, AgentHost, AgentState, AgentStates, Finished, Suspended, current_agent
 from flowgentic.loop import (
     Interrupt,
     Interruption,
@@ -1068,6 +1068,149 @@ async def test_a_task_commits_when_the_model_reply_that_made_it_reached_the_agen
     assert len(alone) == 3 and len(answered) == 3
     for record in alone:
         assert min(answered) <= record.t_commit < record.t_submit
+
+
+# --- the agent a tool runs for, and each model call's arguments ----------------------
+
+
+async def whose(note: str) -> str:
+    """Say which agent this call is for."""
+    return f"{current_agent()} {note}"
+
+
+def whose_sync(note: str) -> str:
+    """Say which agent this call is for, from a worker thread."""
+    return f"{current_agent()} {note}"
+
+
+@pytest.mark.parametrize("tool", [whose, whose_sync])
+async def test_an_inline_tool_knows_the_agent_it_runs_for(tool):
+    model = transport((tool.__name__, {"note": "hi"}), (tool.__name__, {"note": "ho"}))
+    outputs = {}
+    report = await AgentHost(LoopRunner(model, [tool]), stagger=FAST, on_done=collect(outputs)).run(inputs(3))
+    assert report.finished == 3
+    for i in range(3):
+        assert outputs[f"agent-{i}"].messages[-1]["content"] == f"agent-{i} hi | agent-{i} ho"
+    assert current_agent() is None
+
+
+def analyze(result: str) -> str:
+    """Analyze a result."""
+    return f"analyzed {result}"
+
+
+BUDGETS = {"agent-0": 512, "agent-1": 1024}
+
+
+def thinking(agent_id: str, messages: list[dict]) -> dict:
+    """The reasoning knob: a decision call, one after an analysis, thinks
+    within its agent's budget; the other calls do not think."""
+    last = messages[-1]
+    if last["role"] != "tool" or not last["content"].startswith("analyzed"):
+        return {"max_tokens": 64, "extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}
+    budget = BUDGETS[agent_id]
+    return {
+        "max_tokens": 64 + budget,
+        "extra_body": {"chat_template_kwargs": {"enable_thinking": True}, "thinking_token_budget": budget},
+    }
+
+
+async def thinking_async(agent_id: str, messages: list[dict]) -> dict:
+    return thinking(agent_id, messages)
+
+
+def analysis_then_answer(messages):
+    """Analyze once, then answer."""
+    if turns(messages) == 0:
+        return reply(calls=[("c0", "analyze", {"result": "r0"})])
+    return reply("done")
+
+
+def off() -> dict:
+    return {"max_tokens": 64, "extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}
+
+
+def on(budget: int) -> dict:
+    return {
+        "max_tokens": 64 + budget,
+        "extra_body": {"chat_template_kwargs": {"enable_thinking": True}, "thinking_token_budget": budget},
+    }
+
+
+@pytest.mark.parametrize("hook", [thinking, thinking_async])
+async def test_each_model_call_gets_the_arguments_its_function_gives(hook):
+    model = ScriptedTransport(analysis_then_answer)
+    seen = []
+
+    def watched(agent_id, messages):
+        seen.append((agent_id, [m["role"] for m in messages]))
+        return hook(agent_id, messages)
+
+    runner = LoopRunner(model, [analyze], model_kwargs=watched, system_prompt="Be brief.")
+    report = await AgentHost(runner, stagger=FAST).run(inputs(2))
+    assert report.finished == 2
+    # Each agent's first call does not think; its decision call thinks within
+    # its own budget.
+    kwargs = sorted((k for _, _, k in model.calls), key=lambda k: k["max_tokens"])
+    assert kwargs == [off(), off(), on(512), on(1024)]
+    for agent in ("agent-0", "agent-1"):
+        assert (agent, ["user", "assistant", "tool"]) in seen  # the history, without the system prompt
+    assert len(seen) == runner.stats()["model_calls"] == 4  # once per call
+
+
+async def test_a_fleets_calls_get_the_arguments_the_function_gives_and_the_fleet_takes_its_own():
+    replicas = [ScriptedTransport(analysis_then_answer), ScriptedTransport(analysis_then_answer)]
+    fleet = Fleet(replicas)
+    records = []
+    fleet.add_listener(lambda record, reply: records.append(record))
+
+    def thinking_with_reserve(agent_id, messages):
+        kwargs = thinking(agent_id, messages)
+        budget = kwargs["extra_body"].get("thinking_token_budget", 0)
+        return {**kwargs, "reserve": budget, "meta": {"budget": budget}}
+
+    runner = LoopRunner(fleet, [analyze], model_kwargs=thinking_with_reserve)
+    report = await AgentHost(runner, stagger=FAST).run(inputs(2))
+    assert report.finished == 2
+    calls = replicas[0].calls + replicas[1].calls
+    # reserve and meta are the fleet's: the replicas never see them.
+    assert sorted(kwargs["max_tokens"] for _, _, kwargs in calls) == [64, 64, 64 + 512, 64 + 1024]
+    assert all(set(kwargs) == {"max_tokens", "extra_body"} for _, _, kwargs in calls)
+    budgets = sorted((r.agent_id, r.meta["budget"]) for r in records)
+    assert budgets == [("agent-0", 0), ("agent-0", 512), ("agent-1", 0), ("agent-1", 1024)]
+
+
+async def test_one_agents_decision_call_gets_other_arguments_than_its_first():
+    model = ScriptedTransport(analysis_then_answer)
+    runner = LoopRunner(model, [analyze], model_kwargs=thinking)
+    report = await AgentHost(runner, stagger=FAST).run([Agent("agent-1", "go")])
+    assert report.finished == 1
+    (_, _, first), (_, _, decision) = model.calls
+    assert first == off() and decision == on(1024)
+
+
+async def test_model_kwargs_given_as_a_dict_go_with_every_call_unchanged():
+    model = ScriptedTransport(analysis_then_answer)
+    given = {"max_tokens": 64}
+    runner = LoopRunner(model, [analyze], model_kwargs=given)
+    await AgentHost(runner, stagger=FAST).run(inputs(1))
+    given["max_tokens"] = 1  # the runner keeps its own copy
+    await AgentHost(runner, stagger=FAST).run(inputs(1, "again"))
+    assert [kwargs for _, _, kwargs in model.calls] == [{"max_tokens": 64}] * 4
+
+
+@pytest.mark.parametrize("returned", [None, [("max_tokens", 64)], "max_tokens=64"])
+async def test_a_model_kwargs_function_that_returns_no_mapping_fails_its_agent(returned):
+    model = ScriptedTransport(lambda m: reply("done"))
+    report = await AgentHost(LoopRunner(model, model_kwargs=lambda a, m: returned), stagger=FAST).run(inputs(1))
+    (agent,) = report.agents
+    assert agent.status == "failed" and agent.error.startswith("TypeError: model_kwargs")
+    assert model.calls == []
+
+
+def test_model_kwargs_that_are_neither_a_mapping_nor_callable_are_refused():
+    with pytest.raises(TypeError, match="model_kwargs"):
+        LoopRunner(transport(), model_kwargs=[("max_tokens", 64)])
 
 
 # --- construction ------------------------------------------------------------------

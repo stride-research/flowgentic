@@ -166,6 +166,47 @@ builder.add_edge("tools", "model")
 graph = builder.compile(checkpointer=checkpointer)
 ```
 
+### A runner of your own
+
+A runner of the application's own, such as one whose code, not a model, picks
+each step, uses what Flowgentic's runners use, from `flowgentic.host`:
+
+- `current_agent()`: the id of the agent the current coroutine works for, or
+  `None` outside the host's agents. The host sets it in each agent's task, and
+  the tasks started from there inherit it. A worker thread sees it only when
+  started with `asyncio.to_thread` or in a copied context
+  (`contextvars.copy_context().run`), as `LoopRunner` and `GraphRunner` run
+  sync inline tools, so an inline tool reads its agent here under both.
+  `loop.run_in_executor` alone does not carry it.
+- `activity(state)`: counts the current agent in `state` for a block:
+  `TOOL_CALL`, `MODEL_REQUEST`, `MODEL_QUEUED` or `TOOL_WAIT`. An agent with
+  no activity open is `WORKING`, and the host alone makes it `PENDING` or
+  `DONE`, so any other state is a `ValueError`. Activities nest and overlap;
+  the agent's state is the most telling of those open, in that order. A
+  fleet counts its own calls.
+- `wait(futures)`: waits for tasks, such as a `ToolRuntime`'s, without raising
+  their errors. A task whose order has not admitted it yet is withdrawn, and
+  never starts, once every wait on it is cancelled, as when the host stops
+  its agent.
+- `register_pending`, above, for a task the runner suspends its agent on;
+  `ToolRuntime.submit` registers its tasks itself.
+
+```python
+from flowgentic.host import AgentState, Finished, activity, wait
+
+
+class Scripted:
+    """Each agent runs one simulation, with arguments its code chooses."""
+
+    async def start(self, agent):
+        job = runtime.submit(simulate, agent.id, "sim0", {"x": choose(agent.input)})
+        with activity(AgentState.TOOL_WAIT):
+            await wait((job,))
+        return Finished(job.result())
+
+    async def resume(self, agent, done): ...
+```
+
 ## Telemetry
 
 Through the OpenTelemetry API, and only once the application configures an

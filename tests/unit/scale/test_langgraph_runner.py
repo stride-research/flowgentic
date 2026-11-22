@@ -8,16 +8,29 @@ import operator
 from typing import Annotated, TypedDict
 
 import pytest
-from _support import Scripted, calls_then_answer, react_graph
+from _support import Scripted, ScriptedTransport, calls_then_answer, react_graph, reply, tool_results
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import InjectedToolCallId, tool
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.errors import GraphInterrupt, GraphRecursionError
-from langgraph.graph import END, START, StateGraph
+from langgraph.graph import END, START, MessagesState, StateGraph
+from langgraph.prebuilt import ToolNode
 from langgraph.types import interrupt
 
-from flowgentic.host import Agent, AgentHost, AgentState, Finished, Interrupted, Stagger, Suspended, register_pending
+from flowgentic.fleet import Fleet
+from flowgentic.host import (
+    Agent,
+    AgentHost,
+    AgentState,
+    Finished,
+    Interrupted,
+    Stagger,
+    Suspended,
+    current_agent,
+    register_pending,
+)
+from flowgentic.langchain import FleetChatModel
 from flowgentic.langgraph import PENDING_KEY, GraphRunner, record_interrupt, route_tool_calls
 
 FAST = Stagger(batch=50, interval_s=0.0)
@@ -120,6 +133,65 @@ async def test_run_configuration_is_merged_under_the_agents():
     agent = Agent("agent-7", {"messages": [HumanMessage("go")]}, config={"configurable": {"site": "b"}})
     assert isinstance(await runner.start(agent), Finished)
     assert seen["thread_id"] == "agent-7" and seen["site"] == "b" and seen["recursion_limit"] == 50
+
+
+@tool
+async def whose(note: str) -> str:
+    """Say which agent this call is for."""
+    return f"{current_agent()} {note}"
+
+
+@tool
+def whose_sync(note: str) -> str:
+    """Say which agent this call is for, from a worker thread."""
+    return f"{current_agent()} {note}"
+
+
+@pytest.mark.parametrize("tool_", [whose, whose_sync], ids=["async", "sync"])
+async def test_an_inline_tool_knows_the_agent_it_runs_for(tool_):
+    model = Scripted(script=calls_then_answer((tool_.name, {"note": "hi"}), (tool_.name, {"note": "ho"})))
+    outputs = {}
+    host = AgentHost(
+        GraphRunner(react_graph(model, [tool_], InMemorySaver())),
+        stagger=FAST,
+        on_done=lambda r, out: outputs.__setitem__(r.id, out),
+    )
+    report = await host.run(inputs(3))
+    assert report.finished == 3
+    for i in range(3):
+        assert outputs[f"agent-{i}"]["messages"][-1].content == f"agent-{i} hi | agent-{i} ho"
+
+
+async def test_a_graphs_model_node_gives_each_call_its_own_arguments():
+    """What ``LoopRunner(model_kwargs=function)`` does, a graph's model node
+    does itself: it computes the call's arguments from the agent and its
+    messages, and passes them with the call."""
+    budgets = {"agent-0": 512, "agent-1": 1024}
+
+    def script(messages):  # OpenAI-format messages, through the fleet
+        if not tool_results(messages):
+            return reply(calls=[("c0", "note", {"text": "hi"})])
+        return reply("done")
+
+    replica = ScriptedTransport(script)
+    model = FleetChatModel(fleet=Fleet([replica])).bind_tools([note])
+
+    async def call_model(state: MessagesState):
+        decision = state["messages"][-1].type == "tool"
+        budget = budgets[current_agent()] if decision else 0
+        kwargs = {"max_tokens": 64 + budget, "extra_body": {"thinking_token_budget": budget}}
+        return {"messages": [await model.ainvoke(state["messages"], reserve=budget, **kwargs)]}
+
+    g = StateGraph(MessagesState)
+    g.add_node("model", call_model)
+    g.add_node("tools", ToolNode([note]))
+    g.add_edge(START, "model")
+    g.add_conditional_edges("model", route_tool_calls, ["tools", "__end__"])
+    g.add_edge("tools", "model")
+    report = await AgentHost(GraphRunner(g.compile(checkpointer=InMemorySaver())), stagger=FAST).run(inputs(2))
+    assert report.finished == 2
+    sent = sorted(kwargs["extra_body"]["thinking_token_budget"] for _, _, kwargs in replica.calls)
+    assert sent == [0, 0, 512, 1024]
 
 
 def test_each_tool_call_goes_out_as_its_own_task():
