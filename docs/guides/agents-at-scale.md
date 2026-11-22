@@ -252,15 +252,14 @@ Dragon's LLM engine, which clears it, and processes started through Dragon's
 `multiprocessing` need it
 ([radical-cybertools/rhapsody#159](https://github.com/radical-cybertools/rhapsody/issues/159)).
 
-CI runs the example without Dragon. For 0.5.1 the parts were tested under
+CI runs the example without Dragon. For 0.6.0 the parts were tested under
 Dragon by hand: the store's contract on RaDEX, an agent suspended by one
 Dragon process and resumed by another, the tool service in a Dragon process
 serving two agent processes over Dragon's queues, and the worked example
-adapted to Dragon, with 1,000 agents in two processes, every suspension
-resumed from RaDEX. They passed under Dragon 0.15.0 on Python 3.12, with
-RHAPSODY at commit `2523ead`, whose native Dragon backend is not in a release
-yet, and RaDEX at commit `9f9b0df`. That example ran LangGraph's agents
-(`--runner graph` now); the loop's agents have not run under Dragon yet.
+adapted to Dragon, with 1,000 agents in two processes, on the loop and with
+`--runner graph`, every suspension resumed from RaDEX. They passed under
+Dragon 0.15.0 on Python 3.12, with RHAPSODY at commit `2523ead`, whose native
+Dragon backend is not in a release yet, and RaDEX at commit `9f9b0df`.
 See [Project status](../status.md#known-limitations).
 
 ## With LangGraph
