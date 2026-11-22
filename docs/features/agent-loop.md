@@ -249,6 +249,21 @@ suspension is the host's `flowgentic.agent.suspend` event; see
 | Human in the loop | an interrupt ends the agent | an interrupted agent can resume |
 | Streaming, middleware, subgraphs | no | LangGraph's |
 
+Two differences an application that moves from `GraphRunner` to the loop may
+see:
+
+- **When a task tool's `suspend` is asked.** The loop asks it before it
+  submits the task, so a `suspend` that raises submits nothing.
+  `GraphRunner`'s task tools ask it after `prepare`, once the task is
+  submitted. An application that counts calls in `prepare` counts
+  differently.
+- **The prompt's length.** The loop renders the tools' schemas through
+  pydantic, as above; LangChain renders them with `convert_to_openai_tool`.
+  The model gets the same tools, but a call's prompt can differ by a few
+  tokens, the same for every call with the same tools: one application
+  measured 27 more prompt tokens per call on the loop than through
+  LangChain, and its model made the same choices.
+
 To measure both on the [agents-at-scale](../guides/agents-at-scale.md)
 example's workload, in one agent process:
 

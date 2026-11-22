@@ -8,7 +8,7 @@ servers such as vLLM and SGLang. LangGraph is optional:
 [With LangGraph](#with-langgraph) runs the same agents as a LangGraph graph.
 
 Flowgentic is not published on PyPI. Install it from a clone, with this path's
-extra, `agents` (the `openai` SDK, RHAPSODY and MCP):
+extra, `agents` (RHAPSODY and MCP):
 
 ```bash
 git clone https://github.com/stride-research/flowgentic.git
@@ -21,7 +21,7 @@ Or install a wheel, attached to a
 from a clone with `uv build`, into your own environment:
 
 ```bash
-uv pip install "dist/flowgentic-0.5.1-py3-none-any.whl[agents]"
+uv pip install "dist/flowgentic-0.6.0-py3-none-any.whl[agents]"
 ```
 
 RaDEX, which keeps agents' state in a Dragon distributed dictionary, is built
@@ -253,15 +253,14 @@ Dragon's LLM engine, which clears it, and processes started through Dragon's
 `multiprocessing` need it
 ([radical-cybertools/rhapsody#159](https://github.com/radical-cybertools/rhapsody/issues/159)).
 
-CI runs the example without Dragon. For 0.5.1 the parts were tested under
+CI runs the example without Dragon. For 0.6.0 the parts were tested under
 Dragon by hand: the store's contract on RaDEX, an agent suspended by one
 Dragon process and resumed by another, the tool service in a Dragon process
 serving two agent processes over Dragon's queues, and the worked example
-adapted to Dragon, with 1,000 agents in two processes, every suspension
-resumed from RaDEX. They passed under Dragon 0.15.0 on Python 3.12, with
-RHAPSODY at commit `2523ead`, whose native Dragon backend is not in a release
-yet, and RaDEX at commit `9f9b0df`. That example ran LangGraph's agents
-(`--runner graph` now); the loop's agents have not run under Dragon yet.
+adapted to Dragon, with 1,000 agents in two processes, on the loop and with
+`--runner graph`, every suspension resumed from RaDEX. They passed under
+Dragon 0.15.0 on Python 3.12, with RHAPSODY at commit `2523ead`, whose native
+Dragon backend is not in a release yet, and RaDEX at commit `9f9b0df`.
 See [Project status](../status.md#known-limitations).
 
 ## With LangGraph
@@ -299,7 +298,13 @@ as the loop deletes its state; see the
 Its replicas are LangChain chat models, which the fleet runs through
 LangChain's adapter (`flowgentic.langchain`); `HTTPTransport` replicas work
 too, through `fleet.chat_model()`. [Agent loop](../features/agent-loop.md)
-compares the two runners, and measures them on this example's workload.
+compares the two runners, and measures them on this example's workload. An
+application that moves its agents from the graph to the loop sees two
+differences: a task tool's `suspend` is asked before the task is submitted,
+not after `prepare`, and the prompts' lengths can differ by a few tokens per
+call, because the loop renders the tools' schemas through pydantic and
+LangChain with its own converter ([Compared with
+`GraphRunner`](../features/agent-loop.md#compared-with-graphrunner)).
 
 ## Telemetry
 

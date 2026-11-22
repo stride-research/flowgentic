@@ -7,15 +7,134 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
-## [Unreleased]
+## [0.6.0]
 
 Agents at scale run on Flowgentic's own agent loop, on OpenAI Chat Completions
 messages and transports to OpenAI-compatible model servers, and LangGraph
 becomes optional: LangChain is an adapter, in the `langgraph` extra, and
-LangGraph's graphs run on the same parts. The fleet's API breaks (under
-Changed), before 1.0; `GraphRunner` and its graphs work as before. Task tools
-also run on an application's AsyncFlow engine, and each task ends in a
-decision record.
+LangGraph's graphs run on the same parts. Task tools also run as tasks of an
+application's AsyncFlow engine, and each task ends in a decision record.
+Runners outside Flowgentic get public helpers, and the fleet records each
+model call as a span and metrics, which a reader checks after the run, or
+which stream to a live dashboard while it runs. The fleet's API breaks, before 1.0: see [What breaks](#what-breaks) and
+[Migrating from 0.5](#migrating-from-05). `GraphRunner` and its graphs work as
+before.
+
+The new public API, detailed under Added:
+
+- **The agent loop.** `flowgentic.loop.LoopRunner`, on the fleet's
+  `Transport` and its `Reply`, `ToolCall`, `InvalidToolCall` and `Usage`;
+  `HTTPTransport`, the default transport, and `OpenAITransport`, in the
+  `openai` extra; `ModelServerError`, with `ServerUnavailable`,
+  `AuthenticationFailed` and `RequestRejected`; LangChain's adapter,
+  `flowgentic.langchain`; and the `agents` extra, the path without LangGraph.
+- **Task tools on an AsyncFlow engine.** `ToolRuntime(engine=flow,
+  backend=...)`, `task_tool(fn, backend=...)` and `ToolRuntime.check`; the
+  decision record's `TaskRecord.uid`, `backend`, `t_commit`, `t_start` and
+  `t_finish`.
+- **For runners outside Flowgentic.** `flowgentic.host.current_agent()`,
+  `activity(state)` and `wait(futures)`, and `LoopRunner(model_kwargs=fn)`,
+  which gives each model call its own keywords.
+- **Fleet telemetry.** One `chat` span per model call; the metrics
+  `flowgentic.fleet.call.duration`, `flowgentic.fleet.retries`,
+  `flowgentic.fleet.outage.duration` and `flowgentic.fleet.tokens`; and
+  `flowgentic.telemetry`, whose `read_export(path)` reads a run's export back
+  and whose `Export.check()` and `Export.check_servers()` check it.
+- **A live dashboard.** The `otlp` extra and `flowgentic.otlp.configure()`,
+  which streams a process's metrics and spans to an OpenTelemetry collector,
+  with `OtlpTelemetry.rhapsody_options()` for RHAPSODY's own; and
+  `examples/live-dashboard`, a collector, Prometheus, Jaeger and Grafana with
+  a dashboard per component, started per user.
+
+### What breaks
+
+- **`Fleet.ainvoke(agent_id, messages, tools=None, ...)` returns a `Reply`,
+  not an `AIMessage`.** Pass the tools' schemas, or LangChain tools to
+  LangChain replicas, as `tools=`. For an `AIMessage`, call
+  `flowgentic.langchain.to_ai_message(reply)`: with a LangChain replica it is
+  the replica's own message.
+- **`Fleet.bind_tools` is gone.** Pass `tools=` to `ainvoke`, or use
+  `fleet.chat_model().bind_tools(tools)`.
+- **A fleet listener gets `(record, reply)` with the `Reply`.** It has
+  `content`, `tool_calls` and `invalid_tool_calls`, but its calls are
+  objects, not dicts: `ToolCall(id, name, args)`, so `call.id` where it was
+  `call["id"]`, and `InvalidToolCall(id, name, arguments, error)`, whose raw
+  text is `arguments`, not `args`. A listener that reads only `content`, or
+  counts the calls, works as before.
+- **`FleetChatModel` lives in `flowgentic.langchain`.**
+  `flowgentic.fleet.FleetChatModel` still names it, but it is no longer in
+  `flowgentic.fleet.__all__`; without LangChain, `from flowgentic.fleet
+  import FleetChatModel` is a plain `ImportError`, so import it from
+  `flowgentic.langchain`, which names the extra.
+- **Installs.** httpx is a core dependency (`httpx>=0.27,<1`), for the
+  default transport. `flowgentic.fleet` imports no LangChain and needs no
+  extra. The agents-at-scale path installs as `flowgentic[agents]`, RHAPSODY
+  and MCP, with no LangGraph, LangChain or `openai` SDK; `GraphRunner`,
+  `KeyValueSaver`, LangChain replicas and `fleet.chat_model()` need the
+  `langgraph` extra too, and `OpenAITransport` the `openai` extra. The
+  `asyncflow` extra needs AsyncFlow 0.7 (`radical-asyncflow>=0.7,<0.8`, was
+  `>=0.6,<0.7`).
+- **A runtime set up wrong raises `ToolSetupError`**, a `RuntimeError`, where
+  it raised `RuntimeError`: code that catches `RuntimeError` still catches
+  it, but an agent's error reads `ToolSetupError: ...`. On a session, a task
+  tool naming a backend the session lacks is one: it fails its agent, and
+  `bind_tools` refuses it, where the session's error reached the model.
+
+What does not break: a fleet built from LangChain chat models (`ChatOpenAI`,
+or a subclass of it) keeps working, through `ChatModelTransport`, which
+passes LangChain messages and tools to them unchanged; `Recovery`'s check may
+return a chat model or a transport; admission, routing, accounting,
+`CallRecord` and `fleet.stats()` are unchanged. `GraphRunner`, `bind_tools`
+(the tools adapter), `KeyValueSaver` and their graphs are unchanged.
+
+### Migrating from 0.5
+
+**Installs.** Replace `flowgentic[langgraph,rhapsody,mcp]` with
+`flowgentic[agents]` for the agent loop, or `flowgentic[agents,langgraph]` to
+keep running LangGraph graphs.
+
+**A fleet wrapper of the application's own.** Say it holds a `Fleet` of
+`ChatOpenAI` replicas, has a `bind_tools(tools)` that called
+`Fleet.bind_tools`, and an `ainvoke` that returned the bound fleet's
+`AIMessage` to a LangGraph graph. Only the wrapper changes; the graph, which
+calls the wrapper, does not:
+
+```diff
++from flowgentic.langchain import to_ai_message
+ ...
+-        self.bound = self.fleet
++        self.tools = None
+ ...
+     def bind_tools(self, tools: list) -> None:
+-        self.bound = self.fleet.bind_tools(tools)
++        self.tools = list(tools)
+ ...
+-        return await self.bound.ainvoke(thread_id, messages, reserve=..., meta=..., **kwargs)
++        reply = await self.fleet.ainvoke(thread_id, messages, tools=self.tools, reserve=..., meta=..., **kwargs)
++        return to_ai_message(reply)  # the replica's own AIMessage
+```
+
+A graph's model node that called the fleet itself does the same: `reply =
+await fleet.ainvoke(agent_id, messages, tools=tools)`, then returns
+`to_ai_message(reply)`, as the agents-at-scale example's LangGraph version
+does.
+
+**A fleet listener** reads `call.id`, `call.name` and `call.args` for each of
+`reply.tool_calls`, and `call.arguments` for each of
+`reply.invalid_tool_calls`.
+
+**From `GraphRunner` to `LoopRunner`**, which is optional. The loop takes the
+same task, MCP and inline tools, the same fleet and the same store. Two
+differences an application may see:
+
+- The runners ask a task tool's `suspend` at different times: `LoopRunner`
+  before it submits the task, so a `suspend` that raises submits nothing;
+  `GraphRunner`'s tools after `prepare`, once the task is submitted. An
+  application that counts calls in `prepare` counts differently.
+- The loop renders the tools' JSON schemas through pydantic, LangChain
+  through `convert_to_openai_tool`. The model gets the same tools, but the
+  prompt's length can differ by a few tokens per call; see the agent loop
+  page.
 
 ### Added
 
@@ -116,18 +235,19 @@ decision record.
   status ERROR and its `error.type`. With LangChain replicas and
   OpenTelemetry's LangChain instrumentation on, the instrumentation's span is
   the call's, and Flowgentic records none.
-- Three fleet metrics, beside 0.5.0's: `flowgentic.fleet.call.duration`, each
+- Four fleet metrics, beside 0.5.0's: `flowgentic.fleet.call.duration`, each
   call's time, whose count is the calls, with `error.type` for those that
   failed or were cancelled; `flowgentic.fleet.retries`, the requests sent
-  again once their replica came back, counted as each is admitted; and
+  again once their replica came back, counted as each is admitted;
   `flowgentic.fleet.outage.duration`, each outage `Recovery` watched, with
-  `flowgentic.fleet.outage.outcome`, `recovered` or `gave_up`. Counts stay
-  exact through outages and cancellations: a retried call is one call and
-  several requests, `flowgentic.fleet.request.duration` counts a try
-  cancelled at the replica, with `error.type` `CancelledError`, and a call
-  cancelled while it waited for admission sent no request. And `flowgentic.fleet.tokens`, the prompt (`input`) and
-  completion (`output`) tokens the servers counted at each replica, read when
-  the SDK collects, so it costs nothing per call.
+  `flowgentic.fleet.outage.outcome`, `recovered` or `gave_up`; and
+  `flowgentic.fleet.tokens`, the prompt (`input`) and completion (`output`)
+  tokens the servers counted at each replica, read when the SDK collects, so
+  it costs nothing per call. Counts stay exact through outages and
+  cancellations: a retried call is one call and several requests,
+  `flowgentic.fleet.request.duration` counts a try cancelled at the replica,
+  with `error.type` `CancelledError`, and a call cancelled while it waited
+  for admission sent no request.
 - `flowgentic.telemetry.read_export(path)` reads back the OpenTelemetry export
   each agent process wrote into a directory of its own (`metrics.jsonl` and
   `spans.jsonl`, the SDK's console exporters' JSON) and merges them into an
@@ -142,10 +262,10 @@ decision record.
   causes; with `sampled=True`, for spans sampled per agent, only more spans
   than calls. `Export.check_servers()` compares the fleets' tokens and
   successful requests, from the metrics, with the model servers' own
-  counters, and all the `chat` spans' where the fleets made no calls. The telemetry page
-  shows how each process writes its export, and what the SDK costs and how to
-  cut it: spans sampled per agent, no exemplars, metrics every 10 s or less
-  often.
+  counters, and all the `chat` spans' where the fleets made no calls. The
+  telemetry page shows how each process writes its export, and what the SDK
+  costs and how to cut it: spans sampled per agent, no exemplars, metrics
+  every 10 s or less often.
 - `benchmarks/agent_loop.py --otel DIR` and `benchmarks/agent_host.py --otel
   DIR` run with the OpenTelemetry SDK writing its export into `DIR`
   (`--no-spans` for metrics only), to compare their CPU time with a run
@@ -165,8 +285,8 @@ decision record.
   `WorkflowEngine.start_telemetry()`. RHAPSODY's `start_telemetry()` leaves
   its session span current, so agents started in that context would all
   follow its sampling; the docs and the example start them in a context of
-  their own. Metrics stay cumulative whatever the environment
-  prefers. With the collector down, a shutdown takes about `timeout_s` per
+  their own. Metrics stay cumulative whatever the environment prefers.
+  With the collector down, a shutdown takes about `timeout_s` per
   signal, RHAPSODY's span processor's included, and drops what is still
   queued. It refuses a process whose providers are set already, before it
   opens anything. Streaming costs what the files cost: +17.7 % of CPU for
@@ -238,27 +358,11 @@ decision record.
 
 ### Changed
 
-- **The fleet's API breaks.** A replica is a `Transport`. A LangChain chat
-  model given as a replica, or returned by `Recovery`'s check, is wrapped in
-  `ChatModelTransport`, so a fleet built from `ChatOpenAI` replicas keeps
-  working, and its calls reach the models unchanged. But:
-  - `Fleet.ainvoke(agent_id, messages, tools=None, ...)` returns a `Reply`,
-    not an `AIMessage`. Pass the tools' schemas, or LangChain tools to
-    LangChain replicas, as `tools=`. For an `AIMessage`, call
-    `flowgentic.langchain.to_ai_message(reply)`: with a LangChain replica it
-    is the replica's own message.
-  - `Fleet.bind_tools` is gone: pass `tools=` to `ainvoke`, or use
-    `fleet.chat_model().bind_tools(tools)`.
-  - A listener gets `(record, reply)` with the `Reply`, which has
-    `content`, `tool_calls` and `invalid_tool_calls`, but its calls are
-    objects, not dicts: `ToolCall(id, name, args)`, so `call.id` where it
-    was `call["id"]`, and `InvalidToolCall(id, name, arguments, error)`,
-    whose raw text is `arguments`, not `args`.
-  - `FleetChatModel` lives in `flowgentic.langchain`;
-    `flowgentic.fleet.FleetChatModel` still names it.
-  - `flowgentic.fleet` imports no LangChain and needs no extra; the
-    `langgraph` extra is needed only for LangChain replicas and
-    `chat_model()`.
+- The fleet's API, as [What breaks](#what-breaks) says. A replica is a
+  `Transport`; a LangChain chat model given as a replica, or returned by
+  `Recovery`'s check, is wrapped in `ChatModelTransport`, so a fleet built
+  from `ChatOpenAI` replicas keeps working, and its calls reach the models
+  unchanged.
 - The agents-at-scale example runs on `LoopRunner`, with its scripted model as
   a transport and its inline tool a plain function, and needs the `agents`
   extra only; `--runner graph` runs the LangGraph version,
@@ -1015,7 +1119,7 @@ on `main`.
   - Each test matrix job runs its own Python with the dev extra.
   - The bandit job runs again.
 
-[Unreleased]: https://github.com/stride-research/flowgentic/compare/v0.5.1...HEAD
+[0.6.0]: https://github.com/stride-research/flowgentic/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/stride-research/flowgentic/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/stride-research/flowgentic/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/stride-research/flowgentic/compare/v0.3.1...v0.4.0

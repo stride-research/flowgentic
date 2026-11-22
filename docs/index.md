@@ -9,7 +9,7 @@ AsyncFlow workflow tasks, and, from 0.5.0, as agents at scale whose tools run
 as RHAPSODY tasks and whose state lives in RaDEX. Agents at scale run on
 Flowgentic's own agent loop and OpenAI-compatible model servers; LangGraph is
 optional. This
-documentation describes Flowgentic 0.5.1.
+documentation describes Flowgentic 0.6.0.
 
 ## Status
 
@@ -31,7 +31,7 @@ was an implicit retry and timeout on every call and graph node, which re-ran
 scientific work; 0.4.0 removed them. New applications can bind agents with
 `bind_agent`, or run LangGraph on AsyncFlow directly.
 
-0.5.1 requires Python 3.11 or later, and installs each path's dependencies as
+0.6.0 requires Python 3.11 or later, and installs each path's dependencies as
 an extra.
 
 | Path | Agent framework | Runs tasks on | Python |
@@ -60,7 +60,9 @@ Agents at scale (see [Agents at scale](guides/agents-at-scale.md)):
   `langgraph` extra, run LangGraph graphs in the same host, their checkpoints
   in the same store. See [Checkpointer](features/checkpointer.md).
 - **`task_tool` and `mcp_tool`** (`flowgentic.tools`) say where a tool runs: as
-  a RHAPSODY task, which may suspend its agent, or through the tool service
+  a task on a RHAPSODY session or on the application's own AsyncFlow engine,
+  which may suspend its agent and leaves a record of when the agent decided
+  on it and when it ran, or through the tool service
   (`flowgentic.tools.service`), which calls MCP tools for many agent processes.
   See [Tool placement](features/tools.md) and
   [Tool service](features/tool-service.md).
@@ -68,10 +70,16 @@ Agents at scale (see [Agents at scale](guides/agents-at-scale.md)):
   replica of a model server, under caps on tokens and requests in flight. A
   replica is a transport, such as `HTTPTransport` for vLLM, SGLang or
   OpenRouter. See [Fleet](features/fleet.md).
+- **`read_export`** (`flowgentic.telemetry`) reads back the OpenTelemetry
+  export of every agent process of a run, and checks it: each fleet's calls
+  against its `chat` spans, and its tokens against the model servers' own
+  counters. See [Telemetry](features/telemetry.md).
 - **`configure`** (`flowgentic.otlp`), with the `otlp` extra, streams each
   agent process's metrics and spans to an OpenTelemetry collector, and
   `examples/live-dashboard` shows the run live in Grafana: agents in each
   state, model calls and tokens per second, queues at the replicas, tools.
+  Its stack runs per user, on 127.0.0.1, behind a login and a token; on a
+  shared node, other users of the node can reach 127.0.0.1, so keep both.
   See [Live dashboard](features/live-dashboard.md).
 
 The AsyncFlow path:
@@ -107,7 +115,7 @@ in three of them.
 | An external harness (Claude Code, Codex, OpenClaw) steers a run or submits a campaign | ADR, AuCaM | None |
 | A campaign of many agents, each with its tools as RHAPSODY tasks, its model on the allocation and its state in the allocation's memory | The application | `AgentHost` and the parts of agents at scale |
 
-ADR and AuCaM are not released, and Flowgentic 0.5.1 does not support ADR
+ADR and AuCaM are not released, and Flowgentic 0.6.0 does not support ADR
 mode; see [Project status](status.md).
 
 ## Install
@@ -121,12 +129,11 @@ uv sync --locked
 ```
 
 Flowgentic's core installs no agent framework and no workflow engine. Each
-path is an extra: `agents` for agents at scale (the `openai` SDK, `rhapsody`
-and `mcp`), with `langgraph` to run LangGraph graphs on them; `langgraph` and
-`asyncflow` for the LangGraph integration on AsyncFlow; `asyncflow` for
-`bind_agent`; `otlp` to stream a run's telemetry to an OpenTelemetry
-collector, for a live dashboard. The demos' `make` targets add what they
-need.
+path is an extra: `agents` for agents at scale (`rhapsody` and `mcp`), with
+`langgraph` to run LangGraph graphs on them; `langgraph` and `asyncflow` for
+the LangGraph integration on AsyncFlow; `asyncflow` for `bind_agent`; `otlp`
+to stream a run's telemetry to an OpenTelemetry collector, for a live
+dashboard. The demos' `make` targets add what they need.
 
 Or build the wheel and install it into a new environment, with the extras you
 use:
@@ -134,7 +141,7 @@ use:
 ```bash
 uv build
 uv venv --python 3.11 flowgentic-env
-uv pip install --python flowgentic-env/bin/python "dist/flowgentic-0.5.1-py3-none-any.whl[agents]"
+uv pip install --python flowgentic-env/bin/python "dist/flowgentic-0.6.0-py3-none-any.whl[agents]"
 ```
 
 [Getting started](getting-started.md) runs the two offline demos of the

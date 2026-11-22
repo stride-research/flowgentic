@@ -8,15 +8,25 @@ optional. The two paths are at different stages.
 
 ## Agents at scale: in active development
 
-0.5.0 adds the parts that run many thousands of agents per process on an HPC
+0.5.0 added the parts that run many thousands of agents per process on an HPC
 allocation: the [agent host](features/agent-host.md), the
 [checkpointer](features/checkpointer.md), [tool placement](features/tools.md),
 the [tool service](features/tool-service.md) and the [fleet](features/fleet.md)
-client for model servers. The next release makes Flowgentic's own
-[agent loop](features/agent-loop.md), on OpenAI-format messages and the
-fleet's transports, the path's runner, and LangGraph optional: its graphs run
-on the same parts with the `langgraph` extra, through LangChain's adapter.
-This breaks the fleet's API, and the new names may still change.
+client for model servers. 0.6.0 makes Flowgentic's own [agent
+loop](features/agent-loop.md), on OpenAI-format messages and the fleet's
+transports, the path's runner, and LangGraph optional: its graphs run on the
+same parts with the `langgraph` extra, through LangChain's adapter. This breaks
+the fleet's API; the [changelog](changelog.md#migrating-from-05) says what to
+change. 0.6.0 also runs task tools as tasks of an application's own AsyncFlow
+engine, each with a record of when its agent decided on it and when it ran
+([Tool placement](features/tools.md#in-an-asyncflow-application)), gives
+runners of an application's own the host's helpers ([A runner of your
+own](features/agent-host.md#a-runner-of-your-own)), and records each of the
+fleet's model calls as a span and metrics, which `flowgentic.telemetry` reads
+back and checks after a run ([Telemetry](features/telemetry.md)), or which
+`flowgentic.otlp`, with the `otlp` extra, streams to an OpenTelemetry collector
+while it runs, for the live dashboard in `examples/live-dashboard/` ([Live
+dashboard](features/live-dashboard.md)).
 [Agents at scale](guides/agents-at-scale.md) shows the parts together, in an
 example that runs on a laptop, with or without LangGraph. Their interfaces
 may still change before 1.0, as the changelog will say.
@@ -62,9 +72,10 @@ run, and a graph that should change between runs is built anew as a
 | Agents at scale | Flowgentic's agent loop; LangGraph 1.x, optional | RHAPSODY 0.7 on a thread pool, in CI; RHAPSODY's native Dragon backend, not yet released, by hand | 3.11, 3.12, 3.13 |
 | AsyncFlow | LangGraph 1.x | RADICAL AsyncFlow 0.7, local backends | 3.11, 3.12, 3.13 |
 
-Tested environment, from `uv.lock`: httpx 0.28.1, openai 3.36.1, LangGraph 1.2.16,
-langgraph-checkpoint 4.3.0, langchain-core 1.7.0, langchain 1.4.7, rhapsody-py
-0.7.0, mcp 2.3.0, radical-asyncflow 0.7.0 and academy-py 1.0.0. CI runs the
+Tested environment, from `uv.lock`: httpx 0.28.1, openai 3.36.1, LangGraph
+1.2.22, langgraph-checkpoint 4.3.2, langchain-core 1.8.3, langchain 1.5.0,
+rhapsody-py 0.7.0, mcp 2.3.0, radical-asyncflow 0.7.0, academy-py 1.0.0, and
+the OpenTelemetry API, SDK and OTLP/HTTP exporter 1.45.2. CI runs the
 test suite on Python 3.11, 3.12 and 3.13, and on Python 3.11 with the lowest
 versions the dependency ranges allow; it also installs the wheel with the
 `agents` extra alone, without LangGraph, LangChain or the `openai` SDK, and
@@ -88,6 +99,9 @@ metrics, and `httpx>=0.27,<1`, for the fleet's default transport,
   task is called, which task tools on an engine record, and its task spans
   name the backend each task ran on.
 - `agents`: `rhapsody` and `mcp`, for agents at scale.
+- `otlp`: `opentelemetry-sdk>=1.43,<2` and
+  `opentelemetry-exporter-otlp-proto-http>=1.43,<2`, for `flowgentic.otlp`,
+  which streams a process's telemetry to an OpenTelemetry collector.
 
 Agents at scale need `flowgentic[agents]`, and `flowgentic[agents,langgraph]`
 to run LangGraph graphs. The LangGraph integration on AsyncFlow needs
@@ -108,17 +122,18 @@ Agents at scale:
 
 - CI runs no part under Dragon: `RadexStore` is tested against a stand-in for
   RaDEX's client, task tools run on RHAPSODY's thread-pool backend, and the
-  tool service's queues are the standard library's. For 0.5.0, and again for
-  0.5.1, the parts were tested under Dragon by hand: the store's contract on
-  RaDEX, an agent suspended by one Dragon process and resumed by another, the
-  tool service in a Dragon process serving two agent processes over Dragon's
-  queues, and the worked example adapted to Dragon, with 1,000 agents in two
-  processes, every suspension resumed from RaDEX. They passed under Dragon
-  0.15.0 on Python 3.12, with RHAPSODY at commit `2523ead`, whose native
-  Dragon backend is not in a release yet, and RaDEX at commit `9f9b0df`. The
-  tests marked `dragon` make these checks, the last one with the example's
-  `--dragon` flag; the contributing guide says how to run them. That example
-  ran LangGraph's agents; the agent loop's have not run under Dragon yet.
+  tool service's queues are the standard library's. For each release since
+  0.5.0, 0.6.0 included, the parts were tested under Dragon by hand: the
+  store's contract on RaDEX, an agent suspended by one Dragon process and
+  resumed by another, the tool service in a Dragon process serving two agent
+  processes over Dragon's queues, and the worked example adapted to Dragon,
+  with 1,000 agents in two processes, every suspension resumed from RaDEX.
+  For 0.6.0 the example ran on the agent loop and, with `--runner graph`, as
+  LangGraph graphs. They passed under Dragon 0.15.0 on Python 3.12, with
+  RHAPSODY at commit `2523ead`, whose native Dragon backend is not in a
+  release yet, and RaDEX at commit `9f9b0df`. The tests marked `dragon` make
+  these checks, the last one with the example's `--dragon` flag on the loop;
+  the contributing guide says how to run them.
 - RaDEX has no package: `RadexStore` needs RaDEX's Python client built from
   source with its C++ core.
 - An agent resumes only in the process that suspended it, because that
@@ -152,6 +167,18 @@ Agents at scale:
       `share` so that the largest context fits in one share. Each gate counts
       such calls (`oversize` in `fleet.stats()["gates"]`), and the fleet logs
       the first as a warning.
+- The OpenTelemetry SDK costs the agent processes CPU: with 5,000 agents on the
+  loop in one process, metrics add 6 to 8 %, and every span about 50 %, or 17 %
+  with the configuration that
+  [Telemetry](features/telemetry.md#what-it-costs-and-how-to-cut-it) recommends
+  at scale. Streaming it over OTLP costs what writing files costs.
+- The live dashboard (`examples/live-dashboard/`) starts its stack per user,
+  with its ports on 127.0.0.1, a Grafana login and a token for the
+  collector. On a shared node, 127.0.0.1 is closed to other machines, not to
+  other users of the same node: keep the login and the token, and cross a
+  network through an SSH tunnel, since neither Grafana nor the collector uses
+  TLS there. Its own limitations are on the
+  [Live dashboard](features/live-dashboard.md#limitations) page.
 - Python 3.14 is not tested. The host's collector settings were measured on
   CPython 3.12, and 3.14 has a new, incremental collector.
 
