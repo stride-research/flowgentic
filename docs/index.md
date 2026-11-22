@@ -68,6 +68,11 @@ Agents at scale (see [Agents at scale](guides/agents-at-scale.md)):
   replica of a model server, under caps on tokens and requests in flight. A
   replica is a transport, such as `HTTPTransport` for vLLM, SGLang or
   OpenRouter. See [Fleet](features/fleet.md).
+- **`configure`** (`flowgentic.otlp`), with the `otlp` extra, streams each
+  agent process's metrics and spans to an OpenTelemetry collector, and
+  `examples/live-dashboard` shows the run live in Grafana: agents in each
+  state, model calls and tokens per second, queues at the replicas, tools.
+  See [Live dashboard](features/live-dashboard.md).
 
 The AsyncFlow path:
 
@@ -119,7 +124,9 @@ Flowgentic's core installs no agent framework and no workflow engine. Each
 path is an extra: `agents` for agents at scale (the `openai` SDK, `rhapsody`
 and `mcp`), with `langgraph` to run LangGraph graphs on them; `langgraph` and
 `asyncflow` for the LangGraph integration on AsyncFlow; `asyncflow` for
-`bind_agent`. The demos' `make` targets add what they need.
+`bind_agent`; `otlp` to stream a run's telemetry to an OpenTelemetry
+collector, for a live dashboard. The demos' `make` targets add what they
+need.
 
 Or build the wheel and install it into a new environment, with the extras you
 use:

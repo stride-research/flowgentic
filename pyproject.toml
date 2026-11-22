@@ -31,7 +31,8 @@ classifiers = [
 # Flowgentic's loop (`rhapsody` for tools that run as RHAPSODY tasks, `mcp` for
 # the tool service's MCP clients); `openai` for the transport over the openai
 # SDK; `langgraph` for LangGraph graphs, LangChain agents and LangChain's
-# adapter, optional on that path; `asyncflow` for AsyncFlow workflows.
+# adapter, optional on that path; `asyncflow` for AsyncFlow workflows; `otlp`
+# to stream telemetry to an OpenTelemetry collector.
 dependencies = [
     "pydantic>=2.0.0",
     "opentelemetry-api>=1.43,<2",
@@ -62,6 +63,12 @@ mcp = [
 agents = [
     "flowgentic[rhapsody,mcp]",
 ]
+# Stream a process's telemetry to an OpenTelemetry collector over OTLP/HTTP
+# (`flowgentic.otlp`), for a live dashboard such as examples/live-dashboard.
+otlp = [
+    "opentelemetry-sdk>=1.43,<2",
+    "opentelemetry-exporter-otlp-proto-http>=1.43,<2",
+]
 examples = [
     "flowgentic[langgraph,asyncflow]",
     "python-dotenv>=1.0",
@@ -72,7 +79,7 @@ examples = [
     "rhapsody-py[telemetry]>=0.7,<0.8",
 ]
 dev = [
-    "flowgentic[examples,agents,openai]",
+    "flowgentic[examples,agents,openai,otlp]",
     "ruff>=0.12.11",
     "pre-commit>=4.0",
     "mkdocs-material>=9.6",

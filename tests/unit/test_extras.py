@@ -266,7 +266,8 @@ def test_the_agents_extra_installs_the_path_without_langgraph() -> None:
 	"""``flowgentic[agents]``: RHAPSODY and MCP. The fleet's default transport
 	needs httpx, which the core has; the openai SDK is the ``openai`` extra's,
 	for ``OpenAITransport``. LangGraph is the ``langgraph`` extra's, and the
-	AsyncFlow demos' ``examples`` keep it."""
+	AsyncFlow demos' ``examples`` keep it. The ``otlp`` extra adds the SDK and
+	its OTLP/HTTP exporter, for ``flowgentic.otlp``."""
 	import tomllib
 
 	pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
@@ -274,7 +275,11 @@ def test_the_agents_extra_installs_the_path_without_langgraph() -> None:
 	extras = project["optional-dependencies"]
 	assert any(d.startswith("httpx") for d in project["dependencies"])
 	assert extras["agents"] == ["flowgentic[rhapsody,mcp]"]
-	assert extras["dev"][0] == "flowgentic[examples,agents,openai]"
+	assert extras["dev"][0] == "flowgentic[examples,agents,openai,otlp]"
+	assert [d.split(">")[0] for d in extras["otlp"]] == [
+		"opentelemetry-sdk",
+		"opentelemetry-exporter-otlp-proto-http",
+	]
 	assert "langgraph" in extras["examples"][0]
 
 

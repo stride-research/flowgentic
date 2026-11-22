@@ -146,8 +146,9 @@ runtime they run on, and the store.
 ```
 
 And its host, which builds each agent's input as a slot opens, runs the
-process's share of the agents, and then stops the tool service client and
-closes the RHAPSODY session:
+process's share of the agents, each starting a trace of its own (see
+[Live dashboard](../features/live-dashboard.md#stream-a-run-to-it)), and then
+stops the tool service client and closes the RHAPSODY session:
 
 ```python
 --8<-- "examples/agents-at-scale/campaign.py:host"

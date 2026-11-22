@@ -25,6 +25,7 @@ nav:
       - Tool service: features/tool-service.md
       - Fleet: features/fleet.md
       - Telemetry: features/telemetry.md
+      - Live dashboard: features/live-dashboard.md
       - Logging: features/logging.md
   - Design patterns:
       - Sequential: design_patterns/sequential.md
