@@ -349,7 +349,8 @@ The levers, biggest first:
 4. **Write JSON lines.** An OTLP exporter is not cheaper in the agents'
    process: the Python exporter builds the protobuf there, at about the cost
    of the JSON line, for half the bytes. An OpenTelemetry collector takes the
-   work only after encoding. Use OTLP and a collector for
+   work only after encoding: `flowgentic.otlp` measured +17.7 % on the loop
+   against +17.4 % for the files. Use OTLP and a collector for
    [live dashboards](live-dashboard.md) or a trace backend, not to save CPU.
 
 Fewer values per model call would save more: each costs the same, and a

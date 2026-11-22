@@ -74,7 +74,9 @@ most agents queued: about 2.5 minutes for 36,000 calls.
 
 ### What `configure()` sets
 
-The defaults are the [telemetry page's configuration at scale](telemetry.md#what-it-costs-and-how-to-cut-it):
+The defaults are the [telemetry page's configuration at scale](telemetry.md#what-it-costs-and-how-to-cut-it),
+with metrics every 5 s rather than 10 s, for a live view; see
+[what it costs](#what-it-costs):
 
 | Argument | Default | What it sets |
 | --- | --- | --- |
@@ -84,7 +86,7 @@ The defaults are the [telemetry page's configuration at scale](telemetry.md#what
 | `instance` | `OTEL_RESOURCE_ATTRIBUTES`, then the host's name and the process id | `service.instance.id`: the process, one per process |
 | `sample` | 0.1 | The share of agents whose spans are kept, each with its whole trace: `ParentBased(TraceIdRatioBased(sample))` |
 | `exemplars` | `False` | The SDK's default exemplar filter, which keeps an exemplar for each value recorded inside a sampled span |
-| `interval_s` | 10 | Seconds between metric exports |
+| `interval_s` | 5 | Seconds between metric exports, the files' too |
 | `spans` | `True` | `False` exports metrics only |
 | `files` | `None` | A directory for `metrics.jsonl` and `spans.jsonl` as well, as `read_export` reads them |
 | `timeout_s` | `OTEL_EXPORTER_OTLP_TIMEOUT`, then 10 | Seconds an export waits for the collector, retries included |
@@ -121,8 +123,9 @@ such as on the node that starts the campaign, and point their `endpoint` at
 it. The collector's configuration, `collector.yaml`, sends metrics to
 Prometheus and spans to Jaeger; Prometheus, Jaeger and Grafana can run beside
 it or elsewhere, and Grafana is reached through a tunnel to its port. Each
-process sends one metrics request per export interval, a few tens of kB for
-the metrics above, and its sampled spans in batches.
+process sends one metrics request per export interval, about 9 kB for the
+agents-at-scale example's metrics, and its sampled spans in batches of about
+100 kB.
 
 A model server's own metrics, such as vLLM's, go to the same Prometheus:
 `collector.yaml` shows a `prometheus` receiver that scrapes a server's
@@ -165,7 +168,33 @@ are labels named the same way, such as `flowgentic_agent_state`.
 
 ## What it costs
 
-COST
+Streaming costs the agents' process what writing the files costs: the SDK
+does the same work per value and per span, and the OTLP exporter encodes
+protobuf where the console exporter writes JSON. Measured with the
+benchmarks' `--otlp` option into `benchmarks/otlp_sink.py`, an endpoint that
+takes the exports and keeps nothing (22 Nov 2026, AMD EPYC 7502P, Python
+3.14, the whole process's CPU, median of 5 runs on the loop and 7 for the
+host alone):
+
+| SDK, against none | 5,000 agents on the loop (`agent_loop.py`): metrics, a tenth of the agents' spans | The agent host alone, 100,000 agents (`agent_host.py`): metrics |
+| --- | --- | --- |
+| The files `read_export` reads, metrics every 10 s | +17.4 % | +0.0 % |
+| OTLP, metrics every 10 s | +17.7 % | +3.8 % |
+| OTLP, metrics every 5 s | +18.4 % | +2.2 % |
+| OTLP and the files | +21.0 % | not measured |
+
+The runs vary by about 1 %. The host's run lasts 1.8 s, less than an
+interval, so it pays for one export, at the end, which also opens the
+connection. Writing the files beside the stream exports each kept span twice:
+3 % more than the files alone.
+
+One metrics export, once 5,000 agents on the loop have filled every
+instrument, costs 1.5 ms of CPU over OTLP and 2.5 ms as a JSON line; the
+first costs about 5 ms. Every 5 s, that is about 1 s of CPU an hour per
+process, which is why `configure()` exports twice as often as the telemetry
+page's configuration. The spans are what costs: the page's
+[levers](telemetry.md#what-it-costs-and-how-to-cut-it) apply as they are,
+sampling first.
 
 ## Limitations
 

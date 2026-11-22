@@ -157,13 +157,15 @@ decision record.
   for a live dashboard, beside the files that `read_export` reads or
   instead of them (`files=`). One call sets the process's meter and tracer
   providers with the telemetry page's configuration at scale (spans sampled
-  per agent at a tenth, no exemplars, metrics every 10 s) and a resource
+  per agent at a tenth, no exemplars), metrics every 5 s, and a resource
   that names the run (`service.namespace`), the process's role
   (`service.name`) and the process (`service.instance.id`).
   `OtlpTelemetry.rhapsody_options()` sends RHAPSODY's own metrics and spans
   to the same collector, through `Session.start_telemetry()` or AsyncFlow's
   `WorkflowEngine.start_telemetry()`. It refuses a process whose providers
-  are set already. COST
+  are set already. Streaming costs what the files cost: +17.7 % of CPU for
+  5,000 agents on the loop against +17.4 %, and one metrics export about
+  1.5 ms.
 - `examples/live-dashboard`: an OpenTelemetry collector, Prometheus, Jaeger
   and Grafana in one `docker compose` command, on 127.0.0.1, with a dashboard
   per component in a folder of its own: Flowgentic's (agents in each state,
