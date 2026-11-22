@@ -51,6 +51,11 @@ LangGraph adds: streaming, middleware, human-in-the-loop resumes.
   called before each model call. What it returns is the agent's history from
   then on: what the model sees, what a suspension saves, what the output
   holds. It must keep each tool call with its result.
+- **Each call's arguments.** ``model_kwargs`` is a dict that goes with every
+  model call, or a function, or a coroutine function, of the agent's id and
+  its messages that returns one call's: as a thinking budget for an agent's
+  decision calls. It is called once per model call, after ``trim``, with the
+  history the call sends without the system prompt, which it must not change.
 - **Interrupts.** An inline tool that raises ``Interrupt(value)`` stops its
   agent: the host ends it as interrupted, with an ``Interruption`` that holds
   the value, the call and the history. The store keeps nothing of it.
@@ -81,7 +86,7 @@ import time
 import typing
 import uuid
 import weakref
-from collections.abc import Awaitable, Callable, Iterable, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import partial
@@ -115,6 +120,9 @@ ANSWERED = "Answer recorded."
 NOT_RUN = "Error: this call was not run: the conversation went on without its result."
 
 Trim = Callable[[list[dict]], Sequence[dict] | Awaitable[Sequence[dict]]]
+ModelKwargs = Callable[
+	[str, list[dict]], Mapping[str, Any] | Awaitable[Mapping[str, Any]]
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,8 +214,10 @@ class LoopRunner:
 	goes, a ``MemoryStore`` by default; each agent's key is ``key_prefix`` and
 	its id. ``system_prompt`` goes first in every model call and is never saved
 	or trimmed. ``model_kwargs`` go with every model call, such as
-	``max_tokens``. ``response_format``, ``max_model_calls`` and ``trim``: see
-	the module's docstring.
+	``max_tokens``; given as a function of the agent's id and its messages,
+	they are that function's for each call. With a fleet, ``reserve`` and
+	``meta`` among them are the fleet's (``Fleet.ainvoke``). ``response_format``,
+	``max_model_calls`` and ``trim``: see the module's docstring.
 	"""
 
 	def __init__(
@@ -221,11 +231,20 @@ class LoopRunner:
 		response_format: type[BaseModel] | None = None,
 		max_model_calls: int = 25,
 		trim: Trim | None = None,
-		model_kwargs: dict | None = None,
+		model_kwargs: Mapping[str, Any] | ModelKwargs | None = None,
 		key_prefix: str = "loop/",
 	) -> None:
 		if max_model_calls < 1:
 			raise ValueError("max_model_calls must be at least 1")
+		if not (
+			model_kwargs is None
+			or isinstance(model_kwargs, Mapping)
+			or callable(model_kwargs)
+		):
+			raise TypeError(
+				"model_kwargs is a dict, or a function of the agent's id and "
+				f"messages that returns one, not {type(model_kwargs).__name__}"
+			)
 		fleet = model if isinstance(model, Fleet) else getattr(model, "fleet", None)
 		self._fleet: Fleet | None = fleet if isinstance(fleet, Fleet) else None
 		self._transport = None if self._fleet is not None else _as_transport(model)
@@ -235,7 +254,11 @@ class LoopRunner:
 		self.response_format = response_format
 		self.max_model_calls = max_model_calls
 		self.trim = trim
-		self.model_kwargs = dict(model_kwargs or {})
+		self.model_kwargs: dict | ModelKwargs = (
+			model_kwargs
+			if callable(model_kwargs) and not isinstance(model_kwargs, Mapping)
+			else dict(model_kwargs or {})
+		)
 		self.key_prefix = key_prefix
 		# In each task's turn, so that two runners in one process, whose agents
 		# may share ids and call ids, never share a task, through a runtime or
@@ -413,20 +436,34 @@ class LoopRunner:
 		return list(out)
 
 	async def _ask(self, agent_id: str, messages: list[dict]) -> Reply:
+		kwargs = self.model_kwargs
+		if not isinstance(kwargs, dict):
+			kwargs = await self._call_kwargs(agent_id, messages)
 		sent = messages if self._system is None else [self._system, *messages]
 		tools = self.tool_schemas or None
 		if self._fleet is not None:
 			# the fleet notes the reply's tool calls for the tasks' records
-			return await self._fleet.ainvoke(
-				agent_id, sent, tools=tools, **self.model_kwargs
-			)
+			return await self._fleet.ainvoke(agent_id, sent, tools=tools, **kwargs)
 		with _agents.activity(AgentState.MODEL_REQUEST):
-			reply = await _complete(self._transport, sent, tools, self.model_kwargs)
+			reply = await _complete(self._transport, sent, tools, kwargs)
 		# when the agent committed to the reply's tool calls
 		_agents.note_reply(
 			agent_id, time.time(), [c.id for c in reply.tool_calls if c.id]
 		)
 		return reply
+
+	async def _call_kwargs(self, agent_id: str, messages: list[dict]) -> dict:
+		"""One model call's keywords, from the runner's ``model_kwargs``
+		function."""
+		out = self.model_kwargs(agent_id, messages)
+		if inspect.isawaitable(out):
+			out = await out
+		if not isinstance(out, Mapping):
+			raise TypeError(
+				f"model_kwargs returned {type(out).__name__}: give a dict of the "
+				"model call's keywords"
+			)
+		return dict(out)
 
 	def _parse(self, reply: Reply) -> BaseModel | None:
 		try:
