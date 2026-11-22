@@ -263,28 +263,40 @@ with the usage of those that did not fail (`usage`). `export.agents` is the
 agents in each state over time: at each export's time, each process's latest
 counts summed.
 
+Give each process a directory of its own. Processes that write into one
+file anyway are told apart by their resource's `service.instance.id`, which
+the SDK sets to a random id unless the application gives one, and by their
+series' start times.
+
 `check()` lists what is missing or does not add up:
 - a directory with no `metrics.jsonl`, or one with no Flowgentic metrics;
-- in a process that wrote spans, the fleet's `chat` spans against its calls,
+- a file whose last line was cut short, as a process killed at its walltime
+  leaves it: `read_export` reads the file without it;
+- two processes that wrote the same series under one resource;
+- in a directory with spans, each fleet's `chat` spans against its calls,
   failed ones apart. The fleet records one span per call, so a gap means
   spans were dropped, as a `BatchSpanProcessor` whose queue is full drops
-  them, or were never exported. With `sampled=True`, for spans sampled as
-  above, fewer spans than calls is expected, and only more spans than calls
-  is a problem.
+  them, or were never exported. A fleet with no span of its own, beside
+  `chat` spans of another recorder, such as LangChain's instrumentation with
+  LangChain replicas, is not compared. With `sampled=True`, for spans
+  sampled as above, fewer spans than calls is expected, and only more spans
+  than calls is a problem.
 
 `check_servers()` compares the fleets' own counts with the model servers'
 counters over the run, such as the differences in vLLM's
 `prompt_tokens_total`, `generation_tokens_total` and
 `request_success_total` between the first and the last sample: the prompt
 and completion tokens, and the successful requests. The counts come from
-the metrics, so sampled spans change nothing. An export without
-`flowgentic.fleet.tokens`, or whose calls went outside a fleet, is compared
-through its `chat` spans. Only what is given is compared.
+the metrics, so sampled spans change nothing, and they are the fleets'
+calls only: calls made outside a fleet, as the agent loop makes on a bare
+transport, are then not counted. An export whose fleets made no calls, or
+without `flowgentic.fleet.tokens`, is compared through all its `chat` spans.
+Only what is given is compared.
 
 `read_export` reads the SDK's console JSON with cumulative temporality, the
 SDK's default. It raises `ValueError` for a metric exported with delta
-temporality, and for a line that is not JSON, as a process killed while
-writing leaves one, naming the file and line. It does not read the OTLP JSON
+temporality, and for a line inside a file that is not JSON, naming the file
+and line. It does not read the OTLP JSON
 that an OpenTelemetry collector's file exporter writes.
 
 ### What it costs and how to cut it

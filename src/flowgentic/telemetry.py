@@ -46,22 +46,28 @@ _TOKEN_TYPE = "gen_ai.token.type"  # nosec B105  # an attribute name
 _STATE = "flowgentic.agent.state"
 _OUTCOME = "flowgentic.fleet.outage.outcome"
 _REPLICA = "flowgentic.fleet.replica"
+_FLEET = "flowgentic.fleet.name"
+_INSTANCE = "service.instance.id"
 _ERROR = "error.type"
 
 
 @dataclass(frozen=True)
 class _Part:
-	"""One process's directory: what ``check`` compares within it."""
+	"""One directory, a process's or more: what ``check`` compares within it."""
 
 	directory: Path
 	metrics: Path | None
 	spans: Path | None
 	flowgentic: bool = False  # its metrics hold Flowgentic's
-	calls: int = 0
-	failed_calls: int = 0
-	fleet_spans: int = 0
-	failed_fleet_spans: int = 0
+	calls: Mapping[str, tuple[int, int]] = field(default_factory=dict)
+	"""By fleet name: its calls, and the failed ones."""
+	fleet_spans: Mapping[str, tuple[int, int]] = field(default_factory=dict)
+	"""By fleet name: its ``chat`` spans, and the failed ones."""
 	other_spans: int = 0
+	"""``chat`` spans of no fleet."""
+	cut: tuple[Path, ...] = ()
+	"""Its files whose last line was cut short."""
+	two_writers: bool = False
 
 
 @dataclass(frozen=True)
@@ -77,7 +83,9 @@ class Export:
 
 	path: Path
 	processes: int
-	"""The ``metrics.jsonl`` files read, one per process."""
+	"""The processes whose metrics were read: in each ``metrics.jsonl``, its
+	writers, told apart by their resource's ``service.instance.id``, which
+	the SDK sets to a random id unless the application gives one."""
 	exports: int
 	"""Their exports that held Flowgentic's metrics."""
 	agents: tuple[tuple[float, Mapping[str, float]], ...]
@@ -118,15 +126,18 @@ class Export:
 		empty list if nothing.
 
 		Missing: a ``metrics.jsonl`` under ``path``, Flowgentic's metrics in
-		one, or the ``metrics.jsonl`` beside a ``spans.jsonl``.
+		one, the ``metrics.jsonl`` beside a ``spans.jsonl``, or a file's last
+		line, cut short as a process that ended while writing leaves it.
 
-		Not adding up: in a process that wrote both files, the fleet's
-		``chat`` spans, and its failed ones, against its calls and its failed
-		calls. The fleet records one span per call, so a gap means spans were
+		Not adding up: in a directory with both files, each fleet's ``chat``
+		spans, and its failed ones, against its calls and its failed calls.
+		The fleet records one span per call, so a gap means spans were
 		dropped, as a ``BatchSpanProcessor`` whose queue is full drops them,
-		or never exported. A process whose ``chat`` spans all come from
-		another recorder, such as LangChain's instrumentation with LangChain
-		replicas, is not compared.
+		or never exported. A fleet with no span of its own, in a directory
+		with ``chat`` spans of another recorder, such as LangChain's
+		instrumentation with LangChain replicas, is not compared. Nor is it
+		sound when two processes wrote one series under one resource, which
+		this reports too.
 
 		``sampled``: the spans were sampled, as with
 		``ParentBased(TraceIdRatioBased(r))``, so fewer spans than calls is
@@ -137,29 +148,43 @@ class Export:
 			return [f"no {METRICS} under {self.path}"]
 		problems = []
 		for part in self._parts:
+			for path in part.cut:
+				problems.append(
+					f"{path}: its last line is cut short, as a process that ended "
+					"while writing leaves it; read without it"
+				)
 			if part.metrics is None:
 				problems.append(f"{part.directory}: {SPANS} without {METRICS}")
 				continue
+			if part.two_writers:
+				problems.append(
+					f"{part.metrics}: two processes wrote the same series with one "
+					"resource: give each process its own service.instance.id, or a "
+					"directory of its own"
+				)
 			if not part.flowgentic:
 				problems.append(f"{part.metrics}: no Flowgentic metrics")
 				continue
-			if part.spans is None or (part.fleet_spans == 0 and part.other_spans):
+			if part.spans is None:
 				continue
-			spans = (part.fleet_spans, part.failed_fleet_spans)
-			calls = (part.calls, part.failed_calls)
-			if sampled:
-				if spans[0] <= calls[0] and spans[1] <= calls[1]:
+			for name in sorted(set(part.calls) | set(part.fleet_spans)):
+				spans = part.fleet_spans.get(name, (0, 0))
+				calls = part.calls.get(name, (0, 0))
+				if spans == (0, 0) and part.other_spans:
+					continue  # another recorder's spans in its place
+				if sampled:
+					if spans[0] <= calls[0] and spans[1] <= calls[1]:
+						continue
+					why = "more spans than calls"
+				elif spans == calls:
 					continue
-				why = "more spans than calls"
-			elif spans == calls:
-				continue
-			else:
-				why = "spans were dropped or not exported"
-			problems.append(
-				f"{part.directory}: {spans[0]} of the fleet's chat spans for "
-				f"{calls[0]} of its calls ({spans[1]} failed spans for {calls[1]} "
-				f"failed calls): {why}"
-			)
+				else:
+					why = "spans were dropped or not exported"
+				problems.append(
+					f"{part.directory}: fleet {name!r}: {spans[0]} chat spans for "
+					f"{calls[0]} calls ({spans[1]} failed spans for {calls[1]} "
+					f"failed calls): {why}"
+				)
 		return problems
 
 	def check_servers(
@@ -175,13 +200,14 @@ class Export:
 
 		The fleets' own counts give the prompt and completion tokens
 		(``flowgentic.fleet.tokens``) and the successful requests (the calls
-		that did not fail), so sampled spans change nothing. An export
-		without the fleets' token counter, or whose calls went outside a
-		fleet, is compared through its ``chat`` spans that did not fail. Only
-		what is given is compared. A request the fleet gave up on that the
-		server still finished, as after a client's timeout, counts at the
-		server only: the difference names the requests sent again."""
-		if self.fleet_usage is not None:
+		that did not fail), so sampled spans change nothing; calls made outside
+		a fleet, as the agent loop makes on a bare transport, are then not
+		counted. An export whose fleets made no calls, or without the fleets'
+		token counter, is compared through all its ``chat`` spans that did not
+		fail. Only what is given is compared. A request the fleet gave up on
+		that the server still finished, as after a client's timeout, counts at
+		the server only: the difference names the requests sent again."""
+		if self.fleet_usage is not None and self.calls:
 			source = "in the fleets' metrics"
 			usage = self.fleet_usage
 			ok = self.calls - self.failed_calls
@@ -210,11 +236,14 @@ class Export:
 
 def read_export(path: str | Path) -> Export:
 	"""Read and merge every process's export under ``path``: each directory
-	that holds a ``metrics.jsonl``, a ``spans.jsonl`` or both.
+	that holds a ``metrics.jsonl``, a ``spans.jsonl`` or both, best one per
+	process. Processes that write into one file are told apart by their
+	resource and their series' start times.
 
-	Raises ``ValueError`` for a line that is not JSON, naming its file and
-	line, as a process killed while writing leaves one, and for a metric
-	exported with delta temporality, which this does not sum."""
+	A last line cut short, with no newline after it, is left out, and
+	``check()`` reports it. Raises ``ValueError`` for any other line that is
+	not JSON, naming its file and line, and for a metric exported with delta
+	temporality, which this does not sum."""
 	root = Path(path)
 	directories = sorted(
 		{p.parent for name in (METRICS, SPANS) for p in root.rglob(name)}
@@ -226,7 +255,7 @@ def read_export(path: str | Path) -> Export:
 	outages: Counter[str] = Counter()
 	tokens: Counter[str] | None = None
 	down_s = 0.0
-	exports = 0
+	exports = processes = 0
 	spans = _Spans()
 	for directory in directories:
 		metrics = directory / METRICS
@@ -236,10 +265,12 @@ def read_export(path: str | Path) -> Export:
 			metrics if metrics.exists() else None,
 			span_file if span_file.exists() else None,
 		)
+		cut: list[Path] = []
 		if part.metrics is not None:
-			read = _read_metrics(part.metrics)
+			read = _read_metrics(part.metrics, cut)
 			exports += read.exports
-			series.append(read.agents)
+			processes += len(read.agents)
+			series.extend(read.agents.values())
 			totals.update(read.totals)
 			seconds.update(read.seconds)
 			outages.update(read.outages)
@@ -249,32 +280,28 @@ def read_export(path: str | Path) -> Export:
 			part = replace(
 				part,
 				flowgentic=read.exports > 0,
-				calls=read.totals["calls"],
-				failed_calls=read.totals["failed_calls"],
+				calls={
+					name: (int(n), int(read.failed_by_fleet[name]))
+					for name, n in read.calls_by_fleet.items()
+				},
+				two_writers=read.two_writers,
 			)
 		if part.spans is not None:
-			before = spans.snapshot()
-			spans.read(part.spans)
-			after = spans.snapshot()
-			part = replace(
-				part,
-				fleet_spans=after[0] - before[0],
-				failed_fleet_spans=after[1] - before[1],
-				other_spans=after[2] - before[2],
-			)
-		parts.append(part)
+			by_fleet, other = spans.read(part.spans, cut)
+			part = replace(part, fleet_spans=by_fleet, other_spans=other)
+		parts.append(replace(part, cut=tuple(cut)))
 	return Export(
 		path=root,
-		processes=sum(p.metrics is not None for p in parts),
+		processes=processes,
 		exports=exports,
 		agents=_merge(series),
 		agent_seconds=dict(seconds),
-		calls=totals["calls"],
-		failed_calls=totals["failed_calls"],
-		requests=totals["requests"],
-		retries=totals["retries"],
-		outages=outages["recovered"],
-		gave_up=outages["gave_up"],
+		calls=int(totals["calls"]),
+		failed_calls=int(totals["failed_calls"]),
+		requests=int(totals["requests"]),
+		retries=int(totals["retries"]),
+		outages=int(outages["recovered"]),
+		gave_up=int(outages["gave_up"]),
 		down_s=down_s,
 		chat_spans=spans.chat,
 		failed_chat_spans=spans.failed,
@@ -286,69 +313,65 @@ def read_export(path: str | Path) -> Export:
 	)
 
 
-def _lines(path: Path) -> Iterator[dict]:
+def _lines(path: Path, cut: list[Path]) -> Iterator[tuple[int, dict]]:
+	"""Each line of ``path`` as JSON, with its number. A last line with no
+	newline after it that is not JSON was cut short: it is left out, and
+	``path`` added to ``cut``."""
 	with path.open() as f:
-		for n, line in enumerate(f, 1):
-			line = line.strip()
+		for n, raw in enumerate(f, 1):
+			line = raw.strip()
 			if not line:
 				continue
 			try:
-				yield json.loads(line)
+				yield n, json.loads(line)
 			except json.JSONDecodeError as exc:
+				if not raw.endswith("\n"):  # only a file's last line ends so
+					cut.append(path)
+					return
 				raise ValueError(f"{path}, line {n}: not JSON ({exc.msg})") from None
 
 
 @dataclass
 class _Metrics:
-	"""One process's metrics: its exports, its agents over time, and the
-	totals of its cumulative instruments at its last export."""
+	"""One ``metrics.jsonl``'s metrics: its exports, each writer's agents over
+	time, and the totals of its cumulative instruments at their last
+	export."""
 
 	exports: int = 0
-	agents: list[tuple[float, dict[str, float]]] = field(default_factory=list)
+	agents: dict[object, list[tuple[float, dict[str, float]]]] = field(
+		default_factory=dict
+	)
+	"""By writer, its resource: its agents in each state at each export."""
 	totals: Counter[str] = field(default_factory=Counter)
 	seconds: Counter[str] = field(default_factory=Counter)
 	outages: Counter[str] = field(default_factory=Counter)
 	down_s: float = 0.0
 	tokens: Counter[str] = field(default_factory=Counter)
+	calls_by_fleet: Counter[str] = field(default_factory=Counter)
+	failed_by_fleet: Counter[str] = field(default_factory=Counter)
+	two_writers: bool = False
 
 
-class _Cumulative:
-	"""A cumulative series' total, across the restarts of its meter provider:
-	a new start time means it counts from zero again."""
-
-	__slots__ = ("start", "value", "banked")
-
-	def __init__(self) -> None:
-		self.start: int | None = None
-		self.value: tuple[float, float] = (0, 0.0)
-		self.banked: tuple[float, float] = (0, 0.0)
-
-	def add(self, start: int | None, value: tuple[float, float]) -> None:
-		if self.start is not None and start != self.start:
-			self.banked = (
-				self.banked[0] + self.value[0],
-				self.banked[1] + self.value[1],
-			)
-		self.start = start
-		self.value = value
-
-	def total(self) -> tuple[float, float]:
-		return (self.banked[0] + self.value[0], self.banked[1] + self.value[1])
-
-
-def _read_metrics(path: Path) -> _Metrics:
+def _read_metrics(path: Path, cut: list[Path]) -> _Metrics:
+	"""A cumulative series counts from zero again when its meter provider
+	starts again, under a new start time: its total is its last value at each
+	start time, summed. So it is too when two processes write it under one
+	resource, which shows as a start time that comes back after another."""
 	out = _Metrics()
-	series: dict[tuple[str, frozenset], _Cumulative] = {}
-	for n, line in enumerate(_lines(path), 1):
-		t = None
-		agents: dict[str, float] | None = None
-		for name, data, point in _points(line):
+	# (writer, metric, attributes) -> {start time: (count or value, sum)}
+	series: dict[tuple, dict] = {}
+	last_start: dict[tuple, object] = {}
+	for n, line in _lines(path, cut):
+		seen = False
+		snapshots: dict[object, tuple[float, dict[str, float]]] = {}
+		for writer, name, data, point in _points(line):
+			seen = True
 			t = point.get("time_unix_nano", 0) / _NS
 			attrs = point.get("attributes") or {}
 			if name == _AGENTS:
-				agents = {} if agents is None else agents
 				state = attrs.get(_STATE, "?")
-				agents[state] = agents.get(state, 0) + point.get("value", 0)
+				_, counts = snapshots.setdefault(writer, (t, {}))
+				counts[state] = counts.get(state, 0) + point.get("value", 0)
 				continue
 			if data.get("aggregation_temporality") == _DELTA:
 				raise ValueError(
@@ -356,22 +379,31 @@ def _read_metrics(path: Path) -> _Metrics:
 					"read_export sums cumulative exports, the SDK's default"
 				)
 			value = (point.get("count", point.get("value", 0)), point.get("sum", 0.0))
-			key = (name, frozenset((k, str(v)) for k, v in attrs.items()))
-			series.setdefault(key, _Cumulative()).add(
-				point.get("start_time_unix_nano"), value
-			)
-		if t is None:
+			key = (writer, name, frozenset((k, str(v)) for k, v in attrs.items()))
+			starts = series.setdefault(key, {})
+			start = point.get("start_time_unix_nano")
+			if start in starts and last_start.get(key) != start:
+				out.two_writers = True
+			starts[start] = value
+			last_start[key] = start
+		if not seen:
 			continue
 		out.exports += 1
-		if agents is not None:
-			out.agents.append((t, agents))
-	for (name, attrs), cumulative in series.items():
-		count, total = cumulative.total()
+		for writer, snapshot in snapshots.items():
+			out.agents.setdefault(writer, []).append(snapshot)
+	for writer in {key[0] for key in series}:  # writers without agents count too
+		out.agents.setdefault(writer, [])
+	for (_, name, attrs), starts in series.items():
+		count = sum(v[0] for v in starts.values())
+		total = sum(v[1] for v in starts.values())
 		a = dict(attrs)
 		if name == _CALLS:
+			fleet = a.get(_FLEET, "")
 			out.totals["calls"] += count
+			out.calls_by_fleet[fleet] += count
 			if _ERROR in a:
 				out.totals["failed_calls"] += count
+				out.failed_by_fleet[fleet] += count
 		elif name == _REQUESTS:
 			out.totals["requests"] += count
 		elif name == _RETRIES:
@@ -386,16 +418,28 @@ def _read_metrics(path: Path) -> _Metrics:
 	return out
 
 
-def _points(line: dict) -> Iterator[tuple[str, dict, dict]]:
-	"""Flowgentic's data points in one export: (metric, its data, point)."""
+def _writer(resource: dict) -> object:
+	"""The process that wrote an export: its ``service.instance.id``, or else
+	its whole resource."""
+	attrs = (resource.get("resource") or {}).get("attributes") or {}
+	instance = attrs.get(_INSTANCE)
+	if instance is not None:
+		return instance
+	return tuple(sorted((k, str(v)) for k, v in attrs.items()))
+
+
+def _points(line: dict) -> Iterator[tuple[object, str, dict, dict]]:
+	"""Flowgentic's data points in one export: (writer, metric, its data,
+	point)."""
 	for resource in line.get("resource_metrics") or ():
+		writer = _writer(resource)
 		for scope in resource.get("scope_metrics") or ():
 			if (scope.get("scope") or {}).get("name") != _SCOPE:
 				continue
 			for metric in scope.get("metrics") or ():
 				data = metric.get("data") or {}
 				for point in data.get("data_points") or ():
-					yield metric.get("name"), data, point
+					yield writer, metric.get("name"), data, point
 
 
 def _merge(
@@ -420,20 +464,23 @@ def _merge(
 
 
 class _Spans:
-	"""The ``chat`` spans read so far: the fleet's, failed or not, and any
+	"""The ``chat`` spans read so far: the fleets', failed or not, and any
 	other recorder's, with the usage of those that did not fail."""
 
 	def __init__(self) -> None:
 		self.chat = self.failed = 0
-		self.fleet = self.failed_fleet = self.other = 0
 		self.tokens: Counter[str] = Counter()
 		self.reported: set[str] = set()
 
-	def snapshot(self) -> tuple[int, int, int]:
-		return self.fleet, self.failed_fleet, self.other
-
-	def read(self, path: Path) -> None:
-		for span in _lines(path):
+	def read(
+		self, path: Path, cut: list[Path]
+	) -> tuple[dict[str, tuple[int, int]], int]:
+		"""Read one ``spans.jsonl``; return its fleets' spans and failed
+		spans, by fleet name, and its ``chat`` spans of no fleet."""
+		spans: Counter[str] = Counter()
+		failures: Counter[str] = Counter()
+		other = 0
+		for _, span in _lines(path, cut):
 			attrs = span.get("attributes") or {}
 			if attrs.get("gen_ai.operation.name") != "chat":
 				continue
@@ -443,10 +490,11 @@ class _Spans:
 			self.chat += 1
 			self.failed += failed
 			if _REPLICA in attrs:
-				self.fleet += 1
-				self.failed_fleet += failed
+				fleet = str(attrs.get(_FLEET, ""))
+				spans[fleet] += 1
+				failures[fleet] += failed
 			else:
-				self.other += 1
+				other += 1
 			if failed:
 				continue
 			for key in _USAGE:
@@ -454,6 +502,7 @@ class _Spans:
 				if value is not None:
 					self.tokens[key] += int(value)
 					self.reported.add(key)
+		return {name: (n, failures[name]) for name, n in spans.items()}, other
 
 	def usage(self) -> Usage:
 		def optional(key: str) -> int | None:
