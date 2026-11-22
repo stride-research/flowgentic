@@ -161,8 +161,8 @@ class Export:
 		request the fleet gave up on that the server still finished, as after a
 		client's timeout, counts at the server only: the difference names the
 		requests sent again."""
-		if self.processes and not any(p.spans for p in self._parts):
-			return [f"no {SPANS} to count the chat spans' tokens"]
+		if not any(p.spans for p in self._parts):
+			return [f"no {SPANS}: the comparison needs the chat spans"]
 		problems = []
 		pairs = (
 			("prompt tokens", self.usage.prompt_tokens, prompt_tokens),

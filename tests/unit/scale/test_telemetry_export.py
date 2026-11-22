@@ -271,7 +271,10 @@ def test_check_servers_compares_the_tokens_and_the_requests(tmp_path):
 def test_check_servers_needs_spans(tmp_path):
 	write(tmp_path / "metrics.jsonl", export(calls(10, 2)))
 	assert read_export(tmp_path).check_servers(prompt_tokens=10) == [
-		"no spans.jsonl to count the chat spans' tokens"
+		"no spans.jsonl: the comparison needs the chat spans"
+	]
+	assert read_export(tmp_path / "nothing").check_servers(requests=1) == [
+		"no spans.jsonl: the comparison needs the chat spans"
 	]
 
 
