@@ -1,0 +1,13 @@
+# Metrics arrive over OTLP from the collector (--web.enable-otlp-receiver).
+# Each process's resource becomes labels: service_namespace (the run),
+# service_name (the process's role), service_instance_id (the process).
+otlp:
+  promote_resource_attributes:
+    - service.namespace
+    - service.name
+    - service.instance.id
+
+storage:
+  tsdb:
+    # Processes push their exports on their own clocks.
+    out_of_order_time_window: 30m
