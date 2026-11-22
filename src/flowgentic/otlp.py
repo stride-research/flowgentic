@@ -4,7 +4,8 @@ live dashboard. It needs the ``otlp`` extra.
 Flowgentic depends on ``opentelemetry-api`` only, and the application
 configures the SDK. ``configure()`` does it for one process, in one call: it
 sets the process's meter and tracer providers to export over OTLP/HTTP to a
-collector, with the telemetry page's configuration at scale. Everything in
+collector, with the telemetry page's configuration at scale, metrics every
+5 s. Everything in
 the process that records through OpenTelemetry's global providers goes with
 them: Flowgentic's metrics and spans, and the MCP SDK's and the GenAI
 instrumentation's spans. RHAPSODY keeps providers of its own;
@@ -66,8 +67,9 @@ __all__ = ["OtlpTelemetry", "configure"]
 
 SAMPLE = 0.1
 """The share of agents whose spans are kept, each with its whole trace."""
-INTERVAL_S = 10.0
-"""Seconds between metric exports."""
+INTERVAL_S = 5.0
+"""Seconds between metric exports: a live view refreshes every 5 s, and one
+export costs about 1.5 ms of CPU, so about 1 s an hour."""
 MAX_QUEUE_SIZE = 65_536
 """Spans a ``BatchSpanProcessor`` holds; the SDK's 2,048 drops spans in a burst."""
 SERVICE = "flowgentic"
@@ -230,9 +232,9 @@ def configure(
 	The defaults are the telemetry page's configuration at scale: spans
 	sampled per agent, each agent's ``invoke_agent`` span the root of its
 	trace, so ``ParentBased(TraceIdRatioBased(sample))`` keeps a ``sample``
-	share of the agents, each with its whole trace; no exemplars; metrics
-	every ``interval_s``. The metrics count every agent and call, sampled
-	spans or not.
+	share of the agents, each with its whole trace; no exemplars. Metrics go
+	every 5 s, not 10 s, for a live view: one export costs about 1.5 ms of
+	CPU. The metrics count every agent and call, sampled spans or not.
 
 	Args:
 		endpoint: The collector's OTLP/HTTP base URL, such as
