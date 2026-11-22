@@ -3,6 +3,7 @@ message: "If you use Flowgentic in your work, please cite it as below."
 type: software
 title: Flowgentic
 version: 0.6.0
+date-released: 2026-11-22
 abstract: >-
   Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as
   AsyncFlow workflow tasks, and as agents at scale whose tools run as
