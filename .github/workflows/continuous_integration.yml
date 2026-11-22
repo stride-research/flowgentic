@@ -154,6 +154,13 @@ jobs:
       - name: Run the example as a user runs it
         run: agents/bin/python examples/agents-at-scale/campaign.py --agents 1000 --processes 2
 
+      # The otlp extra on the same wheel: an agent process's telemetry streamed
+      # over OTLP/HTTP to a receiver in the test, with no Docker.
+      - name: Add the otlp extra and run its tests
+        run: |
+          uv pip install --python agents/bin/python -c constraints.txt "$(ls dist/*.whl)[agents,otlp]"
+          agents/bin/python -m pytest -q -p no:cacheprovider tests/unit/scale/test_otlp.py
+
   # The suite on the lowest versions the dependency ranges allow, so the
   # floors in pyproject.toml stay true. The changed lock is not kept.
   tests_lowest:

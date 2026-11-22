@@ -28,7 +28,9 @@ their spans, no exemplars, metrics every 10 s (``--otel-sample``,
 exports metrics only). The CPU time then includes the SDK's, its exporter
 threads' and the final flush, and the line adds the problems
 ``flowgentic.telemetry.read_export(DIR).check()`` finds: compare it with a
-run without, at the same size.
+run without, at the same size. ``--otlp URL`` streams the same export over
+OTLP/HTTP with ``flowgentic.otlp`` instead, or as well with ``--otel``; see
+``otlp_sink.py``.
 
     python benchmarks/agent_loop.py --runner loop --agents 1000
     python benchmarks/agent_loop.py --runner graph --agents 5000 --workers 64 --stagger 0
@@ -233,7 +235,8 @@ def run_once(
     """One run; with ``otel``, the SDK writes into it, as ``_otel.configure``
     sets it up with ``spans`` and ``otel_options``."""
     flush = None
-    if otel is not None:
+    otlp = otel_options.get("otlp")
+    if otel is not None or otlp is not None:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         import _otel
 
@@ -247,8 +250,10 @@ def run_once(
                     example, kind, agents, workers, interval, requests, replies[0], flush
                 )
             )
-    out["otel"] = None if otel is None else ("metrics+spans" if spans else "metrics")
-    if otel is not None:
+    signals = "metrics+spans" if spans else "metrics"
+    out["otel"] = None if otel is None else signals
+    out["otlp"] = None if otlp is None else signals
+    if otel is not None or otlp is not None:
         options = {
             "sample": _otel.SAMPLE,
             "exemplars": False,
@@ -256,6 +261,7 @@ def run_once(
             **otel_options,
         }
         out["otel_options"] = options
+    if otel is not None:
         out.update(_otel.summary(otel, sampled=spans and options["sample"] < 1))
     out["python"] = platform.python_version()
     out["machine"] = platform.machine()
@@ -321,6 +327,7 @@ def main() -> None:
                 sample=args.otel_sample,
                 exemplars=args.otel_exemplars,
                 interval_s=args.otel_interval,
+                otlp=args.otlp,
             )
         )
     )

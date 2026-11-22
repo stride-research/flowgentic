@@ -1,0 +1,65 @@
+# A live dashboard for a Flowgentic run: an OpenTelemetry collector, Prometheus
+# for the metrics, Jaeger for the sampled traces, and Grafana with Flowgentic's
+# and RHAPSODY's dashboards. Start it with stack.sh beside this file, which
+# picks ports of this user's own and makes the secrets below:
+#
+#     examples/live-dashboard/stack.sh up
+#
+# Only Grafana and the collector publish a port, on BIND_ADDRESS (127.0.0.1
+# unless set). Grafana asks for a login unless GRAFANA_ANONYMOUS=true, and the
+# collector takes OTLP only with the bearer token OTLP_TOKEN. Prometheus and
+# Jaeger are reached through Grafana. An application's own dashboards go in
+# the Application folder: APP_DASHBOARDS=/path/to/dir.
+
+services:
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.165.0
+    command: ["--config=/etc/otelcol/collector.yaml"]
+    environment:
+      OTLP_TOKEN: ${OTLP_TOKEN:?set OTLP_TOKEN, or start the stack with stack.sh}
+    volumes:
+      - ./collector.yaml:/etc/otelcol/collector.yaml:ro
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${OTLP_HTTP_PORT:-4318}:4318"  # what flowgentic.otlp sends to
+      - "${BIND_ADDRESS:-127.0.0.1}:${OTLP_GRPC_PORT:-4317}:4317"
+    depends_on: [prometheus, jaeger]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yaml
+      - --web.enable-otlp-receiver
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - prometheus:/prometheus
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/jaeger:2.23.0  # in memory: traces go when it stops
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.3.1
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD, or start the stack with stack.sh}
+      GF_AUTH_ANONYMOUS_ENABLED: ${GRAFANA_ANONYMOUS:-false}  # viewers without a login
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: ${HOME_DASHBOARD:-/var/lib/grafana/dashboards/components/Flowgentic/flowgentic.json}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./dashboards:/var/lib/grafana/dashboards/components:ro
+      - ${APP_DASHBOARDS:-./application}:/var/lib/grafana/dashboards/application:ro
+      - grafana:/var/lib/grafana
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000"
+    depends_on: [prometheus, jaeger]
+    restart: unless-stopped
+
+volumes:
+  prometheus:
+  grafana:

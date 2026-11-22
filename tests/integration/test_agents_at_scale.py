@@ -79,6 +79,17 @@ def test_the_campaign_on_langgraph() -> None:
     assert process["model_calls_per_replica"] == [300, 300]
 
 
+@pytest.mark.parametrize("runner", ["loop", "graph"])
+def test_model_latency_slows_each_model_call_on_both_runners(runner: str) -> None:
+    """``--model-latency``: each of an agent's three model calls takes at
+    least that long, one after the other, whichever runner."""
+    if runner == "graph":
+        pytest.importorskip("langgraph")
+    summary = load_example().run_campaign(agents=20, runner=runner, latency_s=0.2)
+    check(summary, 20, runner=runner)
+    assert summary["hosts_wall_s"] >= 3 * 0.2
+
+
 def test_two_agent_processes_share_one_tool_service() -> None:
     """Two agent processes, each with its own host, and the tool service in the
     parent, over multiprocessing queues. Run as a user runs it, as a script."""

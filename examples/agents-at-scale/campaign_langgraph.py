@@ -96,9 +96,9 @@ class ScriptedChatModel(BaseChatModel):
         return ChatResult(generations=[ChatGeneration(message=reply)])
 
 
-def replicas() -> list[ScriptedChatModel]:
-    """The fleet's two replicas."""
-    return [ScriptedChatModel(), ScriptedChatModel()]
+def replicas(latency_s: float = 0.005) -> list[ScriptedChatModel]:
+    """The fleet's two replicas, each call taking ``latency_s``."""
+    return [ScriptedChatModel(latency_s=latency_s), ScriptedChatModel(latency_s=latency_s)]
 
 
 # --- the graph -------------------------------------------------------------------

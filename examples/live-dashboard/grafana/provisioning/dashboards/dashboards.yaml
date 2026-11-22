@@ -1,0 +1,17 @@
+apiVersion: 1
+
+providers:
+  # One folder per component of the stack: Flowgentic, RHAPSODY.
+  - name: components
+    type: file
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards/components
+      foldersFromFilesStructure: true
+  # The application's own view, from APP_DASHBOARDS.
+  - name: application
+    type: file
+    folder: Application
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards/application

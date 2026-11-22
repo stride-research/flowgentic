@@ -39,6 +39,15 @@ own, over Dragon's queues. It also needs Dragon, RaDEX's Python client, and a
 RHAPSODY with ``DragonNativeExecutionBackend``. Only the model stays scripted.
 
     dragon examples/agents-at-scale/campaign.py --dragon --agents 1000 --processes 2
+
+With ``--otlp``, each agent process streams its telemetry, and RHAPSODY's, to
+an OpenTelemetry collector over OTLP (the ``otlp`` extra), such as the live
+dashboard's in ``examples/live-dashboard``. ``--model-latency`` makes each
+model call take longer, so a run lasts long enough to watch:
+
+    source <(examples/live-dashboard/stack.sh env)
+    python examples/agents-at-scale/campaign.py --agents 12000 --processes 4 \
+        --otlp --model-latency 0.5
 """
 
 from __future__ import annotations
@@ -61,6 +70,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+from opentelemetry import context as otel_context
+from opentelemetry import trace
 from pydantic import BaseModel
 
 from flowgentic.fleet import Fleet, Reply, TokenAdmission, ToolCall, Usage
@@ -338,25 +349,46 @@ async def run_agents(
     workers: int = 8,
     descriptor: str | None = None,
     runner: str = "loop",
+    otlp: dict | None = None,
+    latency_s: float = 0.005,
 ) -> dict:
     """Run agent process ``index``'s share of the campaign: agents ``index``,
     ``index + processes``, and so on. With a dictionary's ``descriptor``, on
     Dragon: the store is RaDEX, the tasks run on the native Dragon backend.
-    ``runner="graph"``: the LangGraph version."""
+    ``runner="graph"``: the LangGraph version. ``otlp``: the collector's
+    ``endpoint`` and the ``run``'s name, to stream the process's telemetry.
+    ``latency_s``: each scripted model call's."""
     from rhapsody import Session
 
     dragon = descriptor is not None
     graph = langgraph_version() if runner == "graph" else None
+    telemetry = None
+    if otlp is not None:
+        # --8<-- [start:otlp]
+        from flowgentic.otlp import configure
+
+        # One per agent process, before its hosts run: the run, the process's
+        # role in it, and the process. RHAPSODY's session gets the same.
+        telemetry = configure(
+            otlp["endpoint"], run=otlp["run"], service="agents", instance=f"p{index:03d}"
+        )
+        # --8<-- [end:otlp]
     # --8<-- [start:process]
     client = ToolServiceClient(requests, replies, index=index)
     client.start()
     backend = await task_backend(workers, dragon)
     session = Session(backends=[backend])
+    if telemetry is not None:
+        await session.start_telemetry(**telemetry.rhapsody_options())
     runtime = ToolRuntime(session, client)
     # Every process routes by the same hash, so each takes an equal share of
     # every replica's caps. On an allocation, one per model server:
     # [HTTPTransport("Qwen3-8B", base_url=url) for url in servers]
-    replicas = [ScriptedModel(), ScriptedModel()] if graph is None else graph.replicas()
+    replicas = (
+        [ScriptedModel(latency_s), ScriptedModel(latency_s)]
+        if graph is None
+        else graph.replicas(latency_s)
+    )
     fleet = Fleet(
         replicas,
         admission=TokenAdmission(tokens=40_000, requests=64),
@@ -400,13 +432,19 @@ async def run_agents(
         task = f"Find the best temperature for cand-{i:06d}"
         return {"messages": [{"role": "user", "content": task}]}
 
+    # Each agent starts a trace of its own, sampled on its own: RHAPSODY's
+    # start_telemetry() left its session span current.
+    root = otel_context.attach(trace.set_span_in_context(trace.INVALID_SPAN))
     try:
         report = await host.run_indexed(
             range(index, agents, processes), input_for, id_prefix="agent-"
         )
     finally:
+        otel_context.detach(root)
         client.stop()
         await session.close()
+        if telemetry is not None:
+            telemetry.shutdown()  # exports what is left
     # --8<-- [end:host]
     fleet_stats = fleet.stats()
     return {
@@ -456,13 +494,16 @@ def agent_process(
     workers: int,
     descriptor: str | None = None,
     runner: str = "loop",
+    otlp: dict | None = None,
+    latency_s: float = 0.005,
 ) -> None:
     """An agent process's entry point: its share, reported on ``results``."""
     try:
         out = asyncio.run(
             run_agents(
-                index, processes, agents, requests, replies, workers, descriptor, runner
-            )
+                index, processes, agents, requests, replies, workers, descriptor,
+                runner, otlp, latency_s,
+            )  # fmt: skip
         )
     except BaseException as exc:
         results.put({"index": index, "error": f"{type(exc).__name__}: {exc}"})
@@ -479,17 +520,21 @@ def run_campaign(
     workers: int = 8,
     dragon: bool = False,
     runner: str = "loop",
+    otlp: dict | None = None,
+    latency_s: float = 0.005,
 ) -> dict:
     """Run ``agents`` agents in ``processes`` agent processes against one tool
     service; return the campaign's summary. ``dragon=True`` runs it on Dragon,
     under ``dragon``. ``runner``: ``"loop"``, Flowgentic's own, or ``"graph"``,
-    the LangGraph version."""
+    the LangGraph version. ``otlp``: ``{"endpoint": ..., "run": ...}`` to
+    stream each agent process's telemetry to a collector. ``latency_s``: each
+    scripted model call's."""
     if agents < 1 or processes < 1:
         raise ValueError("a campaign needs at least one agent and one process")
     if runner not in ("loop", "graph"):
         raise ValueError(f"no runner {runner!r}: loop or graph")
     if dragon:
-        return run_campaign_on_dragon(agents, processes, workers, runner)
+        return run_campaign_on_dragon(agents, processes, workers, runner, otlp, latency_s)
     t0 = time.monotonic()
     with McpServer() as mcp:
         if processes == 1:
@@ -503,8 +548,9 @@ def run_campaign(
                 parts = [
                     asyncio.run(
                         run_agents(
-                            0, 1, agents, requests, replies[0], workers, None, runner
-                        )
+                            0, 1, agents, requests, replies[0], workers, None,
+                            runner, otlp, latency_s,
+                        )  # fmt: skip
                     )
                 ]
             else:
@@ -514,7 +560,7 @@ def run_campaign(
                         target=agent_process,
                         args=(
                             i, processes, agents, requests, replies[i], results,
-                            workers, None, runner,
+                            workers, None, runner, otlp, latency_s,
                         ),  # fmt: skip
                         name=f"agent-process-{i}",
                     )
@@ -528,7 +574,12 @@ def run_campaign(
 
 
 def run_campaign_on_dragon(
-    agents: int, processes: int, workers: int, runner: str = "loop"
+    agents: int,
+    processes: int,
+    workers: int,
+    runner: str = "loop",
+    otlp: dict | None = None,
+    latency_s: float = 0.005,
 ) -> dict:
     """The campaign on Dragon: a dictionary for RaDEX, and the tool service and
     each agent process in a Dragon process, over Dragon's queues."""
@@ -539,12 +590,19 @@ def run_campaign_on_dragon(
     previous = multiprocessing.get_start_method(allow_none=True)
     multiprocessing.set_start_method("dragon", force=True)
     try:
-        return _campaign_on_dragon(agents, processes, workers, runner)
+        return _campaign_on_dragon(agents, processes, workers, runner, otlp, latency_s)
     finally:
         multiprocessing.set_start_method(previous, force=True)
 
 
-def _campaign_on_dragon(agents: int, processes: int, workers: int, runner: str) -> dict:
+def _campaign_on_dragon(
+    agents: int,
+    processes: int,
+    workers: int,
+    runner: str,
+    otlp: dict | None = None,
+    latency_s: float = 0.005,
+) -> dict:
     from rhapsody.backends.data.dragon import DragonDataBackend
 
     # Importing RHAPSODY's backends loads Dragon's LLM engine, which clears
@@ -569,7 +627,7 @@ def _campaign_on_dragon(agents: int, processes: int, workers: int, runner: str) 
                         target=agent_process,
                         args=(
                             i, processes, agents, requests, replies[i], results,
-                            workers, descriptor, runner,
+                            workers, descriptor, runner, otlp, latency_s,
                         ),  # fmt: skip
                         name=f"agent-process-{i}",
                     )
@@ -708,6 +766,28 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="run on Dragon (RaDEX, the native backend), under `dragon`",
     )
+    p.add_argument(
+        "--otlp",
+        nargs="?",
+        const="",
+        metavar="URL",
+        help="stream each agent process's telemetry to this OpenTelemetry "
+        "collector, or without a URL to OTEL_EXPORTER_OTLP_ENDPOINT's, with "
+        "OTEL_EXPORTER_OTLP_HEADERS (examples/live-dashboard/stack.sh env "
+        "prints both); needs the otlp extra",
+    )
+    p.add_argument(
+        "--run",
+        help="with --otlp: the run's name on the dashboard "
+        "(agents-at-scale and the time)",
+    )
+    p.add_argument(
+        "--model-latency",
+        type=float,
+        default=0.005,
+        metavar="S",
+        help="seconds each scripted model call takes (0.005)",
+    )
     p.add_argument("--mcp-server", type=int, metavar="PORT", help=argparse.SUPPRESS)
     a = p.parse_args(argv)
     if a.mcp_server:
@@ -715,7 +795,13 @@ def main(argv: list[str] | None = None) -> None:
         return
     if a.runner == "graph":
         langgraph_version()  # without LangGraph, stop before anything starts
-    summary = run_campaign(a.agents, a.processes, a.workers, a.dragon, a.runner)
+    otlp = None
+    if a.otlp is not None:
+        run = a.run or time.strftime("agents-at-scale-%Y%m%d-%H%M%S")
+        otlp = {"endpoint": a.otlp or None, "run": run}
+    summary = run_campaign(
+        a.agents, a.processes, a.workers, a.dragon, a.runner, otlp, a.model_latency
+    )
     print(json.dumps(summary, indent=2) if a.json else report(summary))
 
 
