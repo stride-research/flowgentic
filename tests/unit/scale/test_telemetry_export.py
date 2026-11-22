@@ -124,6 +124,16 @@ def calls(t, ok, failed=0, start=1.0):
 	return histogram("flowgentic.fleet.call.duration", t, *values, start=start)
 
 
+def tokens(t, prompt, completion):
+	"""``flowgentic.fleet.tokens``, an observable counter, at one export."""
+	return counter(
+		"flowgentic.fleet.tokens",
+		t,
+		({**FLEET, "gen_ai.token.type": "input"}, prompt),
+		({**FLEET, "gen_ai.token.type": "output"}, completion),
+	)
+
+
 def agents(t, **by_state):
 	return gauge(
 		"flowgentic.agents", t, *(({"flowgentic.agent.state": s}, n) for s, n in by_state.items())
@@ -249,41 +259,77 @@ def test_a_process_whose_chat_spans_are_langchains_is_not_checked_against_them(t
 	assert read_export(tmp_path).check() == []
 
 
-def test_check_servers_compares_the_tokens_and_the_requests(tmp_path):
+def test_check_servers_compares_the_fleets_tokens_and_requests(tmp_path):
 	write(
 		tmp_path / "metrics.jsonl",
 		export(
 			calls(10, 2, failed=1),
 			counter("flowgentic.fleet.retries", 10, ({**FLEET, "error.type": "ServerUnavailable"}, 1)),
+			tokens(10, 150, 15),
 		),
 	)
-	write(tmp_path / "spans.jsonl", chat(), chat(usage=(50, 5, None, None)), chat(ok=False))
-	got = read_export(tmp_path)
+	got = read_export(tmp_path)  # no spans: the fleets' own counts are enough
+	assert got.fleet_usage == Usage(150, 15, None, None)
 	assert got.check_servers(prompt_tokens=150, completion_tokens=15, requests=2) == []
 	assert got.check_servers(prompt_tokens=150) == []  # only what is given
 	assert got.check_servers(prompt_tokens=151, completion_tokens=15, requests=3) == [
-		"prompt tokens: 150 on the chat spans, 151 at the servers",
-		"successful requests: 2 chat spans, 3 at the servers (the fleets sent 1 "
-		"request again)",
+		"prompt tokens: 150 in the fleets' metrics, 151 at the servers",
+		"successful requests: 2 in the fleets' metrics, 3 at the servers (the fleets "
+		"sent 1 request again)",
 	]
 
 
-def test_check_servers_needs_spans(tmp_path):
-	write(tmp_path / "metrics.jsonl", export(calls(10, 2)))
+def test_check_servers_reads_the_chat_spans_without_the_fleets_tokens(tmp_path):
+	# An export without flowgentic.fleet.tokens, or calls made outside a fleet
+	write(tmp_path / "metrics.jsonl", export(gauge("flowgentic.agents", 10, ({}, 0))))
+	write(tmp_path / "spans.jsonl", chat(fleet=False), chat(fleet=False, usage=(50, 5, None, None)), chat(ok=False))
+	got = read_export(tmp_path)
+	assert got.check_servers(prompt_tokens=150, completion_tokens=15, requests=2) == []
+	assert got.check_servers(prompt_tokens=151, requests=3) == [
+		"prompt tokens: 150 on the chat spans, 151 at the servers",
+		"successful requests: 2 on the chat spans, 3 at the servers (the fleets sent "
+		"0 requests again)",
+	]
+
+
+def test_check_servers_needs_the_fleets_counts_or_spans(tmp_path):
+	write(tmp_path / "metrics.jsonl", export(gauge("flowgentic.agents", 10, ({}, 0))))
 	assert read_export(tmp_path).check_servers(prompt_tokens=10) == [
-		"no spans.jsonl: the comparison needs the chat spans"
+		"no flowgentic.fleet.tokens and no spans.jsonl: nothing to compare with the servers"
 	]
 	assert read_export(tmp_path / "nothing").check_servers(requests=1) == [
-		"no spans.jsonl: the comparison needs the chat spans"
+		"no flowgentic.fleet.tokens and no spans.jsonl: nothing to compare with the servers"
+	]
+
+
+def test_a_sampled_export_is_checked_against_its_metrics(tmp_path):
+	# Spans sampled per agent keep a share of the calls' spans, whole traces.
+	write(tmp_path / "metrics.jsonl", export(calls(10, 9, failed=1), tokens(10, 900, 90)))
+	write(tmp_path / "spans.jsonl", chat(), chat(), chat(ok=False))
+	got = read_export(tmp_path)
+	assert got.check() == [
+		f"{tmp_path}: 2 of the fleet's chat spans for 9 of its calls (1 failed spans for "
+		"1 failed calls): spans were dropped or not exported"
+	]
+	assert got.check(sampled=True) == []
+	assert got.check_servers(prompt_tokens=900, completion_tokens=90, requests=8) == []
+
+
+def test_a_sampled_export_cannot_have_more_spans_than_calls(tmp_path):
+	write(tmp_path / "metrics.jsonl", export(calls(10, 1)))
+	write(tmp_path / "spans.jsonl", chat(), chat())
+	assert read_export(tmp_path).check(sampled=True) == [
+		f"{tmp_path}: 2 of the fleet's chat spans for 1 of its calls (0 failed spans for "
+		"0 failed calls): more spans than calls"
 	]
 
 
 # --- end to end: two agent processes, each with its own export ------------------------
 
 
-def run_process(out: Path, agents: int, failures: int) -> dict:
+def run_process(out: Path, agents: int, failures: int, ratio: float = 1.0) -> dict:
 	done = subprocess.run(
-		[sys.executable, str(PROCESS), str(out), str(agents), str(failures)],
+		[sys.executable, str(PROCESS), str(out), str(agents), str(failures), str(ratio)],
 		capture_output=True,
 		text=True,
 		check=False,
@@ -305,8 +351,21 @@ def test_two_agent_processes_exports_read_back_and_check(tmp_path):
 	assert got.retries == 2 and got.requests == 252
 	assert got.outages == sum(r["outages"] for r in runs) >= 1 and got.gave_up == 0
 	assert got.usage == Usage(25_000, 2_500, 16_000, 1_000)
+	assert got.fleet_usage == Usage(25_000, 2_500, None, None)
 	assert sum(got.agents[-1][1].values()) == 0  # every run over at the last export
 	assert got.agent_seconds["model_request"] > 0
 	totals = {k: sum(r[k] for r in runs) for k in ("prompt_tokens", "completion_tokens")}
 	assert totals == {"prompt_tokens": 25_000, "completion_tokens": 2_500}
 	assert got.check_servers(prompt_tokens=25_000, completion_tokens=2_500, requests=250) == []
+
+
+def test_an_agent_process_with_sampled_spans_reads_back_and_checks(tmp_path):
+	run = run_process(tmp_path / "p000", 200, 0, ratio=0.25)
+	assert run["outcomes"] == {"done": 200}
+	got = read_export(tmp_path)
+	assert got.calls == 200
+	assert 0 < got.chat_spans < 200  # a quarter of the agents, each with its trace
+	assert got.check() != []  # without saying so, the missing spans look dropped
+	assert got.check(sampled=True) == []
+	assert got.fleet_usage == Usage(20_000, 2_000, None, None)
+	assert got.check_servers(prompt_tokens=20_000, completion_tokens=2_000, requests=200) == []

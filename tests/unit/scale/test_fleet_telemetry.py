@@ -286,3 +286,40 @@ async def test_the_spans_of_concurrent_calls_through_one_outage_add_up(
 	outages = points(metric_reader, "flowgentic.fleet.outage.duration", "shared")
 	assert [p.count for p in outages] == [1]  # one watch served every call
 	assert outages[0].sum >= 0.02  # two polls down
+
+
+def tokens(reader, fleet):
+	"""``flowgentic.fleet.tokens`` of fleet ``fleet``: {(replica, type): value}."""
+	return {
+		(p.attributes["flowgentic.fleet.replica"], p.attributes["gen_ai.token.type"]): p.value
+		for p in points(reader, "flowgentic.fleet.tokens", fleet)
+	}
+
+
+async def test_the_fleets_tokens_are_counted_when_the_sdk_collects(metric_reader):
+	from flowgentic.fleet import RoundRobin
+
+	fleet = Fleet(
+		[ScriptedTransport(usage_reply), ScriptedTransport(usage_reply)],
+		routing=RoundRobin(),
+		name="tokens",
+	)
+	for agent in ("a", "b", "c"):
+		await fleet.ainvoke(agent, [{"role": "user", "content": "hi"}])
+	assert tokens(metric_reader, "tokens") == {
+		(0, "input"): 600,
+		(0, "output"): 40,
+		(1, "input"): 300,
+		(1, "output"): 20,
+	}
+
+
+async def test_a_fleets_tokens_stay_counted_after_it_is_gone(metric_reader):
+	import gc
+
+	fleet = Fleet([ScriptedTransport(usage_reply)], name="gone-tokens")
+	await fleet.ainvoke("a", [{"role": "user", "content": "hi"}])
+	del fleet
+	gc.collect()
+	# A counter only grows: the process keeps what its fleets counted.
+	assert tokens(metric_reader, "gone-tokens") == {(0, "input"): 300, (0, "output"): 20}

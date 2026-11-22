@@ -1,10 +1,12 @@
 """One agent process that writes its OpenTelemetry export into a directory, as
 the telemetry page configures it, for the tests that read exports back.
 
-    python otel_process.py OUT_DIR AGENTS FAILURES
+    python otel_process.py OUT_DIR AGENTS FAILURES [RATIO]
 
 Its agents run on the loop over a fleet of one scripted replica, whose server
-is down for its first ``FAILURES`` calls; ``Recovery`` waits it out. Each
+is down for its first ``FAILURES`` calls; ``Recovery`` waits it out. With a
+``RATIO`` below 1, spans are sampled per agent, as the telemetry page
+recommends at scale. Each
 reply counts 100 prompt tokens, 10 completion tokens, 64 cached and 4
 reasoning. Prints the fleet's calls, tokens, requests sent again and outages
 as JSON.
@@ -24,9 +26,10 @@ from opentelemetry.sdk.metrics.export import (
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
 
 
-def configure(out: Path):
+def configure(out: Path, ratio: float = 1.0):
 	"""Write metrics every 50 ms and every span into ``out``; return the
 	function that flushes and closes them."""
 	out.mkdir(parents=True, exist_ok=True)
@@ -41,7 +44,8 @@ def configure(out: Path):
 	)
 	meter_provider = MeterProvider(resource=resource, metric_readers=[reader])
 	metrics.set_meter_provider(meter_provider)
-	tracer_provider = TracerProvider(resource=resource)
+	sampler = ParentBased(TraceIdRatioBased(ratio)) if ratio < 1 else None
+	tracer_provider = TracerProvider(resource=resource, sampler=sampler)
 	tracer_provider.add_span_processor(
 		BatchSpanProcessor(
 			ConsoleSpanExporter(
@@ -112,7 +116,8 @@ async def run(prefix: str, agents: int, failures: int) -> dict:
 
 def main() -> None:
 	out, agents, failures = Path(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])
-	close = configure(out)
+	ratio = float(sys.argv[4]) if len(sys.argv) > 4 else 1.0
+	close = configure(out, ratio)
 	try:
 		print(json.dumps(asyncio.run(run(f"{out.name}-", agents, failures))))
 	finally:
