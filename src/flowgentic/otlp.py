@@ -48,7 +48,7 @@ try:
 		MetricReader,
 		PeriodicExportingMetricReader,
 	)
-	from opentelemetry.sdk.resources import Resource
+	from opentelemetry.sdk.resources import OTELResourceDetector, Resource
 	from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
 	from opentelemetry.sdk.trace.export import (
 		BatchSpanProcessor,
@@ -299,12 +299,15 @@ def configure(
 
 
 def _resource(run: str | None, service: str | None, instance: str | None) -> Resource:
-	"""The call's attributes, over the environment's, over the defaults."""
-	detected = Resource.create()  # OTEL_SERVICE_NAME, OTEL_RESOURCE_ATTRIBUTES
+	"""The call's attributes, over the environment's, over the defaults. The
+	SDK's own default for ``service.instance.id`` is a random id, which a
+	dashboard cannot name a process by: the host and the process id replace
+	it."""
+	env = OTELResourceDetector().detect().attributes  # OTEL_RESOURCE_ATTRIBUTES, ...
 	attributes: dict[str, str] = {}
-	if str(detected.attributes.get("service.name", "")).startswith("unknown_service"):
+	if "service.name" not in env:
 		attributes["service.name"] = SERVICE
-	if "service.instance.id" not in detected.attributes:
+	if "service.instance.id" not in env:
 		attributes["service.instance.id"] = f"{socket.gethostname()}-{os.getpid()}"
 	given = {
 		"service.namespace": run,
@@ -312,7 +315,7 @@ def _resource(run: str | None, service: str | None, instance: str | None) -> Res
 		"service.instance.id": instance,
 	}
 	attributes.update({k: v for k, v in given.items() if v is not None})
-	return detected.merge(Resource(attributes))
+	return Resource.create(attributes)
 
 
 def _metrics_file(out: IO[str]) -> MetricExporter:
