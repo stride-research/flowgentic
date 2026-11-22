@@ -6,7 +6,8 @@ the telemetry page configures it, for the tests that read exports back.
 Its agents run on the loop over a fleet of one scripted replica, whose server
 is down for its first ``FAILURES`` calls; ``Recovery`` waits it out. Each
 reply counts 100 prompt tokens, 10 completion tokens, 64 cached and 4
-reasoning. Prints the fleet's calls, tokens and requests sent again as JSON.
+reasoning. Prints the fleet's calls, tokens, requests sent again and outages
+as JSON.
 """
 
 import asyncio
@@ -45,7 +46,7 @@ def configure(out: Path):
 		BatchSpanProcessor(
 			ConsoleSpanExporter(
 				out=spans_file,
-				formatter=lambda span: json.dumps(json.loads(span.to_json())) + "\n",
+				formatter=lambda span: span.to_json(indent=None) + "\n",
 			)
 		)
 	)
@@ -84,7 +85,8 @@ async def run(prefix: str, agents: int, failures: int) -> dict:
 	async def check(i):
 		return model
 
-	fleet = Fleet([model], recovery=Recovery(check, poll_s=0.01), name="e2e")
+	recovery = Recovery(check, poll_s=0.01)
+	fleet = Fleet([model], recovery=recovery, name="e2e")
 	host = AgentHost(
 		LoopRunner(fleet),
 		max_live_agents=agents,
@@ -104,6 +106,7 @@ async def run(prefix: str, agents: int, failures: int) -> dict:
 		"prompt_tokens": stats["prompt_tokens"],
 		"completion_tokens": stats["completion_tokens"],
 		"retried": stats["retried_calls"],
+		"outages": sum(recovery.stats()["outages"].values()),
 	}
 
 

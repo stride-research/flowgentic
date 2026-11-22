@@ -145,6 +145,8 @@ jobs:
           tests/unit/scale/test_loop_runner.py
           tests/unit/scale/test_loop_langchain.py
           tests/unit/scale/test_http_transport.py
+          tests/unit/scale/test_fleet_telemetry.py
+          tests/unit/scale/test_telemetry_export.py
           tests/integration/test_agents_at_scale.py
           tests/integration/test_agent_loop_benchmark.py
 

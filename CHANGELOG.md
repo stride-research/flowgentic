@@ -86,11 +86,40 @@ decision record.
   here), `to_ai_message` and `reply_from_message`, `from_openai_messages` and
   `to_openai_messages`, and `inline_tool` (a LangChain tool as an inline tool
   of the loop, which the loop applies itself).
-- Each try of a model call through the fleet, or the loop's transport, is a
-  GenAI `chat` span with the usage the server reported, recorded by
-  Flowgentic. With LangChain replicas and OpenTelemetry's LangChain
-  instrumentation on, the instrumentation's span is the call's, and Flowgentic
-  records none.
+- Each model call through the fleet, or the loop's transport, is one GenAI
+  `chat` span with the usage the server reported, recorded by Flowgentic.
+  Through the fleet, the span runs from routing to the reply: its wait for
+  admission, every try and any outage waited out, so a call sent again after
+  an outage is still one span. It names the agent as
+  `gen_ai.conversation.id`, and adds the call's wait for admission
+  (`flowgentic.fleet.admission_wait`), the requests sent again
+  (`flowgentic.fleet.resend_count`) and the time they took
+  (`flowgentic.fleet.recovery_wait`), the gap since the agent's previous call
+  (`flowgentic.fleet.gap`) and the tool whose result came just before
+  (`flowgentic.fleet.after_tool`). A call that failed or was cancelled has
+  status ERROR and its `error.type`. With LangChain replicas and
+  OpenTelemetry's LangChain instrumentation on, the instrumentation's span is
+  the call's, and Flowgentic records none.
+- Three fleet metrics, beside 0.5.0's: `flowgentic.fleet.call.duration`, each
+  call's time, whose count is the calls, with `error.type` for those that
+  failed; `flowgentic.fleet.retries`, the requests sent again once their
+  replica came back; and `flowgentic.fleet.outage.duration`, each outage
+  `Recovery` watched, with `flowgentic.fleet.outage.outcome`, `recovered` or
+  `gave_up`. Calls stay exact through outages: a retried call is one call and
+  several requests.
+- `flowgentic.telemetry.read_export(path)` reads back the OpenTelemetry export
+  each agent process wrote into a directory of its own (`metrics.jsonl` and
+  `spans.jsonl`, the SDK's console exporters' JSON) and merges them into an
+  `Export`: the fleets' calls, requests, requests sent again and outages, the
+  agent-seconds by state, the agents in each state over time, and the `chat`
+  spans with their usage. `Export.check()` lists what is missing, such as a
+  process with no Flowgentic metrics, or what does not add up, such as fewer
+  of the fleet's `chat` spans than its calls, which a full span queue causes;
+  `Export.check_servers()` compares the spans' tokens and successful requests
+  with the model servers' own counters. The telemetry page shows how each
+  process writes its export.
+- `benchmarks/agent_loop.py --otel DIR` runs the benchmark with the
+  OpenTelemetry SDK writing its export into `DIR`, and checks it.
 - `benchmarks/agent_loop.py` runs the agents-at-scale example's workload in
   one agent process with the loop, the loop through LangChain's adapter, or
   `GraphRunner`; `benchmarks/client_cost.py` measures a model client's CPU per

@@ -30,6 +30,7 @@ GEN_AI_RESPONSE_ID = "gen_ai.response.id"
 GEN_AI_RESPONSE_MODEL = "gen_ai.response.model"
 GEN_AI_RESPONSE_FINISH_REASONS = "gen_ai.response.finish_reasons"
 GEN_AI_REQUEST_MODEL = "gen_ai.request.model"
+GEN_AI_CONVERSATION_ID = "gen_ai.conversation.id"
 GEN_AI_USAGE_INPUT_TOKENS = "gen_ai.usage.input_tokens"
 GEN_AI_USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens"
 GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS = "gen_ai.usage.cache_read.input_tokens"
@@ -101,6 +102,14 @@ REQUEST_DURATION_BUCKETS = (
 )  # fmt: skip
 """10 ms to 11 min: the GenAI conventions' boundaries for a model call's
 duration, doubled three more times for long reasoning replies."""
+CALL_DURATION_BUCKETS = (*REQUEST_DURATION_BUCKETS, 1310.72, 2621.44)
+"""10 ms to 44 min: a request's boundaries, doubled twice more for a call that
+waits for admission and out an outage too."""
+OUTAGE_DURATION_BUCKETS = (
+	0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200,
+)  # fmt: skip
+"""100 ms to 2 h: from a server that answers its first check to a model job
+requeued in a busy queue, past ``Recovery``'s default 30 min."""
 
 # --- The agent host's metrics and events -----------------------------------------
 #
@@ -220,6 +229,42 @@ MODEL_SERVICE = meter.create_histogram(
 	unit="s",
 	description="Time a model request spent at its replica, after admission",
 	explicit_bucket_boundaries_advisory=REQUEST_DURATION_BUCKETS,
+)
+
+# A model call through the fleet is one ``chat`` span and one call duration,
+# however many requests it took. The requests sent again, and the outages
+# ``Recovery`` waited out, are counted where they happen, which is rare, so
+# they cost nothing on a call that succeeds at once.
+
+FLEET_ADMISSION_WAIT = "flowgentic.fleet.admission_wait"
+FLEET_RECOVERY_WAIT = "flowgentic.fleet.recovery_wait"
+FLEET_RESEND_COUNT = "flowgentic.fleet.resend_count"
+FLEET_GAP = "flowgentic.fleet.gap"
+FLEET_AFTER_TOOL = "flowgentic.fleet.after_tool"
+OUTAGE_OUTCOME = "flowgentic.fleet.outage.outcome"
+
+CALL_DURATION = meter.create_histogram(
+	"flowgentic.fleet.call.duration",
+	unit="s",
+	description=(
+		"Time a model call took through the fleet: the wait for admission, the "
+		"replica's time, and any outage it waited out"
+	),
+	explicit_bucket_boundaries_advisory=CALL_DURATION_BUCKETS,
+)
+RETRIES = meter.create_counter(
+	"flowgentic.fleet.retries",
+	unit="{request}",
+	description="Model requests sent again once their replica came back",
+)
+OUTAGE_DURATION = meter.create_histogram(
+	"flowgentic.fleet.outage.duration",
+	unit="s",
+	description=(
+		"How long a replica was down, from the call that found it down to its "
+		"return or Recovery giving up"
+	),
+	explicit_bucket_boundaries_advisory=OUTAGE_DURATION_BUCKETS,
 )
 
 

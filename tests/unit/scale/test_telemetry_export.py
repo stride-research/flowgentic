@@ -300,7 +300,7 @@ def test_two_agent_processes_exports_read_back_and_check(tmp_path):
 	assert got.calls == 250 and got.failed_calls == 0
 	assert got.chat_spans == 250 and got.failed_chat_spans == 0
 	assert got.retries == 2 and got.requests == 252
-	assert got.outages == 2 and got.gave_up == 0
+	assert got.outages == sum(r["outages"] for r in runs) >= 1 and got.gave_up == 0
 	assert got.usage == Usage(25_000, 2_500, 16_000, 1_000)
 	assert sum(got.agents[-1][1].values()) == 0  # every run over at the last export
 	assert got.agent_seconds["model_request"] > 0

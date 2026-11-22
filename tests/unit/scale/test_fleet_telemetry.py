@@ -192,6 +192,7 @@ async def test_a_call_whose_replica_stays_down_is_one_failed_span(
 	calls = by_error(metric_reader, "flowgentic.fleet.call.duration", "gone")
 	assert calls == {"ServerUnavailable": 1}
 	assert points(metric_reader, "flowgentic.fleet.retries", "gone") == []
+	await asyncio.sleep(0.05)  # the watch gives up just after the call does
 	outages = {
 		p.attributes["flowgentic.fleet.outage.outcome"]: p.count
 		for p in points(metric_reader, "flowgentic.fleet.outage.duration", "gone")
