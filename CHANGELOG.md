@@ -162,19 +162,28 @@ decision record.
   (`service.name`) and the process (`service.instance.id`).
   `OtlpTelemetry.rhapsody_options()` sends RHAPSODY's own metrics and spans
   to the same collector, through `Session.start_telemetry()` or AsyncFlow's
-  `WorkflowEngine.start_telemetry()`. It refuses a process whose providers
-  are set already. Streaming costs what the files cost: +17.7 % of CPU for
+  `WorkflowEngine.start_telemetry()`. RHAPSODY's `start_telemetry()` leaves
+  its session span current, so agents started in that context would all
+  follow its sampling; the docs and the example start them in a context of
+  their own. Metrics stay cumulative whatever the environment
+  prefers. With the collector down, a shutdown takes about `timeout_s` per
+  signal, RHAPSODY's span processor's included, and drops what is still
+  queued. It refuses a process whose providers are set already, before it
+  opens anything. Streaming costs what the files cost: +17.7 % of CPU for
   5,000 agents on the loop against +17.4 %, and one metrics export about
   1.5 ms.
 - `examples/live-dashboard`: an OpenTelemetry collector, Prometheus, Jaeger
-  and Grafana in one `docker compose` command, on 127.0.0.1, with a dashboard
-  per component in a folder of its own: Flowgentic's (agents in each state,
-  model calls and tokens per second, requests at the replicas, admission
-  wait, time at the replica, requests sent again and outages, tools,
-  event-loop lag and garbage collection) and RHAPSODY's (tasks and nodes).
-  An application adds its own view through `APP_DASHBOARDS`. The
+  and Grafana, started for the user who runs `stack.sh up`, on ports of that
+  user's own, with a dashboard per component in a folder of its own:
+  Flowgentic's (agents in each state, model calls and tokens per second,
+  requests at the replicas, admission wait, time at the replica, requests
+  sent again and outages, tools, event-loop lag and garbage collection) and
+  RHAPSODY's (tasks and nodes). Grafana asks for a login and the collector
+  for a token, both made by `stack.sh`, and only these two publish a port, on
+  127.0.0.1. An application adds its own view through `APP_DASHBOARDS`. The
   agents-at-scale example streams to it with `--otlp`, and `--model-latency`
-  makes its runs long enough to watch. See the new Live dashboard page.
+  makes its runs long enough to watch, on either runner. See the new Live
+  dashboard page.
 - `--otlp URL` for `benchmarks/agent_loop.py` and `benchmarks/agent_host.py`
   streams their export with `flowgentic.otlp`, and `benchmarks/otlp_sink.py`
   takes OTLP exports and keeps nothing, to measure the cost without a
