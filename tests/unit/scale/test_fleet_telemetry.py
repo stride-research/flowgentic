@@ -323,3 +323,93 @@ async def test_a_fleets_tokens_stay_counted_after_it_is_gone(metric_reader):
 	gc.collect()
 	# A counter only grows: the process keeps what its fleets counted.
 	assert tokens(metric_reader, "gone-tokens") == {(0, "input"): 300, (0, "output"): 20}
+
+
+# --- cancellation, and a replica replaced (the review of 22 Nov) ------------------
+
+
+async def test_a_call_cancelled_while_queued_keeps_its_wait(span_exporter, metric_reader):
+	transport = ScriptedTransport(usage_reply, latency_s=0.3)
+	fleet = Fleet([transport], admission=RequestAdmission(1), name="queued-cancel")
+	first = asyncio.create_task(fleet.ainvoke("a", [{"role": "user", "content": "hi"}]))
+	await asyncio.sleep(0.01)
+	queued = asyncio.create_task(fleet.ainvoke("b", [{"role": "user", "content": "hi"}]))
+	await asyncio.sleep(0.1)
+	queued.cancel()
+	with pytest.raises(asyncio.CancelledError):
+		await queued
+	await first
+	spans = {s.attributes["gen_ai.conversation.id"]: s for s in chat_spans(span_exporter)}
+	b = spans["b"].attributes
+	assert b["error.type"] == "CancelledError"
+	assert b["flowgentic.fleet.admission_wait"] >= 0.09  # the wait it was cut out of
+	assert "flowgentic.fleet.recovery_wait" not in b
+	calls = by_error(metric_reader, "flowgentic.fleet.call.duration", "queued-cancel")
+	assert calls == {None: 1, "CancelledError": 1}
+	# The cancelled call never reached the replica: no request of its own.
+	requests = by_error(metric_reader, "flowgentic.fleet.request.duration", "queued-cancel")
+	assert requests == {None: 1}
+
+
+async def test_a_try_cancelled_in_flight_is_a_request(span_exporter, metric_reader):
+	transport = ScriptedTransport(usage_reply, latency_s=10)
+	fleet = Fleet([transport], name="flight-cancel")
+	call = asyncio.create_task(fleet.ainvoke("a", [{"role": "user", "content": "hi"}]))
+	await asyncio.sleep(0.02)
+	call.cancel()
+	with pytest.raises(asyncio.CancelledError):
+		await call
+	# The server got the request: it counts, with the cancellation as its error.
+	requests = by_error(metric_reader, "flowgentic.fleet.request.duration", "flight-cancel")
+	assert requests == {"CancelledError": 1}
+	calls = by_error(metric_reader, "flowgentic.fleet.call.duration", "flight-cancel")
+	assert calls == {"CancelledError": 1}
+
+
+async def test_a_resend_cancelled_while_queued_is_not_counted(span_exporter, metric_reader):
+	transport = Flaky(1, usage_reply, latency_s=0.5)  # the first call fails at once
+
+	async def check(i):
+		await asyncio.sleep(0.05)  # back after a moment
+		return transport
+
+	fleet = Fleet(
+		[transport],
+		admission=RequestAdmission(1),
+		recovery=Recovery(check, poll_s=0.01),
+		name="resend-cancel",
+	)
+	a = asyncio.create_task(fleet.ainvoke("a", [{"role": "user", "content": "hi"}]))
+	await asyncio.sleep(0.02)  # a failed and waits for the replica
+	b = asyncio.create_task(fleet.ainvoke("b", [{"role": "user", "content": "hi"}]))
+	await asyncio.sleep(0.2)  # b holds the replica; a's resend waits behind it
+	a.cancel()
+	with pytest.raises(asyncio.CancelledError):
+		await a
+	await b
+	span = next(
+		s for s in chat_spans(span_exporter) if s.attributes["gen_ai.conversation.id"] == "a"
+	)
+	attrs = span.attributes
+	assert attrs["error.type"] == "CancelledError"
+	assert "flowgentic.fleet.resend_count" not in attrs  # never admitted again
+	# Its second wait for admission is a wait for admission, not recovery.
+	assert attrs["flowgentic.fleet.admission_wait"] >= 0.1
+	assert attrs["flowgentic.fleet.recovery_wait"] < 0.1
+	assert points(metric_reader, "flowgentic.fleet.retries", "resend-cancel") == []
+	assert fleet.stats()["retried_calls"] == 0
+
+
+async def test_a_replaced_replica_names_its_own_model(span_exporter):
+	down = Flaky(1, usage_reply, base_url="http://node-3:8100/v1")
+	moved = ScriptedTransport(usage_reply, model="other", base_url="http://node-7:8200/v1")
+
+	async def check(i):
+		return moved
+
+	fleet = Fleet([down], recovery=Recovery(check, poll_s=0.01), name="renamed")
+	await fleet.ainvoke("a", [{"role": "user", "content": "hi"}])
+	(span,) = chat_spans(span_exporter)
+	assert span.name == "chat other"
+	assert span.attributes["gen_ai.request.model"] == "other"
+	assert span.attributes["server.address"] == "node-7"
