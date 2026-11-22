@@ -162,10 +162,11 @@ provider.shutdown()  # exports what is left
 out.close()
 ```
 
-To send metrics to a collector instead, use `OTLPMetricExporter`, from the
-`opentelemetry-exporter-otlp` package, in place of the console exporter. In
-a campaign of several agent processes, each exports its own metrics: give
-each provider a `Resource` with a `service.instance.id` of its own, so that a
+To send metrics and spans to a collector instead, for a dashboard that shows
+the run while it goes, the `otlp` extra's `flowgentic.otlp.configure()` sets
+up the SDK in one call; see [Live dashboard](live-dashboard.md). In a
+campaign of several agent processes, each exports its own metrics: give each
+provider a `Resource` with a `service.instance.id` of its own, so that a
 backend can tell the processes apart.
 
 ### Read an export back
@@ -336,8 +337,8 @@ The levers, biggest first:
 4. **Write JSON lines.** An OTLP exporter is not cheaper in the agents'
    process: the Python exporter builds the protobuf there, at about the cost
    of the JSON line, for half the bytes. An OpenTelemetry collector takes the
-   work only after encoding. Use OTLP and a collector for live dashboards or
-   a trace backend, not to save CPU.
+   work only after encoding. Use OTLP and a collector for
+   [live dashboards](live-dashboard.md) or a trace backend, not to save CPU.
 
 Fewer values per model call would save more: each costs the same, and a
 View that drops an instrument saves almost nothing. Only not recording
@@ -370,8 +371,9 @@ uv run --extra examples python examples/ai-hpc-coupling/augmented_campaign.py --
 ```
 
 To send spans to a collector or a trace backend such as Jaeger instead, use a
-`BatchSpanProcessor` with an OTLP exporter in place of the file, and a
-`BatchLogRecordProcessor` with an OTLP log exporter for the events.
+`BatchSpanProcessor` with an OTLP exporter in place of the file, as
+`flowgentic.otlp.configure()` does (see [Live dashboard](live-dashboard.md)),
+and a `BatchLogRecordProcessor` with an OTLP log exporter for the events.
 
 The packages are in the `examples` extra:
 - `opentelemetry-sdk`;
@@ -510,4 +512,5 @@ replace it; see the [changelog](../changelog.md).
 ## API
 
 - [`flowgentic.agent`](../api/flowgentic/agent.md)
+- [`flowgentic.otlp`](../api/flowgentic/otlp.md)
 - [`flowgentic.telemetry`](../api/flowgentic/telemetry.md)
