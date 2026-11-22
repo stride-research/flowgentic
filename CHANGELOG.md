@@ -118,11 +118,14 @@ decision record.
   the call's, and Flowgentic records none.
 - Three fleet metrics, beside 0.5.0's: `flowgentic.fleet.call.duration`, each
   call's time, whose count is the calls, with `error.type` for those that
-  failed; `flowgentic.fleet.retries`, the requests sent again once their
-  replica came back; and `flowgentic.fleet.outage.duration`, each outage
-  `Recovery` watched, with `flowgentic.fleet.outage.outcome`, `recovered` or
-  `gave_up`. Calls stay exact through outages: a retried call is one call and
-  several requests. And `flowgentic.fleet.tokens`, the prompt (`input`) and
+  failed or were cancelled; `flowgentic.fleet.retries`, the requests sent
+  again once their replica came back, counted as each is admitted; and
+  `flowgentic.fleet.outage.duration`, each outage `Recovery` watched, with
+  `flowgentic.fleet.outage.outcome`, `recovered` or `gave_up`. Counts stay
+  exact through outages and cancellations: a retried call is one call and
+  several requests, `flowgentic.fleet.request.duration` counts a try
+  cancelled at the replica, with `error.type` `CancelledError`, and a call
+  cancelled while it waited for admission sent no request. And `flowgentic.fleet.tokens`, the prompt (`input`) and
   completion (`output`) tokens the servers counted at each replica, read when
   the SDK collects, so it costs nothing per call.
 - `flowgentic.telemetry.read_export(path)` reads back the OpenTelemetry export
@@ -130,13 +133,16 @@ decision record.
   `spans.jsonl`, the SDK's console exporters' JSON) and merges them into an
   `Export`: the fleets' calls, requests, requests sent again and outages, the
   agent-seconds by state, the agents in each state over time, and the `chat`
-  spans with their usage. `Export.check()` lists what is missing, such as a
-  process with no Flowgentic metrics, or what does not add up, such as fewer
-  of the fleet's `chat` spans than its calls, which a full span queue causes;
-  with `sampled=True`, for spans sampled per agent, only more spans than
-  calls. `Export.check_servers()` compares the fleets' tokens and successful
-  requests, from the metrics, with the model servers' own counters, and the
-  `chat` spans' where the fleets' counts are missing. The telemetry page
+  spans with their usage. Processes that write into one file are told apart
+  by their resource and their series' start times, and a last line cut short,
+  as a process killed at its walltime leaves it, is read around.
+  `Export.check()` lists what is missing, such as a process with no
+  Flowgentic metrics or a line cut short, or what does not add up, such as
+  fewer of a fleet's `chat` spans than its calls, which a full span queue
+  causes; with `sampled=True`, for spans sampled per agent, only more spans
+  than calls. `Export.check_servers()` compares the fleets' tokens and
+  successful requests, from the metrics, with the model servers' own
+  counters, and all the `chat` spans' where the fleets made no calls. The telemetry page
   shows how each process writes its export, and what the SDK costs and how to
   cut it: spans sampled per agent, no exemplars, metrics every 10 s or less
   often.

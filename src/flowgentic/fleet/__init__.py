@@ -826,6 +826,18 @@ def _chat_span(transport: object, attributes: dict | None) -> Any:  # noqa: ANN4
 	)
 
 
+def _renamed(span: Any, old: object, new: object) -> None:  # noqa: ANN401
+	"""Name, on a call's ``chat`` span, the replica that ``Recovery`` put in
+	place of ``old``: its model and its server. A replica without a model or
+	a ``base_url`` leaves the old one's on the span, since a span cannot drop
+	an attribute."""
+	model = getattr(new, "model", None)
+	if model and model != getattr(old, "model", None):
+		span.update_name(f"{_telemetry.CHAT} {model}")
+		span.set_attribute(_telemetry.GEN_AI_REQUEST_MODEL, model)
+	span.set_attributes(_server_attributes(new))
+
+
 def _failed(span: Any, exc: BaseException) -> str:  # noqa: ANN401
 	"""Mark a ``chat`` span failed with ``exc``; return its ``error.type``."""
 	error = type(exc).__qualname__
@@ -1120,6 +1132,7 @@ class Fleet:
 		failing_since: float | None = None
 		wait_s = 0.0  # for admission, over every try
 		resends = 0
+		resend: str | None = None  # the error a resend is waiting to be admitted for
 		got = asked
 		error: str | None = None
 		recovery_s = 0.0
@@ -1130,12 +1143,23 @@ class Fleet:
 				with _agents.activity(_agents.AgentState.MODEL_QUEUED):
 					while True:
 						queued = time.monotonic()
-						await gate.acquire(weight, agent_id)
+						try:
+							await gate.acquire(weight, agent_id)
+						except BaseException:
+							wait_s += time.monotonic() - queued  # cut short
+							raise
 						failed: BaseException | None = None
 						try:
 							got = time.monotonic()
 							wait_s += got - queued
 							_telemetry.ADMISSION_WAIT.record(got - queued, attrs)
+							if resend is not None:  # sent again: count it now
+								resends += 1
+								core.retried += 1
+								_telemetry.RETRIES.add(
+									1, {**attrs, _telemetry.ERROR_TYPE: resend}
+								)
+								resend = None
 							core.in_flight += 1
 							core.in_flight_max = max(core.in_flight_max, core.in_flight)
 							try:
@@ -1155,6 +1179,16 @@ class Fleet:
 								if core.recovery is None or not _transient(exc):
 									raise
 								failed = exc
+							except BaseException as exc:
+								# Cancelled at the server: the request was made.
+								_telemetry.MODEL_SERVICE.record(
+									time.monotonic() - got,
+									{
+										**attrs,
+										_telemetry.ERROR_TYPE: type(exc).__qualname__,
+									},
+								)
+								raise
 							finally:
 								core.in_flight -= 1
 							done = time.monotonic()
@@ -1182,12 +1216,7 @@ class Fleet:
 								_as_transport(model),
 							)
 							_close_later(old)
-						resends += 1
-						core.retried += 1
-						_telemetry.RETRIES.add(
-							1,
-							{**attrs, _telemetry.ERROR_TYPE: type(failed).__qualname__},
-						)
+						resend = type(failed).__qualname__
 			except BaseException as exc:
 				error = _failed(span, exc)
 				raise
@@ -1205,7 +1234,7 @@ class Fleet:
 					if failing_since is not None:
 						span.set_attribute(_telemetry.FLEET_RECOVERY_WAIT, recovery_s)
 					if core.replicas[i] is not transport:  # Recovery replaced it
-						span.set_attributes(_server_attributes(core.replicas[i]))
+						_renamed(span, transport, core.replicas[i])
 				_telemetry.CALL_DURATION.record(
 					ended - asked,
 					attrs if error is None else {**attrs, _telemetry.ERROR_TYPE: error},
