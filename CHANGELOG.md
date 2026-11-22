@@ -122,7 +122,9 @@ decision record.
   replica came back; and `flowgentic.fleet.outage.duration`, each outage
   `Recovery` watched, with `flowgentic.fleet.outage.outcome`, `recovered` or
   `gave_up`. Calls stay exact through outages: a retried call is one call and
-  several requests.
+  several requests. And `flowgentic.fleet.tokens`, the prompt (`input`) and
+  completion (`output`) tokens the servers counted at each replica, read when
+  the SDK collects, so it costs nothing per call.
 - `flowgentic.telemetry.read_export(path)` reads back the OpenTelemetry export
   each agent process wrote into a directory of its own (`metrics.jsonl` and
   `spans.jsonl`, the SDK's console exporters' JSON) and merges them into an
@@ -131,13 +133,19 @@ decision record.
   spans with their usage. `Export.check()` lists what is missing, such as a
   process with no Flowgentic metrics, or what does not add up, such as fewer
   of the fleet's `chat` spans than its calls, which a full span queue causes;
-  `Export.check_servers()` compares the spans' tokens and successful requests
-  with the model servers' own counters. The telemetry page shows how each
-  process writes its export.
+  with `sampled=True`, for spans sampled per agent, only more spans than
+  calls. `Export.check_servers()` compares the fleets' tokens and successful
+  requests, from the metrics, with the model servers' own counters, and the
+  `chat` spans' where the fleets' counts are missing. The telemetry page
+  shows how each process writes its export, and what the SDK costs and how to
+  cut it: spans sampled per agent, no exemplars, metrics every 10 s or less
+  often.
 - `benchmarks/agent_loop.py --otel DIR` and `benchmarks/agent_host.py --otel
   DIR` run with the OpenTelemetry SDK writing its export into `DIR`
   (`--no-spans` for metrics only), to compare their CPU time with a run
-  without; the agent loop's benchmark also checks the export it wrote.
+  without; the agent loop's benchmark also checks the export it wrote. They
+  configure the SDK as the telemetry page recommends at scale, and
+  `--otel-sample`, `--otel-exemplars` and `--otel-interval` change it.
 - `benchmarks/agent_loop.py` runs the agents-at-scale example's workload in
   one agent process with the loop, the loop through LangChain's adapter, or
   `GraphRunner`; `benchmarks/client_cost.py` measures a model client's CPU per

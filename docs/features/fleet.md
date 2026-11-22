@@ -378,7 +378,12 @@ SDK:
   or `gave_up`. Calls that fail while one watch runs share its outage;
 - `flowgentic.fleet.tokens.active`, `flowgentic.fleet.requests.active` and
   `flowgentic.fleet.requests.waiting` give each replica's tokens and requests
-  in flight, and its requests waiting, read when the SDK collects.
+  in flight, and its requests waiting, read when the SDK collects;
+- `flowgentic.fleet.tokens` counts the prompt (`gen_ai.token.type` `input`)
+  and completion (`output`) tokens the servers counted at each replica, read
+  when the SDK collects, so it costs nothing per call and holds however the
+  spans are sampled. Fleets of one name in a process add up, and a fleet
+  that is gone keeps its count.
 
 Each carries `flowgentic.fleet.name`, the fleet's `name`, and
 `flowgentic.fleet.replica`, the replica's index. The `chat` span adds what
