@@ -1,13 +1,23 @@
 # The collector takes each process's OTLP and passes metrics to Prometheus's
-# OTLP receiver and spans to Jaeger. On an allocation, run it where the agent
+# OTLP receiver and spans to Jaeger. It takes OTLP only with the bearer token
+# OTLP_TOKEN, which the agent processes send in OTEL_EXPORTER_OTLP_HEADERS
+# (stack.sh env prints both). On an allocation, run it where the agent
 # processes can reach it, and point their flowgentic.otlp.configure() at it.
+extensions:
+  bearertokenauth:
+    token: ${env:OTLP_TOKEN}
+
 receivers:
   otlp:
     protocols:
       http:
         endpoint: 0.0.0.0:4318
+        auth:
+          authenticator: bearertokenauth
       grpc:
         endpoint: 0.0.0.0:4317
+        auth:
+          authenticator: bearertokenauth
   # Model servers' own metrics, such as vLLM's, scraped beside the agents':
   # prometheus:
   #   config:
@@ -29,6 +39,7 @@ exporters:
       insecure: true
 
 service:
+  extensions: [bearertokenauth]
   pipelines:
     metrics:
       receivers: [otlp]
