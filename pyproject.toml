@@ -1,6 +1,6 @@
 [project]
 name = "flowgentic"
-version = "0.5.1"
+version = "0.6.0"
 description = "Flowgentic runs LLM agents on HPC resources with the RADICAL stack: as AsyncFlow workflow tasks, and as agents at scale, on its own agent loop and OpenAI-compatible model servers, whose tools run as RHAPSODY tasks and whose state lives in RaDEX; LangGraph is optional."
 readme = "README.md"
 authors = [
