@@ -113,58 +113,6 @@ class CountingStore(MemoryStore):
         return super().contains(key)
 
 
-def configure_otel(out: Path, spans: bool = True) -> Any:
-    """Write metrics every second, and spans in batches unless ``spans`` is
-    false, into ``out``, as the telemetry page configures them; return a
-    function that flushes both."""
-    from opentelemetry import metrics, trace
-    from opentelemetry.sdk.metrics import MeterProvider
-    from opentelemetry.sdk.metrics.export import (
-        ConsoleMetricExporter,
-        PeriodicExportingMetricReader,
-    )
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
-
-    out.mkdir(parents=True, exist_ok=True)
-    metrics_file = (out / "metrics.jsonl").open("w")
-    reader = PeriodicExportingMetricReader(
-        ConsoleMetricExporter(
-            out=metrics_file, formatter=lambda data: data.to_json(indent=None) + "\n"
-        ),
-        export_interval_millis=1_000,
-    )
-    meter_provider = MeterProvider(metric_readers=[reader])
-    metrics.set_meter_provider(meter_provider)
-    if not spans:
-
-        def flush_metrics() -> None:
-            meter_provider.shutdown()
-            metrics_file.close()
-
-        return flush_metrics
-    spans_file = (out / "spans.jsonl").open("w")
-    tracer_provider = TracerProvider()
-    tracer_provider.add_span_processor(
-        BatchSpanProcessor(
-            ConsoleSpanExporter(
-                out=spans_file,
-                formatter=lambda span: span.to_json(indent=None) + "\n",
-            ),
-            max_queue_size=65_536,
-        )
-    )
-    trace.set_tracer_provider(tracer_provider)
-
-    def flush() -> None:
-        meter_provider.shutdown()
-        tracer_provider.shutdown()
-        metrics_file.close()
-        spans_file.close()
-
-    return flush
-
-
 def _mib(maxrss: int) -> float:
     return round(maxrss / (1024**2 if sys.platform == "darwin" else 1024), 1)
 
@@ -279,7 +227,12 @@ def run_once(
     otel: Path | None = None,
     spans: bool = True,
 ) -> dict:
-    flush = configure_otel(otel, spans) if otel is not None else None
+    flush = None
+    if otel is not None:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import _otel
+
+        flush = _otel.configure(otel, spans)
     example = load_example()
     with example.McpServer() as mcp:
         requests, replies = queue.Queue(), [queue.Queue()]
@@ -291,12 +244,7 @@ def run_once(
             )
     out["otel"] = None if otel is None else ("metrics+spans" if spans else "metrics")
     if otel is not None:
-        from flowgentic.telemetry import read_export
-
-        export = read_export(otel)
-        out["otel_check"] = export.check()
-        out["otel_calls"] = export.calls
-        out["otel_chat_spans"] = export.chat_spans
+        out.update(_otel.summary(otel))
     out["python"] = platform.python_version()
     out["machine"] = platform.machine()
     return out
