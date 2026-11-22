@@ -489,7 +489,10 @@ def test_the_host_exports_the_names_its_docs_present():
         "Runner",
         "Stagger",
         "Suspended",
+        "activity",
+        "current_agent",
         "register_pending",
+        "wait",
     }
     assert not hasattr(flowgentic.host, "CATEGORY")
 
