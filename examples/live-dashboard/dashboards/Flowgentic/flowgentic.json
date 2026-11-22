@@ -583,7 +583,7 @@
     {
       "type": "stat",
       "title": "Requests sent again",
-      "description": "Requests sent again once their replica came back (flowgentic.fleet.retries)",
+      "description": "Requests sent again after their replica's outage, counted as each is admitted (flowgentic.fleet.retries)",
       "targets": [
         {
           "datasource": {
@@ -1196,7 +1196,7 @@
     {
       "type": "timeseries",
       "title": "Admission wait",
-      "description": "Time a request waited for its replica's admission (flowgentic.fleet.admission.wait)",
+      "description": "Time a request waited for its replica's admission, a wait a cancellation cut short included (flowgentic.fleet.admission.wait)",
       "targets": [
         {
           "datasource": {
@@ -1267,7 +1267,7 @@
     {
       "type": "timeseries",
       "title": "Time at the replica",
-      "description": "Time a request spent at its replica, after admission (flowgentic.fleet.request.duration)",
+      "description": "Time a request spent at its replica, after admission; a try cancelled there counts, with error.type CancelledError (flowgentic.fleet.request.duration)",
       "targets": [
         {
           "datasource": {
@@ -1409,7 +1409,7 @@
     {
       "type": "timeseries",
       "title": "Requests sent again and outages",
-      "description": "Requests sent again once their replica came back, and outages Recovery watched, by how they ended",
+      "description": "Requests sent again after their replica's outage, counted as each is admitted, and outages Recovery watched, by how they ended",
       "targets": [
         {
           "datasource": {
