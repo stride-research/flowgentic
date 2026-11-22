@@ -7,7 +7,7 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
-## [0.6.0]
+## [0.6.0] - 2026-11-22
 
 Agents at scale run on Flowgentic's own agent loop, on OpenAI Chat Completions
 messages and transports to OpenAI-compatible model servers, and LangGraph
