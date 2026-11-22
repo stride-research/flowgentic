@@ -10,8 +10,9 @@ import os
 import socket
 import subprocess
 import sys
+import textwrap
 import threading
-from collections import Counter
+from collections import Counter, namedtuple
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -31,6 +32,10 @@ from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (  # noqa: 
 from flowgentic.telemetry import read_export  # noqa: E402
 
 PROCESS = Path(__file__).resolve().parent / "otlp_process.py"
+EXAMPLE = (
+	Path(__file__).resolve().parents[3] / "examples" / "agents-at-scale" / "campaign.py"
+)
+Span = namedtuple("Span", "scope name trace parent")
 CUMULATIVE = 2  # AggregationTemporality.CUMULATIVE in OTLP
 FLOWGENTIC_METRICS = {
 	"flowgentic.agents",
@@ -135,6 +140,21 @@ class Receiver:
 			for s in r.scope_metrics
 			if s.scope.name == scope
 			for m in s.metrics
+		]
+
+	def span_records(self) -> list[Span]:
+		"""Every span received: its scope, name, trace and parent."""
+		return [
+			Span(
+				s.scope.name,
+				span.name.split()[0],
+				span.trace_id.hex(),
+				span.parent_span_id.hex(),
+			)
+			for request in self.traces
+			for r in request.resource_spans
+			for s in r.scope_spans
+			for span in s.spans
 		]
 
 	def spans(self) -> list[tuple[str, dict]]:
@@ -305,6 +325,121 @@ def test_a_collector_that_is_down_does_not_stop_the_agents():
 		timeout=60,
 	)  # fmt: skip
 	assert run["outcomes"] == {"done": 30}
+
+
+def test_metrics_stay_cumulative_whatever_the_environment_prefers(tmp_path):
+	with Receiver() as collector:
+		run_process(
+			"--endpoint", collector.url, "--agents", "20", "--files", str(tmp_path / "p000"),
+			env={"OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": "DELTA"},
+		)  # fmt: skip
+	temporalities = {
+		getattr(m, m.WhichOneof("data")).aggregation_temporality
+		for request in collector.metrics
+		for r in request.resource_metrics
+		for s in r.scope_metrics
+		for m in s.metrics
+		if m.WhichOneof("data") in ("sum", "histogram")
+	}
+	assert temporalities == {CUMULATIVE}  # Prometheus's panels need the totals
+	(calls,) = collector.last("flowgentic.fleet.call.duration")
+	assert calls.count == 20
+	assert read_export(tmp_path).check() == []  # read_export refuses delta
+
+
+def test_the_example_keeps_a_tenth_of_its_agents_each_the_root_of_its_trace():
+	"""RHAPSODY's ``start_telemetry()`` leaves its session span current; the
+	example's agents must still start traces of their own, or every agent
+	follows the session's sampling and lands in one trace."""
+	with Receiver() as collector:
+		done = subprocess.run(
+			[sys.executable, str(EXAMPLE), "--agents", "300", "--otlp", collector.url],
+			capture_output=True,
+			text=True,
+			check=False,
+			timeout=240,
+		)
+	assert done.returncode == 0, done.stderr
+	spans = collector.span_records()
+	agents = [s for s in spans if s.name == "invoke_agent"]
+	assert 0 < len(agents) < 150  # 30 expected; 0 or 150 has p < 1e-12
+	assert not any(s.parent for s in agents)  # each the root of its trace
+	kept = {s.trace for s in agents}
+	assert len(kept) == len(agents)
+	tasks = [s for s in spans if (s.scope, s.name) == ("rhapsody", "task")]
+	assert len(tasks) == len(agents)  # one simulation per agent, kept with it
+	assert {s.trace for s in tasks} <= kept
+	(session,) = [s for s in spans if (s.scope, s.name) == ("rhapsody", "session")]
+	assert session.trace not in kept
+
+
+def test_shutdown_with_the_collector_down_is_bounded():
+	"""Spans queued for a collector that is down: shutting down ours, and
+	RHAPSODY's with the processor ``rhapsody_options()`` gave it, each takes
+	about ``timeout_s``, not a retry per queued batch up to the batch
+	processor's 30 s (26 s for 20,000 spans at ``timeout_s=1`` before)."""
+	code = textwrap.dedent(
+		"""
+		import socket, time
+		from opentelemetry import trace
+		from opentelemetry.sdk.trace import TracerProvider
+		from flowgentic.otlp import configure
+
+		def spans(tracer, name):
+			for _ in range(20_000):
+				with tracer.start_as_current_span(name):
+					pass
+
+		with socket.socket() as s:
+			s.bind(("127.0.0.1", 0))
+			port = s.getsockname()[1]  # nothing listens once it is closed
+		telemetry = configure(f"http://127.0.0.1:{port}", sample=1.0, timeout_s=1)
+		options = telemetry.rhapsody_options()
+		spans(trace.get_tracer("test"), "invoke_agent")
+		t = time.monotonic()
+		telemetry.shutdown()
+		ours_s = time.monotonic() - t
+		theirs = TracerProvider(resource=options["resource"])  # as RHAPSODY builds it
+		for processor in options["span_processors"]:
+			theirs.add_span_processor(processor)
+		spans(theirs.get_tracer("rhapsody"), "task")
+		t = time.monotonic()
+		theirs.shutdown()  # as RHAPSODY's session.close() does
+		print(ours_s, time.monotonic() - t)
+		"""
+	)
+	done = subprocess.run(
+		[sys.executable, "-c", code], capture_output=True, text=True, timeout=300
+	)
+	assert done.returncode == 0, done.stderr
+	ours_s, rhapsody_s = map(float, done.stdout.split())
+	assert ours_s < 4  # spans and metrics: a second each, and an export under way
+	assert rhapsody_s < 4
+
+
+def test_a_refused_process_keeps_its_files_and_sends_nothing(tmp_path):
+	out = tmp_path / "p000"
+	out.mkdir()
+	(out / "metrics.jsonl").write_text("an earlier run\n")
+	code = (
+		"import sys\n"
+		"from opentelemetry import metrics\n"
+		"from opentelemetry.sdk.metrics import MeterProvider\n"
+		"metrics.set_meter_provider(MeterProvider())\n"
+		"from flowgentic.otlp import configure\n"
+		"configure(sys.argv[1], files=sys.argv[2], interval_s=0.05)\n"
+	)
+	with Receiver() as collector:
+		done = subprocess.run(
+			[sys.executable, "-c", code, collector.url, str(out)],
+			capture_output=True,
+			text=True,
+			timeout=60,
+		)
+	assert "RuntimeError: a meter provider is set already" in done.stderr
+	assert (out / "metrics.jsonl").read_text() == "an earlier run\n"
+	assert not (out / "spans.jsonl").exists()
+	assert not collector.metrics and not collector.traces
 
 
 def test_a_process_whose_providers_are_set_already_is_refused():
