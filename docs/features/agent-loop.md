@@ -52,9 +52,11 @@ on a laptop.
 - **It calls the model through the fleet**, which routes and admits each call
   by agent, or through a transport, such as `HTTPTransport`; see
   [Fleet](fleet.md#replicas-are-transports). Each call sends the tools' JSON
-  schemas, built once, and `model_kwargs`, such as `max_tokens`.
-  `system_prompt` goes first in every call; it is not part of the agent's
-  history. Each model call is a GenAI `chat` span with its usage.
+  schemas, built once, and `model_kwargs`, such as `max_tokens`, or the
+  call's own, from a function: see [each call's
+  arguments](#each-calls-arguments). `system_prompt` goes first in every
+  call; it is not part of the agent's history. Each model call is a GenAI
+  `chat` span with its usage.
 - **Its tools' schemas come from pydantic**: a task or MCP tool's
   `args_schema`, or the function's signature and type hints. An inline tool is
   a plain function, `async` or not; one with `name`, `description` and
@@ -73,7 +75,9 @@ on a laptop.
   tools run in the agent's process. The results go back to the model in the
   order of the calls, their text as written, not escaped to ASCII. Each call
   is an `execute_tool` span, an inline tool's too (`flowgentic.tool.kind`
-  `inline`), with status ERROR and its exception when the tool raised. A task's
+  `inline`), with status ERROR and its exception when the tool raised. An
+  inline tool reads the agent it runs for with `flowgentic.host.current_agent()`,
+  sync or async. A task's
   [decision record](tools.md#the-decision-record) commits at the reply that
   asked for it, through a fleet or a transport alone. A task tool the runtime
   cannot run, such as one naming a backend the session lacks, is refused when
@@ -146,6 +150,52 @@ is still a conversation the agent can go on with, which failing the agent
 would refuse. Text that UTF-8 cannot carry, such as a lone surrogate in a
 file name Linux could not decode, reaches the model as its escape.
 
+## Each call's arguments
+
+`model_kwargs` is a dict that goes with every model call, or a function of the
+agent's id and its messages that returns one call's. A coroutine function
+works too. The function is called once per model call, after `trim`, with the
+history the call sends, without the system prompt; it must not change it.
+What it returns is all the call's keywords: nothing of a dict is merged in.
+With a fleet, `reserve` and `meta` among them are the fleet's: tokens to
+admit beyond the usual reply, and what the call's `CallRecord` carries. The
+other keywords go to the replica, as `max_tokens` and `extra_body` do. Each
+try of a call, when the fleet's `Recovery` tries it again, sends the same
+keywords.
+
+A reasoning knob, for one: an agent's decision calls, the calls after an
+analysis, think within the agent's own budget, and its other calls do not
+think.
+
+```python
+THINK_OFF = {"chat_template_kwargs": {"enable_thinking": False}}
+
+
+def thinking(agent_id: str, messages: list[dict]) -> dict:
+    last = messages[-1]
+    if last["role"] != "tool" or not is_analysis(last):
+        return {"max_tokens": 512, "extra_body": THINK_OFF}
+    budget = budgets[agent_id]
+    return {
+        "max_tokens": 512 + budget,
+        "extra_body": {
+            "chat_template_kwargs": {"enable_thinking": True},
+            "thinking_token_budget": budget,
+        },
+        "reserve": budget,  # the fleet admits the call with its thinking
+        "meta": {"budget": budget},
+    }
+
+
+runner = LoopRunner(fleet, tools, model_kwargs=thinking)
+```
+
+With `GraphRunner`, the graph's model node is the application's own, so it
+does the same itself: it computes the arguments from the state's messages and
+the agent (`current_agent()`, or the run's `thread_id`), and passes them with
+the call, as `FleetChatModel`'s `ainvoke(messages, reserve=budget, **kwargs)`
+or the fleet's `ainvoke(agent, messages, **kwargs)`.
+
 ## LangChain, through its adapter
 
 The loop runs no LangChain code of its own. With the `langgraph` extra,
@@ -195,6 +245,7 @@ suspension is the host's `flowgentic.agent.suspend` event; see
 | A limit | `max_model_calls`, over the whole run | `recursion_limit` per run, and as many resumes |
 | Tool errors | always returned to the model | as the graph's `ToolNode` handles them |
 | Structured answers | `response_format` | the graph's own |
+| Each model call's arguments | `model_kwargs`, a dict or a function | the graph's model node |
 | Human in the loop | an interrupt ends the agent | an interrupted agent can resume |
 | Streaming, middleware, subgraphs | no | LangGraph's |
 

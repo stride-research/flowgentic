@@ -143,6 +143,7 @@ jobs:
         run: >-
           agents/bin/python -m pytest -q -p no:cacheprovider
           tests/unit/scale/test_loop_runner.py
+          tests/unit/scale/test_scripted_runner.py
           tests/unit/scale/test_loop_langchain.py
           tests/unit/scale/test_http_transport.py
           tests/unit/scale/test_fleet_telemetry.py

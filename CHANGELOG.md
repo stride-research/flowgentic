@@ -41,6 +41,22 @@ decision record.
   inline ones included, is an `execute_tool` span. A task's decision record
   commits at the reply that asked for it, and a task tool the runtime cannot
   run is refused when the runner is made. See the agent loop page.
+- `LoopRunner(model_kwargs=...)` also takes a function, or a coroutine
+  function, of the agent's id and its messages, which returns each model
+  call's keywords: a thinking budget for an agent's decision calls, for one.
+  It is called once per call, after `trim`; with a fleet, `reserve` and `meta`
+  among its keywords are the fleet's. With `GraphRunner`, the graph's model
+  node passes each call's arguments itself.
+- `flowgentic.host.current_agent()`, `activity(state)` and `wait(futures)`,
+  for inline tools and for runners of an application's own, such as one whose
+  code, not a model, picks each step. `current_agent()` is the id of the agent
+  the current coroutine works for, in an inline tool too, sync or async, under
+  `LoopRunner` and `GraphRunner`. `activity(state)` counts that agent in
+  `TOOL_CALL`, `MODEL_REQUEST`, `MODEL_QUEUED` or `TOOL_WAIT` for a block, and
+  refuses any other state with `ValueError`. `wait(futures)` waits for tasks
+  without raising their errors, and withdraws a `ToolRuntime` task that its
+  order has not admitted yet once every wait on it is cancelled. See the
+  agent host page.
 - `flowgentic.fleet.Transport`: what a fleet's replica, or the loop's model,
   is. Its `async complete(messages, tools=None, **kwargs)` takes OpenAI-format
   messages, the tools' JSON schemas and the call's keywords, and returns a
