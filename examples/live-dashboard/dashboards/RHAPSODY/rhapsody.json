@@ -136,7 +136,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(last_over_time(tasks_submitted_total{service_namespace=~\"$run\", service_instance_id=~\"$process\"}[$__range])) or vector(0)",
+          "expr": "sum(last_over_time(tasks_submitted_total{service_namespace=~\"$run\", service_instance_id=~\"$process\"}[$__range]))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -198,7 +198,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(last_over_time(tasks_completed_total{service_namespace=~\"$run\", service_instance_id=~\"$process\"}[$__range])) or vector(0)",
+          "expr": "sum(last_over_time(tasks_completed_total{service_namespace=~\"$run\", service_instance_id=~\"$process\"}[$__range]))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -260,7 +260,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(last_over_time(tasks_failed_total{service_namespace=~\"$run\", service_instance_id=~\"$process\"}[$__range])) or vector(0)",
+          "expr": "sum(last_over_time(tasks_failed_total{service_namespace=~\"$run\", service_instance_id=~\"$process\"}[$__range]))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -322,7 +322,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(last_over_time(tasks_canceled_total{service_namespace=~\"$run\", service_instance_id=~\"$process\"}[$__range])) or vector(0)",
+          "expr": "sum(last_over_time(tasks_canceled_total{service_namespace=~\"$run\", service_instance_id=~\"$process\"}[$__range]))",
           "legendFormat": "",
           "refId": "A"
         }
