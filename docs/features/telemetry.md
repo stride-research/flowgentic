@@ -167,6 +167,28 @@ a campaign of several agent processes, each exports its own metrics: give
 each provider a `Resource` with a `service.instance.id` of its own, so that a
 backend can tell the processes apart.
 
+### What the SDK costs
+
+Without an SDK, every instrument is a no-op. With one, the agents' states
+cost nothing while they change, since the SDK reads them when it collects;
+each histogram value and counter increment costs the SDK about 4 µs in a
+tight loop, and more in a busy process. Measured with the benchmarks'
+`--otel` option (22 Nov 2026, AMD EPYC 7502P, median of 5 to 7 runs):
+
+- the agent host alone, `benchmarks/agent_host.py`, whose agents do nothing:
+  metrics cost 12 ms more CPU with 5,000 agents (10 % of a 0.11 s run) and
+  72 ms with 100,000 (3 %), so the cost hardly grows with the agents. Its
+  `invoke_agent` spans cost about four times the run;
+- agents on the loop with model calls and tools,
+  `benchmarks/agent_loop.py --agents 5000`: about 10 % more CPU with metrics,
+  for about 12 values per agent (3 model calls, each with its admission wait,
+  its time at the replica and its whole time, and 2 tool calls), and about
+  50 % more with every span written as JSON as below. A quarter of those
+  spans are the MCP SDK's own.
+
+Spans cost the most, mostly in their export: a sampler that keeps a share of
+the traces, or an OTLP exporter in place of the console JSON, cuts that.
+
 ### Read an export back
 
 In a campaign of several agent processes, each process can write its export

@@ -118,8 +118,10 @@ decision record.
   `Export.check_servers()` compares the spans' tokens and successful requests
   with the model servers' own counters. The telemetry page shows how each
   process writes its export.
-- `benchmarks/agent_loop.py --otel DIR` runs the benchmark with the
-  OpenTelemetry SDK writing its export into `DIR`, and checks it.
+- `benchmarks/agent_loop.py --otel DIR` and `benchmarks/agent_host.py --otel
+  DIR` run with the OpenTelemetry SDK writing its export into `DIR`
+  (`--no-spans` for metrics only), to compare their CPU time with a run
+  without; the agent loop's benchmark also checks the export it wrote.
 - `benchmarks/agent_loop.py` runs the agents-at-scale example's workload in
   one agent process with the loop, the loop through LangChain's adapter, or
   `GraphRunner`; `benchmarks/client_cost.py` measures a model client's CPU per
