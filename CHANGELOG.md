@@ -102,11 +102,56 @@ decision record.
   here), `to_ai_message` and `reply_from_message`, `from_openai_messages` and
   `to_openai_messages`, and `inline_tool` (a LangChain tool as an inline tool
   of the loop, which the loop applies itself).
-- Each try of a model call through the fleet, or the loop's transport, is a
-  GenAI `chat` span with the usage the server reported, recorded by
-  Flowgentic. With LangChain replicas and OpenTelemetry's LangChain
-  instrumentation on, the instrumentation's span is the call's, and Flowgentic
-  records none.
+- Each model call through the fleet, or the loop's transport, is one GenAI
+  `chat` span with the usage the server reported, recorded by Flowgentic.
+  Through the fleet, the span runs from routing to the reply: its wait for
+  admission, every try and any outage waited out, so a call sent again after
+  an outage is still one span. It names the agent as
+  `gen_ai.conversation.id`, and adds the call's wait for admission
+  (`flowgentic.fleet.admission_wait`), the requests sent again
+  (`flowgentic.fleet.resend_count`) and the time they took
+  (`flowgentic.fleet.recovery_wait`), the gap since the agent's previous call
+  (`flowgentic.fleet.gap`) and the tool whose result came just before
+  (`flowgentic.fleet.after_tool`). A call that failed or was cancelled has
+  status ERROR and its `error.type`. With LangChain replicas and
+  OpenTelemetry's LangChain instrumentation on, the instrumentation's span is
+  the call's, and Flowgentic records none.
+- Three fleet metrics, beside 0.5.0's: `flowgentic.fleet.call.duration`, each
+  call's time, whose count is the calls, with `error.type` for those that
+  failed or were cancelled; `flowgentic.fleet.retries`, the requests sent
+  again once their replica came back, counted as each is admitted; and
+  `flowgentic.fleet.outage.duration`, each outage `Recovery` watched, with
+  `flowgentic.fleet.outage.outcome`, `recovered` or `gave_up`. Counts stay
+  exact through outages and cancellations: a retried call is one call and
+  several requests, `flowgentic.fleet.request.duration` counts a try
+  cancelled at the replica, with `error.type` `CancelledError`, and a call
+  cancelled while it waited for admission sent no request. And `flowgentic.fleet.tokens`, the prompt (`input`) and
+  completion (`output`) tokens the servers counted at each replica, read when
+  the SDK collects, so it costs nothing per call.
+- `flowgentic.telemetry.read_export(path)` reads back the OpenTelemetry export
+  each agent process wrote into a directory of its own (`metrics.jsonl` and
+  `spans.jsonl`, the SDK's console exporters' JSON) and merges them into an
+  `Export`: the fleets' calls, requests, requests sent again and outages, the
+  agent-seconds by state, the agents in each state over time, and the `chat`
+  spans with their usage. Processes that write into one file are told apart
+  by their resource and their series' start times, and a last line cut short,
+  as a process killed at its walltime leaves it, is read around.
+  `Export.check()` lists what is missing, such as a process with no
+  Flowgentic metrics or a line cut short, or what does not add up, such as
+  fewer of a fleet's `chat` spans than its calls, which a full span queue
+  causes; with `sampled=True`, for spans sampled per agent, only more spans
+  than calls. `Export.check_servers()` compares the fleets' tokens and
+  successful requests, from the metrics, with the model servers' own
+  counters, and all the `chat` spans' where the fleets made no calls. The telemetry page
+  shows how each process writes its export, and what the SDK costs and how to
+  cut it: spans sampled per agent, no exemplars, metrics every 10 s or less
+  often.
+- `benchmarks/agent_loop.py --otel DIR` and `benchmarks/agent_host.py --otel
+  DIR` run with the OpenTelemetry SDK writing its export into `DIR`
+  (`--no-spans` for metrics only), to compare their CPU time with a run
+  without; the agent loop's benchmark also checks the export it wrote. They
+  configure the SDK as the telemetry page recommends at scale, and
+  `--otel-sample`, `--otel-exemplars` and `--otel-interval` change it.
 - `benchmarks/agent_loop.py` runs the agents-at-scale example's workload in
   one agent process with the loop, the loop through LangChain's adapter, or
   `GraphRunner`; `benchmarks/client_cost.py` measures a model client's CPU per

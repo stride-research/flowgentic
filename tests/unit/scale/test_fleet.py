@@ -1209,7 +1209,7 @@ async def test_a_transport_replica_takes_openai_messages_and_tools():
     assert stats["cached_tokens"] == 2048 and stats["reasoning_tokens"] == 24
 
 
-async def test_each_try_is_a_chat_span_with_its_usage(span_exporter):
+async def test_a_retried_call_is_one_chat_span_with_its_usage(span_exporter):
     from _support import ScriptedTransport, reply
 
     tries = iter([fleet_module.OpenAITransport, None])
@@ -1229,19 +1229,18 @@ async def test_each_try_is_a_chat_span_with_its_usage(span_exporter):
         [back], recovery=Recovery(check, poll_s=0.01), name="qwen"
     )
     await fleet.ainvoke("a", [{"role": "user", "content": "hi"}])
-    spans = [s for s in span_exporter.get_finished_spans() if s.name == "chat scripted"]
-    failed, ok = spans
-    assert ok.attributes["gen_ai.operation.name"] == "chat"
-    assert ok.attributes["gen_ai.request.model"] == "scripted"
-    assert ok.attributes["server.address"] == "node-3" and ok.attributes["server.port"] == 8100
-    assert ok.attributes["gen_ai.usage.input_tokens"] == 300
-    assert ok.attributes["gen_ai.usage.output_tokens"] == 20
-    assert ok.attributes["gen_ai.usage.cache_read.input_tokens"] == 256
-    assert "gen_ai.usage.reasoning.output_tokens" not in ok.attributes  # not reported
-    assert ok.attributes["gen_ai.response.finish_reasons"] == ("stop",)
-    assert ok.attributes["flowgentic.fleet.name"] == "qwen"
-    assert failed.status.status_code.name == "ERROR"
-    assert failed.attributes["error.type"] == "APIConnectionError"
+    (span,) = [s for s in span_exporter.get_finished_spans() if s.name == "chat scripted"]
+    assert span.attributes["gen_ai.operation.name"] == "chat"
+    assert span.attributes["gen_ai.request.model"] == "scripted"
+    assert span.attributes["server.address"] == "node-3" and span.attributes["server.port"] == 8100
+    assert span.attributes["gen_ai.usage.input_tokens"] == 300
+    assert span.attributes["gen_ai.usage.output_tokens"] == 20
+    assert span.attributes["gen_ai.usage.cache_read.input_tokens"] == 256
+    assert "gen_ai.usage.reasoning.output_tokens" not in span.attributes  # not reported
+    assert span.attributes["gen_ai.response.finish_reasons"] == ("stop",)
+    assert span.attributes["flowgentic.fleet.name"] == "qwen"
+    assert span.attributes["flowgentic.fleet.resend_count"] == 1  # the failed try
+    assert span.status.status_code.name == "UNSET" and "error.type" not in span.attributes
 
 
 def httpx_connection_error():

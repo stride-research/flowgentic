@@ -23,7 +23,7 @@ LangChain instrumentation; see the end of this section.
 | `invoke_agent <identity>`, one per call of an agent bound with `bind_agent` | Flowgentic |
 | `invoke_agent`, one per agent an agent host runs, with a `flowgentic.agent.suspend` event per suspension; see [the agent host's spans](#the-agent-hosts-spans) | Flowgentic |
 | `execute_tool <tool>`, one per call of a task or MCP tool from `flowgentic.tools`, and of an inline tool on the [agent loop](agent-loop.md); see [Tool placement](tools.md#what-it-reports) | Flowgentic |
-| `chat <model>`, one per try of a model call through the fleet or the agent loop's transport, with the usage the server reported; see [Fleet](fleet.md#what-it-reports). With LangChain replicas and the LangChain instrumentation on, the instrumentation's `chat` span takes its place | Flowgentic |
+| `chat <model>`, one per model call through the fleet, its wait for admission, tries and outages included, or through the agent loop's transport, with the usage the server reported; see [Fleet](fleet.md#what-it-reports). With LangChain replicas and the LangChain instrumentation on, the instrumentation's `chat` span takes its place | Flowgentic |
 | `accept <name>`, one per call of `accept`, with an `accept.attempt <name>` span per attempt and a `gen_ai.evaluation.result` event per check that ran; see [Acceptance](acceptance.md) | Flowgentic |
 | `chat <model>`, `execute_tool <tool>`, `invoke_workflow <graph>` | OpenTelemetry's GenAI instrumentation for LangChain, with its OpenAI instrumentation |
 | `session`, `workflow`, `block`, `task` | RHAPSODY, once the application calls `flow.start_telemetry()` |
@@ -90,6 +90,10 @@ agents' states or an agent process's health. Every duration is in seconds.
 | `flowgentic.tool.duration` | Histogram | `s` | `gen_ai.tool.name`, `flowgentic.tool.kind`, `flowgentic.tool.outcome` | Time from a task or service call's submission to its result; see [Tool placement](tools.md#what-it-reports) |
 | `flowgentic.fleet.admission.wait` | Histogram | `s` | `flowgentic.fleet.name`, `flowgentic.fleet.replica` | Time a model request waited for its replica's admission |
 | `flowgentic.fleet.request.duration` | Histogram | `s` | `flowgentic.fleet.name`, `flowgentic.fleet.replica` | Time a model request spent at its replica, after admission |
+| `flowgentic.fleet.call.duration` | Histogram | `s` | `flowgentic.fleet.name`, `flowgentic.fleet.replica`, `error.type` | Time a model call took through the fleet: its wait for admission, its tries and any outage it waited out; one per call, as its `chat` span |
+| `flowgentic.fleet.retries` | Counter | `{request}` | `flowgentic.fleet.name`, `flowgentic.fleet.replica`, `error.type` | Requests sent again once their replica came back, by the error before each |
+| `flowgentic.fleet.outage.duration` | Histogram | `s` | `flowgentic.fleet.name`, `flowgentic.fleet.replica`, `flowgentic.fleet.outage.outcome` | Each outage `Recovery` watched, from the call that found the replica down to its return (`recovered`) or to `Recovery` giving up (`gave_up`) |
+| `flowgentic.fleet.tokens` | Counter, read at collection | `{token}` | `flowgentic.fleet.name`, `flowgentic.fleet.replica`, `gen_ai.token.type` (`input`, `output`) | The prompt and completion tokens the servers counted for the fleets' calls; a fleet that is gone keeps its count |
 | `flowgentic.fleet.tokens.active` | Gauge, read at collection | `{token}` | `flowgentic.fleet.name`, `flowgentic.fleet.replica` | Tokens of live context in flight at each replica, as admitted |
 | `flowgentic.fleet.requests.active` | Gauge, read at collection | `{request}` | `flowgentic.fleet.name`, `flowgentic.fleet.replica` | Requests in flight at each replica |
 | `flowgentic.fleet.requests.waiting` | Gauge, read at collection | `{request}` | `flowgentic.fleet.name`, `flowgentic.fleet.replica` | Requests waiting for each replica's admission |
@@ -124,6 +128,8 @@ milliseconds.
 | `flowgentic.tool.duration` | 0.001 to 10 as above, then 30, 60, 120, 300, 600, 1800, 3600 and 7200 |
 | `flowgentic.fleet.admission.wait` | 0.001 to 10 as above, then 30, 60, 120, 300 and 600 |
 | `flowgentic.fleet.request.duration` | 0.01, doubling to 655.36: the GenAI conventions' boundaries for a model call's duration, three doublings further |
+| `flowgentic.fleet.call.duration` | As a request's, two doublings further, to 2621.44 |
+| `flowgentic.fleet.outage.duration` | 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600, 1200, 1800, 3600 and 7200 |
 
 A view the application configures for a histogram replaces its boundaries.
 
@@ -161,6 +167,193 @@ To send metrics to a collector instead, use `OTLPMetricExporter`, from the
 a campaign of several agent processes, each exports its own metrics: give
 each provider a `Resource` with a `service.instance.id` of its own, so that a
 backend can tell the processes apart.
+
+### Read an export back
+
+In a campaign of several agent processes, each process can write its export
+into a directory of its own: its metrics as above, and its spans one per
+line. `flowgentic.telemetry.read_export` reads them all back, merged, and
+checks them.
+
+Each process configures the SDK like this, with `out` its own directory,
+such as `run/otel/p003`. This is the configuration for thousands of agents,
+which keeps the SDK's cost down; see
+[what it costs](#what-it-costs-and-how-to-cut-it):
+- spans sampled per agent: each agent's `invoke_agent` span is the root of
+  its trace, so `ParentBased(TraceIdRatioBased(0.1))` keeps a tenth of the
+  agents, each with its whole trace;
+- no exemplars, which the SDK otherwise keeps for every value recorded
+  inside a sampled span;
+- metrics exported every 10 s or less often.
+
+```python
+from pathlib import Path
+
+from opentelemetry import metrics, trace
+from opentelemetry.sdk.metrics import AlwaysOffExemplarFilter, MeterProvider
+from opentelemetry.sdk.metrics.export import (
+    ConsoleMetricExporter,
+    PeriodicExportingMetricReader,
+)
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
+
+out = Path("run/otel/p003")
+out.mkdir(parents=True, exist_ok=True)
+resource = Resource.create({"service.instance.id": out.name})
+metrics_file = (out / "metrics.jsonl").open("w")
+reader = PeriodicExportingMetricReader(
+    ConsoleMetricExporter(
+        out=metrics_file, formatter=lambda data: data.to_json(indent=None) + "\n"
+    ),
+    export_interval_millis=10_000,
+)
+meter_provider = MeterProvider(
+    resource=resource,
+    metric_readers=[reader],
+    exemplar_filter=AlwaysOffExemplarFilter(),
+)
+metrics.set_meter_provider(meter_provider)
+spans_file = (out / "spans.jsonl").open("w")
+tracer_provider = TracerProvider(
+    resource=resource, sampler=ParentBased(TraceIdRatioBased(0.1))
+)
+tracer_provider.add_span_processor(
+    BatchSpanProcessor(
+        ConsoleSpanExporter(
+            out=spans_file,
+            formatter=lambda span: span.to_json(indent=None) + "\n",
+        ),
+        max_queue_size=65_536,  # the default, 2,048, drops spans in a burst
+    )
+)
+trace.set_tracer_provider(tracer_provider)
+
+...  # run the agent hosts
+
+meter_provider.shutdown()
+tracer_provider.shutdown()
+metrics_file.close()
+spans_file.close()
+```
+
+Then, once the processes have ended:
+
+```python
+from flowgentic.telemetry import read_export
+
+export = read_export("run/otel")  # every metrics.jsonl and spans.jsonl below
+problems = export.check(sampled=True)
+# The servers' own counters over the run, as the application sampled them
+problems += export.check_servers(
+    prompt_tokens=prompt_tokens, completion_tokens=generated_tokens, requests=successes
+)
+print(export.calls, export.fleet_usage, export.agents[-1])
+```
+
+An `Export` sums Flowgentic's counts over the processes, each at its last
+export: the fleets' calls and failed calls, the requests the replicas got,
+the requests sent again, the outages waited out or given up and their time,
+the agent-seconds by state, the tokens the servers counted for the fleets'
+calls (`fleet_usage`, from `flowgentic.fleet.tokens`), and the `chat` spans
+with the usage of those that did not fail (`usage`). `export.agents` is the
+agents in each state over time: at each export's time, each process's latest
+counts summed.
+
+Give each process a directory of its own. Processes that write into one
+file anyway are told apart by their resource's `service.instance.id`, which
+the SDK sets to a random id unless the application gives one, and by their
+series' start times.
+
+`check()` lists what is missing or does not add up:
+- a directory with no `metrics.jsonl`, or one with no Flowgentic metrics;
+- a file whose last line was cut short, as a process killed at its walltime
+  leaves it: `read_export` reads the file without it;
+- two processes that wrote the same series under one resource;
+- in a directory with spans, each fleet's `chat` spans against its calls,
+  failed ones apart. The fleet records one span per call, so a gap means
+  spans were dropped, as a `BatchSpanProcessor` whose queue is full drops
+  them, or were never exported. A fleet with no span of its own, beside
+  `chat` spans of another recorder, such as LangChain's instrumentation with
+  LangChain replicas, is not compared. With `sampled=True`, for spans
+  sampled as above, fewer spans than calls is expected, and only more spans
+  than calls is a problem.
+
+`check_servers()` compares the fleets' own counts with the model servers'
+counters over the run, such as the differences in vLLM's
+`prompt_tokens_total`, `generation_tokens_total` and
+`request_success_total` between the first and the last sample: the prompt
+and completion tokens, and the successful requests. The counts come from
+the metrics, so sampled spans change nothing, and they are the fleets'
+calls only: calls made outside a fleet, as the agent loop makes on a bare
+transport, are then not counted. An export whose fleets made no calls, or
+without `flowgentic.fleet.tokens`, is compared through all its `chat` spans.
+Only what is given is compared.
+
+`read_export` reads the SDK's console JSON with cumulative temporality, the
+SDK's default. It raises `ValueError` for a metric exported with delta
+temporality, and for a line inside a file that is not JSON, naming the file
+and line. It does not read the OTLP JSON
+that an OpenTelemetry collector's file exporter writes.
+
+### What it costs and how to cut it
+
+Without an SDK, every instrument is a no-op. With one, the agents' states
+cost nothing while they change, since the SDK reads them when it collects,
+and so do the fleets' tokens. Everything else costs a little per value or
+span:
+
+- each value recorded: about 3 µs in a tight loop, and about 20 µs in a busy
+  agent process. Agents on the loop record about 12 values each: per model
+  call, its admission wait, its time at the replica and its whole time; per
+  task or MCP tool call, its duration;
+- each span: about 38 µs kept and written as a JSON line, half of it the
+  export, in a tight loop, and about 200 µs in a busy process; a span that
+  sampling drops, about 5 µs in a tight loop.
+
+The garbage collector is not where it goes: its pauses barely change with
+metrics, and with every span kept they account for about a tenth of the
+cost. It is the SDK's own Python, on the agents' event loop and in the span
+exporter's thread.
+
+Measured with the benchmarks' `--otel` options (22 Nov 2026, AMD EPYC 7502P,
+median of 5 to 7 runs, the whole process's CPU, the SDK's threads and last
+flush included):
+
+| SDK | The agent host alone, 100,000 agents (`agent_host.py`) | 5,000 agents on the loop, with model calls and tools (`agent_loop.py`) |
+| --- | --- | --- |
+| Metrics, every second | +3.1 % | +6 % |
+| Metrics, every 10 s, no exemplars | +1.3 % | +8 % |
+| Every span, exemplars, metrics every second | about +430 % | +51 % |
+| Every span, no exemplars, metrics every 10 s | not measured | +47 % |
+| The configuration above: a tenth of the agents' spans, no exemplars, metrics every 10 s | +102 % | +17 % |
+
+The host alone runs agents that do nothing, so its spans weigh far more
+there than in any real campaign. A quarter of the loop's spans are the MCP
+SDK's own, which sampling drops with their agent.
+
+The levers, biggest first:
+1. **Sample spans per agent**, as configured above. A kept agent keeps its
+   whole trace; `check(sampled=True)` and `check_servers()` still check the
+   counts, from the metrics.
+2. **Exemplars off** (`exemplar_filter=AlwaysOffExemplarFilter()`, or
+   `OTEL_METRICS_EXEMPLAR_FILTER=always_off`). The SDK's default keeps an
+   exemplar for each value recorded inside a sampled span, and every value
+   an agent records is inside its `invoke_agent` span.
+3. **Export metrics every 10 to 60 s**, not every second. Each export is a
+   fixed cost, whatever the agents: it shows on a host whose agents do
+   little, and hardly where they call models.
+4. **Write JSON lines.** An OTLP exporter is not cheaper in the agents'
+   process: the Python exporter builds the protobuf there, at about the cost
+   of the JSON line, for half the bytes. An OpenTelemetry collector takes the
+   work only after encoding. Use OTLP and a collector for live dashboards or
+   a trace backend, not to save CPU.
+
+Fewer values per model call would save more: each costs the same, and a
+View that drops an instrument saves almost nothing. Only not recording
+does.
 
 ## Set it up
 
@@ -242,7 +435,9 @@ missing input or output total means "not measured".
 
 Flowgentic adds no counts up on its own spans: a decision's total is the sum
 over the `chat` spans below its `invoke_agent` span. A model call has one
-`chat` span, Flowgentic's or the LangChain instrumentation's, never both.
+`chat` span, Flowgentic's or the LangChain instrumentation's, never both. A
+call through the fleet that was sent again, after its replica's outage, is
+still one span, with the usage of the try that succeeded.
 
 Two sources still invent counts, and Flowgentic cannot detect either from the
 client side:
@@ -326,4 +521,5 @@ replace it; see the [changelog](../changelog.md).
 
 ## API
 
-[`flowgentic.agent`](../api/flowgentic/agent.md)
+- [`flowgentic.agent`](../api/flowgentic/agent.md)
+- [`flowgentic.telemetry`](../api/flowgentic/telemetry.md)

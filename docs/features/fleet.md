@@ -350,24 +350,66 @@ the recovery's outages.
 Through the OpenTelemetry API, and only once the application configures an
 SDK:
 
-- each try is a GenAI `chat` span, with the request's and the response's
-  model, the server's address and port, the finish reason, and the usage the
-  server reported (`gen_ai.usage.input_tokens`, `output_tokens`,
-  `cache_read.input_tokens`, `reasoning.output_tokens`; a breakdown of zero, or
-  one not reported, is left out). A failed try's span has status ERROR and
-  `error.type`. With LangChain replicas and OpenTelemetry's LangChain
-  instrumentation on, the instrumentation's span is the call's, and the fleet
-  records none, so no usage is counted twice;
+- each call is one GenAI `chat` span, from the moment the fleet routes it to
+  its reply, however many tries it took: its wait for admission, every try,
+  and any outage it waited out. It carries the request's and the response's
+  model, the server's address and port (those of the replica that answered,
+  if `Recovery` replaced it, as far as it names them: a span cannot drop an
+  attribute), the finish reason, and the usage the server
+  reported (`gen_ai.usage.input_tokens`, `output_tokens`,
+  `cache_read.input_tokens`, `reasoning.output_tokens`; a breakdown of zero,
+  or one not reported, is left out). The agent's id is its
+  `gen_ai.conversation.id`. Flowgentic adds the call's own attributes, below.
+  A call that failed, or was cancelled, has status ERROR and `error.type`.
+  With LangChain replicas and OpenTelemetry's LangChain instrumentation on,
+  the instrumentation's span is the call's, and the fleet records none, so no
+  usage is counted twice;
+- `flowgentic.fleet.call.duration` records each call's time, as its span
+  does, with `error.type` for a call that failed or was cancelled; its count
+  is the fleet's calls;
 - `flowgentic.fleet.admission.wait` and `flowgentic.fleet.request.duration`
   record each try's wait for admission and its time at the replica, so a
   retried call records one of each per try; a try that failed, retried or
-  not, carries its error's class in `error.type`;
+  not, carries its error's class in `error.type`, and one cancelled at the
+  replica, which the server saw, `CancelledError`;
+- `flowgentic.fleet.retries` counts the requests sent again once their
+  replica came back, with the `error.type` of the failure before each, when
+  each is admitted again: a call cancelled before that sent none;
+- `flowgentic.fleet.outage.duration` records each outage that `Recovery`
+  watched, from the call that found the replica down to its return or to
+  `Recovery` giving up, with `flowgentic.fleet.outage.outcome`, `recovered`
+  or `gave_up`. Calls that fail while one watch runs share its outage;
 - `flowgentic.fleet.tokens.active`, `flowgentic.fleet.requests.active` and
   `flowgentic.fleet.requests.waiting` give each replica's tokens and requests
-  in flight, and its requests waiting, read when the SDK collects.
+  in flight, and its requests waiting, read when the SDK collects;
+- `flowgentic.fleet.tokens` counts the prompt (`gen_ai.token.type` `input`)
+  and completion (`output`) tokens the servers counted at each replica, read
+  when the SDK collects, so it costs nothing per call and holds however the
+  spans are sampled. Fleets of one name in a process add up, and a fleet
+  that is gone keeps its count.
 
 Each carries `flowgentic.fleet.name`, the fleet's `name`, and
-`flowgentic.fleet.replica`, the replica's index.
+`flowgentic.fleet.replica`, the replica's index. The `chat` span adds what
+the call's `CallRecord` holds about its times and its place in the agent's
+conversation:
+
+| Attribute | Value |
+| --- | --- |
+| `flowgentic.fleet.admission_wait` | Seconds the call waited for admission, over all its tries, a wait that a cancellation cut short included |
+| `flowgentic.fleet.resend_count` | Requests sent again, if any |
+| `flowgentic.fleet.recovery_wait` | Seconds in the tries that failed and in the waits for the replica, if a try failed with an error `Recovery` waits out |
+| `flowgentic.fleet.gap` | Seconds since the agent's previous call through the fleet ended; absent on its first |
+| `flowgentic.fleet.after_tool` | The tool whose result is the conversation's last message, if one is |
+
+The cached tokens, the gap and the tool before tell, call by call, how much
+of a prompt the server found in its prefix cache, and after what.
+
+Counts read from these metrics stay exact through outages and
+cancellations. The calls are `flowgentic.fleet.call.duration`'s count. The
+requests the servers saw are `flowgentic.fleet.request.duration`'s: the
+calls that reached a replica, plus the requests sent again. A call cancelled
+while it waited for admission is a call that sent no request. [Telemetry](telemetry.md#read-an-export-back) reads an export per
+process back and checks it.
 
 ## In an agent host
 

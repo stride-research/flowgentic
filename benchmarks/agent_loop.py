@@ -21,8 +21,18 @@ A run prints one JSON line: the host's wall time, the process's CPU time, the
 event loop's lag, the collector's pauses, peak RSS, and the store's calls and
 bytes.
 
+``--otel DIR`` configures the OpenTelemetry SDK, as the telemetry page does
+at scale, to write metrics and spans into ``DIR``: a tenth of the agents keep
+their spans, no exemplars, metrics every 10 s (``--otel-sample``,
+``--otel-exemplars`` and ``--otel-interval`` change them; ``--no-spans``
+exports metrics only). The CPU time then includes the SDK's, its exporter
+threads' and the final flush, and the line adds the problems
+``flowgentic.telemetry.read_export(DIR).check()`` finds: compare it with a
+run without, at the same size.
+
     python benchmarks/agent_loop.py --runner loop --agents 1000
     python benchmarks/agent_loop.py --runner graph --agents 5000 --workers 64 --stagger 0
+    python benchmarks/agent_loop.py --agents 5000 --otel /tmp/otel-5000
 
 ``--repeat N`` runs each runner at each ``--sizes`` N times, interleaved, each
 run in a fresh interpreter, and prints their lines. The example's own settings
@@ -117,6 +127,7 @@ async def run_agents(
     interval: float,
     requests: Any,
     replies: Any,
+    otel_flush: Any = None,
 ) -> dict:
     from rhapsody import Session
 
@@ -174,6 +185,8 @@ async def run_agents(
     finally:
         client.stop()
     wall = time.perf_counter() - t
+    if otel_flush is not None:
+        otel_flush()  # the spans still queued, and the last export
     cpu = time.process_time() - cpu
     rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     await session.close()
@@ -208,14 +221,42 @@ async def run_agents(
     }
 
 
-def run_once(kind: str, agents: int, workers: int, interval: float) -> dict:
+def run_once(
+    kind: str,
+    agents: int,
+    workers: int,
+    interval: float,
+    otel: Path | None = None,
+    spans: bool = True,
+    **otel_options: Any,
+) -> dict:
+    """One run; with ``otel``, the SDK writes into it, as ``_otel.configure``
+    sets it up with ``spans`` and ``otel_options``."""
+    flush = None
+    if otel is not None:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import _otel
+
+        flush = _otel.configure(otel, spans, **otel_options)
     example = load_example()
     with example.McpServer() as mcp:
         requests, replies = queue.Queue(), [queue.Queue()]
         with example.ToolService(mcp.url, requests, replies):
             out = asyncio.run(
-                run_agents(example, kind, agents, workers, interval, requests, replies[0])
+                run_agents(
+                    example, kind, agents, workers, interval, requests, replies[0], flush
+                )
             )
+    out["otel"] = None if otel is None else ("metrics+spans" if spans else "metrics")
+    if otel is not None:
+        options = {
+            "sample": _otel.SAMPLE,
+            "exemplars": False,
+            "interval_s": _otel.INTERVAL_S,
+            **otel_options,
+        }
+        out["otel_options"] = options
+        out.update(_otel.summary(otel, sampled=spans and options["sample"] < 1))
     out["python"] = platform.python_version()
     out["machine"] = platform.machine()
     return out
@@ -256,6 +297,9 @@ def main() -> None:
     parser.add_argument(
         "--stagger", type=float, default=0.05, help="seconds between first-wave batches"
     )
+    import _otel  # beside this script
+
+    _otel.add_arguments(parser)
     parser.add_argument("--repeat", type=int, default=0)
     parser.add_argument("--sizes", type=lambda s: [int(x) for x in s.split(",")], default=[1000, 5000])
     parser.add_argument(
@@ -265,7 +309,21 @@ def main() -> None:
     if args.repeat:
         repeat(args)
         return
-    print(json.dumps(run_once(args.runner, args.agents, args.workers, args.stagger)))
+    print(
+        json.dumps(
+            run_once(
+                args.runner,
+                args.agents,
+                args.workers,
+                args.stagger,
+                args.otel,
+                not args.no_spans,
+                sample=args.otel_sample,
+                exemplars=args.otel_exemplars,
+                interval_s=args.otel_interval,
+            )
+        )
+    )
 
 
 if __name__ == "__main__":

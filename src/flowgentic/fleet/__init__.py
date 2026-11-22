@@ -32,11 +32,14 @@ fleet decides, for each call, which replica takes it and when:
   and the reply's reasoning tokens when the server reports them, the gap since
   the agent's previous call, the tool whose result came just before, and the
   caller's ``meta``. The fleet itself keeps counters.
-- **Metrics.** The wait for admission and the time at the replica are
-  OpenTelemetry histograms, recorded for each try, a failed one with its
-  ``error.type``; each replica's tokens and requests in flight, and its
-  requests waiting, are gauges. They carry the fleet's ``name``, so the fleets
-  of several models in one process stay apart, and the replica's index.
+- **Metrics.** The call's whole time is an OpenTelemetry histogram, one per
+  call; the wait for admission and the time at the replica are histograms
+  recorded for each try, a failed one with its ``error.type``. The requests
+  sent again are counted, and each outage ``Recovery`` watched is a
+  histogram's value, by how it ended. Each replica's tokens and requests in
+  flight, and its requests waiting, are gauges. They carry the fleet's
+  ``name``, so the fleets of several models in one process stay apart, and
+  the replica's index.
 
 A request's live context is estimated before it is sent: the agent's size
 after its previous call, as the server counted it, plus the characters added
@@ -68,17 +71,21 @@ Both take, per call, settings for the replica (``extra_body``,
 a ``meta`` that the call's record carries. Which settings make a model think
 is the model's business, not the fleet's.
 
-**Each try is a GenAI ``chat`` span**, with the request's and the response's
-model, the server's address and port, the finish reasons, and the usage the
-server reported (input, output, cached input and reasoning tokens). With the
-LangChain adapter, and OpenTelemetry's LangChain instrumentation on, the
-instrumentation's span is the call's, and the fleet records none, so no usage
-is counted twice.
+**Each call is a GenAI ``chat`` span**, from routing to the reply, its wait
+for admission, tries and outages included, with the request's and the
+response's model, the server's address and port, the finish reasons, the
+usage the server reported (input, output, cached input and reasoning tokens),
+the agent's id as ``gen_ai.conversation.id``, and the call's own: its wait for
+admission, the requests sent again and the time spent on them, the gap since
+the agent's previous call and the tool before. With the LangChain adapter,
+and OpenTelemetry's LangChain instrumentation on, the instrumentation's span
+is the call's, and the fleet records none, so no usage is counted twice.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
 import inspect
 import itertools
@@ -93,7 +100,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
-from opentelemetry.trace import SpanKind, Status, StatusCode
+from opentelemetry.trace import INVALID_SPAN, SpanKind, Status, StatusCode
 
 from flowgentic import _agents, _telemetry
 from flowgentic.fleet._transport import (
@@ -543,6 +550,13 @@ class Recovery:
 		``poll_s`` of the caller's time is left, the caller starts a new watch.
 		With less left, it returns ``None`` then, and leaves no watch behind
 		that no call waits for."""
+		return await self._wait(i, timeout, {_telemetry.FLEET_REPLICA: i})
+
+	async def _wait(
+		self, i: int, timeout: float | None, attributes: dict[str, Any]
+	) -> Any | None:
+		"""``wait``, with the attributes of the outage a watch it starts
+		records: the fleet's name and the replica's index."""
 		loop = asyncio.get_running_loop()
 		end = None if timeout is None else loop.time() + timeout
 		while True:
@@ -554,7 +568,7 @@ class Recovery:
 				# No agent, span or run config of the call that happened to fail
 				# first.
 				task = asyncio.create_task(
-					self._watch(i, future), context=contextvars.Context()
+					self._watch(i, future, attributes), context=contextvars.Context()
 				)
 				self._tasks.add(task)
 				task.add_done_callback(self._tasks.discard)
@@ -572,15 +586,25 @@ class Recovery:
 			if self.outage_s <= 0 or end - loop.time() < self.poll_s:
 				return None
 
-	async def _watch(self, i: int, future: asyncio.Future) -> None:
+	def _ended(self, attributes: dict[str, Any], outcome: str, down_s: float) -> None:
+		"""Record an outage that ended: ``recovered`` or ``gave_up``."""
+		_telemetry.OUTAGE_DURATION.record(
+			down_s, {**attributes, _telemetry.OUTAGE_OUTCOME: outcome}
+		)
+
+	async def _watch(
+		self, i: int, future: asyncio.Future, attributes: dict[str, Any]
+	) -> None:
 		t0 = time.monotonic()
 		failures = 0
 		try:
 			while True:
 				left = self.outage_s - (time.monotonic() - t0)
 				if left <= 0:
+					down_s = time.monotonic() - t0
 					self.gave_up[i] += 1
-					self.down_s[i] += time.monotonic() - t0
+					self.down_s[i] += down_s
+					self._ended(attributes, "gave_up", down_s)
 					future.set_result(None)
 					return
 				try:
@@ -598,8 +622,10 @@ class Recovery:
 						exc,
 					)
 				if model is not None:
+					down_s = time.monotonic() - t0
 					self.outages[i] += 1
-					self.down_s[i] += time.monotonic() - t0
+					self.down_s[i] += down_s
+					self._ended(attributes, "recovered", down_s)
 					future.set_result(model)
 					return
 				await asyncio.sleep(self.poll_s)
@@ -766,6 +792,60 @@ def _server(base_url: str | None) -> tuple[str | None, int | None]:
 	return parts.hostname, port
 
 
+def _server_attributes(transport: object) -> dict[str, Any]:
+	"""The ``server.address`` and ``server.port`` of a transport's
+	``base_url``, if it has one."""
+	host, port = _server(getattr(transport, "base_url", None))
+	if not host:
+		return {}
+	if not port:
+		return {_telemetry.SERVER_ADDRESS: host}
+	return {_telemetry.SERVER_ADDRESS: host, _telemetry.SERVER_PORT: port}
+
+
+def _chat_span(transport: object, attributes: dict | None) -> Any:  # noqa: ANN401
+	"""A GenAI ``chat`` span for a call to ``transport``, to enter; a span
+	that records nothing when the transport records its own
+	(``records_span``)."""
+	if not getattr(transport, "records_span", True):
+		return contextlib.nullcontext(INVALID_SPAN)
+	model = getattr(transport, "model", None)
+	attrs: dict[str, Any] = {_telemetry.GEN_AI_OPERATION_NAME: _telemetry.CHAT}
+	if model:
+		attrs[_telemetry.GEN_AI_REQUEST_MODEL] = model
+	attrs.update(_server_attributes(transport))
+	if attributes:
+		attrs.update(attributes)
+	name = f"{_telemetry.CHAT} {model}" if model else _telemetry.CHAT
+	return _telemetry.tracer.start_as_current_span(
+		name,
+		kind=SpanKind.CLIENT,
+		attributes=attrs,
+		record_exception=False,
+		set_status_on_exception=False,
+	)
+
+
+def _renamed(span: Any, old: object, new: object) -> None:  # noqa: ANN401
+	"""Name, on a call's ``chat`` span, the replica that ``Recovery`` put in
+	place of ``old``: its model and its server. A replica without a model or
+	a ``base_url`` leaves the old one's on the span, since a span cannot drop
+	an attribute."""
+	model = getattr(new, "model", None)
+	if model and model != getattr(old, "model", None):
+		span.update_name(f"{_telemetry.CHAT} {model}")
+		span.set_attribute(_telemetry.GEN_AI_REQUEST_MODEL, model)
+	span.set_attributes(_server_attributes(new))
+
+
+def _failed(span: Any, exc: BaseException) -> str:  # noqa: ANN401
+	"""Mark a ``chat`` span failed with ``exc``; return its ``error.type``."""
+	error = type(exc).__qualname__
+	span.set_attribute(_telemetry.ERROR_TYPE, error)
+	span.set_status(Status(StatusCode.ERROR, f"{type(exc).__name__}: {exc}"[:500]))
+	return error
+
+
 async def _complete(
 	transport: Any,  # noqa: ANN401
 	messages: Sequence[Any],
@@ -773,32 +853,13 @@ async def _complete(
 	kwargs: dict,
 	attributes: dict | None = None,
 ) -> Reply:
-	"""One try at a transport, as a GenAI ``chat`` span with its usage; see
-	the module's docstring."""
-	if not getattr(transport, "records_span", True):
-		return await transport.complete(messages, tools, **kwargs)
-	model = getattr(transport, "model", None)
-	attrs: dict[str, Any] = {_telemetry.GEN_AI_OPERATION_NAME: _telemetry.CHAT}
-	if model:
-		attrs[_telemetry.GEN_AI_REQUEST_MODEL] = model
-	host, port = _server(getattr(transport, "base_url", None))
-	if host:
-		attrs[_telemetry.SERVER_ADDRESS] = host
-		if port:
-			attrs[_telemetry.SERVER_PORT] = port
-	if attributes:
-		attrs.update(attributes)
-	name = f"{_telemetry.CHAT} {model}" if model else _telemetry.CHAT
-	with _telemetry.tracer.start_as_current_span(
-		name, kind=SpanKind.CLIENT, attributes=attrs, record_exception=False
-	) as span:
+	"""One call to a transport outside a fleet, as the agent loop makes one,
+	as a GenAI ``chat`` span with its usage; see the module's docstring."""
+	with _chat_span(transport, attributes) as span:
 		try:
 			reply = await transport.complete(messages, tools, **kwargs)
-		except Exception as exc:
-			span.set_attribute(_telemetry.ERROR_TYPE, type(exc).__qualname__)
-			span.set_status(
-				Status(StatusCode.ERROR, f"{type(exc).__name__}: {exc}"[:500])
-			)
+		except BaseException as exc:
+			_failed(span, exc)
 			raise
 		_telemetry.record_reply(span, reply)
 		return reply
@@ -917,6 +978,11 @@ class _Core:
 		self.invalid_tool_calls = 0
 		self.errors: Counter[str] = Counter()
 		self.retried = 0
+		# Each replica's [prompt, completion] tokens, in the process's totals,
+		# which the telemetry reads when the SDK collects.
+		self.tokens = [
+			_tokens.setdefault((name, i), [0, 0]) for i in range(len(replicas))
+		]
 
 	def agent(self, agent_id: str) -> _Agent:
 		state = self.agents.get(agent_id)
@@ -958,6 +1024,9 @@ class _Core:
 
 
 _all_fleets: weakref.WeakSet[_Core] = weakref.WeakSet()
+_tokens: dict[tuple[str, int], list[int]] = {}
+"""The process's fleets' [prompt, completion] tokens, by fleet name and replica:
+fleets of one name add up, and a fleet that is gone keeps its count."""
 
 
 class Fleet:
@@ -1053,57 +1122,124 @@ class Fleet:
 		asked_at = time.time()
 		asked = time.monotonic()
 		attrs = {_telemetry.FLEET_NAME: core.name, _telemetry.FLEET_REPLICA: i}
+		transport = core.replicas[i]
+		span_attrs = {**attrs, _telemetry.GEN_AI_CONVERSATION_ID: agent_id}
+		if state.last_end is not None:
+			span_attrs[_telemetry.FLEET_GAP] = asked_at - state.last_end
+		if after_tool is not None:
+			span_attrs[_telemetry.FLEET_AFTER_TOOL] = after_tool
 		sent = list(messages)
 		failing_since: float | None = None
 		wait_s = 0.0  # for admission, over every try
-		with _agents.activity(_agents.AgentState.MODEL_QUEUED):
-			while True:
-				queued = time.monotonic()
-				await gate.acquire(weight, agent_id)
-				failed: BaseException | None = None
-				try:
-					got = time.monotonic()
-					wait_s += got - queued
-					_telemetry.ADMISSION_WAIT.record(got - queued, attrs)
-					core.in_flight += 1
-					core.in_flight_max = max(core.in_flight_max, core.in_flight)
-					try:
-						with _agents.activity(_agents.AgentState.MODEL_REQUEST):
-							reply = await _complete(
-								core.replicas[i], sent, tools, kwargs, attrs
-							)
-					except Exception as exc:
-						core.errors[type(exc).__name__] += 1
-						_telemetry.MODEL_SERVICE.record(
-							time.monotonic() - got,
-							{**attrs, _telemetry.ERROR_TYPE: type(exc).__qualname__},
-						)
-						if core.recovery is None or not _transient(exc):
+		resends = 0
+		resend: str | None = None  # the error a resend is waiting to be admitted for
+		got = asked
+		error: str | None = None
+		recovery_s = 0.0
+		# One chat span per call, from routing to the reply: the wait for
+		# admission, every try and any outage waited out.
+		with _chat_span(transport, span_attrs) as span:
+			try:
+				with _agents.activity(_agents.AgentState.MODEL_QUEUED):
+					while True:
+						queued = time.monotonic()
+						try:
+							await gate.acquire(weight, agent_id)
+						except BaseException:
+							wait_s += time.monotonic() - queued  # cut short
 							raise
-						failed = exc
-					finally:
-						core.in_flight -= 1
-					done = time.monotonic()
-				finally:
-					gate.release(weight, agent_id)
-				if failed is None:
-					break
-				# outage_s bounds the call, not only one watch: a call that fails
-				# again once its replica is back pauses before the next try, and
-				# fails outage_s after its first failure.
-				recovery = core.recovery
-				if failing_since is None:
-					failing_since = time.monotonic()
-				else:
-					await asyncio.sleep(recovery.poll_s)
-				left = recovery.outage_s - (time.monotonic() - failing_since)
-				model = await recovery.wait(i, left) if left > 0 else None
-				if model is None:
-					raise failed
-				if not _same_replica(model, core.replicas[i]):
-					old, core.replicas[i] = core.replicas[i], _as_transport(model)
-					_close_later(old)
-				core.retried += 1
+						failed: BaseException | None = None
+						try:
+							got = time.monotonic()
+							wait_s += got - queued
+							_telemetry.ADMISSION_WAIT.record(got - queued, attrs)
+							if resend is not None:  # sent again: count it now
+								resends += 1
+								core.retried += 1
+								_telemetry.RETRIES.add(
+									1, {**attrs, _telemetry.ERROR_TYPE: resend}
+								)
+								resend = None
+							core.in_flight += 1
+							core.in_flight_max = max(core.in_flight_max, core.in_flight)
+							try:
+								with _agents.activity(_agents.AgentState.MODEL_REQUEST):
+									reply = await core.replicas[i].complete(
+										sent, tools, **kwargs
+									)
+							except Exception as exc:
+								core.errors[type(exc).__name__] += 1
+								_telemetry.MODEL_SERVICE.record(
+									time.monotonic() - got,
+									{
+										**attrs,
+										_telemetry.ERROR_TYPE: type(exc).__qualname__,
+									},
+								)
+								if core.recovery is None or not _transient(exc):
+									raise
+								failed = exc
+							except BaseException as exc:
+								# Cancelled at the server: the request was made.
+								_telemetry.MODEL_SERVICE.record(
+									time.monotonic() - got,
+									{
+										**attrs,
+										_telemetry.ERROR_TYPE: type(exc).__qualname__,
+									},
+								)
+								raise
+							finally:
+								core.in_flight -= 1
+							done = time.monotonic()
+						finally:
+							gate.release(weight, agent_id)
+						if failed is None:
+							break
+						# outage_s bounds the call, not only one watch: a call that
+						# fails again once its replica is back pauses before the
+						# next try, and fails outage_s after its first failure.
+						recovery = core.recovery
+						if failing_since is None:
+							failing_since = time.monotonic()
+						else:
+							await asyncio.sleep(recovery.poll_s)
+						left = recovery.outage_s - (time.monotonic() - failing_since)
+						model = (
+							await recovery._wait(i, left, attrs) if left > 0 else None
+						)
+						if model is None:
+							raise failed
+						if not _same_replica(model, core.replicas[i]):
+							old, core.replicas[i] = (
+								core.replicas[i],
+								_as_transport(model),
+							)
+							_close_later(old)
+						resend = type(failed).__qualname__
+			except BaseException as exc:
+				error = _failed(span, exc)
+				raise
+			finally:
+				ended = time.monotonic()
+				if failing_since is not None:
+					# The tries that failed and the wait for the replica: for a
+					# call that failed, all but its waits for admission.
+					last = got if error is None else ended
+					recovery_s = max(last - asked - wait_s, 0.0)
+				if span.is_recording():
+					span.set_attribute(_telemetry.FLEET_ADMISSION_WAIT, wait_s)
+					if resends:
+						span.set_attribute(_telemetry.FLEET_RESEND_COUNT, resends)
+					if failing_since is not None:
+						span.set_attribute(_telemetry.FLEET_RECOVERY_WAIT, recovery_s)
+					if core.replicas[i] is not transport:  # Recovery replaced it
+						_renamed(span, transport, core.replicas[i])
+				_telemetry.CALL_DURATION.record(
+					ended - asked,
+					attrs if error is None else {**attrs, _telemetry.ERROR_TYPE: error},
+				)
+			_telemetry.record_reply(span, reply)
 		_telemetry.MODEL_SERVICE.record(done - got, attrs)
 		return self._account(
 			core,
@@ -1115,7 +1251,7 @@ class Fleet:
 			asked_at,
 			wait_s,
 			done - got,
-			0.0 if failing_since is None else max(got - asked - wait_s, 0.0),
+			recovery_s,
 			estimate,
 			after_tool,
 			meta,
@@ -1155,6 +1291,9 @@ class Fleet:
 			core.reasoning_tokens += reasoning
 		core.prompt_tokens += prompt
 		core.completion_tokens += completion
+		tokens = core.tokens[i]
+		tokens[0] += prompt
+		tokens[1] += completion
 		record = CallRecord(
 			agent_id=agent_id,
 			replica=i,
