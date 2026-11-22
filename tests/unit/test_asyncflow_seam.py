@@ -15,7 +15,16 @@ SOURCE = Path(flowgentic.__file__).parent
 SEAM = SOURCE / "_asyncflow.py"
 # WorkflowEngine's methods for registering work and shutting down; the seam is
 # their only caller.
-ENGINE_METHODS = {"function_task", "executable_task", "prompt_task", "block", "shutdown"}
+ENGINE_METHODS = {
+	"function_task",
+	"executable_task",
+	"prompt_task",
+	"block",
+	"shutdown",
+}
+# Modules that call a method of that name on something else, and what: their
+# other engine methods are still checked.
+NOT_THE_ENGINE = {SOURCE / "otlp.py": {"shutdown"}}  # OpenTelemetry's providers
 
 
 def _is_type_checking(test: ast.expr) -> bool:
@@ -55,7 +64,7 @@ def _runtime_asyncflow_imports(tree: ast.Module) -> list[int]:
 	)
 
 
-def _engine_calls(tree: ast.Module) -> list[int]:
+def _engine_calls(tree: ast.Module, methods: set[str] = ENGINE_METHODS) -> list[int]:
 	"""Line numbers of engine calls outside the seam's own functions."""
 	lines = []
 	for node in _runtime_nodes(tree):
@@ -66,7 +75,7 @@ def _engine_calls(tree: ast.Module) -> list[int]:
 		if owner_name == "_asyncflow":
 			continue
 		creates = node.func.attr == "create" and owner_name == "WorkflowEngine"
-		if node.func.attr in ENGINE_METHODS or creates:
+		if node.func.attr in methods or creates:
 			lines.append(node.lineno)
 	return sorted(lines)
 
@@ -92,7 +101,8 @@ def test_only_the_seam_calls_asyncflow() -> None:
 	for module in sorted(SOURCE.rglob("*.py")):
 		if module == SEAM:
 			continue
-		lines = _engine_calls(_parse(module))
+		methods = ENGINE_METHODS - NOT_THE_ENGINE.get(module, set())
+		lines = _engine_calls(_parse(module), methods)
 		if lines:
 			offenders[str(module.relative_to(SOURCE))] = lines
 
