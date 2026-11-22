@@ -270,10 +270,12 @@ def current_agent() -> str | None:
 	"""The id of the agent the current coroutine works for, or ``None``
 	outside the agents an ``AgentHost`` runs.
 
-	The host sets it in each agent's task, and asyncio copies it into the tasks
-	and threads a runner starts for the agent: an inline tool, sync or async,
-	reads its agent here, under ``LoopRunner``, ``GraphRunner`` or a runner of
-	the application's own."""
+	The host sets it in each agent's task, and the tasks started from there
+	inherit it. A worker thread sees it only when started with
+	``asyncio.to_thread`` or in a copied context
+	(``contextvars.copy_context().run``), as ``LoopRunner`` and ``GraphRunner``
+	run sync inline tools; ``loop.run_in_executor`` alone does not carry it. So
+	an inline tool, sync or async, reads its agent here under either runner."""
 	agent = _current.get()
 	return None if agent is None else agent.id
 

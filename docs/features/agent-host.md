@@ -173,9 +173,11 @@ each step, uses what Flowgentic's runners use, from `flowgentic.host`:
 
 - `current_agent()`: the id of the agent the current coroutine works for, or
   `None` outside the host's agents. The host sets it in each agent's task, and
-  asyncio copies it into the tasks and worker threads a runner starts for the
-  agent, so an inline tool reads its agent here too, under `LoopRunner` and
-  `GraphRunner`.
+  the tasks started from there inherit it. A worker thread sees it only when
+  started with `asyncio.to_thread` or in a copied context
+  (`contextvars.copy_context().run`), as `LoopRunner` and `GraphRunner` run
+  sync inline tools, so an inline tool reads its agent here under both.
+  `loop.run_in_executor` alone does not carry it.
 - `activity(state)`: counts the current agent in `state` for a block:
   `TOOL_CALL`, `MODEL_REQUEST`, `MODEL_QUEUED` or `TOOL_WAIT`. An agent with
   no activity open is `WORKING`, and the host alone makes it `PENDING` or
