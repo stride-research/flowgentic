@@ -219,6 +219,28 @@ def test_an_agent_process_streams_its_metrics_and_spans_to_a_collector():
 	)
 
 
+def test_without_names_the_process_is_its_host_and_pid_and_the_environment_wins():
+	with Receiver() as collector:
+		run_process("--endpoint", collector.url, "--agents", "5")
+	(resource,) = {tuple(sorted(r.items())) for r in collector.resources()}
+	resource = dict(resource)
+	assert resource["service.name"] == "flowgentic"
+	host, _, pid = resource["service.instance.id"].rpartition("-")
+	assert host == socket.gethostname() and pid.isdigit()  # not the SDK's random id
+	assert "service.namespace" not in resource
+
+	env = {
+		"OTEL_RESOURCE_ATTRIBUTES": "service.instance.id=rank-7,service.namespace=c1",
+		"OTEL_SERVICE_NAME": "workers",
+	}
+	with Receiver() as collector:
+		run_process("--endpoint", collector.url, "--agents", "5", env=env)
+	for resource in collector.resources():
+		assert resource["service.instance.id"] == "rank-7"
+		assert resource["service.namespace"] == "c1"
+		assert resource["service.name"] == "workers"
+
+
 def test_by_default_a_tenth_of_the_agents_keep_their_spans_and_every_call_is_counted():
 	with Receiver() as collector:
 		run = run_process("--endpoint", collector.url, "--agents", "200")
