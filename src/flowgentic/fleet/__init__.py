@@ -966,6 +966,11 @@ class _Core:
 		self.invalid_tool_calls = 0
 		self.errors: Counter[str] = Counter()
 		self.retried = 0
+		# Each replica's [prompt, completion] tokens, in the process's totals,
+		# which the telemetry reads when the SDK collects.
+		self.tokens = [
+			_tokens.setdefault((name, i), [0, 0]) for i in range(len(replicas))
+		]
 
 	def agent(self, agent_id: str) -> _Agent:
 		state = self.agents.get(agent_id)
@@ -1007,6 +1012,9 @@ class _Core:
 
 
 _all_fleets: weakref.WeakSet[_Core] = weakref.WeakSet()
+_tokens: dict[tuple[str, int], list[int]] = {}
+"""The process's fleets' [prompt, completion] tokens, by fleet name and replica:
+fleets of one name add up, and a fleet that is gone keeps its count."""
 
 
 class Fleet:
@@ -1254,6 +1262,9 @@ class Fleet:
 			core.reasoning_tokens += reasoning
 		core.prompt_tokens += prompt
 		core.completion_tokens += completion
+		tokens = core.tokens[i]
+		tokens[0] += prompt
+		tokens[1] += completion
 		record = CallRecord(
 			agent_id=agent_id,
 			replica=i,

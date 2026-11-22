@@ -13,8 +13,8 @@ directory of the process's own, as the telemetry page shows:
 into an ``Export``: Flowgentic's counters and histograms summed over the
 processes, the agents in each state over time, and the ``chat`` spans with
 their usage. ``Export.check()`` says what is missing from the export or does
-not add up within it; ``Export.check_servers()`` compares it with the model
-servers' own counters.
+not add up within it, spans sampled or not; ``Export.check_servers()``
+compares it with the model servers' own counters.
 """
 
 from __future__ import annotations
@@ -41,6 +41,8 @@ _CALLS = "flowgentic.fleet.call.duration"
 _REQUESTS = "flowgentic.fleet.request.duration"
 _RETRIES = "flowgentic.fleet.retries"
 _OUTAGES = "flowgentic.fleet.outage.duration"
+_TOKENS = "flowgentic.fleet.tokens"
+_TOKEN_TYPE = "gen_ai.token.type"
 _STATE = "flowgentic.agent.state"
 _OUTCOME = "flowgentic.fleet.outage.outcome"
 _REPLICA = "flowgentic.fleet.replica"
@@ -104,9 +106,14 @@ class Export:
 	"""``chat`` spans, failed ones included."""
 	failed_chat_spans: int
 	usage: Usage
+	"""On the ``chat`` spans that did not fail."""
+	fleet_usage: Usage | None = None
+	"""The prompt and completion tokens the servers counted for the fleets'
+	calls (``flowgentic.fleet.tokens``), sampled spans or not; ``None`` if the
+	export has no such counter."""
 	_parts: tuple[_Part, ...] = field(default=(), repr=False, compare=False)
 
-	def check(self) -> list[str]:
+	def check(self, *, sampled: bool = False) -> list[str]:
 		"""What is missing from the export, or does not add up within it; an
 		empty list if nothing.
 
@@ -120,6 +127,11 @@ class Export:
 		or never exported. A process whose ``chat`` spans all come from
 		another recorder, such as LangChain's instrumentation with LangChain
 		replicas, is not compared.
+
+		``sampled``: the spans were sampled, as with
+		``ParentBased(TraceIdRatioBased(r))``, so fewer spans than calls is
+		expected and only more spans than calls is a problem. The counts come
+		from the metrics, which sampling does not touch.
 		"""
 		if not self._parts or all(p.metrics is None for p in self._parts):
 			return [f"no {METRICS} under {self.path}"]
@@ -133,16 +145,21 @@ class Export:
 				continue
 			if part.spans is None or (part.fleet_spans == 0 and part.other_spans):
 				continue
-			if (part.fleet_spans, part.failed_fleet_spans) != (
-				part.calls,
-				part.failed_calls,
-			):
-				problems.append(
-					f"{part.directory}: {part.fleet_spans} of the fleet's chat spans "
-					f"for {part.calls} of its calls ({part.failed_fleet_spans} failed "
-					f"spans for {part.failed_calls} failed calls): spans were dropped "
-					"or not exported"
-				)
+			spans = (part.fleet_spans, part.failed_fleet_spans)
+			calls = (part.calls, part.failed_calls)
+			if sampled:
+				if spans[0] <= calls[0] and spans[1] <= calls[1]:
+					continue
+				why = "more spans than calls"
+			elif spans == calls:
+				continue
+			else:
+				why = "spans were dropped or not exported"
+			problems.append(
+				f"{part.directory}: {spans[0]} of the fleet's chat spans for "
+				f"{calls[0]} of its calls ({spans[1]} failed spans for {calls[1]} "
+				f"failed calls): {why}"
+			)
 		return problems
 
 	def check_servers(
@@ -156,30 +173,38 @@ class Export:
 		run, as vLLM's ``prompt_tokens_total``, ``generation_tokens_total`` and
 		``request_success_total`` count them; an empty list if they agree.
 
-		The ``chat`` spans that did not fail give the prompt and completion
-		tokens, and the successful requests. Only what is given is compared. A
-		request the fleet gave up on that the server still finished, as after a
-		client's timeout, counts at the server only: the difference names the
-		requests sent again."""
-		if not any(p.spans for p in self._parts):
-			return [f"no {SPANS}: the comparison needs the chat spans"]
+		The fleets' own counts give the prompt and completion tokens
+		(``flowgentic.fleet.tokens``) and the successful requests (the calls
+		that did not fail), so sampled spans change nothing. An export
+		without the fleets' token counter, or whose calls went outside a
+		fleet, is compared through its ``chat`` spans that did not fail. Only
+		what is given is compared. A request the fleet gave up on that the
+		server still finished, as after a client's timeout, counts at the
+		server only: the difference names the requests sent again."""
+		if self.fleet_usage is not None:
+			source = "in the fleets' metrics"
+			usage = self.fleet_usage
+			ok = self.calls - self.failed_calls
+		elif any(p.spans for p in self._parts):
+			source = "on the chat spans"
+			usage = self.usage
+			ok = self.chat_spans - self.failed_chat_spans
+		else:
+			return [f"no {_TOKENS} and no {SPANS}: nothing to compare with the servers"]
 		problems = []
 		pairs = (
-			("prompt tokens", self.usage.prompt_tokens, prompt_tokens),
-			("completion tokens", self.usage.completion_tokens, completion_tokens),
+			("prompt tokens", usage.prompt_tokens, prompt_tokens),
+			("completion tokens", usage.completion_tokens, completion_tokens),
+			("successful requests", ok, requests),
 		)
 		for what, ours, theirs in pairs:
-			if theirs is not None and ours != theirs:
-				problems.append(
-					f"{what}: {ours} on the chat spans, {theirs} at the servers"
-				)
-		ok = self.chat_spans - self.failed_chat_spans
-		if requests is not None and ok != requests:
-			again = "request" if self.retries == 1 else "requests"
-			problems.append(
-				f"successful requests: {ok} chat spans, {requests} at the servers "
-				f"(the fleets sent {self.retries} {again} again)"
-			)
+			if theirs is None or ours == theirs:
+				continue
+			problem = f"{what}: {ours} {source}, {theirs} at the servers"
+			if what == "successful requests":
+				again = "request" if self.retries == 1 else "requests"
+				problem += f" (the fleets sent {self.retries} {again} again)"
+			problems.append(problem)
 		return problems
 
 
@@ -199,6 +224,7 @@ def read_export(path: str | Path) -> Export:
 	totals: Counter[str] = Counter()
 	seconds: Counter[str] = Counter()
 	outages: Counter[str] = Counter()
+	tokens: Counter[str] | None = None
 	down_s = 0.0
 	exports = 0
 	spans = _Spans()
@@ -217,6 +243,8 @@ def read_export(path: str | Path) -> Export:
 			totals.update(read.totals)
 			seconds.update(read.seconds)
 			outages.update(read.outages)
+			if read.tokens:
+				tokens = (tokens or Counter()) + read.tokens
 			down_s += read.down_s
 			part = replace(
 				part,
@@ -251,6 +279,9 @@ def read_export(path: str | Path) -> Export:
 		chat_spans=spans.chat,
 		failed_chat_spans=spans.failed,
 		usage=spans.usage(),
+		fleet_usage=None
+		if tokens is None
+		else Usage(int(tokens["input"]), int(tokens["output"])),
 		_parts=tuple(parts),
 	)
 
@@ -278,6 +309,7 @@ class _Metrics:
 	seconds: Counter[str] = field(default_factory=Counter)
 	outages: Counter[str] = field(default_factory=Counter)
 	down_s: float = 0.0
+	tokens: Counter[str] = field(default_factory=Counter)
 
 
 class _Cumulative:
@@ -349,6 +381,8 @@ def _read_metrics(path: Path) -> _Metrics:
 			out.down_s += total
 		elif name == _AGENT_TIME:
 			out.seconds[a.get(_STATE, "?")] += count  # a counter's value
+		elif name == _TOKENS:
+			out.tokens[a.get(_TOKEN_TYPE, "?")] += count
 	return out
 
 

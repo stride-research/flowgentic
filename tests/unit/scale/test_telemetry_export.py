@@ -308,11 +308,11 @@ def test_a_sampled_export_is_checked_against_its_metrics(tmp_path):
 	write(tmp_path / "spans.jsonl", chat(), chat(), chat(ok=False))
 	got = read_export(tmp_path)
 	assert got.check() == [
-		f"{tmp_path}: 2 of the fleet's chat spans for 9 of its calls (1 failed spans for "
+		f"{tmp_path}: 3 of the fleet's chat spans for 10 of its calls (1 failed spans for "
 		"1 failed calls): spans were dropped or not exported"
 	]
 	assert got.check(sampled=True) == []
-	assert got.check_servers(prompt_tokens=900, completion_tokens=90, requests=8) == []
+	assert got.check_servers(prompt_tokens=900, completion_tokens=90, requests=9) == []
 
 
 def test_a_sampled_export_cannot_have_more_spans_than_calls(tmp_path):

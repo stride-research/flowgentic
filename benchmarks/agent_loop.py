@@ -21,10 +21,12 @@ A run prints one JSON line: the host's wall time, the process's CPU time, the
 event loop's lag, the collector's pauses, peak RSS, and the store's calls and
 bytes.
 
-``--otel DIR`` configures the OpenTelemetry SDK, as the telemetry page does,
-to write every metric each second and every span into ``DIR``; with
-``--no-spans``, the metrics only. The CPU time then includes the SDK's, its
-exporter thread's and the final flush, and the line adds the problems
+``--otel DIR`` configures the OpenTelemetry SDK, as the telemetry page does
+at scale, to write metrics and spans into ``DIR``: a tenth of the agents keep
+their spans, no exemplars, metrics every 10 s (``--otel-sample``,
+``--otel-exemplars`` and ``--otel-interval`` change them; ``--no-spans``
+exports metrics only). The CPU time then includes the SDK's, its exporter
+threads' and the final flush, and the line adds the problems
 ``flowgentic.telemetry.read_export(DIR).check()`` finds: compare it with a
 run without, at the same size.
 
@@ -226,13 +228,16 @@ def run_once(
     interval: float,
     otel: Path | None = None,
     spans: bool = True,
+    **otel_options: Any,
 ) -> dict:
+    """One run; with ``otel``, the SDK writes into it, as ``_otel.configure``
+    sets it up with ``spans`` and ``otel_options``."""
     flush = None
     if otel is not None:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         import _otel
 
-        flush = _otel.configure(otel, spans)
+        flush = _otel.configure(otel, spans, **otel_options)
     example = load_example()
     with example.McpServer() as mcp:
         requests, replies = queue.Queue(), [queue.Queue()]
@@ -244,7 +249,14 @@ def run_once(
             )
     out["otel"] = None if otel is None else ("metrics+spans" if spans else "metrics")
     if otel is not None:
-        out.update(_otel.summary(otel))
+        options = {
+            "sample": _otel.SAMPLE,
+            "exemplars": False,
+            "interval_s": _otel.INTERVAL_S,
+            **otel_options,
+        }
+        out["otel_options"] = options
+        out.update(_otel.summary(otel, sampled=spans and options["sample"] < 1))
     out["python"] = platform.python_version()
     out["machine"] = platform.machine()
     return out
@@ -285,12 +297,9 @@ def main() -> None:
     parser.add_argument(
         "--stagger", type=float, default=0.05, help="seconds between first-wave batches"
     )
-    parser.add_argument(
-        "--otel", type=Path, default=None, help="write OpenTelemetry's export here"
-    )
-    parser.add_argument(
-        "--no-spans", action="store_true", help="with --otel: export metrics only"
-    )
+    import _otel  # beside this script
+
+    _otel.add_arguments(parser)
     parser.add_argument("--repeat", type=int, default=0)
     parser.add_argument("--sizes", type=lambda s: [int(x) for x in s.split(",")], default=[1000, 5000])
     parser.add_argument(
@@ -309,6 +318,9 @@ def main() -> None:
                 args.stagger,
                 args.otel,
                 not args.no_spans,
+                sample=args.otel_sample,
+                exemplars=args.otel_exemplars,
+                interval_s=args.otel_interval,
             )
         )
     )

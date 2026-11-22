@@ -31,6 +31,7 @@ GEN_AI_RESPONSE_MODEL = "gen_ai.response.model"
 GEN_AI_RESPONSE_FINISH_REASONS = "gen_ai.response.finish_reasons"
 GEN_AI_REQUEST_MODEL = "gen_ai.request.model"
 GEN_AI_CONVERSATION_ID = "gen_ai.conversation.id"
+GEN_AI_TOKEN_TYPE = "gen_ai.token.type"
 GEN_AI_USAGE_INPUT_TOKENS = "gen_ai.usage.input_tokens"
 GEN_AI_USAGE_OUTPUT_TOKENS = "gen_ai.usage.output_tokens"
 GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS = "gen_ai.usage.cache_read.input_tokens"
@@ -301,6 +302,34 @@ meter.create_observable_gauge(
 	callbacks=[_observe_fleet("waiting")],
 	unit="{request}",
 	description="Requests waiting for each replica's admission",
+)
+
+
+def _observe_tokens(options: object) -> list:
+	"""The tokens the servers counted for the process's fleets' calls, per
+	fleet name and replica; kept after a fleet is gone, so the counter only
+	grows."""
+	fleet = sys.modules.get("flowgentic.fleet")
+	if fleet is None:
+		return []
+	out = []
+	for (name, replica), (prompt, completion) in list(fleet._tokens.items()):
+		attrs = {FLEET_NAME: name, FLEET_REPLICA: replica}
+		out.append(metrics.Observation(prompt, {**attrs, GEN_AI_TOKEN_TYPE: "input"}))
+		out.append(
+			metrics.Observation(completion, {**attrs, GEN_AI_TOKEN_TYPE: "output"})
+		)
+	return out
+
+
+meter.create_observable_counter(
+	"flowgentic.fleet.tokens",
+	callbacks=[_observe_tokens],
+	unit="{token}",
+	description=(
+		"Prompt (input) and completion (output) tokens the servers counted for the "
+		"fleets' calls, at each replica"
+	),
 )
 
 

@@ -1,8 +1,8 @@
 """Measure host scheduling with synthetic inputs, an immediate runner and no I/O.
 
 ``--otel DIR`` configures the OpenTelemetry SDK into ``DIR``, as
-``agent_loop.py --otel`` does (``--no-spans`` for metrics only), so the CPU
-time can be compared with a run without.
+``agent_loop.py --otel`` does, with the same options, so the CPU time can be
+compared with a run without.
 """
 
 import argparse
@@ -10,7 +10,6 @@ import asyncio
 import resource
 import sys
 import time
-from pathlib import Path
 
 from flowgentic.host import Agent, AgentHost, Finished, Stagger
 
@@ -26,16 +25,13 @@ async def main() -> None:
     parser.add_argument("--live", type=int, default=256)
     parser.add_argument("--input-bytes", type=int, default=1024)
     parser.add_argument("--full-report", action="store_true")
-    parser.add_argument("--otel", type=Path, default=None)
-    parser.add_argument("--no-spans", action="store_true")
+    import _otel  # beside this script
+
+    _otel.add_arguments(parser)
     args = parser.parse_args()
     if args.agents < 0 or args.input_bytes < 0:
         parser.error("agents and input-bytes must be nonnegative")
-    flush = None
-    if args.otel is not None:
-        import _otel  # beside this script
-
-        flush = _otel.configure(args.otel, not args.no_spans)
+    flush = _otel.from_arguments(args)
     host = AgentHost(
         Immediate(),
         max_live_agents=args.live,
