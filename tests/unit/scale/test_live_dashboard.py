@@ -168,3 +168,46 @@ def test_no_query_hides_a_missing_series():
 	panel with no series shows its own "0" or "None" instead."""
 	for path in (FLOWGENTIC, RHAPSODY):
 		assert "vector(0)" not in path.read_text(), path
+
+
+# --- the stack's defaults ------------------------------------------------------------
+
+STACK = DASHBOARDS.parent
+
+
+def test_only_grafana_and_the_collector_publish_ports_on_the_bind_address():
+	yaml = pytest.importorskip("yaml")
+	services = yaml.safe_load((STACK / "compose.yaml").read_text())["services"]
+	published = {name: s.get("ports", []) for name, s in services.items()}
+	assert {name for name, ports in published.items() if ports} == {
+		"grafana",
+		"collector",
+	}
+	for ports in published.values():
+		assert all(p.startswith("${BIND_ADDRESS:-127.0.0.1}:${") for p in ports), ports
+
+
+def test_grafana_needs_a_password_and_the_collector_a_token():
+	yaml = pytest.importorskip("yaml")
+	services = yaml.safe_load((STACK / "compose.yaml").read_text())["services"]
+	grafana = services["grafana"]["environment"]
+	assert grafana["GF_SECURITY_ADMIN_PASSWORD"].startswith(
+		"${GRAFANA_ADMIN_PASSWORD:?"
+	)
+	assert grafana["GF_AUTH_ANONYMOUS_ENABLED"] == "${GRAFANA_ANONYMOUS:-false}"
+	assert services["collector"]["environment"]["OTLP_TOKEN"].startswith(
+		"${OTLP_TOKEN:?"
+	)
+	collector = yaml.safe_load((STACK / "collector.yaml").read_text())
+	protocols = collector["receivers"]["otlp"]["protocols"]
+	assert {p["auth"]["authenticator"] for p in protocols.values()} == {
+		"bearertokenauth"
+	}
+	assert "bearertokenauth" in collector["service"]["extensions"]
+
+
+def test_the_stack_script_parses():
+	done = subprocess.run(
+		["bash", "-n", str(STACK / "stack.sh")], capture_output=True, text=True
+	)
+	assert done.returncode == 0, done.stderr
