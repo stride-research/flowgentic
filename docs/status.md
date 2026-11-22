@@ -8,15 +8,22 @@ optional. The two paths are at different stages.
 
 ## Agents at scale: in active development
 
-0.5.0 adds the parts that run many thousands of agents per process on an HPC
+0.5.0 added the parts that run many thousands of agents per process on an HPC
 allocation: the [agent host](features/agent-host.md), the
 [checkpointer](features/checkpointer.md), [tool placement](features/tools.md),
 the [tool service](features/tool-service.md) and the [fleet](features/fleet.md)
-client for model servers. The next release makes Flowgentic's own
-[agent loop](features/agent-loop.md), on OpenAI-format messages and the
-fleet's transports, the path's runner, and LangGraph optional: its graphs run
-on the same parts with the `langgraph` extra, through LangChain's adapter.
-This breaks the fleet's API, and the new names may still change.
+client for model servers. 0.6.0 makes Flowgentic's own [agent
+loop](features/agent-loop.md), on OpenAI-format messages and the fleet's
+transports, the path's runner, and LangGraph optional: its graphs run on the
+same parts with the `langgraph` extra, through LangChain's adapter. This breaks
+the fleet's API; the [changelog](changelog.md#migrating-from-05) says what to
+change. 0.6.0 also runs task tools as tasks of an application's own AsyncFlow
+engine, each with a record of when its agent decided on it and when it ran
+([Tool placement](features/tools.md#in-an-asyncflow-application)), gives
+runners of an application's own the host's helpers ([A runner of your
+own](features/agent-host.md#a-runner-of-your-own)), and records each of the
+fleet's model calls as a span and metrics, which `flowgentic.telemetry` reads
+back and checks after a run ([Telemetry](features/telemetry.md)).
 [Agents at scale](guides/agents-at-scale.md) shows the parts together, in an
 example that runs on a laptop, with or without LangGraph. Their interfaces
 may still change before 1.0, as the changelog will say.
@@ -62,9 +69,10 @@ run, and a graph that should change between runs is built anew as a
 | Agents at scale | Flowgentic's agent loop; LangGraph 1.x, optional | RHAPSODY 0.7 on a thread pool, in CI; RHAPSODY's native Dragon backend, not yet released, by hand | 3.11, 3.12, 3.13 |
 | AsyncFlow | LangGraph 1.x | RADICAL AsyncFlow 0.7, local backends | 3.11, 3.12, 3.13 |
 
-Tested environment, from `uv.lock`: httpx 0.28.1, openai 3.36.1, LangGraph 1.2.16,
-langgraph-checkpoint 4.3.0, langchain-core 1.7.0, langchain 1.4.7, rhapsody-py
-0.7.0, mcp 2.3.0, radical-asyncflow 0.7.0 and academy-py 1.0.0. CI runs the
+Tested environment, from `uv.lock`: httpx 0.28.1, openai 3.36.1, LangGraph
+1.2.22, langgraph-checkpoint 4.3.2, langchain-core 1.8.3, langchain 1.5.0,
+rhapsody-py 0.7.0, mcp 2.3.0, radical-asyncflow 0.7.0, academy-py 1.0.0 and
+the OpenTelemetry API and SDK 1.45.2. CI runs the
 test suite on Python 3.11, 3.12 and 3.13, and on Python 3.11 with the lowest
 versions the dependency ranges allow; it also installs the wheel with the
 `agents` extra alone, without LangGraph, LangChain or the `openai` SDK, and
@@ -200,6 +208,11 @@ The AsyncFlow path:
       `opentelemetry._logs`. An application sees them only once it configures
       a logger provider.
     - RHAPSODY's Dragon-vLLM endpoint reports word counts as token counts.
+    - The OpenTelemetry SDK costs the agent processes CPU: with 5,000 agents
+      on the loop in one process, metrics add 6 to 8 %, and every span about
+      50 %, or 17 % with the configuration that
+      [Telemetry](features/telemetry.md#what-it-costs-and-how-to-cut-it)
+      recommends at scale.
 - Live runs of the design-pattern examples need a model provider and
   credentials. CI runs three of them with a scripted chat model in place of the
   provider (`tests/integration/test_design_patterns_offline.py`), which shows

@@ -37,7 +37,7 @@ LangGraph execution adapter (`LangGraphIntegration`) is frozen. New
 applications can bind agents with `bind_agent`, or run LangGraph on AsyncFlow
 directly.
 
-0.5.1 requires Python 3.11 or later, and installs each path's dependencies as
+0.6.0 requires Python 3.11 or later, and installs each path's dependencies as
 an extra.
 
 | Path | Agent framework | Runs tasks on | Python |
@@ -64,12 +64,18 @@ Agents at scale (see [Agents at scale](https://stride-research.github.io/flowgen
   `langgraph` extra, run LangGraph graphs in the same host, their checkpoints
   in the same store.
 - **`task_tool` and `mcp_tool`** (`flowgentic.tools`) say where a tool runs: as
-  a RHAPSODY task, which may suspend its agent, or through the tool service
+  a task on a RHAPSODY session or on the application's own AsyncFlow engine,
+  which may suspend its agent and leaves a record of when the agent decided
+  on it and when it ran, or through the tool service
   (`flowgentic.tools.service`), which calls MCP tools for many agent processes.
 - **`Fleet`** (`flowgentic.fleet`) sends each agent's model calls to one
   replica of a model server, under caps on tokens and requests in flight. A
   replica is a transport, such as `HTTPTransport` for vLLM, SGLang or
   OpenRouter.
+- **`read_export`** (`flowgentic.telemetry`) reads back the OpenTelemetry
+  export of every agent process of a run, and checks it: each fleet's calls
+  against its `chat` spans, and its tokens against the model servers' own
+  counters.
 
 The AsyncFlow path:
 
@@ -97,10 +103,10 @@ uv sync --locked
 ```
 
 Flowgentic's core installs no agent framework and no workflow engine. Each
-path is an extra: `agents` for agents at scale (the `openai` SDK, `rhapsody`
-and `mcp`), with `langgraph` to run LangGraph graphs on them; `langgraph` and
-`asyncflow` for the LangGraph integration on AsyncFlow; `asyncflow` for
-`bind_agent`. The demos' `make` targets add what they need.
+path is an extra: `agents` for agents at scale (`rhapsody` and `mcp`), with
+`langgraph` to run LangGraph graphs on them; `langgraph` and `asyncflow` for
+the LangGraph integration on AsyncFlow; `asyncflow` for `bind_agent`. The
+demos' `make` targets add what they need.
 
 Or build the wheel and install it into a new environment, with the extras you
 use:
@@ -108,7 +114,7 @@ use:
 ```bash
 uv build
 uv venv --python 3.11 flowgentic-env
-uv pip install --python flowgentic-env/bin/python "dist/flowgentic-0.5.1-py3-none-any.whl[agents]"
+uv pip install --python flowgentic-env/bin/python "dist/flowgentic-0.6.0-py3-none-any.whl[agents]"
 ```
 
 ## Run the examples
@@ -158,7 +164,7 @@ holds the metadata, and GitHub's "Cite this repository" menu turns it into APA
 or BibTeX:
 
 > Alsaadi, A., Amirghofran, Y., Barbero, C., Cordovez, D., Dominguez, J.,
-> Oliveros, D., & Turilli, M. (2026). *Flowgentic* (Version 0.5.1) [Computer
+> Oliveros, D., & Turilli, M. (2026). *Flowgentic* (Version 0.6.0) [Computer
 > software]. https://github.com/stride-research/flowgentic
 
 ## License
