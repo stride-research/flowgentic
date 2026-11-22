@@ -344,7 +344,7 @@ def test_metrics_stay_cumulative_whatever_the_environment_prefers(tmp_path):
 	assert temporalities == {CUMULATIVE}  # Prometheus's panels need the totals
 	(calls,) = collector.last("flowgentic.fleet.call.duration")
 	assert calls.count == 20
-	assert read_export(tmp_path).check() == []  # read_export refuses delta
+	assert read_export(tmp_path).check(sampled=True) == []  # it refuses delta
 
 
 def test_the_example_keeps_a_tenth_of_its_agents_each_the_root_of_its_trace():
