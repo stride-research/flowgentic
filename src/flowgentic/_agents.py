@@ -65,6 +65,9 @@ _PRECEDENCE = (
 	AgentState.MODEL_QUEUED,
 	AgentState.TOOL_WAIT,
 )
+# The states an activity can open: an agent with none open is working, and the
+# host alone makes it pending or done.
+_ACTIVITIES = frozenset(_PRECEDENCE)
 
 _N = len(AgentState)
 
@@ -264,7 +267,13 @@ def set_current_agent(agent_id: str, states: AgentStates) -> None:
 
 
 def current_agent() -> str | None:
-	"""The id of the agent the current coroutine works for, if any."""
+	"""The id of the agent the current coroutine works for, or ``None``
+	outside the agents an ``AgentHost`` runs.
+
+	The host sets it in each agent's task, and asyncio copies it into the tasks
+	and threads a runner starts for the agent: an inline tool, sync or async,
+	reads its agent here, under ``LoopRunner``, ``GraphRunner`` or a runner of
+	the application's own."""
 	agent = _current.get()
 	return None if agent is None else agent.id
 
@@ -291,7 +300,19 @@ def reply_time(agent_id: str, call_id: str) -> float | None:
 
 @contextmanager
 def activity(state: AgentState) -> Iterator[None]:
-	"""Count the current agent as in ``state`` for the duration of the block."""
+	"""Count the current agent as in ``state`` for the duration of the block.
+
+	``state`` is ``TOOL_CALL``, ``MODEL_REQUEST``, ``MODEL_QUEUED`` or
+	``TOOL_WAIT``; any other is a ``ValueError``: an agent with no activity open
+	is ``WORKING``, and the host alone makes it ``PENDING`` or ``DONE``.
+	Activities nest and overlap, as the concurrent calls of one reply do: the
+	agent's state is the most telling of those open, in that order. Outside an
+	agent the block runs and nothing is counted."""
+	if state not in _ACTIVITIES:
+		raise ValueError(
+			f"an activity is TOOL_CALL, MODEL_REQUEST, MODEL_QUEUED or TOOL_WAIT, "
+			f"not {AgentState(state).name}"
+		)
 	agent = _current.get()
 	if agent is None:
 		yield
@@ -478,11 +499,15 @@ def withdrawable(future: asyncio.Future, withdraw: Callable[[], None] | None) ->
 
 
 async def wait(futures: Iterable[asyncio.Future]) -> None:
-	"""Wait for ``futures`` to end, without raising their exceptions.
+	"""Wait for ``futures`` to end, without raising their exceptions: read each
+	one's outcome from it afterwards.
 
 	Several waits may share a future, as calls made again with one key share
 	their task. A future whose last wait is cancelled before it ends is
-	withdrawn, if it still can be (``withdrawable``); otherwise it runs on."""
+	withdrawn if it still can be (``withdrawable``), as a ``ToolRuntime``'s
+	task that its order has not admitted yet is: it never starts. Otherwise it
+	runs on. Count the agent as waiting with ``activity(AgentState.TOOL_WAIT)``
+	around the wait."""
 	futures = [f for f in futures if not f.done()]
 	if not futures:
 		return
