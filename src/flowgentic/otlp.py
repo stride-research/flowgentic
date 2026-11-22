@@ -27,8 +27,11 @@ with Flowgentic's and RHAPSODY's dashboards, in one command.
 
 from __future__ import annotations
 
+import math
 import os
 import socket
+import time
+from collections.abc import Sequence
 from pathlib import Path
 from types import TracebackType
 from typing import IO, Any
@@ -42,19 +45,30 @@ try:
 	from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
 		OTLPSpanExporter,
 	)
-	from opentelemetry.sdk.metrics import AlwaysOffExemplarFilter, MeterProvider
+	from opentelemetry.sdk.metrics import (
+		AlwaysOffExemplarFilter,
+		Counter,
+		Histogram,
+		MeterProvider,
+		ObservableCounter,
+		ObservableGauge,
+		ObservableUpDownCounter,
+		UpDownCounter,
+	)
 	from opentelemetry.sdk.metrics.export import (
+		AggregationTemporality,
 		ConsoleMetricExporter,
 		MetricExporter,
 		MetricReader,
 		PeriodicExportingMetricReader,
 	)
 	from opentelemetry.sdk.resources import OTELResourceDetector, Resource
-	from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
+	from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor, TracerProvider
 	from opentelemetry.sdk.trace.export import (
 		BatchSpanProcessor,
 		ConsoleSpanExporter,
 		SpanExporter,
+		SpanExportResult,
 	)
 	from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
 except ModuleNotFoundError as exc:
@@ -63,6 +77,11 @@ except ModuleNotFoundError as exc:
 		name=exc.name,
 	) from exc
 
+try:  # the API's stand-in until the process sets a meter provider
+	from opentelemetry.metrics._internal import _ProxyMeterProvider
+except ImportError:  # pragma: no cover  # configure() checks after setting
+	_ProxyMeterProvider = None
+
 __all__ = ["OtlpTelemetry", "configure"]
 
 SAMPLE = 0.1
@@ -70,8 +89,26 @@ SAMPLE = 0.1
 INTERVAL_S = 5.0
 """Seconds between metric exports: a live view refreshes every 5 s, and one
 export costs about 1.5 ms of CPU, so about 1 s an hour."""
-MAX_QUEUE_SIZE = 65_536
-"""Spans a ``BatchSpanProcessor`` holds; the SDK's 2,048 drops spans in a burst."""
+QUEUE_SIZE = 8_192
+"""Spans each OTLP span processor holds for the collector: sixteen batches,
+about 30 MB if the collector is down. More are dropped."""
+FILES_QUEUE_SIZE = 65_536
+"""Spans the ``files`` span processor holds; the SDK's 2,048 drops spans in a
+burst."""
+TIMEOUT_S = 10.0
+"""``timeout_s`` when neither the call nor ``OTEL_EXPORTER_OTLP_TIMEOUT``
+gives one, as the exporters' own default."""
+_CUMULATIVE = dict.fromkeys(
+	(
+		Counter,
+		UpDownCounter,
+		Histogram,
+		ObservableCounter,
+		ObservableUpDownCounter,
+		ObservableGauge,
+	),
+	AggregationTemporality.CUMULATIVE,
+)
 SERVICE = "flowgentic"
 """``service.name`` when neither the call nor the environment gives one."""
 
@@ -106,6 +143,7 @@ class OtlpTelemetry:
 		as ``flowgentic.telemetry.read_export`` reads them, or ``None``."""
 		self._interval_s = interval_s
 		self._timeout_s = timeout_s
+		self._bound_s = _timeout(timeout_s)
 		self._open: list[IO[str]] = []
 		self._closed = False
 		readers: list[MetricReader] = [self._reader(self._metric_exporter())]
@@ -119,7 +157,10 @@ class OtlpTelemetry:
 			)
 			if spans:
 				processors.append(
-					self._processor(_spans_file(self._file(files / "spans.jsonl")))
+					BatchSpanProcessor(
+						_spans_file(self._file(files / "spans.jsonl")),
+						max_queue_size=FILES_QUEUE_SIZE,
+					)
 				)
 		self.meter_provider = MeterProvider(
 			resource=resource,
@@ -138,12 +179,31 @@ class OtlpTelemetry:
 
 	def rhapsody_options(self) -> dict[str, Any]:
 		"""Options for RHAPSODY's ``Session.start_telemetry()``, or AsyncFlow's
-		``WorkflowEngine.start_telemetry()``, that export RHAPSODY's metrics and
-		spans to the same collector, with this process's resource:
+		``WorkflowEngine.start_telemetry()``: a metric reader and a span
+		processor that export RHAPSODY's metrics and spans to the same
+		collector, with this process's resource, export interval and shutdown
+		bound.
 
 			await session.start_telemetry(**telemetry.rhapsody_options())
 
-		RHAPSODY keeps its own providers, which ``configure()`` does not reach.
+		RHAPSODY keeps providers of its own, which ``configure()`` does not
+		reach, and builds them itself: its ``session`` span is always kept;
+		each ``task`` span is kept or dropped with the span that submitted the
+		task, so with its agent; its metrics keep the SDK's default exemplars,
+		which ``OTEL_METRICS_EXEMPLAR_FILTER=always_off`` turns off.
+
+		``start_telemetry()`` also leaves RHAPSODY's ``session`` span current in
+		the caller's context until the session closes. Agents started there
+		are its children, and per-agent sampling follows it: every agent keeps
+		its spans, all in one trace. Start the agents in a context of their
+		own:
+
+			token = context.attach(trace.set_span_in_context(trace.INVALID_SPAN))
+			try:
+				await host.run_indexed(...)
+			finally:
+				context.detach(token)
+
 		Each call makes a new reader and span processor; RHAPSODY shuts them
 		down when its session closes."""
 		options: dict[str, Any] = {
@@ -155,14 +215,15 @@ class OtlpTelemetry:
 		return options
 
 	def shutdown(self) -> None:
-		"""Export what is left, stop the exports and close the files. A
-		collector that is down costs at most the exporters' timeout per
-		signal. A second call does nothing."""
+		"""Export what is left, stop the exports and close the files. With
+		the collector down, it takes about ``timeout_s`` for the metrics and
+		as much for the spans, and drops the spans still queued. A second
+		call does nothing."""
 		if self._closed:
 			return
 		self._closed = True
 		try:
-			self.meter_provider.shutdown()
+			self.meter_provider.shutdown(timeout_millis=1_000 * self._bound_s)
 			if self.tracer_provider is not None:
 				self.tracer_provider.shutdown()
 		finally:
@@ -187,7 +248,9 @@ class OtlpTelemetry:
 
 	def _metric_exporter(self) -> MetricExporter:
 		return OTLPMetricExporter(
-			endpoint=self._url("metrics"), timeout=self._timeout_s
+			endpoint=self._url("metrics"),
+			timeout=self._timeout_s,
+			preferred_temporality=_CUMULATIVE,  # whatever the environment prefers
 		)
 
 	def _span_exporter(self) -> SpanExporter:
@@ -198,9 +261,8 @@ class OtlpTelemetry:
 			exporter, export_interval_millis=1_000 * self._interval_s
 		)
 
-	@staticmethod
-	def _processor(exporter: SpanExporter) -> SpanProcessor:
-		return BatchSpanProcessor(exporter, max_queue_size=MAX_QUEUE_SIZE)
+	def _processor(self, exporter: SpanExporter) -> SpanProcessor:
+		return _BoundedSpanProcessor(exporter, self._bound_s)
 
 	def _file(self, path: Path) -> IO[str]:
 		f = path.open("w")
@@ -261,7 +323,10 @@ def configure(
 		timeout_s: Seconds an export waits for the collector, retries
 			included; ``None`` reads ``OTEL_EXPORTER_OTLP_TIMEOUT``, by default
 			10. An export that fails is dropped and the next one carries the
-			totals: metrics are cumulative.
+			totals: metrics are cumulative, whatever
+			``OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE`` says. It also
+			bounds a shutdown with the collector down: about ``timeout_s`` for
+			the metrics and as much for the spans, ours or RHAPSODY's.
 
 	Raises:
 		ValueError: ``sample`` is not between 0 and 1, or ``interval_s`` is not
@@ -273,11 +338,12 @@ def configure(
 		raise ValueError(f"sample must be between 0 and 1, not {sample}")
 	if interval_s <= 0:
 		raise ValueError(f"interval_s must be positive, not {interval_s}")
+	if _ProxyMeterProvider is not None and not isinstance(
+		metrics.get_meter_provider(), _ProxyMeterProvider
+	):
+		raise RuntimeError(_SET_ALREADY.format("meter"))
 	if spans and not isinstance(trace.get_tracer_provider(), trace.ProxyTracerProvider):
-		raise RuntimeError(
-			"a tracer provider is set already in this process; configure() sets "
-			"the process's providers, once"
-		)
+		raise RuntimeError(_SET_ALREADY.format("tracer"))
 	telemetry = OtlpTelemetry(
 		_resource(run, service, instance),
 		endpoint,
@@ -291,13 +357,64 @@ def configure(
 	metrics.set_meter_provider(telemetry.meter_provider)
 	if metrics.get_meter_provider() is not telemetry.meter_provider:
 		telemetry.shutdown()
-		raise RuntimeError(
-			"a meter provider is set already in this process; configure() sets "
-			"the process's providers, once"
-		)
+		raise RuntimeError(_SET_ALREADY.format("meter"))
 	if telemetry.tracer_provider is not None:
 		trace.set_tracer_provider(telemetry.tracer_provider)
 	return telemetry
+
+
+_SET_ALREADY = (
+	"a {} provider is set already in this process; configure() sets the "
+	"process's providers, once"
+)
+
+
+class _Bounded(SpanExporter):
+	"""A span exporter that stops exporting at a deadline: the spans of each
+	export asked for after it are dropped at once."""
+
+	def __init__(self, exporter: SpanExporter) -> None:
+		self._exporter = exporter
+		self.deadline = math.inf
+
+	def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
+		if time.monotonic() >= self.deadline:
+			return SpanExportResult.FAILURE
+		return self._exporter.export(spans)
+
+	def shutdown(self) -> None:
+		self._exporter.shutdown()
+
+	def force_flush(self, timeout_millis: int = 30_000) -> bool:
+		return self._exporter.force_flush(timeout_millis)
+
+
+class _BoundedSpanProcessor(BatchSpanProcessor):
+	"""A ``BatchSpanProcessor`` whose shutdown takes about ``bound_s`` with
+	the collector down. The SDK's shutdown exports every queued batch, each
+	with its retries, for up to 30 s; this one drops what is left
+	``bound_s`` after the shutdown starts, whoever calls it, RHAPSODY's
+	session included."""
+
+	def __init__(self, exporter: SpanExporter, bound_s: float) -> None:
+		self._bounded = _Bounded(exporter)
+		self._bound_s = bound_s
+		super().__init__(self._bounded, max_queue_size=QUEUE_SIZE)
+
+	def shutdown(self) -> None:
+		self._bounded.deadline = time.monotonic() + self._bound_s
+		super().shutdown()
+
+
+def _timeout(timeout_s: float | None) -> float:
+	"""The exporters' timeout: the call's, ``OTEL_EXPORTER_OTLP_TIMEOUT``'s
+	(in seconds, as the Python exporters read it), or 10 s."""
+	if timeout_s is not None:
+		return timeout_s
+	try:
+		return float(os.environ.get("OTEL_EXPORTER_OTLP_TIMEOUT", TIMEOUT_S))
+	except ValueError:
+		return TIMEOUT_S
 
 
 def _resource(run: str | None, service: str | None, instance: str | None) -> Resource:
@@ -322,7 +439,9 @@ def _resource(run: str | None, service: str | None, instance: str | None) -> Res
 
 def _metrics_file(out: IO[str]) -> MetricExporter:
 	return ConsoleMetricExporter(
-		out=out, formatter=lambda data: data.to_json(indent=None) + "\n"
+		out=out,
+		formatter=lambda data: data.to_json(indent=None) + "\n",
+		preferred_temporality=_CUMULATIVE,  # read_export refuses delta
 	)
 
 
