@@ -45,7 +45,8 @@ an OpenTelemetry collector over OTLP (the ``otlp`` extra), such as the live
 dashboard's in ``examples/live-dashboard``. ``--model-latency`` makes each
 model call take longer, so a run lasts long enough to watch:
 
-    python examples/agents-at-scale/campaign.py --agents 20000 --processes 4 \
+    source <(examples/live-dashboard/stack.sh env)
+    python examples/agents-at-scale/campaign.py --agents 12000 --processes 4 \
         --otlp --model-latency 0.5
 """
 
@@ -69,6 +70,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+from opentelemetry import context as otel_context
+from opentelemetry import trace
 from pydantic import BaseModel
 
 from flowgentic.fleet import Fleet, Reply, TokenAdmission, ToolCall, Usage
@@ -384,7 +387,7 @@ async def run_agents(
     replicas = (
         [ScriptedModel(latency_s), ScriptedModel(latency_s)]
         if graph is None
-        else graph.replicas()
+        else graph.replicas(latency_s)
     )
     fleet = Fleet(
         replicas,
@@ -429,11 +432,15 @@ async def run_agents(
         task = f"Find the best temperature for cand-{i:06d}"
         return {"messages": [{"role": "user", "content": task}]}
 
+    # Each agent starts a trace of its own, sampled on its own: RHAPSODY's
+    # start_telemetry() left its session span current.
+    root = otel_context.attach(trace.set_span_in_context(trace.INVALID_SPAN))
     try:
         report = await host.run_indexed(
             range(index, agents, processes), input_for, id_prefix="agent-"
         )
     finally:
+        otel_context.detach(root)
         client.stop()
         await session.close()
         if telemetry is not None:
@@ -762,10 +769,12 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument(
         "--otlp",
         nargs="?",
-        const="http://localhost:4318",
+        const="",
         metavar="URL",
         help="stream each agent process's telemetry to this OpenTelemetry "
-        "collector (http://localhost:4318); needs the otlp extra",
+        "collector, or without a URL to OTEL_EXPORTER_OTLP_ENDPOINT's, with "
+        "OTEL_EXPORTER_OTLP_HEADERS (examples/live-dashboard/stack.sh env "
+        "prints both); needs the otlp extra",
     )
     p.add_argument(
         "--run",
@@ -787,9 +796,9 @@ def main(argv: list[str] | None = None) -> None:
     if a.runner == "graph":
         langgraph_version()  # without LangGraph, stop before anything starts
     otlp = None
-    if a.otlp:
+    if a.otlp is not None:
         run = a.run or time.strftime("agents-at-scale-%Y%m%d-%H%M%S")
-        otlp = {"endpoint": a.otlp, "run": run}
+        otlp = {"endpoint": a.otlp or None, "run": run}
     summary = run_campaign(
         a.agents, a.processes, a.workers, a.dragon, a.runner, otlp, a.model_latency
     )
