@@ -35,7 +35,6 @@ CUMULATIVE = 2  # AggregationTemporality.CUMULATIVE in OTLP
 FLOWGENTIC_METRICS = {
 	"flowgentic.agents",
 	"flowgentic.agent.time",
-	"flowgentic.host.loop.lag",
 	"flowgentic.fleet.admission.wait",
 	"flowgentic.fleet.request.duration",
 	"flowgentic.fleet.call.duration",
@@ -118,6 +117,15 @@ class Receiver:
 		metric = found[-1]
 		kind = metric.WhichOneof("data")
 		return list(getattr(metric, kind).data_points)
+
+	def points(self, name: str, scope: str = "flowgentic") -> list:
+		"""The data points of metric ``name`` in every request."""
+		return [
+			p
+			for m in self._metrics(scope)
+			if m.name == name
+			for p in getattr(m, m.WhichOneof("data")).data_points
+		]
 
 	def _metrics(self, scope: str) -> list:
 		return [
@@ -205,9 +213,10 @@ def test_an_agent_process_streams_its_metrics_and_spans_to_a_collector():
 	chats = [attrs for name, attrs in collector.spans() if name.startswith("chat")]
 	assert all(a["gen_ai.usage.input_tokens"] == 100 for a in chats)
 
-	# Exemplars are off: every value was recorded inside a sampled span.
-	(call,) = collector.last("flowgentic.fleet.call.duration")
-	assert not call.exemplars
+	# Exemplars are off, though every value was recorded inside a sampled span.
+	assert not any(
+		p.exemplars for p in collector.points("flowgentic.fleet.call.duration")
+	)
 
 
 def test_by_default_a_tenth_of_the_agents_keep_their_spans_and_every_call_is_counted():
@@ -224,16 +233,10 @@ def test_by_default_a_tenth_of_the_agents_keep_their_spans_and_every_call_is_cou
 def test_exemplars_can_be_turned_on():
 	with Receiver() as collector:
 		run_process(
-			"--endpoint",
-			collector.url,
-			"--agents",
-			"20",
-			"--sample",
-			"1",
-			"--exemplars",
-		)
-	(call,) = collector.last("flowgentic.fleet.call.duration")
-	assert call.exemplars
+			"--endpoint", collector.url, "--agents", "20", "--sample", "1", "--exemplars"
+		)  # fmt: skip
+	# An export's exemplars are those of the values since the one before.
+	assert any(p.exemplars for p in collector.points("flowgentic.fleet.call.duration"))
 
 
 def test_metrics_only():
