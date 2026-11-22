@@ -7,6 +7,11 @@ The defaults are the page's configuration at scale: spans sampled per agent
 exported every 10 s. ``add_arguments`` gives a benchmark the options that
 change them; ``--otel-sample 1 --otel-exemplars --otel-interval 1`` keeps
 every span, as the SDK's defaults and the page's first configuration did.
+
+``--otlp URL`` streams the export over OTLP/HTTP instead, with
+``flowgentic.otlp.configure`` (the ``otlp`` extra) and the same options; with
+``--otel DIR`` too, it also writes the files. ``otlp_sink.py`` beside this
+file is an endpoint that takes the exports and keeps nothing.
 """
 
 from __future__ import annotations
@@ -22,6 +27,13 @@ INTERVAL_S = 10.0
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--otel", type=Path, default=None, help="write OpenTelemetry's export here"
+    )
+    parser.add_argument(
+        "--otlp",
+        metavar="URL",
+        default=None,
+        help="stream OpenTelemetry's export to this OTLP/HTTP endpoint with "
+        "flowgentic.otlp (the otlp extra); with --otel, also write the files",
     )
     parser.add_argument(
         "--no-spans", action="store_true", help="with --otel: export metrics only"
@@ -46,16 +58,34 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def configure(
-    out: Path,
+    out: Path | None,
     spans: bool = True,
     sample: float = SAMPLE,
     exemplars: bool = False,
     interval_s: float = INTERVAL_S,
+    otlp: str | None = None,
 ) -> Callable[[], None]:
     """Write metrics every ``interval_s``, and spans unless ``spans`` is false,
     into ``out``; return a function that flushes and closes them. ``sample``
     is the share of traces kept, each agent's span the root of its trace;
-    ``exemplars`` keeps the SDK's default exemplar filter."""
+    ``exemplars`` keeps the SDK's default exemplar filter. With ``otlp``, an
+    OTLP/HTTP endpoint, stream them there with ``flowgentic.otlp`` instead,
+    and into ``out`` too if it is given."""
+    if otlp is not None:
+        from flowgentic.otlp import configure as stream
+
+        telemetry = stream(
+            otlp,
+            run="benchmark",
+            sample=sample,
+            exemplars=exemplars,
+            interval_s=interval_s,
+            spans=spans,
+            files=out,
+        )
+        return telemetry.shutdown
+    if out is None:
+        raise ValueError("configure needs a directory or an OTLP endpoint")
     from opentelemetry import metrics, trace
     from opentelemetry.sdk.metrics import AlwaysOffExemplarFilter, MeterProvider
     from opentelemetry.sdk.metrics.export import (
@@ -109,8 +139,9 @@ def configure(
 
 
 def from_arguments(args: argparse.Namespace) -> Callable[[], None] | None:
-    """``configure`` from a benchmark's options; ``None`` without ``--otel``."""
-    if args.otel is None:
+    """``configure`` from a benchmark's options; ``None`` without ``--otel``
+    or ``--otlp``."""
+    if args.otel is None and args.otlp is None:
         return None
     return configure(
         args.otel,
@@ -118,6 +149,7 @@ def from_arguments(args: argparse.Namespace) -> Callable[[], None] | None:
         args.otel_sample,
         args.otel_exemplars,
         args.otel_interval,
+        args.otlp,
     )
 
 
