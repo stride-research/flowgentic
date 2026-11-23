@@ -460,6 +460,9 @@ class AgentHost:
 		s = self._session
 		if s is None:
 			raise RuntimeError("this host is not running")
+		if asyncio.current_task() in s.tasks:
+			# It would wait for its own end.
+			raise RuntimeError("an agent cannot stop the host it runs in")
 		if s.stopping:
 			if not drain:
 				self._cancel_all(s)

@@ -351,7 +351,8 @@ report = await host.stop()  # waits for the live and waiting agents
 - **Agents that call agents.** An agent may submit another to its own host
   and await it, as an agent that calls another in the process. Keep
   `max_live_agents` above the number of agents that can wait on others at
-  once: an agent waiting on one that cannot start holds its slot.
+  once: an agent waiting on one that cannot start holds its slot. An agent
+  cannot stop the host it runs in: `stop` raises `RuntimeError` there.
 
 A host that serves for days keeps its event loop's lag samples for the whole
 period, 8 bytes every 100 ms, about 7 MB a day.

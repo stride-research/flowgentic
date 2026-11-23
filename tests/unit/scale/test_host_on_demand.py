@@ -341,6 +341,19 @@ async def test_a_host_stopped_at_once_after_start_ends(drain):
         assert future is None or future.done()
 
 
+async def test_an_agent_cannot_stop_its_own_host():
+    class Stops(Runner):
+        async def start(self, agent):
+            await self.host.stop()
+
+    host = make_host(Stops())
+    await host.start()
+    result, _ = await host.submit(Agent("a", None))
+    await host.stop()
+    assert result.status == "failed"
+    assert result.error == "RuntimeError: an agent cannot stop the host it runs in"
+
+
 async def test_stop_without_drain_while_a_stop_drains_cancels_what_is_left():
     runner = Runner(sleep=10)
     host = make_host(runner, max_live_agents=1)
