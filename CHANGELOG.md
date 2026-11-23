@@ -7,6 +7,36 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
+## [Unreleased]
+
+### Added
+
+- **Agents on demand.** A host takes agents one at a time, as messages reach
+  a server, between `AgentHost.start()` and `AgentHost.stop()`, with the cap,
+  staggered starts, the collector's settings, suspension, `AgentStates` and
+  `on_done` that `run` gives. `submit(agent)` never blocks: it returns a
+  future of `(result, output)`, what `on_done` receives, and the agent starts
+  as soon as a slot is free, after the agents submitted before it. Cancelling
+  the future cancels the agent. An agent's id must be unique among the live
+  and waiting agents, and is free again once the agent has ended.
+  `AgentHost(max_queued=...)` bounds the agents waiting for a slot; beyond it,
+  `submit` raises the new `flowgentic.host.QueueFull`. `stop()` waits for the
+  live and waiting agents; `stop(drain=False)` cancels the live ones and
+  withdraws the waiting ones. `run` and `run_indexed` run on the same parts,
+  and behave as before.
+- The agents-at-scale example's `--arrivals RATE`: its agents arrive one at a
+  time, and each process's host takes them as they come. The host
+  benchmark's `--submit` measures the same path.
+
+### Fixed
+
+- `LoopRunner` keys an agent's tool calls by the agent's run as well, so the
+  same agent id run again on one runner, as a server runs one logical agent
+  per message, makes its calls afresh. Before, with a model server that
+  numbers its calls per reply, a later run found the earlier run's tasks, and
+  the tool service its calls, and got their results. The turn part of a
+  call's key, and so of its RHAPSODY task's uid, now carries the run's number.
+
 ## [0.6.0] - 2026-11-22
 
 Agents at scale run on Flowgentic's own agent loop, on OpenAI Chat Completions

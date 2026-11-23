@@ -21,6 +21,10 @@ print(report.finished, report.states["share_by_category"], report.loop_lag)
 
 `flowgentic.host` needs no extra. `GraphRunner` needs the `langgraph` extra.
 
+`run` takes a fixed set of agents and returns when every one has ended. A
+host can also take agents one at a time, as they arrive, between `start` and
+`stop`: see [Agents on demand](#agents-on-demand).
+
 ## What the host does
 
 - **It tunes the cyclic collector while it runs.** At CPython's defaults the
@@ -58,7 +62,8 @@ print(report.finished, report.states["share_by_category"], report.loop_lag)
   `error`.
 - **It stops cleanly when cancelled.** When `run` is cancelled, each live agent
   ends as `cancelled`, not `failed`; `on_done` receives it, and `run` raises
-  `CancelledError`. Agents that had not started stay `PENDING`.
+  `CancelledError`. Agents that had not started stay `PENDING`. A started
+  host's `stop(drain=False)` ends its live agents the same way.
 - **It keeps outputs out of memory.** Each agent's output goes to `on_done`,
   if given, and is not kept: a finished agent's state can be large.
 
@@ -84,7 +89,8 @@ campaign reports:
 | `TOOL_WAIT` | waiting | waiting for a task, queued or running, suspended or not |
 | `PENDING`, `DONE` | | not started, or ended |
 
-Each run requires unique agent IDs and starts its own accounting period.
+Each run requires unique agent IDs and starts its own accounting period; so
+does each period of a started host, from `start` to `stop`.
 The counts can be read from another thread while agents run, for a sampler of
 your own: pass your `AgentStates` as `states=` and read it while the host runs.
 An `AgentStates` tracks one run at a time, so hosts that run at the same time
@@ -249,5 +255,103 @@ external requests, so set `max_live_agents` from what one process sustains.
 
 To measure host scheduling and peak process RSS on Linux or macOS, run
 `uv run --locked python benchmarks/agent_host.py --agents 100000`.
-Add `--full-report` for the ordinary host path. The runner finishes immediately,
-uses generated inputs and performs no model, checkpoint or network calls.
+Add `--full-report` for the ordinary host path, or `--submit` for agents given
+one at a time to a started host. The runner finishes immediately, uses
+generated inputs and performs no model, checkpoint or network calls.
+
+## Agents on demand
+
+A server's agents do not come as a list: each starts when a message arrives,
+and the server answers the message when its agent ends. A started host takes
+them one at a time, with everything `run` gives: the cap, staggered starts,
+the collector's settings, suspension, the accounting and `on_done`.
+
+```python
+from flowgentic.host import Agent, AgentHost, QueueFull
+
+host = AgentHost(runner, max_live_agents=5_000, max_queued=20_000)
+await host.start()
+
+
+async def handle(message):  # one per message, on the host's event loop
+    try:
+        future = host.submit(Agent(f"{message.agent}/{message.task}", message.input))
+    except QueueFull:
+        return busy()  # "busy, retry later"
+    result, output = await future  # what on_done receives
+    return answer(output) if result.status == "done" else failed(result)
+
+
+# ... and when the server shuts down:
+report = await host.stop()  # waits for the live and waiting agents
+```
+
+- **`start()`** tunes the collector, starts the probes of the event loop and
+  the collector, and begins an accounting period, as `run` does. A host runs
+  one period at a time: `start`, `run` or `run_indexed` while it runs raises
+  `RuntimeError`. After `stop`, it can start again, or run a list.
+- **`submit(agent)`** never blocks. It returns an `asyncio.Future` that
+  resolves to `(result, output)`, what `on_done` receives, when the agent
+  ends: `done`, `failed`, `interrupted` or `cancelled`. An agent's error is in
+  `result.error`, never raised by the future; an `on_done` that raises makes
+  the result `failed`, with `callback_error`. The agent starts as soon as a
+  slot is free, after the agents submitted before it. It runs in a copy of
+  the caller's context, as a task `asyncio.create_task` makes there: its
+  `invoke_agent` span is a child of the span current at `submit`, such as a
+  server's request span. Call `submit` on the host's event loop; from another
+  thread, use `asyncio.run_coroutine_threadsafe` with a coroutine that calls
+  it.
+- **Ids.** An agent's id must be unique among the host's live and waiting
+  agents: `submit` raises `ValueError` otherwise. Once an agent ends, its id
+  is free again, by the time its future resolves, so a server can run one
+  logical agent once per message under one id. `LoopRunner` keys each run's
+  tool calls apart, and `GraphRunner` continues the agent's thread, or starts
+  a fresh one with `delete_finished=True`.
+- **`max_queued`** bounds the agents that wait for a slot: `submit` raises
+  `QueueFull` when the host holds `max_live_agents + max_queued` agents, live
+  or waiting, so a server can refuse work rather than pile it up. With
+  `max_queued=0`, an agent is taken only into a free slot. `None`, the
+  default, accepts every agent. It does not bound `run` or `run_indexed`,
+  which take their agents as slots free.
+- **Suspended agents keep their slots.** A suspended agent is live, as in
+  `run`: while all slots hold agents, live or suspended, new agents wait, and
+  each starts when an agent ends.
+- **The first wave.** The first `max_live_agents` agents the host starts are
+  staggered, as in `run`. The host freezes the objects alive once its first
+  agents have started: when it has started `max_live_agents` agents, or every
+  agent submitted so far, whichever comes first.
+- **Cancelling one agent.** Cancelling a future cancels its agent: one still
+  waiting never starts, and one live ends as `cancelled`, which `on_done`
+  receives. A handler that awaits the future and is itself cancelled, as when
+  a client goes away, cancels the future too, as `await` does; to let the
+  agent run on, await `asyncio.shield(future)`.
+- **`stop(drain=True)`** refuses new agents (`submit` raises `RuntimeError`),
+  waits for the live and waiting agents to end, ends the host's period, and
+  returns its `HostReport`. **`stop(drain=False)`** cancels the live agents,
+  which end as `cancelled`, and withdraws the waiting ones, which never start:
+  each of their futures resolves to a `cancelled` result whose `t_start` is
+  `0.0`, and `on_done` does not receive them. `stop(drain=False)` while a
+  `stop()` drains cancels what is left, and both return the same report, so a
+  shutdown with a deadline reads:
+
+    ```python
+    stopping = asyncio.create_task(host.stop())
+    done, _ = await asyncio.wait({stopping}, timeout=30)
+    if not done:
+        await host.stop(drain=False)  # cancel what is left
+    report = await stopping
+    ```
+
+    Cancelling `stop` ends the host as cancelling `run` does.
+- **The report** keeps aggregate counts, as `run_indexed`'s does: `agents` is
+  empty, since each result went to its future and to `on_done`, and
+  `outcomes` counts every agent submitted once, those withdrawn before they
+  started as `cancelled`. While the host runs, `host.states` counts the
+  waiting agents as `PENDING`, and keeps no state of an agent that has ended.
+- **Agents that call agents.** An agent may submit another to its own host
+  and await it, as an agent that calls another in the process. Keep
+  `max_live_agents` above the number of agents that can wait on others at
+  once: an agent waiting on one that cannot start holds its slot.
+
+A host that serves for days keeps its event loop's lag samples for the whole
+period, 8 bytes every 100 ms, about 7 MB a day.

@@ -113,16 +113,56 @@ def test_two_agent_processes_share_one_tool_service() -> None:
         assert process["tool_service_client"]["answered"] == 100
 
 
+@pytest.mark.parametrize("runner", ["loop", "graph"])
+def test_agents_that_arrive_one_at_a_time(runner: str) -> None:
+    """``--arrivals``: the agents arrive one at a time, and the host, started
+    once, takes each as it comes. Each message's handler reads its agent's
+    answer from the future ``submit`` returned."""
+    if runner == "graph":
+        pytest.importorskip("langgraph")
+    summary = load_example().run_campaign(agents=200, runner=runner, arrivals=2000)
+    check(summary, 200, runner=runner)
+    assert summary["arrivals"] == 2000
+    assert summary["replies"] == {"best score 0.98": 200}
+    (process,) = summary["per_process"]
+    assert process["collector"]["freeze"]["frozen"] > 0
+
+
+def test_two_agent_processes_whose_agents_arrive_one_at_a_time() -> None:
+    completed = subprocess.run(
+        [
+            sys.executable, str(EXAMPLE), "--agents", "200", "--processes", "2",
+            "--arrivals", "2000", "--json",
+        ],  # fmt: skip
+        cwd=REPOSITORY,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        capture_output=True,
+        encoding="utf-8",
+        timeout=300,
+    )
+    assert completed.returncode == 0, completed.stderr
+    summary = json.loads(completed.stdout)
+    check(summary, 200)
+    assert summary["replies"] == {"best score 0.98": 200}
+    assert [p["replies"] for p in summary["per_process"]] == [{"best score 0.98": 100}] * 2
+
+
 @pytest.mark.dragon
-def test_the_campaign_on_dragon(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("arrivals", [None, 500])
+def test_the_campaign_on_dragon(monkeypatch: pytest.MonkeyPatch, arrivals: float | None) -> None:
     """``--dragon``: the agents' state in RaDEX on a Dragon dictionary, the
     simulations on RHAPSODY's native Dragon backend, and the tool service and
-    two agent processes as Dragon processes over Dragon's queues."""
+    two agent processes as Dragon processes over Dragon's queues; with
+    ``arrivals``, the agents arrive one at a time."""
     # Imported by name, so that Dragon's processes can import it too.
     monkeypatch.syspath_prepend(str(EXAMPLE.parent))
     campaign = importlib.import_module("campaign")
-    summary = campaign.run_campaign(agents=200, processes=2, workers=4, dragon=True)
+    summary = campaign.run_campaign(
+        agents=200, processes=2, workers=4, dragon=True, arrivals=arrivals
+    )
     check(summary, 200)
+    if arrivals is not None:  # each host took its agents as they came
+        assert summary["replies"] == {"best score 0.98": 200}
     pids = {process["pid"] for process in summary["per_process"]}
     assert len(pids) == 2 and os.getpid() not in pids
     for process in summary["per_process"]:
