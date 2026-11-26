@@ -11,6 +11,24 @@ predate this changelog, so their changes are not listed here.
 
 ### Added
 
+- **Agents on demand.** A host takes agents one at a time, as messages reach
+  a server, between `AgentHost.start()` and `AgentHost.stop()`, with the cap,
+  staggered starts, the collector's settings, suspension, `AgentStates` and
+  `on_done` that `run` gives. `submit(agent)` never blocks: it returns a
+  future of `(result, output)`, what `on_done` receives, and the agent starts
+  as soon as a slot is free, after the agents submitted before it. Cancelling
+  the future cancels the agent. An agent's id must be unique among the live
+  and waiting agents, and is free again once the agent has ended.
+  `AgentHost(max_queued=...)` bounds the agents waiting for a slot; beyond it,
+  `submit` raises the new `flowgentic.host.QueueFull`. `stop()` waits for the
+  live and waiting agents, and still takes the agents the host's own agents
+  submit meanwhile; `stop(drain=False)` cancels the live ones and withdraws
+  the waiting ones. `async with host:` starts the host and stops it at the
+  block's end, with `stop(drain=False)` if the block raised. `run` and
+  `run_indexed` run on the same parts, and behave as before.
+- The agents-at-scale example's `--arrivals RATE`: its agents arrive one at a
+  time, and each process's host takes them as they come. The host
+  benchmark's `--submit` measures the same path.
 - **Exact admission caps across agent processes.**
   `Fleet(process=(index, processes))` says which of the processes that use
   the replicas this one is, and the processes split each replica's caps so
@@ -49,6 +67,15 @@ predate this changelog, so their changes are not listed here.
   did, one for each value of `SSL_CERT_FILE` and `SSL_CERT_DIR`. Each built
   its own before, about 3 ms and 0.7 MiB: 400 replicas cost a process 1.5 s
   and about 300 MB to set up, and now 0.1 s and a few MB.
+
+### Fixed
+
+- `LoopRunner` keys an agent's tool calls by the agent's run as well, so the
+  same agent id run again on one runner, as a server runs one logical agent
+  per message, makes its calls afresh. Before, with a model server that
+  numbers its calls per reply, a later run found the earlier run's tasks, and
+  the tool service its calls, and got their results. The turn part of a
+  call's key, and so of its RHAPSODY task's uid, now carries the run's number.
 
 ## [0.6.0] - 2026-11-22
 

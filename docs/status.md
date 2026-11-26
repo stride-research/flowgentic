@@ -138,9 +138,15 @@ Agents at scale:
   source with its C++ core.
 - An agent resumes only in the process that suspended it, because that
   process awaits the agent's tasks.
+- A host that serves agents on demand keeps, until `stop`, its event loop's
+  lag samples, about 7 MB a day, the collector's pauses, 9 bytes a
+  collection, and the task registrations made outside an agent
+  (`register_pending`) that no agent took.
 - LangGraph's checkpoints:
     - A finished agent's last checkpoint stays in the store by default, so the
-      store grows with the campaign, not with the agents live at once. On a
+      store grows with the campaign, not with the agents live at once, and in
+      a host that serves agents on demand for days, with every agent it has
+      served. On a
       Dragon dictionary, whose size is fixed when it is created, run the agents
       with `GraphRunner(graph, delete_finished=True)`, which deletes each
       finished agent's thread.
