@@ -632,6 +632,8 @@ class LoopRunner:
 		if job.cancelled():
 			return _error(call, f"{tool.name} failed: its task was cancelled")
 		error = job.exception()
+		if isinstance(error, ToolSetupError):  # placed wrong: the agent fails
+			raise ToolSetupError(str(error)) from error
 		if error is not None:
 			return _error(
 				call, f"{tool.name} failed: {type(error).__name__}: {error}"[:500]

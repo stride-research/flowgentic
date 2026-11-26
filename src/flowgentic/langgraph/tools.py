@@ -128,6 +128,8 @@ def _task_tool(runtime: ToolRuntime, tool: TaskTool) -> BaseTool:
 		if job.cancelled():  # by whoever submitted it: the model reads it
 			raise ToolException(f"{tool.name} failed: its task was cancelled")
 		error = job.exception()
+		if isinstance(error, ToolSetupError):  # placed wrong: the agent fails
+			raise ToolSetupError(str(error)) from error
 		if error is not None:  # the model reads the failure
 			raise ToolException(
 				f"{tool.name} failed: {type(error).__name__}: {error}"[:500]

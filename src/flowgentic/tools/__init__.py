@@ -377,11 +377,17 @@ class ToolRuntime:
 	admitted it, just before the runtime submits it, and returns fields to add
 	to the tool's own, or ``None``: a ``backend``, or the backend's own fields
 	in ``task_backend_specific_kwargs``, which go over the tool's key by key,
-	such as the GPU a call runs on. The fields are checked as a tool's are. A
-	``place`` that raises, or fields the session or engine cannot take, fail
-	the task, and its agent reads the error. Each task it places ends in one
-	record (``add_listener``), so a placement by load can count a task when it
-	places it, and again when the task's record arrives.
+	such as the GPU a call runs on. ``task_backend_specific_kwargs=None``
+	drops all the tool's backend fields, and none can drop one of them;
+	``backend=None`` gives the runtime's backend, not the tool's. The fields
+	are checked as a tool's are, and a ``place`` that
+	raises, or fields the session or engine cannot take, fail the task with
+	``ToolSetupError``, which fails its agent: a placement set up wrong is a
+	runtime set up wrong, not a call's error for the model to read. Each task
+	it places ends in one record (``add_listener``), so a placement by load
+	can count a task when it places it, and again when the task's record
+	arrives: when the runtime has seen the task end, which for a cancelled
+	task is before its worker stops.
 
 	On an engine, AsyncFlow 0.7.0 keeps each task, with its value, or its exception
 	and the frames it passed through, until the engine shuts down; a task
@@ -636,12 +642,22 @@ class ToolRuntime:
 	def _place(
 		self, tool: TaskTool, info: TaskInfo
 	) -> tuple[dict[str, Any], Callable[..., asyncio.Future] | None]:
-		"""``_placed`` for one task, with the fields ``place`` gives it."""
-		placed = self.place(info)
+		"""``_placed`` for one task, with the fields ``place`` gives it.
+
+		``ToolSetupError`` if ``place`` raises, or gives fields the session or
+		engine cannot take: a placement set up wrong fails the agent, as a tool
+		set up wrong does, rather than tell its model that the call failed."""
+		try:
+			placed = self.place(info)
+		except Exception as exc:
+			raise ToolSetupError(
+				f"task tool {tool.name}: place failed for {info.key}: "
+				f"{type(exc).__name__}: {exc}"
+			) from exc
 		try:
 			return self._placed(tool, placed)
 		except ValueError as exc:
-			raise ValueError(f"task tool {tool.name}, as placed: {exc}") from exc
+			raise ToolSetupError(f"task tool {tool.name}, as placed: {exc}") from exc
 
 	def _forget(self, key: str, job: asyncio.Future, *, cancel: bool = False) -> None:
 		"""Forget a task that never reached RHAPSODY, so that the call made

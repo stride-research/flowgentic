@@ -216,9 +216,17 @@ chooses them per call: `place(info)` gets each task's `TaskInfo` once its
 order admits it, just before the runtime submits it, and returns fields to
 add to the tool's own, or `None` for the tool's own. A `backend` it returns
 replaces the tool's; the backend's own fields, `task_backend_specific_kwargs`,
-go over the tool's key by key. They are checked as a tool's are. A `place`
-that raises, or fields that the session or engine cannot take, fail the task,
-and its agent reads the error.
+go over the tool's key by key. The merge is shallow, so a placement cannot
+drop one of the tool's backend fields: `{"task_backend_specific_kwargs":
+None}` drops them all, and `{"backend": None}` gives the runtime's backend,
+not the tool's.
+
+The fields are checked as a tool's are, and a placement set up wrong is a
+runtime set up wrong: a `place` that raises, or fields that the session or
+engine cannot take, such as a backend it lacks, fail the task with
+`ToolSetupError`, which fails its agent, as a tool's unknown backend does. The
+model never reads the error, so a mistyped GPU does not cost every agent its
+turns.
 
 Where a task runs belongs to the process, not to the tool: one tool list
 serves processes that have different GPUs, and the agents of an
@@ -228,7 +236,10 @@ only some tools' tasks.
 
 Each task `place` places ends in one [decision record](#the-decision-record),
 so a placement by load counts a task when it places it, and again when the
-task's record arrives:
+task's record arrives. The record arrives when the runtime sees the task end:
+a task cancelled while it runs has its record at once, though RHAPSODY does
+not stop a started task, so its GPU may still be busy while the count says it
+is free.
 
 ```python
 --8<-- "tests/unit/scale/test_tool_runtime.py:least-loaded"
@@ -239,14 +250,21 @@ pinned to a GPU when the task's `process_template` holds only a policy that
 names the node and the GPU:
 
 ```python
+import socket
+
 from dragon.infrastructure.policy import Policy
+
+node = socket.gethostname()  # a node this process's workers run on
+gpus = [0, 1, 2, 3]  # its GPUs
+
 
 def on_gpu(gpu: int) -> dict:
     policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=node, gpu_affinity=[gpu])
     return {"task_backend_specific_kwargs": {"process_template": {"policy": policy}}}
 
-placement = LeastLoaded({gpu: on_gpu(gpu) for gpu in gpus})
-runtime = ToolRuntime(session, place=placement)
+
+placement = LeastLoaded({gpu: on_gpu(gpu) for gpu in gpus})  # the class above
+runtime = ToolRuntime(session, place=placement)  # session: RHAPSODY's, on Dragon
 runtime.add_listener(placement.ended)
 ```
 
