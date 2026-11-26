@@ -621,6 +621,33 @@ async def test_backend_specific_fields_reach_the_backend():
     assert seen["uid"] == records[0].uid
 
 
+async def test_a_placement_chooses_each_calls_backend_and_its_fields():
+    """On an engine, a placement can name the backend, and the backend's own
+    fields, per call: a call with a large x runs on "ai"."""
+    flow = await open_engine("compute", "ai")
+    seen_on = {}
+
+    def place(info):
+        if info.args["x"] > 1:
+            return {"backend": "ai", "task_backend_specific_kwargs": {"priority": 3}}
+        return None
+
+    runtime = ToolRuntime(engine=flow, place=place)
+    records = []
+    runtime.add_listener(records.append)
+    try:
+        small = await runtime.submit(task_tool(where), "a", "c1", {"x": 1.0})
+        seen_on = await record_while_running(
+            flow, lambda: runtime.submit(task_tool(held), "a", "c2", {"x": 2.0})
+        )
+        large = await runtime.submit(task_tool(where), "a", "c3", {"x": 2.0})
+    finally:
+        await _asyncflow.close_engine(flow)
+    assert small["thread"].startswith("pool-compute") and large["thread"].startswith("pool-ai")
+    assert seen_on["task_backend_specific_kwargs"] == {"priority": 3}
+    assert [r.backend for r in records] == ["compute", "ai", "ai"]
+
+
 # --- the decision record ---------------------------------------------------------
 
 
