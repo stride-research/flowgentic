@@ -2,6 +2,8 @@
 task runs."""
 
 import asyncio
+import gc
+import traceback
 import weakref
 
 import pytest
@@ -68,6 +70,75 @@ async def test_the_runtime_keeps_outcomes_not_tasks():
     assert failed.exception() is runtime.submit(fails, "a0", "c1", {"x": 0.0}).exception()
     assert RUNS == {"simulate": n - n // 10, "broken": n // 10}
     assert runtime.stats()["repeats"] == 3
+
+
+async def test_a_failed_outcome_raised_again_keeps_the_traceback_it_ended_with():
+    """Each repeat raises the same exception, from the traceback its task ended
+    with: the callers that raised it before neither grow the traceback nor
+    stay alive in it."""
+    runtime = ToolRuntime(InstantSession())
+    fails = task_tool(broken)
+    first = runtime.submit(fails, "a", "c1", {"x": 0.0})
+    await asyncio.wait([first])
+    callers = []
+
+    class Caller:
+        pass
+
+    async def call_again():
+        me = Caller()
+        callers.append(weakref.ref(me))
+        try:
+            await runtime.submit(fails, "a", "c1", {"x": 0.0})
+        except ValueError as exc:
+            assert exc is first.exception()
+            return len(list(traceback.walk_tb(exc.__traceback__)))
+
+    depths = [await call_again() for _ in range(400)]
+    gc.collect()
+    assert len(set(depths)) == 1
+    # Only the last caller, until the next repeat.
+    assert len([ref for ref in callers if ref() is not None]) <= 1
+    assert RUNS == {"broken": 1}
+
+
+class Big:
+    """Stands for a large argument."""
+
+    def __repr__(self) -> str:
+        return "big"
+
+
+async def test_a_failed_outcome_keeps_its_arguments_until_the_runtime_drops_it():
+    """A failed task's exception keeps its traceback, whose frames keep the
+    call's arguments, for as long as the runtime keeps its outcome."""
+    runtime = ToolRuntime(InstantSession(), retained=1)
+    fails = task_tool(broken)
+    big = Big()
+    kept = weakref.ref(big)
+    job = runtime.submit(fails, "a", "c1", {"x": big})
+    await asyncio.wait([job])
+    del big, job
+    gc.collect()
+    assert kept() is not None
+    await asyncio.wait([runtime.submit(fails, "a", "c2", {"x": 1.0})])
+    gc.collect()
+    assert kept() is None
+
+
+def test_a_call_made_again_on_no_event_loop_gets_the_outcome_kept():
+    """Called again for an ended task from code that runs on no event loop,
+    ``submit`` gives a future on the loop of the runtime's last task."""
+    runtime = ToolRuntime(InstantSession())
+    sim = task_tool(simulate)
+
+    async def first():
+        return await runtime.submit(sim, "a", "c1", {"x": 1.0})
+
+    assert asyncio.run(first()) == {"y": 2.0}
+    again = runtime.submit(sim, "a", "c1", {"x": 1.0})
+    assert again.done() and again.result() == {"y": 2.0}
+    assert RUNS == {"simulate": 1} and runtime.stats()["repeats"] == 1
 
 
 class Refuse:

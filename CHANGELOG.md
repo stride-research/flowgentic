@@ -27,14 +27,19 @@ predate this changelog, so their changes are not listed here.
   the asyncio tasks: each one's value, its exception, or that it was
   cancelled. A call made again after its task ended gets a new future,
   already done, with that outcome, where it got the ended task itself; the
-  outcome is the same, and nothing runs again. A kept outcome costs the
-  runtime about 170 bytes on CPython 3.12 and 440 on 3.11 beside the value,
-  where an ended task cost about 1.4 KB, and a failed task's about 5 KB, its
-  exception's traceback included, where it cost 6 KB. The process no longer
-  holds 100,000 ended asyncio tasks, which the collector walked and
-  `asyncio.all_tasks()` visited each time `asyncio.run` ended, as it does
-  for each `async def` task on a thread pool. The default `retained` stays
-  100,000.
+  outcome is the same, and nothing runs again. An outcome with a small value
+  costs the runtime a few hundred bytes, the value included (about 170 on
+  CPython 3.12 and 400 on 3.11), where an ended task cost about 1.4 KB more.
+  A failed task's costs about 5 KB with small arguments, where it cost 6 KB,
+  but still as much as its arguments with large ones: its exception keeps its
+  traceback, whose frames keep their locals. A call made again raises the
+  same exception with the traceback the task ended with, not one grown by
+  the calls that raised it before. A call made again from code that runs on
+  no event loop gets the future on the loop of the runtime's last task. The
+  process no longer holds 100,000 ended asyncio tasks, which the collector
+  walked and `asyncio.all_tasks()` visited each time `asyncio.run` ended, as
+  it does for each `async def` task on a thread pool. The default `retained`
+  stays 100,000.
 
 ## [0.6.0] - 2026-11-22
 
