@@ -11,6 +11,55 @@ predate this changelog, so their changes are not listed here.
 
 ### Added
 
+- **Agents on demand.** A host takes agents one at a time, as messages reach
+  a server, between `AgentHost.start()` and `AgentHost.stop()`, with the cap,
+  staggered starts, the collector's settings, suspension, `AgentStates` and
+  `on_done` that `run` gives. `submit(agent)` never blocks: it returns a
+  future of `(result, output)`, what `on_done` receives, and the agent starts
+  as soon as a slot is free, after the agents submitted before it. Cancelling
+  the future cancels the agent. An agent's id must be unique among the live
+  and waiting agents, and is free again once the agent has ended.
+  `AgentHost(max_queued=...)` bounds the agents waiting for a slot; beyond it,
+  `submit` raises the new `flowgentic.host.QueueFull`. `stop()` waits for the
+  live and waiting agents, and still takes the agents the host's own agents
+  submit meanwhile; `stop(drain=False)` cancels the live ones and withdraws
+  the waiting ones. `async with host:` starts the host and stops it at the
+  block's end, with `stop(drain=False)` if the block raised. `run` and
+  `run_indexed` run on the same parts, and behave as before.
+- The agents-at-scale example's `--arrivals RATE`: its agents arrive one at a
+  time, and each process's host takes them as they come. The host
+  benchmark's `--submit` measures the same path.
+- **Exact admission caps across agent processes.**
+  `Fleet(process=(index, processes))` says which of the processes that use
+  the replicas this one is, and the processes split each replica's caps so
+  that their parts add up to the cap and none is above it. Each process
+  holds an equal part of the fleet's requests, to one request, and its part
+  of the token cap follows its requests: the token cap ÷ the request cap for
+  each. A process may hold none of a replica, and then sends it nothing: it
+  routes each agent, by the agent's hash, to one of the replicas it holds a
+  part of, in proportion to its parts. Every process must be given the same
+  replicas, in the same order, and the same admission. `Fleet(share=...)`
+  works as before, and `Fleet` refuses both together. Over 4 replicas with
+  a cap of 256 requests, 100 processes with `share=1 / 100` used 200 of
+  each replica's 256, and 300 processes with `share=1 / 300` could send 300;
+  with `process=`, they use 256 in both.
+- **Each process to a few replicas.** `Fleet(process=..., layout="pack")`
+  gives each process its part from as few replicas as hold it, in their
+  order, rather than from every replica (`layout="spread"`, the default).
+  A process then holds whole caps, except at the one or two replicas where
+  its run of them starts and ends, and connects to those servers only.
+  When the processes divide the replicas evenly, every part is whole. With
+  the replicas and processes listed in the order of their nodes, and as
+  many of each on every node, each process's replicas are on its node.
+- `flowgentic.fleet.Share`, the share an `Admission`'s `gate(share)` gets
+  from such a fleet: a float, the fraction of the caps, as before, whose
+  `part(cap)` is the process's exact part of a cap. The fleet makes shares.
+  `fleet.stats()` gives `process` and `replicas_used`, and a routing's
+  `loads` its `weights`, the process's parts of the replicas where they
+  differ.
+- The agents-at-scale example's processes split the caps with
+  `process=(index, processes)`, and its guide says so. The example refuses
+  more than 128 processes, 2 replicas × 64 requests.
 - `ToolRuntime(place=...)` chooses where each task runs: `place(info)` gets
   each task's `TaskInfo` once its order admits it, and returns fields to add
   to the tool's, such as a `backend`, or the backend's own fields
@@ -48,6 +97,10 @@ predate this changelog, so their changes are not listed here.
 
 ### Changed
 
+- **Every `HTTPTransport` in a process shares one SSL context,** as its pools
+  did, one for each value of `SSL_CERT_FILE` and `SSL_CERT_DIR`. Each built
+  its own before, about 3 ms and 0.7 MiB: 400 replicas cost a process 1.5 s
+  and about 300 MB to set up, and now 0.1 s and a few MB.
 - `ToolRuntime` keeps the outcomes of its last `retained` ended tasks, not
   the asyncio tasks: each one's value, its exception, or that it was
   cancelled. A call made again after its task ended gets a new future,
@@ -65,6 +118,15 @@ predate this changelog, so their changes are not listed here.
   walked and `asyncio.all_tasks()` visited each time `asyncio.run` ended, as
   it does for each `async def` task on a thread pool. The default `retained`
   stays 100,000.
+
+### Fixed
+
+- `LoopRunner` keys an agent's tool calls by the agent's run as well, so the
+  same agent id run again on one runner, as a server runs one logical agent
+  per message, makes its calls afresh. Before, with a model server that
+  numbers its calls per reply, a later run found the earlier run's tasks, and
+  the tool service its calls, and got their results. The turn part of a
+  call's key, and so of its RHAPSODY task's uid, now carries the run's number.
 
 ## [0.6.0] - 2026-11-22
 

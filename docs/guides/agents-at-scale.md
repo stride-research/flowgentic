@@ -50,7 +50,9 @@ Flowgentic has two paths for agents on HPC resources.
 ## The agent process
 
 An agent process runs one `AgentHost`, which runs agents through one runner,
-up to `max_live_agents` at once:
+up to `max_live_agents` at once: a fixed set with `run`, or one at a time, as
+they arrive, with `submit` (see
+[Serving agents on demand](#serving-agents-on-demand)):
 
 ```text
 AgentHost.run(agents)  starts agents in batches, tunes the collector, resumes
@@ -163,6 +165,51 @@ needs: its size is fixed when it is created.
 `--json` prints the whole summary, with each process's `HostReport` figures,
 the fleet's, the tools' and the loop's counters.
 
+## Serving agents on demand
+
+A campaign knows its agents up front. A server does not: an agent starts when
+a message arrives, such as a request from another agent over a protocol like
+A2A, and the server answers the message when the agent ends. A host started
+once takes such agents one at a time, with everything `run` gives them: the
+cap, staggered starts, the collector's settings, suspension, the accounting
+and `on_done`.
+
+With `--arrivals RATE`, the example's agents arrive one at a time, `RATE` a
+second on average across the processes, and each process's host takes each
+as it comes:
+
+```bash
+uv run --extra agents python examples/agents-at-scale/campaign.py --agents 1000 --arrivals 500
+```
+
+Each message gets a handler, which gives the host its agent and waits for the
+agent's end:
+
+```python
+--8<-- "examples/agents-at-scale/campaign.py:on-demand"
+```
+
+- `async with host:` starts the host's period, with the collector's settings,
+  the probes and the accounting, as `run` does, and stops the host at the
+  block's end: cancelling its agents, if the block raised, so that an error
+  never leaves the collector tuned.
+- `submit(agent)` never blocks. It returns a future of `(result, output)`, what
+  `on_done` receives; the agent starts as soon as a slot is free, after the
+  agents submitted before it. An agent's error is in its result, never raised.
+- With `max_queued`, `submit` raises `QueueFull` once that many agents wait
+  for a slot, and the handler answers "busy, retry later" rather than pile
+  the work up.
+- `stop()` refuses new agents, except those the host's own agents submit,
+  waits for the live and waiting ones, and returns the `HostReport`;
+  `stop(drain=False)` cancels them instead.
+
+An agent's id is free again once it has ended, so a server can run one
+logical agent once per message under one id. The rest, cancelling one agent,
+ids, contexts and the report, is on the
+[Agent host](../features/agent-host.md#agents-on-demand) page. CI runs the
+example with `--arrivals` in one and two processes, on the loop and on
+LangGraph (`tests/integration/test_agents_at_scale.py`).
+
 ## Choosing the limits
 
 The host's report says where the agents spent their time, and what running
@@ -205,9 +252,11 @@ Each column is one run of three, the one with the median time:
   happened (`collector["freeze"]["frozen"]`).
 - **Model admission.** `TokenAdmission(tokens, requests)` caps each replica's
   tokens of live context and requests in flight, across all agent processes;
-  each process takes `share` of them. Set `tokens` to what the server's KV
-  cache holds, and watch `MODEL_QUEUED` against `MODEL_REQUEST`: agents queued
-  while the server is not full mean a cap that is too low.
+  with `Fleet(process=(index, processes))` each process holds its exact part
+  of them (see [Fleet](../features/fleet.md#many-agent-processes)). Set
+  `tokens` to what the server's KV cache holds, and watch `MODEL_QUEUED`
+  against `MODEL_REQUEST`: agents queued while the server is not full mean a
+  cap that is too low.
 - **Task workers.** Agents in `TOOL_WAIT` wait for their tasks. If they
   wait longer than the tasks run, the session's backend needs more workers.
 
@@ -227,8 +276,10 @@ on Dragon's resources:
   process. Each agent process starts its `ToolServiceClient` on its own reply
   queue.
 - **The agent processes.** Each runs one host on a disjoint range of agents
-  (`run_indexed`), and a fleet with `share=1/processes` over the model
-  servers' replicas.
+  (`run_indexed`), or takes its agents as they arrive (`start` and
+  `submit`), and a fleet with `process=(index, processes)` over the model
+  servers' replicas: with `layout="pack"`, each process sends to a few of
+  them.
 - **The model servers** run on the allocation's GPUs, and each replica is an
   `HTTPTransport` of one server.
 
