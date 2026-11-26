@@ -40,6 +40,12 @@ RHAPSODY with ``DragonNativeExecutionBackend``. Only the model stays scripted.
 
     dragon examples/agents-at-scale/campaign.py --dragon --agents 1000 --processes 2
 
+With ``--arrivals RATE``, the agents are not a fixed list: they arrive one at a
+time, RATE a second on average across the processes, as messages reach a
+server, and each process's host, started once, takes each as it comes:
+
+    python examples/agents-at-scale/campaign.py --agents 1000 --arrivals 500
+
 With ``--otlp``, each agent process streams its telemetry, and RHAPSODY's, to
 an OpenTelemetry collector over OTLP (the ``otlp`` extra), such as the live
 dashboard's in ``examples/live-dashboard``. ``--model-latency`` makes each
@@ -59,6 +65,7 @@ import json
 import multiprocessing
 import os
 import queue
+import random
 import socket
 import subprocess
 import sys
@@ -75,7 +82,14 @@ from opentelemetry import trace
 from pydantic import BaseModel
 
 from flowgentic.fleet import Fleet, Reply, TokenAdmission, ToolCall, Usage
-from flowgentic.host import AgentHost, AgentResult, Stagger
+from flowgentic.host import (
+    Agent,
+    AgentHost,
+    AgentResult,
+    HostReport,
+    QueueFull,
+    Stagger,
+)
 from flowgentic.loop import LoopRunner
 from flowgentic.store import MemoryStore, RadexStore
 from flowgentic.tools import ToolRuntime, mcp_tool, task_tool
@@ -321,6 +335,12 @@ def langgraph_version() -> ModuleType:
 
 # --- one agent process ----------------------------------------------------------
 
+# Each scripted replica's request cap. The processes split it, so each holds
+# at least one request: at most 2 replicas × REQUESTS processes.
+REQUESTS = 64
+MAX_PROCESSES = 2 * REQUESTS
+
+
 
 async def task_backend(workers: int, dragon: bool) -> Any:
     """RHAPSODY's backend for the task tools: a thread pool, or the native
@@ -351,13 +371,16 @@ async def run_agents(
     runner: str = "loop",
     otlp: dict | None = None,
     latency_s: float = 0.005,
+    arrivals: float | None = None,
 ) -> dict:
     """Run agent process ``index``'s share of the campaign: agents ``index``,
     ``index + processes``, and so on. With a dictionary's ``descriptor``, on
     Dragon: the store is RaDEX, the tasks run on the native Dragon backend.
     ``runner="graph"``: the LangGraph version. ``otlp``: the collector's
     ``endpoint`` and the ``run``'s name, to stream the process's telemetry.
-    ``latency_s``: each scripted model call's."""
+    ``latency_s``: each scripted model call's. ``arrivals``: the agents arrive
+    this many a second across the processes, and the host takes each as it
+    comes, rather than run the share as one range."""
     from rhapsody import Session
 
     dragon = descriptor is not None
@@ -381,8 +404,9 @@ async def run_agents(
     if telemetry is not None:
         await session.start_telemetry(**telemetry.rhapsody_options())
     runtime = ToolRuntime(session, client)
-    # Every process routes by the same hash, so each takes an equal share of
-    # every replica's caps. On an allocation, one per model server:
+    # The processes split every replica's caps exactly: this one holds its
+    # part, at least one request, so at most 2 × 64 processes. On an
+    # allocation, one replica per model server, with its server's caps:
     # [HTTPTransport("Qwen3-8B", base_url=url) for url in servers]
     replicas = (
         [ScriptedModel(latency_s), ScriptedModel(latency_s)]
@@ -391,8 +415,8 @@ async def run_agents(
     )
     fleet = Fleet(
         replicas,
-        admission=TokenAdmission(tokens=40_000, requests=64),
-        share=1 / processes,
+        admission=TokenAdmission(tokens=40_000, requests=REQUESTS),
+        process=(index, processes),
     )
     # The agents' state: RaDEX on Dragon, this process's memory on a laptop.
     store = RadexStore.attach(descriptor) if dragon else MemoryStore()
@@ -435,10 +459,15 @@ async def run_agents(
     # Each agent starts a trace of its own, sampled on its own: RHAPSODY's
     # start_telemetry() left its session span current.
     root = otel_context.attach(trace.set_span_in_context(trace.INVALID_SPAN))
+    replies: dict[str, int] = {}
     try:
-        report = await host.run_indexed(
-            range(index, agents, processes), input_for, id_prefix="agent-"
-        )
+        indices = range(index, agents, processes)
+        if arrivals is None:
+            report = await host.run_indexed(indices, input_for, id_prefix="agent-")
+        else:  # the agents arrive one at a time: see on_demand()
+            report, replies = await on_demand(
+                host, indices, input_for, arrivals / processes
+            )
     finally:
         otel_context.detach(root)
         client.stop()
@@ -453,6 +482,8 @@ async def run_agents(
         "store": type(store).__name__,
         "task_backend": type(backend).__name__,
         "runner": runner,
+        "arrivals": arrivals,
+        "replies": replies,
         "agents": len(range(index, agents, processes)),
         "outcomes": report.outcomes,
         "errors": report.errors,
@@ -476,6 +507,40 @@ async def run_agents(
     }
 
 
+# --8<-- [start:on-demand]
+async def on_demand(
+    host: AgentHost, indices: range, input_for: Any, rate: float
+) -> tuple[HostReport, dict[str, int]]:
+    """Agents arrive one at a time, ``rate`` a second on average, as messages
+    reach a server; the host, started once, takes each as it comes."""
+    arrival = random.Random(0)
+    # The block starts the host and stops it at its end; on an error, it
+    # cancels what is live and drops what waits.
+    async with host:
+        handlers = []
+        for i in indices:
+            await asyncio.sleep(arrival.expovariate(rate))  # the next message
+            agent = Agent(f"agent-{i}", input_for(i))
+            handlers.append(asyncio.create_task(handle(host, agent)))
+        replies = Counter(await asyncio.gather(*handlers))
+        report = await host.stop()  # waits for the live and waiting agents
+    return report, dict(replies)
+
+
+async def handle(host: AgentHost, agent: Agent) -> str:
+    """One message's handler: its agent's answer, or why there is none."""
+    try:
+        # Never blocks: the agent starts as soon as a slot is free.
+        future = host.submit(agent)
+    except QueueFull:  # with max_queued, when too many wait for a slot
+        return "busy, retry later"
+    result, output = await future  # what on_done receives
+    return answer(output) if result.status == "done" else result.status
+
+
+# --8<-- [end:on-demand]
+
+
 def answer(output: Any) -> str:
     """A finished agent's answer: the last message of the loop's ``LoopOutput``,
     or of a LangGraph graph's state."""
@@ -496,13 +561,14 @@ def agent_process(
     runner: str = "loop",
     otlp: dict | None = None,
     latency_s: float = 0.005,
+    arrivals: float | None = None,
 ) -> None:
     """An agent process's entry point: its share, reported on ``results``."""
     try:
         out = asyncio.run(
             run_agents(
                 index, processes, agents, requests, replies, workers, descriptor,
-                runner, otlp, latency_s,
+                runner, otlp, latency_s, arrivals,
             )  # fmt: skip
         )
     except BaseException as exc:
@@ -522,19 +588,25 @@ def run_campaign(
     runner: str = "loop",
     otlp: dict | None = None,
     latency_s: float = 0.005,
+    arrivals: float | None = None,
 ) -> dict:
     """Run ``agents`` agents in ``processes`` agent processes against one tool
     service; return the campaign's summary. ``dragon=True`` runs it on Dragon,
     under ``dragon``. ``runner``: ``"loop"``, Flowgentic's own, or ``"graph"``,
     the LangGraph version. ``otlp``: ``{"endpoint": ..., "run": ...}`` to
     stream each agent process's telemetry to a collector. ``latency_s``: each
-    scripted model call's."""
+    scripted model call's. ``arrivals``: the agents arrive this many a second,
+    and each host takes them as they come."""
     if agents < 1 or processes < 1:
         raise ValueError("a campaign needs at least one agent and one process")
     if runner not in ("loop", "graph"):
         raise ValueError(f"no runner {runner!r}: loop or graph")
+    if arrivals is not None and arrivals <= 0:
+        raise ValueError("arrivals must be a positive rate")
     if dragon:
-        return run_campaign_on_dragon(agents, processes, workers, runner, otlp, latency_s)
+        return run_campaign_on_dragon(
+            agents, processes, workers, runner, otlp, latency_s, arrivals
+        )
     t0 = time.monotonic()
     with McpServer() as mcp:
         if processes == 1:
@@ -549,7 +621,7 @@ def run_campaign(
                     asyncio.run(
                         run_agents(
                             0, 1, agents, requests, replies[0], workers, None,
-                            runner, otlp, latency_s,
+                            runner, otlp, latency_s, arrivals,
                         )  # fmt: skip
                     )
                 ]
@@ -560,7 +632,7 @@ def run_campaign(
                         target=agent_process,
                         args=(
                             i, processes, agents, requests, replies[i], results,
-                            workers, None, runner, otlp, latency_s,
+                            workers, None, runner, otlp, latency_s, arrivals,
                         ),  # fmt: skip
                         name=f"agent-process-{i}",
                     )
@@ -580,6 +652,7 @@ def run_campaign_on_dragon(
     runner: str = "loop",
     otlp: dict | None = None,
     latency_s: float = 0.005,
+    arrivals: float | None = None,
 ) -> dict:
     """The campaign on Dragon: a dictionary for RaDEX, and the tool service and
     each agent process in a Dragon process, over Dragon's queues."""
@@ -590,7 +663,9 @@ def run_campaign_on_dragon(
     previous = multiprocessing.get_start_method(allow_none=True)
     multiprocessing.set_start_method("dragon", force=True)
     try:
-        return _campaign_on_dragon(agents, processes, workers, runner, otlp, latency_s)
+        return _campaign_on_dragon(
+            agents, processes, workers, runner, otlp, latency_s, arrivals
+        )
     finally:
         multiprocessing.set_start_method(previous, force=True)
 
@@ -602,6 +677,7 @@ def _campaign_on_dragon(
     runner: str,
     otlp: dict | None = None,
     latency_s: float = 0.005,
+    arrivals: float | None = None,
 ) -> dict:
     from rhapsody.backends.data.dragon import DragonDataBackend
 
@@ -627,7 +703,7 @@ def _campaign_on_dragon(
                         target=agent_process,
                         args=(
                             i, processes, agents, requests, replies[i], results,
-                            workers, descriptor, runner, otlp, latency_s,
+                            workers, descriptor, runner, otlp, latency_s, arrivals,
                         ),  # fmt: skip
                         name=f"agent-process-{i}",
                     )
@@ -681,6 +757,7 @@ def summarize(parts: list[dict], service: dict, agents: int, wall_s: float) -> d
     lifetimes = sum(p["lifetimes_s"] for p in parts)
     return {
         "runner": parts[0]["runner"],
+        "arrivals": parts[0]["arrivals"],
         "agents": agents,
         "processes": len(parts),
         "wall_s": round(wall_s, 3),
@@ -689,6 +766,8 @@ def summarize(parts: list[dict], service: dict, agents: int, wall_s: float) -> d
         "outcomes": merged("outcomes"),
         "suspensions": total("suspensions"),
         "answers": merged("answers"),
+        # With arrivals: what each message's handler replied.
+        "replies": merged("replies"),
         "agent_seconds": {k: round(v, 3) for k, v in seconds.items()},
         "agent_seconds_by_state": {k: round(v, 3) for k, v in by_state.items()},
         "lifetimes_s": round(lifetimes, 3),
@@ -728,7 +807,13 @@ def report(summary: dict) -> str:
             f"{summary['agents']} agents in {summary['processes']} agent "
             f"{process_word}: {summary['outcomes']}; the hosts ran for "
             f"{summary['hosts_wall_s']:.1f} s, the campaign {summary['wall_s']:.1f} s",
-            f"answers: {summary['answers']}",
+            f"answers: {summary['answers']}"
+            + (
+                ""
+                if summary["arrivals"] is None
+                else f"; arriving {summary['arrivals']:g} a second, replies: "
+                f"{summary['replies']}"
+            ),
             f"agent-seconds: {shares}; "
             f"{100 * summary['accounted']:.2f} % of the agents' lifetimes",
             f"  by state: {states}",
@@ -746,7 +831,13 @@ def report(summary: dict) -> str:
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--agents", type=int, default=200)
-    p.add_argument("--processes", type=int, default=1)
+    p.add_argument(
+        "--processes",
+        type=int,
+        default=1,
+        help=f"agent processes, at most {MAX_PROCESSES}: each holds at least one "
+        f"request of the scripted replicas' caps, 2 × {REQUESTS}",
+    )
     p.add_argument(
         "--workers",
         type=int,
@@ -788,8 +879,17 @@ def main(argv: list[str] | None = None) -> None:
         metavar="S",
         help="seconds each scripted model call takes (0.005)",
     )
+    p.add_argument(
+        "--arrivals",
+        type=float,
+        metavar="RATE",
+        help="the agents arrive one at a time, RATE a second on average, and each "
+        "process's host, started once, takes each as it comes",
+    )
     p.add_argument("--mcp-server", type=int, metavar="PORT", help=argparse.SUPPRESS)
     a = p.parse_args(argv)
+    if not 1 <= a.processes <= MAX_PROCESSES:
+        p.error(f"--processes must be from 1 to {MAX_PROCESSES}")
     if a.mcp_server:
         serve_mcp(a.mcp_server)
         return
@@ -800,8 +900,9 @@ def main(argv: list[str] | None = None) -> None:
         run = a.run or time.strftime("agents-at-scale-%Y%m%d-%H%M%S")
         otlp = {"endpoint": a.otlp or None, "run": run}
     summary = run_campaign(
-        a.agents, a.processes, a.workers, a.dragon, a.runner, otlp, a.model_latency
-    )
+        a.agents, a.processes, a.workers, a.dragon, a.runner, otlp, a.model_latency,
+        a.arrivals,
+    )  # fmt: skip
     print(json.dumps(summary, indent=2) if a.json else report(summary))
 
 
