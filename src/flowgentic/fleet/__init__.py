@@ -4,8 +4,9 @@ Agents' model calls go to placed models, one replica per GPU or server. The
 fleet decides, for each call, which replica takes it and when:
 
 - **Routing.** ``AgentAffinity`` sends each agent to one replica by a stable
-  hash of its id, the same in every process, so the agent's growing prompt
-  stays in that replica's prefix cache. ``RoundRobin`` and ``LeastLoaded`` are
+  hash of its id, the same in every process (with ``process=``, among the
+  replicas its process sends to), so the agent's growing prompt stays in that
+  replica's prefix cache. ``RoundRobin`` and ``LeastLoaded`` are
   the baselines to compare it with.
 - **Admission.** ``TokenAdmission`` admits requests to a replica while the
   tokens of live context in flight stay under one cap and the requests in

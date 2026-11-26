@@ -153,9 +153,10 @@ unchanged, and the reply's `raw` is the model's own `AIMessage`.
 
 - **It keeps each agent on one replica.** `AgentAffinity`, the default, sends
   an agent's calls to one replica, chosen by a hash of the agent's id that is
-  the same in every process. The agent's prompt grows by a few messages per
-  call, so the replica's prefix cache holds most of it. `RoundRobin` and
-  `LeastLoaded` are there to compare with.
+  the same in every process; with `process=`, among the replicas its process
+  sends to. The agent's prompt grows by a few messages per call, so the
+  replica's prefix cache holds most of it. `RoundRobin` and `LeastLoaded`
+  are there to compare with.
 - **It admits calls to a replica under caps.** Once a model server's KV cache
   cannot hold the contexts of the agents it serves, its prefix cache evicts
   the contexts about to be reused, and every call recomputes its history.
