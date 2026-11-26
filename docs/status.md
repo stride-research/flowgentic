@@ -157,16 +157,22 @@ Agents at scale:
       each task's description for the life of its session, so a process's
       memory still grows with the tasks it runs, by a few kilobytes a task.
 - The fleet:
-    - Model admission is shared among agent processes in static, equal shares
-      (`Fleet(share=...)`): a process with fewer agents leaves part of its
-      share unused.
-    - A call whose context is larger than a process's share of a replica's
+    - Model admission is split among agent processes in static parts, exact
+      with `Fleet(process=...)`: a process with fewer agents, or whose agents
+      have ended, leaves some of its part unused. With `Fleet(share=...)`, as
+      in 0.6.0, the parts are also rounded down, to at least 1, so many
+      processes may use less than a replica's caps, or more.
+    - The fleet does not know where the model servers run. A process's
+      replicas are on its node only when the replicas and the processes are
+      listed in the order of their nodes, with `pack=True`. Finding the
+      servers again after their job is requeued is the application's work.
+    - A call whose context is larger than a process's part of a replica's
       token cap is still admitted, alone, once nothing else from that process
       is in flight at that replica. One such call takes the replica past its
-      cap while the other processes use their shares. Choose the cap and
-      `share` so that the largest context fits in one share. Each gate counts
-      such calls (`oversize` in `fleet.stats()["gates"]`), and the fleet logs
-      the first as a warning.
+      cap while the other processes use their parts. Choose the caps and the
+      processes so that the largest context fits in one part. Each gate
+      counts such calls (`oversize` in `fleet.stats()["gates"]`), and the
+      fleet logs the first as a warning.
 - The OpenTelemetry SDK costs the agent processes CPU: with 5,000 agents on the
   loop in one process, metrics add 6 to 8 %, and every span about 50 %, or 17 %
   with the configuration that

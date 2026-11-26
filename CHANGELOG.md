@@ -7,6 +7,39 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
+## [Unreleased]
+
+### Added
+
+- **Exact admission caps across agent processes.**
+  `Fleet(process=(index, processes))` says which of the processes that use
+  the replicas this one is, and the processes split each replica's caps so
+  that their parts add up to the cap and none is above it. Each process
+  holds an equal part of the fleet's requests, to one request, and its part
+  of the token cap follows its requests. A process may hold none of a
+  replica, and then sends it nothing: it routes each agent, by the agent's
+  hash, to one of the replicas it holds a part of, in proportion to its
+  parts. `Fleet(share=...)` works as before, and `Fleet` refuses both
+  together. Over 4 replicas with a cap of 256 requests, 100 processes with
+  `share=1 / 100` used 200 of each replica's 256, and 300 processes with
+  `share=1 / 300` could send 300; with `process=`, they use 256 in both.
+- **Each process to a few replicas.** `Fleet(process=..., pack=True)` gives
+  each process its part from as few replicas as hold it, in their order,
+  rather than from every replica: with as many replicas as processes or
+  more, whole caps, and connections to a few servers only. Listed in the
+  order of their nodes, replicas and processes then meet on a node.
+- `flowgentic.fleet.Share`, the share an `Admission`'s `gate(share)` gets
+  from such a fleet: a float, the fraction of the caps, as before, whose
+  `part(cap)` is the process's exact part of a cap. `fleet.stats()` gives
+  `process` and `replicas_used`, and a routing's `loads` its `weights`, the
+  process's parts of the replicas where they differ.
+
+### Changed
+
+- **Every `HTTPTransport` in a process shares one SSL context,** as its pools
+  did. Each built its own before, about 3 ms and 0.7 MiB: 400 replicas cost a
+  process 1.5 s and about 300 MB to set up, and now 0.1 s and a few MB.
+
 ## [0.6.0] - 2026-11-22
 
 Agents at scale run on Flowgentic's own agent loop, on OpenAI Chat Completions

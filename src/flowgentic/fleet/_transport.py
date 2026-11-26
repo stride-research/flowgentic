@@ -359,6 +359,19 @@ _UNSET: Any = object()
 """A keyword not given."""
 
 
+_ssl: Any = None
+
+
+def _ssl_context(httpx: Any) -> Any:  # noqa: ANN401  # an ssl.SSLContext
+	"""One SSL context for every transport the process makes: each would
+	otherwise build its own, about 3 ms and 0.7 MiB, and a process may hold
+	hundreds of replicas."""
+	global _ssl
+	if _ssl is None:
+		_ssl = httpx.create_ssl_context()
+	return _ssl
+
+
 def _timeout(httpx: Any, value: object) -> Any:  # noqa: ANN401  # httpx's Timeout
 	"""httpx's timeout for ``value`` seconds, ``None`` for none, connecting within
 	5 s at most, as the ``openai`` SDK does; an ``httpx.Timeout`` as it is."""
@@ -430,9 +443,10 @@ class HTTPTransport:
 	calls in flight, 8 per pool cost 0.8 ms of CPU per call, 64 per pool
 	1.5 ms; at 512, 0.8 and 1.4 ms, and one pool 29 ms. ``pools`` fixes the
 	number of clients instead. A pool's connections are not capped, and all
-	the pools share one SSL context. ``aclose()`` closes them once their
-	calls have ended; the fleet closes a transport that ``Recovery``
-	replaces.
+	the pools, of every transport in the process, share one SSL context. A
+	pool connects to its server on its first call. ``aclose()`` closes them
+	once their calls have ended; the fleet closes a transport that
+	``Recovery`` replaces.
 
 	``client``, an ``httpx.AsyncClient``, replaces the clients the transport
 	would make, and is its only one. It keeps its own timeout and headers
@@ -497,9 +511,8 @@ class HTTPTransport:
 				# call outlasts: the transport's 600 s, as the openai SDK does.
 				self._request = {"timeout": self._timeout}
 		else:
-			# One SSL context for every pool: each would build its own, on the
-			# event loop, about 3 ms and 0.7 MiB.
-			self._ssl = httpx.create_ssl_context()
+			# One SSL context for every pool, and every transport.
+			self._ssl = _ssl_context(httpx)
 			self.clients = [self._new_client() for _ in range(pools or 1)]
 			self.pools = pools
 			self._headers = None  # the clients have them
