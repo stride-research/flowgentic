@@ -33,6 +33,8 @@ predate this changelog, so their changes are not listed here.
   `part(cap)` is the process's exact part of a cap. `fleet.stats()` gives
   `process` and `replicas_used`, and a routing's `loads` its `weights`, the
   process's parts of the replicas where they differ.
+- The agents-at-scale example's processes split the caps with
+  `process=(index, processes)`, and its guide says so.
 
 ### Changed
 
