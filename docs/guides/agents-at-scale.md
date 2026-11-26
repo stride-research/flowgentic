@@ -252,9 +252,11 @@ Each column is one run of three, the one with the median time:
   happened (`collector["freeze"]["frozen"]`).
 - **Model admission.** `TokenAdmission(tokens, requests)` caps each replica's
   tokens of live context and requests in flight, across all agent processes;
-  each process takes `share` of them. Set `tokens` to what the server's KV
-  cache holds, and watch `MODEL_QUEUED` against `MODEL_REQUEST`: agents queued
-  while the server is not full mean a cap that is too low.
+  with `Fleet(process=(index, processes))` each process holds its exact part
+  of them (see [Fleet](../features/fleet.md#many-agent-processes)). Set
+  `tokens` to what the server's KV cache holds, and watch `MODEL_QUEUED`
+  against `MODEL_REQUEST`: agents queued while the server is not full mean a
+  cap that is too low.
 - **Task workers.** Agents in `TOOL_WAIT` wait for their tasks. If they
   wait longer than the tasks run, the session's backend needs more workers.
 
@@ -275,8 +277,9 @@ on Dragon's resources:
   queue.
 - **The agent processes.** Each runs one host on a disjoint range of agents
   (`run_indexed`), or takes its agents as they arrive (`start` and
-  `submit`), and a fleet with `share=1/processes` over the model servers'
-  replicas.
+  `submit`), and a fleet with `process=(index, processes)` over the model
+  servers' replicas: with `layout="pack"`, each process sends to a few of
+  them.
 - **The model servers** run on the allocation's GPUs, and each replica is an
   `HTTPTransport` of one server.
 

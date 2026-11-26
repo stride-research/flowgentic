@@ -335,6 +335,12 @@ def langgraph_version() -> ModuleType:
 
 # --- one agent process ----------------------------------------------------------
 
+# Each scripted replica's request cap. The processes split it, so each holds
+# at least one request: at most 2 replicas × REQUESTS processes.
+REQUESTS = 64
+MAX_PROCESSES = 2 * REQUESTS
+
+
 
 async def task_backend(workers: int, dragon: bool) -> Any:
     """RHAPSODY's backend for the task tools: a thread pool, or the native
@@ -398,8 +404,9 @@ async def run_agents(
     if telemetry is not None:
         await session.start_telemetry(**telemetry.rhapsody_options())
     runtime = ToolRuntime(session, client)
-    # Every process routes by the same hash, so each takes an equal share of
-    # every replica's caps. On an allocation, one per model server:
+    # The processes split every replica's caps exactly: this one holds its
+    # part, at least one request, so at most 2 × 64 processes. On an
+    # allocation, one replica per model server, with its server's caps:
     # [HTTPTransport("Qwen3-8B", base_url=url) for url in servers]
     replicas = (
         [ScriptedModel(latency_s), ScriptedModel(latency_s)]
@@ -408,8 +415,8 @@ async def run_agents(
     )
     fleet = Fleet(
         replicas,
-        admission=TokenAdmission(tokens=40_000, requests=64),
-        share=1 / processes,
+        admission=TokenAdmission(tokens=40_000, requests=REQUESTS),
+        process=(index, processes),
     )
     # The agents' state: RaDEX on Dragon, this process's memory on a laptop.
     store = RadexStore.attach(descriptor) if dragon else MemoryStore()
@@ -824,7 +831,13 @@ def report(summary: dict) -> str:
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--agents", type=int, default=200)
-    p.add_argument("--processes", type=int, default=1)
+    p.add_argument(
+        "--processes",
+        type=int,
+        default=1,
+        help=f"agent processes, at most {MAX_PROCESSES}: each holds at least one "
+        f"request of the scripted replicas' caps, 2 × {REQUESTS}",
+    )
     p.add_argument(
         "--workers",
         type=int,
@@ -875,6 +888,8 @@ def main(argv: list[str] | None = None) -> None:
     )
     p.add_argument("--mcp-server", type=int, metavar="PORT", help=argparse.SUPPRESS)
     a = p.parse_args(argv)
+    if not 1 <= a.processes <= MAX_PROCESSES:
+        p.error(f"--processes must be from 1 to {MAX_PROCESSES}")
     if a.mcp_server:
         serve_mcp(a.mcp_server)
         return
