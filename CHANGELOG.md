@@ -7,6 +7,23 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
+## [Unreleased]
+
+### Changed
+
+- `ToolRuntime` keeps the outcomes of its last `retained` ended tasks, not
+  the asyncio tasks: each one's value, its exception, or that it was
+  cancelled. A call made again after its task ended gets a new future,
+  already done, with that outcome, where it got the ended task itself; the
+  outcome is the same, and nothing runs again. A kept outcome costs the
+  runtime about 170 bytes on CPython 3.12 and 440 on 3.11 beside the value,
+  where an ended task cost about 1.4 KB, and a failed task's about 5 KB, its
+  exception's traceback included, where it cost 6 KB. The process no longer
+  holds 100,000 ended asyncio tasks, which the collector walked and
+  `asyncio.all_tasks()` visited each time `asyncio.run` ended, as it does
+  for each `async def` task on a thread pool. The default `retained` stays
+  100,000.
+
 ## [0.6.0] - 2026-11-22
 
 Agents at scale run on Flowgentic's own agent loop, on OpenAI Chat Completions

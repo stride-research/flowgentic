@@ -100,6 +100,35 @@ def _read_outcome(job: asyncio.Future) -> None:
 		job.exception()
 
 
+class _Failed:
+	"""What the runtime keeps of a task that failed: its exception."""
+
+	__slots__ = ("error",)
+
+	def __init__(self, error: BaseException) -> None:
+		self.error = error
+
+
+# What the runtime keeps of a task cancelled once its order had admitted it.
+_CANCELLED = object()
+# No outcome to keep: the task never ended as a task does.
+_NOTHING = object()
+
+
+def _done(kept: Any) -> asyncio.Future:
+	"""A future that has already ended with the outcome the runtime kept: the
+	task's value, its exception, or its cancellation."""
+	future = asyncio.get_running_loop().create_future()
+	if kept is _CANCELLED:
+		future.cancel()
+	elif isinstance(kept, _Failed):
+		future.set_exception(kept.error)
+		_read_outcome(future)
+	else:
+		future.set_result(kept)
+	return future
+
+
 def _key_part(value: str) -> str:
 	# A part of a key holds no "/", so the parts of a key are always the same.
 	return str(value).replace("%", "%25").replace("/", "%2F")
@@ -315,8 +344,9 @@ class ToolRuntime:
 	telemetry ``engine.start_telemetry()`` returned, from which each task's
 	record takes its start. ``service``: a started
 	``flowgentic.tools.service.ToolServiceClient``, for MCP tools. ``order``:
-	when tasks are submitted, ``Immediate()`` by default. ``retained``: how
-	many ended tasks are kept, for repeat safety.
+	when tasks are submitted, ``Immediate()`` by default. ``retained``: of how
+	many ended tasks the outcome is kept, for repeat safety: the value, the
+	exception, or that the task was cancelled, not the asyncio task.
 
 	On an engine, AsyncFlow 0.7.0 keeps each task, with its value, or its exception
 	and the frames it passed through, until the engine shuts down; a task
@@ -376,8 +406,12 @@ class ToolRuntime:
 		self.order = order or Immediate()
 		self.retained = retained
 		self._on_engine: dict[tuple[Callable[..., Any], str | None], Callable] = {}
+		# The tasks still running; then, once each has ended, its outcome: the
+		# value itself, a _Failed, or _CANCELLED. An asyncio task kept after it
+		# ends costs more, and Python walks every Task alive in the process
+		# (asyncio.all_tasks), as asyncio.run does each time it ends.
 		self._jobs: dict[str, asyncio.Future] = {}
-		self._ended: OrderedDict[str, None] = OrderedDict()
+		self._ended: OrderedDict[str, Any] = OrderedDict()
 		self.submitted = 0
 		self.repeats = 0
 		self.failed = 0
@@ -419,11 +453,12 @@ class ToolRuntime:
 		scope: str = "",
 	) -> asyncio.Future:
 		"""The future of the task for this call: a new task, or the one already
-		submitted under the same key. ``scope``: see ``key``.
+		submitted under the same key, or, once that one has ended, a new future,
+		already done, with its outcome. ``scope``: see ``key``.
 
-		A failed task keeps its exception for as long as it is kept. Read it
-		with ``exception()`` rather than raise it in a framework's code, whose
-		frames its traceback would then keep.
+		A failed task's exception is kept for as long as its outcome is. Read
+		it with ``exception()`` rather than raise it in a framework's code,
+		whose frames its traceback would then keep.
 
 		On an engine, ``submit`` must run on the engine's event loop, where
 		AsyncFlow registers tasks: anywhere else it raises ``ToolSetupError``, as
@@ -435,6 +470,10 @@ class ToolRuntime:
 		key = self.key(agent_id, call_id, scope)
 		job = self._jobs.get(key)
 		if job is None:
+			kept = self._ended.get(key, _NOTHING)
+			if kept is not _NOTHING:
+				self.repeats += 1
+				return _done(kept)
 			# Dropped from the runtime's ended tasks, but still registered by the
 			# agent asking: an agent resuming after other tasks ended finds it.
 			job = _agents.registered(key)
@@ -565,6 +604,7 @@ class ToolRuntime:
 		value: Any = None
 		error: str | None = None
 		outcome = "error"
+		kept: Any = _NOTHING
 		uid: str | None = None
 		backend: str | None = fields.get("backend")
 		finish = None
@@ -621,28 +661,34 @@ class ToolRuntime:
 				finally:
 					self.order.done(info)
 				outcome = "ok"
+				kept = value
 				return value
 			except asyncio.CancelledError:
 				outcome = "cancelled"
 				error = "CancelledError"
+				kept = _CANCELLED
 				if t_admit is None:  # withdrawn, or cancelled before admission
 					self._forget(info.key, asyncio.current_task())
 				raise
 			except TaskCancelled as exc:
 				outcome = "cancelled"
 				error = f"TaskCancelled: {exc}"
+				kept = _Failed(exc)
 				raise
 			except Exception as exc:
 				if outcome == "error":
 					self.failed += 1
 				error = f"{type(exc).__name__}: {exc}"
+				kept = _Failed(exc)
 				span.set_attribute(_telemetry.ERROR_TYPE, type(exc).__qualname__)
 				raise
 			finally:
+				# No local holds the task: a failed task's exception keeps this
+				# frame, in its traceback, for as long as the runtime keeps it.
 				_agents.withdrawable(asyncio.current_task(), None)
 				span.set_attribute(_telemetry.TOOL_OUTCOME, outcome)
 				if t_admit is not None or outcome != "cancelled":
-					self._ended_add(info.key)
+					self._end(info.key, asyncio.current_task(), kept)
 				t_start = None
 				if self._starts is not None and uid is not None:
 					t_start = self._starts.pop(uid)
@@ -680,11 +726,16 @@ class ToolRuntime:
 					"a task listener failed on %s", record.info.key, exc_info=True
 				)
 
-	def _ended_add(self, key: str) -> None:
-		self._ended[key] = None
+	def _end(self, key: str, job: asyncio.Future, kept: Any) -> None:
+		"""The task ``job`` has ended: keep its outcome, not the task, among the
+		last ``retained``."""
+		if self._jobs.get(key) is job:
+			del self._jobs[key]
+		if kept is _NOTHING:  # stopped by the interpreter, not ended as a task
+			return
+		self._ended[key] = kept
 		while len(self._ended) > self.retained:
-			old, _ = self._ended.popitem(last=False)
-			self._jobs.pop(old, None)
+			self._ended.popitem(last=False)
 
 	async def call_service(
 		self,

@@ -125,10 +125,15 @@ same key, as a framework does when it resumes an agent, gets the first call's
 result and runs nothing: LangGraph gives a task the same id when it runs again.
 A later turn that reuses a call id, as a model server that numbers its tool
 calls per message does, runs in a new task, so it makes a new call. Outside a
-LangGraph run the key is `agent/call`. The runtime keeps the last `retained`
-ended tasks (100,000 by default), and an agent in a host finds the tasks it
-asked for until it ends, however many have ended since. The tool service keeps
-its own answers, by the same key.
+LangGraph run the key is `agent/call`. The runtime keeps the outcomes of the
+last `retained` ended tasks (100,000 by default): each one's value, its
+exception, or that it was cancelled, but not the asyncio task. A call made
+again after its task ended gets a new future, already done, with that
+outcome. An outcome costs the runtime about 170 bytes on CPython 3.12, and
+440 on 3.11, beside the value itself; a failed task's costs about 5 KB, its
+exception's traceback included. An agent in a host finds the tasks it asked
+for until it ends, however many have ended since. The tool service keeps its
+own answers, by the same key.
 
 The task tells turns apart only when each turn's tools run in a LangGraph task
 of their own, as they do in a `ToolNode` node, with `route_tool_calls`, or in a

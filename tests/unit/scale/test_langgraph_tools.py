@@ -75,9 +75,10 @@ async def test_a_suspended_agent_resumes_and_nothing_runs_twice():
     final = outputs["agent-0"]["messages"][-1].content
     assert '{"y": 3.0}' in final and "noted hi" in final
     assert host.states.agent_seconds()[AgentState.TOOL_WAIT] > 0
-    # the host holds no task of an agent that has ended
-    assert len(runtime._jobs) == 20
-    assert all(_agents.pending(key) is None for key in runtime._jobs)
+    # the host holds no task of an agent that has ended, and the runtime keeps
+    # each one's outcome, not the task
+    assert runtime._jobs == {} and runtime.stats()["retained"] == 20
+    assert all(_agents.pending(key) is None for key in runtime._ended)
 
 
 def left_by(run_objects: tuple) -> list:
@@ -105,7 +106,7 @@ async def test_a_task_tool_suspension_leaves_nothing_for_the_collector():
         step = await runner.start(agent)
         assert isinstance(step, Suspended) and len(step.waits) == 1
         left = left_by((GraphInterrupt, PregelRunner))
-        await asyncio.wait([runtime._jobs[key] for _, key in step.waits])
+        await until(lambda: all(key in runtime._ended for _, key in step.waits))
         done = {rid: {"flowgentic_done": key} for rid, key in step.waits}
         step = await runner.resume(agent, done)
         assert isinstance(step, Finished)
@@ -164,7 +165,7 @@ async def test_after_a_run_nothing_keeps_the_agents_messages(fn, suspend):
     try:
         step = await runner.start(agent)
         if suspend:
-            await asyncio.wait([runtime._jobs[key] for _, key in step.waits])
+            await until(lambda: all(key in runtime._ended for _, key in step.waits))
             step = await runner.resume(agent, {rid: {"flowgentic_done": key} for rid, key in step.waits})
         await session.close()
         messages = step.output["messages"]
@@ -174,8 +175,8 @@ async def test_after_a_run_nothing_keeps_the_agents_messages(fn, suspend):
         assert [m() for m in kept] == [None, None, None]
     finally:
         gc.enable()
-    (job,) = runtime._jobs.values()
-    error = job.exception()
+    (kept,) = runtime._ended.values()  # the task's outcome: its value or its exception
+    error = getattr(kept, "error", None)
     assert (error is None) == (fn is simulate)
     if error is not None:  # no frame of the tool that waited on the task
         frames = [f.f_code.co_filename for f, _ in traceback.walk_tb(error.__traceback__)]
@@ -400,7 +401,7 @@ async def test_a_queued_task_no_call_waits_for_is_withdrawn():
     (ran,) = [r for r in records if r.outcome == "ok"]
     withdrawn = [r for r in records if r is not ran]
     assert [(r.outcome, r.t_admit) for r in withdrawn] == [("cancelled", None)] * 2
-    assert list(runtime._jobs) == [ran.info.key]
+    assert runtime._jobs == {} and list(runtime._ended) == [ran.info.key]
     again = await tool_.ainvoke(*call(int(withdrawn[0].info.args["x"])))
     await session.close()
     assert again.status == "success" and RUNS == {"slow_simulate": 2}
@@ -472,11 +473,11 @@ async def test_closing_the_session_ends_its_tasks_and_frees_their_places():
     await until(lambda: order.slot.locked())  # a's task runs
     queued = asyncio.create_task(tool_.ainvoke(*call("b")))  # b's waits for its turn
     await until(lambda: len(runtime._jobs) == 2)
+    job = runtime._jobs["a/c1"]
     running.cancel()
     await asyncio.gather(running, return_exceptions=True)
     await session.close()
     out = await asyncio.wait_for(queued, 2)
-    job = runtime._jobs["a/c1"]
     assert job.done() and isinstance(job.exception(), TaskCancelled)
     assert out.status == "error" and "TaskCancelled: the RHAPSODY session is closed" in out.content
     assert [(r.info.agent_id, r.outcome) for r in records] == [("a", "cancelled"), ("b", "cancelled")]
@@ -560,9 +561,9 @@ async def test_a_cancelled_wait_keeps_its_tasks_place_in_the_order_until_it_ends
     ]
     waits = [asyncio.create_task(tool_.ainvoke(call, config)) for call, config in calls]
     await asyncio.sleep(0.1)  # a's task runs; b's waits for its turn
+    jobs = list(runtime._jobs.values())
     waits[0].cancel()
     await asyncio.gather(*waits, return_exceptions=True)
-    jobs = list(runtime._jobs.values())
     await asyncio.wait(jobs)
     await session.close()
     assert COUNTED["peak"] == 1  # never two at once under a one-at-a-time order
