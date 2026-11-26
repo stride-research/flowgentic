@@ -2,7 +2,9 @@
 runs, and a task run again after its worker was lost."""
 
 import asyncio
+import gc
 import logging
+import traceback
 import weakref
 
 import pytest
@@ -11,7 +13,7 @@ from _basics import FAST, RUNS, ScriptedTransport, broken, inputs, reply, simula
 from flowgentic.host import AgentHost
 from flowgentic.loop import LoopRunner
 from flowgentic.store import MemoryStore
-from flowgentic.tools import TaskCancelled, TaskInfo, TaskRecord, ToolRuntime, task_tool
+from flowgentic.tools import TaskCancelled, TaskInfo, TaskRecord, ToolRuntime, ToolSetupError, task_tool
 
 
 @pytest.fixture(autouse=True)
@@ -78,6 +80,75 @@ async def test_the_runtime_keeps_outcomes_not_tasks():
     assert failed.exception() is runtime.submit(fails, "a0", "c1", {"x": 0.0}).exception()
     assert RUNS == {"simulate": n - n // 10, "broken": n // 10}
     assert runtime.stats()["repeats"] == 3
+
+
+async def test_a_failed_outcome_raised_again_keeps_the_traceback_it_ended_with():
+    """Each repeat raises the same exception, from the traceback its task ended
+    with: the callers that raised it before neither grow the traceback nor
+    stay alive in it."""
+    runtime = ToolRuntime(InstantSession())
+    fails = task_tool(broken)
+    first = runtime.submit(fails, "a", "c1", {"x": 0.0})
+    await asyncio.wait([first])
+    callers = []
+
+    class Caller:
+        pass
+
+    async def call_again():
+        me = Caller()
+        callers.append(weakref.ref(me))
+        try:
+            await runtime.submit(fails, "a", "c1", {"x": 0.0})
+        except ValueError as exc:
+            assert exc is first.exception()
+            return len(list(traceback.walk_tb(exc.__traceback__)))
+
+    depths = [await call_again() for _ in range(400)]
+    gc.collect()
+    assert len(set(depths)) == 1
+    # Only the last caller, until the next repeat.
+    assert len([ref for ref in callers if ref() is not None]) <= 1
+    assert RUNS == {"broken": 1}
+
+
+class Big:
+    """Stands for a large argument."""
+
+    def __repr__(self) -> str:
+        return "big"
+
+
+async def test_a_failed_outcome_keeps_its_arguments_until_the_runtime_drops_it():
+    """A failed task's exception keeps its traceback, whose frames keep the
+    call's arguments, for as long as the runtime keeps its outcome."""
+    runtime = ToolRuntime(InstantSession(), retained=1)
+    fails = task_tool(broken)
+    big = Big()
+    kept = weakref.ref(big)
+    job = runtime.submit(fails, "a", "c1", {"x": big})
+    await asyncio.wait([job])
+    del big, job
+    gc.collect()
+    assert kept() is not None
+    await asyncio.wait([runtime.submit(fails, "a", "c2", {"x": 1.0})])
+    gc.collect()
+    assert kept() is None
+
+
+def test_a_call_made_again_on_no_event_loop_gets_the_outcome_kept():
+    """Called again for an ended task from code that runs on no event loop,
+    ``submit`` gives a future on the loop of the runtime's last task."""
+    runtime = ToolRuntime(InstantSession())
+    sim = task_tool(simulate)
+
+    async def first():
+        return await runtime.submit(sim, "a", "c1", {"x": 1.0})
+
+    assert asyncio.run(first()) == {"y": 2.0}
+    again = runtime.submit(sim, "a", "c1", {"x": 1.0})
+    assert again.done() and again.result() == {"y": 2.0}
+    assert RUNS == {"simulate": 1} and runtime.stats()["repeats"] == 1
 
 
 class Refuse:
@@ -238,22 +309,118 @@ class RefuseNegativeTwo:
     [
         (lambda info: {"backend": "gpus"}, "as placed: the RHAPSODY session has no backend 'gpus'"),
         (lambda info: ["gpu", 1], "as placed: a placement gives a task's fields: a dict, not list"),
-        (lambda info: 1 / 0, "division by zero"),
+        (lambda info: 1 / 0, "place failed for a/c1: ZeroDivisionError: division by zero"),
     ],
     ids=["unknown-backend", "not-a-dict", "raises"],
 )
-async def test_a_placement_that_fails_fails_its_task(place, error):
-    """The agent reads the error, as it reads a failed task's: the order's
-    place is given back, and nothing runs."""
+async def test_a_placement_set_up_wrong_fails_its_task_with_tool_setup_error(place, error):
+    """A runtime set up wrong, not a call's error: the order's place is given
+    back, and nothing runs."""
     order = RefuseNegativeTwo()
     runtime = ToolRuntime(GpuSession({}), place=place, order=order)
     records = []
     runtime.add_listener(records.append)
     job = runtime.submit(task_tool(simulate), "a", "c1", {"x": 1.0})
     await asyncio.wait([job])
+    assert isinstance(job.exception(), ToolSetupError)
     assert error in str(job.exception()) and "simulate" not in RUNS
     assert [(r.outcome, r.t_admit is not None) for r in records] == [("error", True)]
     assert runtime.stats()["failed"] == 1 and order.ended == ["a/c1"]
+
+
+async def test_a_placement_set_up_wrong_fails_the_agent_before_its_model_reads_it():
+    """A mistyped GPU fails each agent that calls the tool, as a tool's unknown
+    backend does: no model spends its turns on the error."""
+    turns = []
+
+    def script(messages):
+        turns.append(len(messages))
+        if tool_results(messages):
+            return reply("done")
+        return reply(calls=[("call-0", "simulate", {"x": 1.0})])
+
+    runtime = ToolRuntime(GpuSession({}), place=lambda info: {"backend": "gpus"})
+    runner = LoopRunner(ScriptedTransport(script), [task_tool(simulate)], runtime=runtime)
+    report = await AgentHost(runner, stagger=FAST).run(inputs(2))
+    assert [agent.status for agent in report.agents] == ["failed", "failed"]
+    for agent in report.agents:
+        assert agent.error.startswith("ToolSetupError: task tool simulate, as placed: ")
+    assert len(turns) == 2 and "simulate" not in RUNS  # one model call per agent
+
+
+class HangingSession(InstantSession):
+    """A session whose tasks end only as a test ends them."""
+
+    def __init__(self) -> None:
+        self.futures: list[asyncio.Future] = []
+
+    async def submit_tasks(self, tasks):
+        self.futures += [asyncio.get_running_loop().create_future() for _ in tasks]
+        return self.futures[-len(tasks) :]
+
+    async def close(self) -> None:
+        return None
+
+
+@pytest.mark.parametrize(
+    "end, outcome",
+    [("lost", "error"), ("rhapsody", "cancelled"), ("session", "cancelled"), ("agent", "cancelled")],
+    ids=["worker-lost", "cancelled-by-rhapsody", "session-closed", "cancelled-by-agent"],
+)
+async def test_a_placed_task_gives_its_place_back_however_it_ends(end, outcome):
+    """Its one record arrives however the task ends, so a placement by load
+    counts it once more."""
+    session = HangingSession()
+    placement = LeastLoaded({gpu: on_fake_gpu(gpu) for gpu in (0, 1)})
+    runtime = ToolRuntime(session, place=placement)
+    records = []
+    runtime.add_listener(placement.ended)
+    runtime.add_listener(records.append)
+    job = runtime.submit(task_tool(simulate), "a", "c1", {"x": 1.0})
+    while not session.futures:
+        await asyncio.sleep(0)
+    assert placement.running == {0: 1, 1: 0}
+    (future,) = session.futures
+    if end == "lost":
+        future.set_exception(RuntimeError("worker 3 exited with code -9"))
+    elif end == "rhapsody":
+        future.set_result({"state": "CANCELED"})
+    elif end == "session":
+        await session.close()
+    else:
+        job.cancel()
+    await asyncio.wait([job])
+    assert [record.outcome for record in records] == [outcome]
+    assert placement.running == {0: 0, 1: 0} and placement.on == {}
+
+
+class NamedBackends(GpuSession):
+    """A session with two backends, which notes each task's backend too."""
+
+    backends = {"cpu": InstantSession(), "gpu": InstantSession()}
+
+    async def submit_tasks(self, tasks):
+        self.seen += [
+            {"backend": task.get("backend"), **(task.get("task_backend_specific_kwargs") or {})} for task in tasks
+        ]
+        return [asyncio.ensure_future(self._run(task)) for task in tasks]
+
+
+@pytest.mark.parametrize(
+    "placed, seen",
+    [
+        ({"task_backend_specific_kwargs": None}, {"backend": "gpu"}),  # all the tool's own fields dropped
+        ({"task_backend_specific_kwargs": {"cpus": 1}}, {"backend": "gpu", "gpu": 9, "cpus": 1}),
+        ({"backend": None}, {"backend": "cpu", "gpu": 9}),  # the runtime's backend, not the tool's
+    ],
+    ids=["no-backend-fields", "fields-key-by-key", "no-backend"],
+)
+async def test_a_placement_merges_shallowly_over_the_tools_fields(placed, seen):
+    session = NamedBackends({})
+    runtime = ToolRuntime(session, backend="cpu", place=lambda info: placed)
+    tool = task_tool(simulate, backend="gpu", task_backend_specific_kwargs={"gpu": 9})
+    assert await runtime.submit(tool, "a", "c1", {"x": 1.0}) == {"y": 2.0}
+    assert session.seen == [seen]
 
 
 # --- a task run again after its worker was lost ------------------------------------

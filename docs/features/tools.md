@@ -129,11 +129,19 @@ LangGraph run the key is `agent/call`. The runtime keeps the outcomes of the
 last `retained` ended tasks (100,000 by default): each one's value, its
 exception, or that it was cancelled, but not the asyncio task. A call made
 again after its task ended gets a new future, already done, with that
-outcome. An outcome costs the runtime about 170 bytes on CPython 3.12, and
-440 on 3.11, beside the value itself; a failed task's costs about 5 KB, its
-exception's traceback included. An agent in a host finds the tasks it asked
-for until it ends, however many have ended since. The tool service keeps its
-own answers, by the same key.
+outcome. An outcome with a small value costs the runtime a few hundred
+bytes, the value included: about 170 on CPython 3.12 and 400 on 3.11 in one
+probe. A failed task's costs more. Its exception keeps its traceback, and each
+frame there keeps its locals, the call's arguments among them: about 5 KB
+with small arguments, but as much as the arguments with large ones, so
+100,000 kept failures with 1 MB arguments hold 100 GB. If many calls may
+fail with large arguments, pass the inputs by path, or lower `retained`. The
+runtime does not clear the frames' locals: on CPython 3.11 and 3.12 that
+closes any coroutine still running whose frame the traceback passed through,
+such as a backend's own loop. A call made again gets the same exception,
+raised with the traceback the task ended with. An agent in a host finds the
+tasks it asked for until it ends, however many have ended since. The tool
+service keeps its own answers, by the same key.
 
 The task tells turns apart only when each turn's tools run in a LangGraph task
 of their own, as they do in a `ToolNode` node, with `route_tool_calls`, or in a
@@ -208,9 +216,17 @@ chooses them per call: `place(info)` gets each task's `TaskInfo` once its
 order admits it, just before the runtime submits it, and returns fields to
 add to the tool's own, or `None` for the tool's own. A `backend` it returns
 replaces the tool's; the backend's own fields, `task_backend_specific_kwargs`,
-go over the tool's key by key. They are checked as a tool's are. A `place`
-that raises, or fields that the session or engine cannot take, fail the task,
-and its agent reads the error.
+go over the tool's key by key. The merge is shallow, so a placement cannot
+drop one of the tool's backend fields: `{"task_backend_specific_kwargs":
+None}` drops them all, and `{"backend": None}` gives the runtime's backend,
+not the tool's.
+
+The fields are checked as a tool's are, and a placement set up wrong is a
+runtime set up wrong: a `place` that raises, or fields that the session or
+engine cannot take, such as a backend it lacks, fail the task with
+`ToolSetupError`, which fails its agent, as a tool's unknown backend does. The
+model never reads the error, so a mistyped GPU does not cost every agent its
+turns.
 
 Where a task runs belongs to the process, not to the tool: one tool list
 serves processes that have different GPUs, and the agents of an
@@ -220,8 +236,11 @@ only some tools' tasks.
 
 Each run `place` places ends in one [decision record](#the-decision-record),
 so a placement by load counts a task when it places it, and again when the
-task's record arrives. A task that runs again after a
-[lost worker](#a-lost-worker) is placed again, for its new run:
+task's record arrives. The record arrives when the runtime sees the task end:
+a task cancelled while it runs has its record at once, though RHAPSODY does
+not stop a started task, so its GPU may still be busy while the count says it
+is free. A task that runs again after a [lost worker](#a-lost-worker) is
+placed again, for its new run:
 
 ```python
 --8<-- "tests/unit/scale/test_tool_runtime.py:least-loaded"
@@ -232,14 +251,21 @@ pinned to a GPU when the task's `process_template` holds only a policy that
 names the node and the GPU:
 
 ```python
+import socket
+
 from dragon.infrastructure.policy import Policy
+
+node = socket.gethostname()  # a node this process's workers run on
+gpus = [0, 1, 2, 3]  # its GPUs
+
 
 def on_gpu(gpu: int) -> dict:
     policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=node, gpu_affinity=[gpu])
     return {"task_backend_specific_kwargs": {"process_template": {"policy": policy}}}
 
-placement = LeastLoaded({gpu: on_gpu(gpu) for gpu in gpus})
-runtime = ToolRuntime(session, place=placement)
+
+placement = LeastLoaded({gpu: on_gpu(gpu) for gpu in gpus})  # the class above
+runtime = ToolRuntime(session, place=placement)  # session: RHAPSODY's, on Dragon
 runtime.add_listener(placement.ended)
 ```
 

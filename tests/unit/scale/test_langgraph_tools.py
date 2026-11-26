@@ -758,6 +758,27 @@ async def test_a_runtime_set_up_wrong_fails_the_agent(setup):
     assert expected in agent.error
 
 
+async def test_a_placement_set_up_wrong_fails_the_agent():
+    """A ``place`` that names a backend the session lacks fails the agent, as
+    the tool's own unknown backend would, rather than tell the model."""
+    session = await thread_session()
+    try:
+        runtime = ToolRuntime(session, place=lambda info: {"backend": "gpus"})
+        graph = react_graph(
+            Scripted(script=calls_then_answer(("simulate", {"x": 1.0}))),
+            bind_tools(runtime, [task_tool(simulate)]),
+            KeyValueSaver(MemoryStore()),
+            handle_tool_errors=None,
+        )
+        report = await AgentHost(GraphRunner(graph), stagger=FAST).run(inputs(1))
+    finally:
+        await session.close()
+    (agent,) = report.agents
+    assert agent.status == "failed" and agent.error.startswith("ToolSetupError: ")
+    assert "as placed: the RHAPSODY session has no backend 'gpus'" in agent.error
+    assert "simulate" not in RUNS
+
+
 def points(reader, name: str) -> list:
     """The data points of metric ``name`` in the reader's latest collection."""
     data = reader.get_metrics_data()
