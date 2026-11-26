@@ -101,12 +101,15 @@ def _read_outcome(job: asyncio.Future) -> None:
 
 
 class _Failed:
-	"""What the runtime keeps of a task that failed: its exception."""
+	"""What the runtime keeps of a task that failed: its exception, and the
+	traceback it ended with. Each raise of the exception adds its caller's
+	frames to the traceback, so each repeat starts again from this one."""
 
-	__slots__ = ("error",)
+	__slots__ = ("error", "traceback")
 
 	def __init__(self, error: BaseException) -> None:
 		self.error = error
+		self.traceback = error.__traceback__
 
 
 # What the runtime keeps of a task cancelled once its order had admitted it.
@@ -115,14 +118,16 @@ _CANCELLED = object()
 _NOTHING = object()
 
 
-def _done(kept: Any) -> asyncio.Future:
-	"""A future that has already ended with the outcome the runtime kept: the
-	task's value, its exception, or its cancellation."""
-	future = asyncio.get_running_loop().create_future()
+def _done(kept: Any, loop: asyncio.AbstractEventLoop) -> asyncio.Future:
+	"""A future on ``loop`` that has already ended with the outcome the runtime
+	kept: the task's value, its exception, or its cancellation."""
+	future = loop.create_future()
 	if kept is _CANCELLED:
 		future.cancel()
 	elif isinstance(kept, _Failed):
-		future.set_exception(kept.error)
+		# The same exception for every repeat, with the traceback the task
+		# ended with, not one grown by the callers that raised it before.
+		future.set_exception(kept.error.with_traceback(kept.traceback))
 		_read_outcome(future)
 	else:
 		future.set_result(kept)
@@ -412,6 +417,7 @@ class ToolRuntime:
 		# (asyncio.all_tasks), as asyncio.run does each time it ends.
 		self._jobs: dict[str, asyncio.Future] = {}
 		self._ended: OrderedDict[str, Any] = OrderedDict()
+		self._loop: asyncio.AbstractEventLoop | None = None  # of the last task
 		self.submitted = 0
 		self.repeats = 0
 		self.failed = 0
@@ -456,9 +462,12 @@ class ToolRuntime:
 		submitted under the same key, or, once that one has ended, a new future,
 		already done, with its outcome. ``scope``: see ``key``.
 
-		A failed task's exception is kept for as long as its outcome is. Read
-		it with ``exception()`` rather than raise it in a framework's code,
-		whose frames its traceback would then keep.
+		A failed task's exception is kept for as long as its outcome is, and
+		with it its traceback, whose frames keep their locals, the call's
+		arguments among them. Each repeat raises the same exception with the
+		traceback the task ended with. Read it with ``exception()`` rather than
+		raise it in a framework's code, whose frames its traceback would then
+		keep until the next repeat.
 
 		On an engine, ``submit`` must run on the engine's event loop, where
 		AsyncFlow registers tasks: anywhere else it raises ``ToolSetupError``, as
@@ -473,7 +482,7 @@ class ToolRuntime:
 			kept = self._ended.get(key, _NOTHING)
 			if kept is not _NOTHING:
 				self.repeats += 1
-				return _done(kept)
+				return _done(kept, self._loop_now())
 			# Dropped from the runtime's ended tasks, but still registered by the
 			# agent asking: an agent resuming after other tasks ended finds it.
 			job = _agents.registered(key)
@@ -517,7 +526,8 @@ class ToolRuntime:
 		# An asyncio task keeps the context it was created in, and the runtime
 		# keeps ended tasks: in the caller's context, a kept task would keep the
 		# framework's run, and with it the agent's whole state.
-		job = asyncio.get_running_loop().create_task(
+		self._loop = asyncio.get_running_loop()
+		job = self._loop.create_task(
 			self._run(tool, info, fields, on_engine, t_submit, committed, within),
 			context=_agents.task_context(),
 		)
@@ -530,6 +540,16 @@ class ToolRuntime:
 		job.add_done_callback(_read_outcome)
 		self.submitted += 1
 		return job
+
+	def _loop_now(self) -> asyncio.AbstractEventLoop:
+		"""The running event loop, else, as when ``submit`` is called again for
+		an ended task from code that runs on none, the loop of the last task."""
+		try:
+			return asyncio.get_running_loop()
+		except RuntimeError:
+			if self._loop is None:  # pragma: no cover: an ended task had a loop
+				raise
+			return self._loop
 
 	def check(self, tool: TaskTool) -> None:
 		"""Raise ``ValueError`` if this runtime cannot run ``tool``'s tasks: a
