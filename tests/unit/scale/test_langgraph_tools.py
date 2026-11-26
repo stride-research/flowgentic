@@ -674,6 +674,8 @@ async def test_the_model_and_the_worker_see_different_things_and_budgets_refuse(
         "repeats": 0,
         "failed": 0,
         "refused": 1,
+        "lost": 0,
+        "retries": 0,
         "retained": 2,
     }
 

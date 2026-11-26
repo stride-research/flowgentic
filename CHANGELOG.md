@@ -16,10 +16,19 @@ predate this changelog, so their changes are not listed here.
   to the tool's, such as a `backend`, or the backend's own fields
   (`task_backend_specific_kwargs`), which go over the tool's key by key. So
   the agents of `LoopRunner`, which share one tool list, can spread their
-  calls over a process's GPUs, by load or otherwise. Each placed task ends in
-  one record, which a placement by load counts. A `place` that raises, or
+  calls over a process's GPUs, by load or otherwise. Each run it places ends
+  in one record, which a placement by load counts. A `place` that raises, or
   fields its session or engine cannot take, fail the task, and its agent
   reads the error.
+- A task whose worker was lost can run again: `task_tool(fn, retries=...,
+  retry_on=...)`, where `retry_on(error)` is the application's test of a
+  task's error for a lost worker; Flowgentic matches no error itself. The
+  task runs again under its call's same future, so its agent, suspended or
+  not, sees only the last run's outcome. Each run has its own uid
+  (`ToolRuntime.uid(key, attempt)` on a session) and its own `TaskRecord`,
+  with the new `attempt` field; a run whose worker was lost ends with the new
+  outcome `lost`. `runtime.stats()` counts `lost` runs and `retries`, and the
+  metric `flowgentic.tool.retries` counts the runs again.
 
 ### Changed
 

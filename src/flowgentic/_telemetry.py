@@ -209,6 +209,14 @@ TOOL_DURATION = meter.create_histogram(
 	description="Time from a tool call's submission to its result",
 	explicit_bucket_boundaries_advisory=TOOL_DURATION_BUCKETS,
 )
+# A task whose worker was lost runs again under its call's same span and
+# duration; each run again is counted here, which is rare, so it costs nothing
+# on a task that runs once.
+TOOL_RETRIES = meter.create_counter(
+	"flowgentic.tool.retries",
+	unit="{task}",
+	description="Tasks run again after their worker was lost",
+)
 
 
 # --- The fleet's metrics ----------------------------------------------------------

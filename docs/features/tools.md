@@ -218,9 +218,10 @@ serves processes that have different GPUs, and the agents of an
 over a process's GPUs. `info.tool` names the tool, for a placement that moves
 only some tools' tasks.
 
-Each task `place` places ends in one [decision record](#the-decision-record),
+Each run `place` places ends in one [decision record](#the-decision-record),
 so a placement by load counts a task when it places it, and again when the
-task's record arrives:
+task's record arrives. A task that runs again after a
+[lost worker](#a-lost-worker) is placed again, for its new run:
 
 ```python
 --8<-- "tests/unit/scale/test_tool_runtime.py:least-loaded"
@@ -242,6 +243,40 @@ runtime = ToolRuntime(session, place=placement)
 runtime.add_listener(placement.ended)
 ```
 
+## A lost worker
+
+A task's worker can die under it: the kernel kills it for its memory, or a
+crash in native or GPU code takes it down. The backend fails that task, and
+by default its agent reads the error, as it reads any failed task's. A task
+tool can run such a task again instead:
+
+```python
+def lost_worker(error: Exception) -> bool:
+    """RHAPSODY's native Dragon backend names the dead worker in its error."""
+    text = str(error)
+    return isinstance(error, RuntimeError) and text.startswith("Dragon worker ") and " while running " in text
+
+simulate_tool = task_tool(simulate, retries=2, retry_on=lost_worker)
+```
+
+`retry_on(error)` says whether a task's error means its worker was lost, and
+`retries` how many times, at most, the task runs again. Only the application
+can tell a lost worker by its backend's error, so Flowgentic recognises none
+itself, and runs nothing again without `retry_on`. An error that `retry_on`
+does not take, such as the function's own, fails the task at once: a
+deterministic error would only fail again. A `TaskCancelled` task never runs
+again.
+
+The task runs again under the call's same future, so its agent, whether it
+waits in memory or is suspended, sees only the last run's outcome, and its
+order's admission holds for every run. Each run is a new task in RHAPSODY or
+AsyncFlow, with its own uid (`ToolRuntime.uid(key, attempt)` on a session),
+and its own record: a run whose worker was lost ends `lost`, and the next run
+has the next `attempt`. A task that loses its worker on its last run ends
+`lost`, and its agent reads that run's error. The function must be safe to run
+again with the same arguments: its value the same, its side effects written
+again, not added to.
+
 ## The decision record
 
 Each task ends in a `TaskRecord`, which `runtime.add_listener(listener)` hands
@@ -259,7 +294,8 @@ call (`record.info.call_id`), and says where the task ran and when:
 | `t_start` | When the backend reported it running: AsyncFlow's `TaskStarted` event, from the telemetry the runtime was given |
 | `t_finish` | When it ended: when the agent's process saw AsyncFlow resolve the task |
 | `t_end` | When the runtime saw it end, just before its agent is told |
-| `outcome` | `ok`, `error`, `refused` or `cancelled`, with its `value` or `error` |
+| `outcome` | `ok`, `error`, `lost` (its worker was lost, as its tool's `retry_on` says), `refused` or `cancelled`, with its `value` or `error` |
+| `attempt` | Which run of the task this is, from 1: a task that runs again after a [lost worker](#a-lost-worker) has a record for each run, with the same `info`, and each run's own `uid` and times |
 
 Times are `time.time()` in the agent's process, which on an engine is the
 engine's too. A withdrawn task is `cancelled` with no admission time.
@@ -312,10 +348,14 @@ suspended.
 - `runtime.add_listener(listener)` receives each task's
   [decision record](#the-decision-record).
 - `runtime.stats()` counts the tasks submitted, asked for again, failed and
-  refused.
+  refused, the runs whose worker was lost (`lost`), and the runs again after
+  one (`retries`).
 - Each task or service call is an `execute_tool` span, inside its agent's
   trace, with `gen_ai.tool.name`, `gen_ai.tool.call.id`,
   `flowgentic.tool.kind` (`task` or `service`, and `inline` for an inline
   tool on the [agent loop](agent-loop.md)) and `flowgentic.tool.outcome`.
 - `flowgentic.tool.duration` is a histogram of the time from a call's
-  submission to its result, by tool, kind and outcome.
+  submission to its result, by tool, kind and outcome: one value per call,
+  however many times its task ran.
+- `flowgentic.tool.retries` counts the tasks run again after a lost worker,
+  by tool and kind.

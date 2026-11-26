@@ -1,8 +1,9 @@
 # Retries and timeouts
 
 Flowgentic runs each decorated call once. It adds no retry and no timeout to
-tools, tasks, services or graph nodes. Each kind of failure has an owner that
-can tell whether it is transient and can redo only the work that failed:
+tools, tasks, services or graph nodes of its own accord. Each kind of failure
+has an owner that can tell whether it is transient and can redo only the work
+that failed:
 
 | What fails | Who retries it | Who sets its deadline |
 | --- | --- | --- |
@@ -10,6 +11,7 @@ can tell whether it is transient and can redo only the work that failed:
 | A tool in an agent loop | `ToolRetryMiddleware`, or the application around the tool call | The tool |
 | A graph node | LangGraph: `add_node(..., retry_policy=RetryPolicy(...))` | LangGraph: `add_node(..., timeout=...)`, from LangGraph 1.2 |
 | An AsyncFlow task | The application: AsyncFlow 0.7 has no per-task retry | The application: AsyncFlow 0.7 has no per-task timeout |
+| A task tool's task whose worker died | The application, through `task_tool(fn, retries=..., retry_on=...)`: `retry_on` says which errors mean a lost worker ([A lost worker](../features/tools.md#a-lost-worker)) | The task |
 
 `ToolNode(handle_tool_errors=...)` does not retry a tool. It returns the error
 to the model as a `ToolMessage`, and the model decides whether to call the

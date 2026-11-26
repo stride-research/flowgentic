@@ -88,6 +88,7 @@ agents' states or an agent process's health. Every duration is in seconds.
 | `flowgentic.host.loop.lag` | Histogram | `s` | | How late the event loop woke a 100 ms timer, sampled every 100 ms while a host runs on it |
 | `flowgentic.host.gc.pause` | Histogram | `s` | `flowgentic.gc.generation` | Each pause of the cyclic garbage collector while a host runs |
 | `flowgentic.tool.duration` | Histogram | `s` | `gen_ai.tool.name`, `flowgentic.tool.kind`, `flowgentic.tool.outcome` | Time from a task or service call's submission to its result; see [Tool placement](tools.md#what-it-reports) |
+| `flowgentic.tool.retries` | Counter | `{task}` | `gen_ai.tool.name`, `flowgentic.tool.kind` | Tasks run again after their worker was lost; see [Tool placement](tools.md#a-lost-worker) |
 | `flowgentic.fleet.admission.wait` | Histogram | `s` | `flowgentic.fleet.name`, `flowgentic.fleet.replica` | Time a model request waited for its replica's admission |
 | `flowgentic.fleet.request.duration` | Histogram | `s` | `flowgentic.fleet.name`, `flowgentic.fleet.replica` | Time a model request spent at its replica, after admission |
 | `flowgentic.fleet.call.duration` | Histogram | `s` | `flowgentic.fleet.name`, `flowgentic.fleet.replica`, `error.type` | Time a model call took through the fleet: its wait for admission, its tries and any outage it waited out; one per call, as its `chat` span |
