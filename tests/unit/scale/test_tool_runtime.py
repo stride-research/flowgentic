@@ -380,6 +380,35 @@ async def test_a_task_that_keeps_losing_its_worker_fails_after_its_retries():
     assert (stats["failed"], stats["lost"], stats["retries"]) == (1, 3, 2)
 
 
+async def test_a_retry_on_that_counts_can_cap_the_runs_again_of_many_tasks():
+    """retry_on is asked once for each run that fails, the last one too, so a
+    count kept in it can stop the runs again of several tasks together; the run
+    it stops ends as an error."""
+    asked = []
+
+    def at_most_two_again(error: Exception) -> bool:
+        asked.append(error)
+        return lost_worker(error) and len(asked) <= 2
+
+    tool = task_tool(simulate, retries=5, retry_on=at_most_two_again)
+    runtime = ToolRuntime(LosingSession({1.0: 9, 2.0: 9}))
+    records = []
+    runtime.add_listener(records.append)
+    one = runtime.submit(tool, "a", "c1", {"x": 1.0})
+    await asyncio.wait([one])
+    two = runtime.submit(tool, "a", "c2", {"x": 2.0})
+    await asyncio.wait([two])
+    assert len(asked) == 4  # c1: lost, lost, stopped; c2: stopped
+    assert [(r.info.call_id, r.outcome, r.attempt) for r in records] == [
+        ("c1", "lost", 1),
+        ("c1", "lost", 2),
+        ("c1", "error", 3),
+        ("c2", "error", 1),
+    ]
+    assert isinstance(one.exception(), WorkerLost) and isinstance(two.exception(), WorkerLost)
+    assert runtime.stats()["retries"] == 2
+
+
 @pytest.mark.parametrize(
     "error, retry_on",
     [

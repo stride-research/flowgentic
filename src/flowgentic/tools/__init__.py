@@ -200,7 +200,9 @@ class TaskTool:
 	application can tell a lost worker by its backend's error, so Flowgentic
 	recognises none itself. The task runs again under the call's same future,
 	so its agent, suspended or waiting, sees only the last run's outcome. The
-	function must be safe to run again with the same arguments.
+	function must be safe to run again with the same arguments. ``retry_on`` is
+	asked once for each run that fails, before the runs are counted, so one
+	that keeps a count can also cap the runs again of many tasks together.
 	"""
 
 	fn: Callable[..., Any]

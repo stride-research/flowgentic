@@ -265,7 +265,10 @@ can tell a lost worker by its backend's error, so Flowgentic recognises none
 itself, and runs nothing again without `retry_on`. An error that `retry_on`
 does not take, such as the function's own, fails the task at once: a
 deterministic error would only fail again. A `TaskCancelled` task never runs
-again.
+again. The runtime asks `retry_on` once for each run that fails, before it
+counts the task's runs, so a `retry_on` that keeps a count can also cap the
+runs again of many tasks together, such as all of a population's: once it
+says no, the run's error fails the task, and the run's record says `error`.
 
 The task runs again under the call's same future, so its agent, whether it
 waits in memory or is suspended, sees only the last run's outcome, and its
