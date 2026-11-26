@@ -292,13 +292,15 @@ RHAPSODY release, until its backends raise a typed error for a lost worker.
 and `retries` how many times, at most, the task runs again. Only the
 application can tell a lost worker by its backend's error, so Flowgentic
 recognises none itself, and runs nothing again without `retry_on`. The
-runtime asks `retry_on` once for each run that fails and decides alone
-whether the run runs again, so `retry_on` must be a test and no more:
-synchronous, as it runs on the agents' event loop, fast, and free of counts or
-budgets. A tool with an `async` one is refused when it is made. An error that
-`retry_on` does not take, such as the function's own, fails the task at once:
-a deterministic error would only fail again. A `TaskCancelled` task never
-runs again.
+runtime asks `retry_on` once for each run that fails, its last too, and
+decides alone whether the run runs again, so every lost worker that
+`retry_on` recognises is recorded `lost`. `retry_on` must be synchronous, as it
+runs on the agents' event loop, and fast. A tool with an `async` one is
+refused when it is made. A `retry_on` that also says no for another reason,
+such as a budget shared by many tasks, makes the run it stops end `error`, not
+`lost`. An error that `retry_on` does not take, such as the function's own,
+fails the task at once: a deterministic error would only fail again. A
+`TaskCancelled` task never runs again.
 
 The task runs again under the call's same future, so its agent, whether it
 waits in memory or is suspended, sees only the last run's outcome. Each run
