@@ -21,9 +21,11 @@ predate this changelog, so their changes are not listed here.
   and waiting agents, and is free again once the agent has ended.
   `AgentHost(max_queued=...)` bounds the agents waiting for a slot; beyond it,
   `submit` raises the new `flowgentic.host.QueueFull`. `stop()` waits for the
-  live and waiting agents; `stop(drain=False)` cancels the live ones and
-  withdraws the waiting ones. `run` and `run_indexed` run on the same parts,
-  and behave as before.
+  live and waiting agents, and still takes the agents the host's own agents
+  submit meanwhile; `stop(drain=False)` cancels the live ones and withdraws
+  the waiting ones. `async with host:` starts the host and stops it at the
+  block's end, with `stop(drain=False)` if the block raised. `run` and
+  `run_indexed` run on the same parts, and behave as before.
 - The agents-at-scale example's `--arrivals RATE`: its agents arrive one at a
   time, and each process's host takes them as they come. The host
   benchmark's `--submit` measures the same path.
