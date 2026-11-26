@@ -52,7 +52,10 @@ the task suspends its agent), and Flowgentic's, with the same
 (`flowgentic.tool.outcome`, which tells a refused or cancelled task from a
 failed one), and the call's whole duration, from submission through the order
 policy's wait and the agent's suspension to the result, with the spans of the
-task's function under it.
+task's function under it. A task tool with `retry_on` adds how many times its
+task ran (`flowgentic.tool.attempts`), and a `flowgentic.tool.retry` event for
+each run again after a lost worker, with the lost run's
+`flowgentic.tool.attempt` and `error.type`.
 
 ### The agent host's spans
 
@@ -88,6 +91,7 @@ agents' states or an agent process's health. Every duration is in seconds.
 | `flowgentic.host.loop.lag` | Histogram | `s` | | How late the event loop woke a 100 ms timer, sampled every 100 ms while a host runs on it |
 | `flowgentic.host.gc.pause` | Histogram | `s` | `flowgentic.gc.generation` | Each pause of the cyclic garbage collector while a host runs |
 | `flowgentic.tool.duration` | Histogram | `s` | `gen_ai.tool.name`, `flowgentic.tool.kind`, `flowgentic.tool.outcome` | Time from a task or service call's submission to its result; see [Tool placement](tools.md#what-it-reports) |
+| `flowgentic.tool.retries` | Counter | `{task}` | `gen_ai.tool.name`, `flowgentic.tool.kind` | Tasks run again after their worker was lost; see [Tool placement](tools.md#a-lost-worker) |
 | `flowgentic.fleet.admission.wait` | Histogram | `s` | `flowgentic.fleet.name`, `flowgentic.fleet.replica` | Time a model request waited for its replica's admission |
 | `flowgentic.fleet.request.duration` | Histogram | `s` | `flowgentic.fleet.name`, `flowgentic.fleet.replica` | Time a model request spent at its replica, after admission |
 | `flowgentic.fleet.call.duration` | Histogram | `s` | `flowgentic.fleet.name`, `flowgentic.fleet.replica`, `error.type` | Time a model call took through the fleet: its wait for admission, its tries and any outage it waited out; one per call, as its `chat` span |

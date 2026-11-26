@@ -46,6 +46,8 @@ processes' side of the tool service need no extra.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
+import inspect
 import logging
 import re
 import time
@@ -135,6 +137,34 @@ def _done(kept: Any, loop: asyncio.AbstractEventLoop) -> asyncio.Future:
 	return future
 
 
+def _lost(tool: TaskTool, error: Exception) -> bool:
+	"""Whether ``error`` means its run's worker was lost, as the tool's
+	``retry_on`` says. A ``retry_on`` that raises, or that returns an awaitable,
+	as an ``async`` callable does, says no, with a warning."""
+	if tool.retry_on is None:
+		return False
+	try:
+		lost = tool.retry_on(error)
+	except Exception:
+		log.warning(
+			"retry_on of task tool %s failed on %s; the task is not run again",
+			tool.name,
+			type(error).__name__,
+			exc_info=True,
+		)
+		return False
+	if inspect.isawaitable(lost):
+		if inspect.iscoroutine(lost):
+			lost.close()  # never awaited: no warning of its own
+		log.warning(
+			"retry_on of task tool %s returned an awaitable, not a bool; it must "
+			"be synchronous, so the task is not run again",
+			tool.name,
+		)
+		return False
+	return bool(lost)
+
+
 def _over(fields: dict[str, Any], placed: Mapping[str, Any]) -> dict[str, Any]:
 	"""A tool's task fields with a placement's over them: the backend's own
 	fields key by key, any other field whole."""
@@ -181,6 +211,19 @@ class TaskTool:
 	keyword arguments ``fn`` is called with, adding what the model must not see,
 	such as where to write a result; ``output(value)`` turns ``fn``'s result
 	into what the model reads.
+
+	A task whose worker was lost, such as one the kernel killed for its memory,
+	can run again: ``retry_on(error)`` says whether a run's error means that,
+	and ``retries`` how many times the task runs again, at most. Only the
+	application can tell a lost worker by its backend's error, so Flowgentic
+	recognises none itself. ``retry_on`` only tells: it must be synchronous
+	and fast, as it runs on the agents' event loop, and the runtime decides
+	whether a lost run runs again, which the task's order may refuse
+	(``TaskOrder``'s ``again``). The task runs again under the
+	call's same future, so its agent, suspended or waiting, sees only the
+	last run's outcome. Each run gets the same keyword arguments, as
+	``prepare`` made them once, so ``fn`` must be safe to run again with them:
+	a lost worker may have left a partial output, or may still be running.
 	"""
 
 	fn: Callable[..., Any]
@@ -191,6 +234,27 @@ class TaskTool:
 	args_schema: Any = None
 	prepare: Callable[[str, str, dict[str, Any]], dict[str, Any]] | None = None
 	output: Callable[[Any], Any] | None = None
+	retries: int = 0
+	retry_on: Callable[[Exception], bool] | None = None
+
+	def __post_init__(self) -> None:
+		if self.retries < 0:
+			raise ValueError(
+				f"task tool {self.name}: retries is {self.retries}, not 0 or more"
+			)
+		if self.retries and self.retry_on is None:
+			raise ValueError(
+				f"task tool {self.name}: retries needs retry_on, which says which "
+				"errors mean a lost worker"
+			)
+		if self.retry_on is not None and (
+			inspect.iscoroutinefunction(self.retry_on)
+			or inspect.iscoroutinefunction(getattr(self.retry_on, "__call__", None))
+		):
+			raise ValueError(
+				f"task tool {self.name}: retry_on must be synchronous, a test of "
+				"an error for a lost worker, not async"
+			)
 
 	def suspends(self, agent_id: str, args: dict[str, Any]) -> bool:
 		"""Whether this call suspends its agent."""
@@ -208,6 +272,8 @@ def task_tool(
 	args_schema: Any = None,
 	prepare: Callable[[str, str, dict[str, Any]], dict[str, Any]] | None = None,
 	output: Callable[[Any], Any] | None = None,
+	retries: int = 0,
+	retry_on: Callable[[Exception], bool] | None = None,
 	**task: Any,
 ) -> Any:
 	"""Declare ``fn`` a task tool; usable as ``@task_tool`` or
@@ -226,6 +292,8 @@ def task_tool(
 			args_schema=args_schema,
 			prepare=prepare,
 			output=output,
+			retries=retries,
+			retry_on=retry_on,
 		)
 
 	return make(fn) if fn is not None else make
@@ -263,8 +331,16 @@ def mcp_tool(
 
 @dataclass(frozen=True, slots=True)
 class TaskInfo:
-	"""What an order policy knows about a task waiting to be submitted: the
-	model's arguments, and the keyword arguments ``fn`` will be called with."""
+	"""What an order policy, or a placement, knows about a task: the model's
+	arguments, and the keyword arguments ``fn`` will be called with.
+
+	For a placement (``ToolRuntime(place=...)``), which places each run of a
+	task: ``attempt``, which run this is, from 1, and for a run again after a
+	lost worker (``TaskTool.retries``), the run before's fields, as placed
+	(``lost_on``: its ``backend`` and ``task_backend_specific_kwargs``, such
+	as its GPU), and its error (``lost_error``), so that a placement can avoid
+	where the worker was lost. An order's ``admit`` and ``done`` see the first
+	run's; its ``again``, if it has one, the run's it is asked about."""
 
 	key: str
 	agent_id: str
@@ -272,6 +348,9 @@ class TaskInfo:
 	tool: str
 	args: dict[str, Any]
 	kwargs: dict[str, Any]
+	attempt: int = 1
+	lost_on: dict[str, Any] | None = None
+	lost_error: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -280,8 +359,12 @@ class TaskRecord:
 
 	``info`` names the agent (``info.agent_id``) and the tool call that asked
 	for the task (``info.call_id``). ``outcome`` is ``ok``, ``error`` (the task
-	failed), ``refused`` (the order policy refused it) or ``cancelled``; with
-	the task's value or error.
+	failed), ``lost`` (it failed with an error its tool's ``retry_on`` takes for
+	a lost worker), ``refused`` (the order policy refused it) or ``cancelled``;
+	with the task's value or error. A task that runs again after a lost worker
+	has one record for each run, the same ``info``, and its run's ``attempt``,
+	from 1: each run's own ``uid``, admission, start, finish and end, and the
+	call's ``t_commit`` and ``t_submit``.
 
 	Times are ``time.time()``, in the agent's process, in this order.
 	``t_commit``: when the agent committed to the call: when the model reply
@@ -292,7 +375,8 @@ class TaskRecord:
 	call id, each such call is dated by the latest of them. ``t_submit``: when
 	the runtime got the call. ``t_admit``: when
 	the order policy admitted the task and the runtime submitted it to RHAPSODY
-	or AsyncFlow; ``None`` if it never was. ``t_start``: on an engine, when
+	or AsyncFlow, and for a run again, when the runtime submitted that run;
+	``None`` if it never was. ``t_start``: on an engine, when
 	the backend reported the task running, as AsyncFlow's ``TaskStarted``
 	event in the telemetry the runtime was given says, if the event arrived
 	before the task's record was made; otherwise ``None``, as on a session.
@@ -323,6 +407,7 @@ class TaskRecord:
 	t_commit: float | None = None
 	t_start: float | None = None
 	t_finish: float | None = None
+	attempt: int = 1
 
 	@property
 	def ok(self) -> bool:
@@ -331,7 +416,18 @@ class TaskRecord:
 
 
 class TaskOrder(Protocol):
-	"""When, and whether, tasks reach RHAPSODY or AsyncFlow."""
+	"""When, and whether, tasks reach RHAPSODY or AsyncFlow.
+
+	An order may also have ``again(info) -> bool``, synchronous, asked before
+	each run again of a task whose worker was lost (``TaskTool.retries``), with
+	that run's ``TaskInfo`` (its ``attempt``, ``lost_on`` and ``lost_error``).
+	It returns ``False`` to refuse the run, as a budget shared by many tasks
+	does, such as a population's: the task then ends with the lost run's
+	error, and that run's record says ``lost``. It is not asked for a task's
+	first run, which ``admit`` decides, nor once the tool's ``retries`` are
+	spent. Without it, every run again the tool's ``retries`` allows goes
+	ahead. One that raises, or returns an awaitable, refuses, with a warning.
+	"""
 
 	async def admit(self, info: TaskInfo) -> None:
 		"""Return when the task may be submitted, or raise to refuse it: the
@@ -380,14 +476,15 @@ class ToolRuntime:
 	such as the GPU a call runs on. ``task_backend_specific_kwargs=None``
 	drops all the tool's backend fields, and none can drop one of them;
 	``backend=None`` gives the runtime's backend, not the tool's. The fields
-	are checked as a tool's are, and a ``place`` that
-	raises, or fields the session or engine cannot take, fail the task with
-	``ToolSetupError``, which fails its agent: a placement set up wrong is a
-	runtime set up wrong, not a call's error for the model to read. Each task
-	it places ends in one record (``add_listener``), so a placement by load
-	can count a task when it places it, and again when the task's record
-	arrives: when the runtime has seen the task end, which for a cancelled
-	task is before its worker stops.
+	are checked as a tool's are, and a ``place`` that raises, or fields the
+	session or engine cannot take, fail the task with ``ToolSetupError``,
+	which fails its agent: a placement set up wrong is a runtime set up
+	wrong, not a call's error for the model to read. Each run it places, a
+	task's first and each run again after a lost worker
+	(``TaskTool.retries``), ends in one record (``add_listener``), so a
+	placement by load can count a run when it places it, and again when the
+	run's record arrives: when the runtime has seen the run end, which for a
+	cancelled task is before its worker stops.
 
 	On an engine, AsyncFlow 0.7.0 keeps each task, with its value, or its exception
 	and the frames it passed through, until the engine shuts down; a task
@@ -460,6 +557,8 @@ class ToolRuntime:
 		self.repeats = 0
 		self.failed = 0
 		self.refused = 0
+		self.lost = 0
+		self.retries = 0
 		self._listeners: list[Callable[[TaskRecord], None]] = []
 
 	def add_listener(self, listener: Callable[[TaskRecord], None]) -> None:
@@ -480,12 +579,14 @@ class ToolRuntime:
 		return "/".join(_key_part(p) for p in parts)
 
 	@staticmethod
-	def uid(key: str) -> str:
+	def uid(key: str, attempt: int = 1) -> str:
 		"""The RHAPSODY task uid of a key: ``flowgentic.`` and the key, with
 		``/`` written ``.``, ``_`` written ``__`` and any character other than
-		a letter, a digit or ``-`` written ``_x<hex>_``. Different keys never
-		share a uid."""
-		return "flowgentic." + _ESCAPED.sub(_escape, key)
+		a letter, a digit or ``-`` written ``_x<hex>_``. A task that runs again
+		after a lost worker has a uid for each run: from the second run on,
+		``_r<attempt>`` follows. Different keys, or runs, never share a uid."""
+		uid = "flowgentic." + _ESCAPED.sub(_escape, key)
+		return uid if attempt == 1 else f"{uid}_r{attempt}"
 
 	def submit(
 		self,
@@ -686,6 +787,7 @@ class ToolRuntime:
 		outcome = "error"
 		kept: Any = _NOTHING
 		uid: str | None = None
+		attempt = 1
 		backend: str | None = fields.get("backend")
 		finish = None
 		if on_engine is not None:
@@ -711,38 +813,109 @@ class ToolRuntime:
 				t_admit = time.time()
 				_agents.withdrawable(asyncio.current_task(), None)
 				try:
-					if self.place is not None:
-						fields, on_engine = self._place(tool, info)
-						backend = fields.get("backend")
-						if on_engine is not None:
-							backend = backend or _asyncflow.default_backend(self.engine)
-					if on_engine is None:
-						named = self.uid(info.key)
+					run = info  # what each run's placement knows
+					while True:  # once, and again for each run whose worker was lost
+						if self.place is not None:
+							fields, on_engine = self._place(tool, run)
+							backend = fields.get("backend")
+							if on_engine is not None:
+								backend = backend or _asyncflow.default_backend(
+									self.engine
+								)
+						if attempt > 1:  # placed, so this run will be submitted
+							self.retries += 1
+							_telemetry.TOOL_RETRIES.add(
+								1,
+								{
+									_telemetry.GEN_AI_TOOL_NAME: tool.name,
+									_telemetry.TOOL_KIND: "task",
+								},
+							)
+						try:
+							if on_engine is None:
+								named = self.uid(info.key, attempt)
 
-						def submitted(sent_to: str | None) -> None:
-							nonlocal uid, backend
-							uid = named  # once the session has accepted the task
-							backend = sent_to or backend
+								def submitted(sent_to: str | None) -> None:
+									nonlocal uid, backend
+									uid = named  # once the session has accepted it
+									backend = sent_to or backend
 
-						value = await _rhapsody.run_function(
-							self.session,
-							tool.fn,
-							info.kwargs,
-							uid=named,
-							on_submitted=submitted,
-							**fields,
-						)
-					else:
-						future = on_engine(
-							info.kwargs,
-							fields.get("task_backend_specific_kwargs") or {},
-							within,
-						)
-						uid = _asyncflow.uid(future)
-						finish = _asyncflow.Finish(future)
-						if self._starts is not None:
-							self._starts.add(uid)
-						value = await _asyncflow.result(future)
+								value = await _rhapsody.run_function(
+									self.session,
+									tool.fn,
+									info.kwargs,
+									uid=named,
+									on_submitted=submitted,
+									**fields,
+								)
+							else:
+								future = on_engine(
+									info.kwargs,
+									fields.get("task_backend_specific_kwargs") or {},
+									within,
+								)
+								uid = _asyncflow.uid(future)
+								finish = _asyncflow.Finish(future)
+								if self._starts is not None:
+									self._starts.add(uid)
+								value = await _asyncflow.result(future)
+							break
+						except TaskCancelled:
+							raise
+						except Exception as exc:
+							if not _lost(tool, exc):
+								raise
+							outcome = "lost"
+							# Its last run, or no one wants its outcome any more:
+							# its agent has ended and no call waits for it.
+							if attempt > tool.retries or _agents.unwanted(
+								asyncio.current_task()
+							):
+								raise
+							error = f"{type(exc).__name__}: {exc}"
+							next_run = dataclasses.replace(
+								info,
+								attempt=attempt + 1,
+								lost_on=fields,
+								lost_error=error,
+							)
+							if not self._again(next_run):  # its order refuses
+								raise
+							# This run's worker was lost: its record, then a new run,
+							# still under the agent's future and the order's admission.
+							self.lost += 1
+							self._tell(
+								self._record(
+									info,
+									(t_submit, t_admit, committed),
+									"lost",
+									None,
+									error,
+									uid,
+									backend,
+									finish,
+									attempt,
+								)
+							)
+							span.add_event(
+								_telemetry.TOOL_RETRY_EVENT,
+								{
+									_telemetry.TOOL_ATTEMPT: attempt,
+									_telemetry.ERROR_TYPE: type(exc).__qualname__,
+								},
+							)
+							log.info(
+								"task %s lost its worker on run %d of %d (%s): "
+								"running it again",
+								info.key,
+								attempt,
+								tool.retries + 1,
+								error,
+							)
+							attempt, run = attempt + 1, next_run
+							outcome, error = "error", None
+							uid = finish = None
+							t_admit = time.time()
 				finally:
 					self.order.done(info)
 				outcome = "ok"
@@ -761,8 +934,10 @@ class ToolRuntime:
 				kept = _Failed(exc)
 				raise
 			except Exception as exc:
-				if outcome == "error":
+				if outcome in ("error", "lost"):
 					self.failed += 1
+				if outcome == "lost":
+					self.lost += 1
 				error = f"{type(exc).__name__}: {exc}"
 				kept = _Failed(exc)
 				span.set_attribute(_telemetry.ERROR_TYPE, type(exc).__qualname__)
@@ -772,25 +947,21 @@ class ToolRuntime:
 				# frame, in its traceback, for as long as the runtime keeps it.
 				_agents.withdrawable(asyncio.current_task(), None)
 				span.set_attribute(_telemetry.TOOL_OUTCOME, outcome)
+				if tool.retry_on is not None:
+					span.set_attribute(_telemetry.TOOL_ATTEMPTS, attempt)
 				if t_admit is not None or outcome != "cancelled":
 					self._end(info.key, asyncio.current_task(), kept)
-				t_start = None
-				if self._starts is not None and uid is not None:
-					t_start = self._starts.pop(uid)
 				self._tell(
-					TaskRecord(
+					self._record(
 						info,
-						t_submit,
-						t_admit,
-						time.time(),
+						(t_submit, t_admit, committed),
 						outcome,
 						value,
 						error,
-						uid=uid,
-						backend=backend,
-						t_commit=t_submit if committed is None else committed,
-						t_start=t_start,
-						t_finish=None if finish is None else finish.time,
+						uid,
+						backend,
+						finish,
+						attempt,
 					)
 				)
 				_telemetry.TOOL_DURATION.record(
@@ -801,6 +972,73 @@ class ToolRuntime:
 						_telemetry.TOOL_OUTCOME: outcome,
 					},
 				)
+
+	def _again(self, run: TaskInfo) -> bool:
+		"""Whether the order lets a lost task run again (``TaskOrder.again``):
+		yes for an order without ``again``."""
+		again = getattr(self.order, "again", None)
+		if again is None:
+			return True
+		try:
+			yes = again(run)
+		except Exception:
+			log.warning(
+				"the task order's again failed on %s; the task is not run again",
+				run.key,
+				exc_info=True,
+			)
+			return False
+		if inspect.isawaitable(yes):
+			if inspect.iscoroutine(yes):
+				yes.close()  # never awaited: no warning of its own
+			log.warning(
+				"the task order's again returned an awaitable, not a bool; it must "
+				"be synchronous, so task %s is not run again",
+				run.key,
+			)
+			return False
+		if not yes:
+			log.info(
+				"task %s lost its worker on run %d: its order refuses a run again",
+				run.key,
+				run.attempt - 1,
+			)
+		return bool(yes)
+
+	def _record(
+		self,
+		info: TaskInfo,
+		times: tuple[float, float | None, float | None],
+		outcome: str,
+		value: Any,
+		error: str | None,
+		uid: str | None,
+		backend: str | None,
+		finish: Any,
+		attempt: int,
+	) -> TaskRecord:
+		"""The record of one run of a task, ending now. ``times``: when the
+		runtime got the call, when it submitted this run, and when the agent
+		committed to the call, if known."""
+		t_submit, t_admit, committed = times
+		t_start = None
+		if self._starts is not None and uid is not None:
+			t_start = self._starts.pop(uid)
+		return TaskRecord(
+			info,
+			t_submit,
+			t_admit,
+			time.time(),
+			outcome,
+			value,
+			error,
+			uid=uid,
+			backend=backend,
+			t_commit=t_submit if committed is None else committed,
+			t_start=t_start,
+			t_finish=None if finish is None else finish.time,
+			attempt=attempt,
+		)
 
 	def _tell(self, record: TaskRecord) -> None:
 		for listener in self._listeners:
@@ -877,12 +1115,15 @@ class ToolRuntime:
 				)
 
 	def stats(self) -> dict:
-		"""Tasks submitted, asked for again, failed and refused, and how many
-		ended tasks are kept."""
+		"""Tasks submitted, asked for again, failed and refused; runs whose
+		worker was lost, and runs again after one; and how many ended tasks'
+		outcomes are kept."""
 		return {
 			"submitted": self.submitted,
 			"repeats": self.repeats,
 			"failed": self.failed,
 			"refused": self.refused,
+			"lost": self.lost,
+			"retries": self.retries,
 			"retained": len(self._ended),
 		}

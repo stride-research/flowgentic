@@ -202,12 +202,25 @@ def emit_suspend(agent_id: str, waits: int) -> None:
 
 TOOL_KIND = "flowgentic.tool.kind"
 TOOL_OUTCOME = "flowgentic.tool.outcome"
+# How many times a task tool's task ran, on its span; and on the event each run
+# again adds, which run lost its worker.
+TOOL_ATTEMPTS = "flowgentic.tool.attempts"
+TOOL_ATTEMPT = "flowgentic.tool.attempt"
+TOOL_RETRY_EVENT = "flowgentic.tool.retry"
 
 TOOL_DURATION = meter.create_histogram(
 	"flowgentic.tool.duration",
 	unit="s",
 	description="Time from a tool call's submission to its result",
 	explicit_bucket_boundaries_advisory=TOOL_DURATION_BUCKETS,
+)
+# A task whose worker was lost runs again under its call's same span and
+# duration; each run again is counted here, which is rare, so it costs nothing
+# on a task that runs once.
+TOOL_RETRIES = meter.create_counter(
+	"flowgentic.tool.retries",
+	unit="{task}",
+	description="Tasks run again after their worker was lost",
 )
 
 

@@ -241,8 +241,15 @@ The AsyncFlow path:
   Academy's local exchange and AsyncFlow's local backend only; see
   [Academy actions as AsyncFlow tasks](guides/academy-on-asyncflow.md#limitations).
 - AsyncFlow 0.7 has no per-task retry or timeout, so applications wrap the
-  task calls that need them. See
+  task calls that need them. A task tool's task can run again after its
+  worker was lost (`task_tool(fn, retries=..., retry_on=...)`), but nothing
+  runs a task again after its own error, and nothing times it out. See
   [Retries and timeouts](guides/retries-and-timeouts.md).
+- A task run again after a lost worker is told by its application's
+  `retry_on`, which reads the backend's error text until RHAPSODY raises a
+  typed error for a lost worker. It runs again at once, with no backoff, and
+  a worker reported lost may still be running, so its function can run twice
+  at once.
 - Tracing (see [Telemetry](features/telemetry.md)):
     - A model call inside an AsyncFlow task is a sibling of the task's span, not
       its child.

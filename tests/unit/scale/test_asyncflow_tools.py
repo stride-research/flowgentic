@@ -648,6 +648,34 @@ async def test_a_placement_chooses_each_calls_backend_and_its_fields():
     assert [r.backend for r in records] == ["compute", "ai", "ai"]
 
 
+def loses_its_worker_once(x: float) -> dict:
+    """Fail the first run as a dead worker would; then run."""
+    count("loses_its_worker_once")
+    if RUNS["loses_its_worker_once"] == 1:
+        raise ConnectionResetError("the worker went away")
+    return {"y": 2 * x}
+
+
+async def test_a_lost_worker_runs_again_as_a_new_asyncflow_task():
+    flow = await open_engine("compute")
+    runtime = ToolRuntime(engine=flow)
+    records = []
+    runtime.add_listener(records.append)
+    tool = task_tool(
+        loses_its_worker_once, retries=1, retry_on=lambda error: isinstance(error, ConnectionResetError)
+    )
+    try:
+        value = await runtime.submit(tool, "a", "c1", {"x": 1.0})
+    finally:
+        await _asyncflow.close_engine(flow)
+    assert value == {"y": 2.0} and RUNS == {"loses_its_worker_once": 2}
+    lost, ok = records
+    assert (lost.outcome, lost.attempt, ok.outcome, ok.attempt) == ("lost", 1, "ok", 2)
+    assert lost.uid and ok.uid and lost.uid != ok.uid  # two AsyncFlow tasks
+    assert lost.t_finish is not None and ok.t_finish is not None
+    assert "ConnectionResetError: the worker went away" in lost.error
+
+
 # --- the decision record ---------------------------------------------------------
 
 

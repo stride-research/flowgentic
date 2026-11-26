@@ -65,13 +65,35 @@ predate this changelog, so their changes are not listed here.
   to the tool's, such as a `backend`, or the backend's own fields
   (`task_backend_specific_kwargs`), which go over the tool's key by key. So
   the agents of `LoopRunner`, which share one tool list, can spread their
-  calls over a process's GPUs, by load or otherwise. Each placed task ends in
-  one record, which a placement by load counts; a cancelled task's arrives
+  calls over a process's GPUs, by load or otherwise. Each run it places ends
+  in one record, which a placement by load counts; a cancelled task's arrives
   before its worker stops. The merge is shallow: a placement can drop all the
   tool's backend fields (`None`), but not one of them. A `place` that raises,
   or fields its session or engine cannot take, fail the task with
   `ToolSetupError`, which fails its agent, as a tool set up wrong does: the
   model never reads it.
+- A task whose worker was lost can run again: `task_tool(fn, retries=...,
+  retry_on=...)`, where `retry_on(error)`, synchronous, is the application's
+  test of a run's error for a lost worker; Flowgentic matches no error
+  itself, and decides whether a lost run runs again, up to `retries`.
+  `fn` must be safe to run again with the same arguments: `prepare` runs once
+  per call, and a worker reported lost may still be running. The task runs
+  again at once, under its call's same future, so its agent, suspended or
+  not, sees only the last run's outcome, and its order admits it once. A task
+  whose agent has ended and that no call waits for does not run again. Each
+  run has its own uid (`ToolRuntime.uid(key, attempt)` on a session) and its
+  own `TaskRecord`, with the new `attempt` field; a run whose worker was lost
+  ends with the new outcome `lost`, and on an AsyncFlow engine is also a
+  failed task among the engine's. A `TaskOrder` may refuse a run again with
+  an optional, synchronous `again(info)`, as a budget shared by many tasks
+  does: the refused run stays `lost`, and orders without `again` are
+  unchanged. Each run again is placed again, and `TaskInfo` gains `attempt`,
+  `lost_on` and `lost_error`, so a placement can avoid where the worker was
+  lost. `runtime.stats()` gains the keys `lost` and `retries`, which a
+  comparison with the whole dict sees. The metric `flowgentic.tool.retries`
+  counts the runs again, and the call's `execute_tool` span gains
+  `flowgentic.tool.attempts` and a `flowgentic.tool.retry` event per run
+  again.
 
 ### Changed
 
