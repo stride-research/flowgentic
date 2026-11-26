@@ -3,8 +3,9 @@
 An ``AgentHost`` runs agents of any framework through a ``Runner``, the small
 adapter each framework provides (``flowgentic.langgraph.GraphRunner`` for
 LangGraph). It runs a fixed set of agents with ``run`` or ``run_indexed``, or
-takes agents one at a time, as they arrive, between ``start`` and ``stop``:
-``submit`` gives it one more and returns a future of how it ended. It owns
+takes agents one at a time, as they arrive, between ``start`` and ``stop``,
+or in an ``async with host:`` block: ``submit`` gives it one more and returns
+a future of how it ended. It owns
 what makes thousands of agents in one Python process work:
 
 - **The collector.** CPython's cyclic collector, at its default settings,
@@ -47,11 +48,11 @@ import gc
 import logging
 import threading
 import time
-from collections import Counter, deque
+from collections import Counter, OrderedDict
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from functools import partial
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from opentelemetry.trace import Status, StatusCode
 
@@ -65,6 +66,9 @@ from flowgentic._agents import (
 	wait,
 )
 from flowgentic.host._probes import CollectorPauses, LoopLag
+
+if TYPE_CHECKING:
+	from types import TracebackType
 
 __all__ = [
 	"Agent",
@@ -252,6 +256,7 @@ class _Session:
 		"collect",
 		"dispatcher",
 		"dispatching",
+		"draining",
 		"ended",
 		"errors",
 		"finished",
@@ -263,9 +268,9 @@ class _Session:
 		"loop",
 		"mode",
 		"outcomes",
+		"owner",
 		"pauses",
 		"queue",
-		"queued",
 		"report",
 		"results",
 		"source",
@@ -288,10 +293,9 @@ class _Session:
 		# run's and run_indexed's agents, taken as slots free, and how many are left
 		self.source = source
 		self.left = count
-		# Submitted agents waiting to start, withdrawn ones included until they
-		# reach the front; how many are not withdrawn; the ids live or waiting.
-		self.queue: deque[_Submitted] = deque()
-		self.queued = 0
+		# Submitted agents waiting to start, by id, in the order they came: one
+		# withdrawn leaves at once. The ids of the agents live or waiting.
+		self.queue: OrderedDict[str, _Submitted] = OrderedDict()
 		self.ids: set[str] = set()
 		# The live agents' tasks, each with its result, or its submission.
 		self.tasks: dict[asyncio.Task, AgentResult | _Submitted] = {}
@@ -302,6 +306,9 @@ class _Session:
 		self.wake = asyncio.Event()
 		self.closed = mode != _SERVED  # submit refuses agents
 		self.stopping = False
+		# stop(drain=True) waits: submit takes agents from this period's agents
+		# still, so that one that delegates to another ends as it would have.
+		self.draining = False
 		self.dispatching = True
 		self.ended = False
 		# Every agent has ended, or the error that stops the host.
@@ -316,10 +323,12 @@ class _Session:
 		self.t0 = 0.0
 		self.dispatcher: asyncio.Task | None = None
 		self.collect: Callable[[asyncio.Task], None] | None = None
+		# What this period's agents carry, so that the host knows its own.
+		self.owner = object()
 
 	def waiting(self) -> bool:
 		"""Whether an agent waits to start."""
-		return bool(self.queued or self.left)
+		return bool(self.queue or self.left)
 
 
 # CPython shares its thresholds and permanent generation across event loops.
@@ -393,8 +402,27 @@ class AgentHost:
 		The host tunes the collector, starts its probes, and begins its
 		accounting period, as ``run`` does. It runs one period at a time:
 		``start``, ``run`` or ``run_indexed`` while it runs raise
-		``RuntimeError``."""
+		``RuntimeError``. ``async with host:`` starts it and stops it at the
+		block's end, so an error between the two cannot leave the collector
+		tuned."""
 		self._open(_SERVED, None, 0)
+
+	async def __aenter__(self) -> AgentHost:
+		"""``start`` the host."""
+		await self.start()
+		return self
+
+	async def __aexit__(
+		self,
+		exc_type: type[BaseException] | None,
+		exc: BaseException | None,
+		tb: TracebackType | None,
+	) -> None:
+		"""``stop`` the host, if the block has not: draining it, or, when the
+		block raised, cancelling its agents (``stop(drain=False)``)."""
+		s = self._session
+		if s is not None and s.mode == _SERVED:
+			await self.stop(drain=exc_type is None)
 
 	def submit(self, agent: Agent) -> asyncio.Future[tuple[AgentResult, Any]]:
 		"""Give the started host one more agent, and return at once.
@@ -411,7 +439,9 @@ class AgentHost:
 		host's event loop. It raises ``RuntimeError`` before ``start`` and once
 		``stop`` is called, ``ValueError`` if an agent with the same id is live
 		or waiting (an id may be used again once its agent has ended), and
-		``QueueFull`` when ``max_queued`` agents already wait for a slot."""
+		``QueueFull`` when ``max_queued`` agents already wait for a slot.
+		While ``stop()`` drains, the host's own agents may still submit, so
+		that an agent that delegates to another ends as it would have."""
 		s = self._session
 		if s is None:
 			raise RuntimeError("this host is not running: await host.start() first")
@@ -420,7 +450,12 @@ class AgentHost:
 				raise RuntimeError(
 					"this host runs a fixed set of agents (run or run_indexed)"
 				)
-			raise RuntimeError("this host is stopping")
+			if not (s.draining and _agents.agent_of(s.owner) is not None):
+				raise RuntimeError(
+					"this host is stopping"
+					if s.stopping
+					else "this host's own task has ended: stop the host"
+				)
 		loop = asyncio.get_running_loop()
 		if loop is not s.loop:
 			raise RuntimeError("submit agents on the event loop the host runs on")
@@ -430,18 +465,17 @@ class AgentHost:
 			)
 		if (
 			self.max_queued is not None
-			and s.queued + len(s.tasks) >= self.max_live_agents + self.max_queued
+			and len(s.queue) + len(s.tasks) >= self.max_live_agents + self.max_queued
 		):
 			raise QueueFull(
-				f"{len(s.tasks)} agents live and {s.queued} waiting: the host holds at "
-				f"most max_live_agents + max_queued = "
+				f"{len(s.tasks)} agents live and {len(s.queue)} waiting: the host "
+				f"holds at most max_live_agents + max_queued = "
 				f"{self.max_live_agents + self.max_queued}"
 			)
 		future = loop.create_future()
 		entry = _Submitted(agent, future, contextvars.copy_context())
 		future.add_done_callback(partial(self._cancelled, s, entry))
-		s.queue.append(entry)
-		s.queued += 1
+		s.queue[agent.id] = entry
 		s.ids.add(agent.id)
 		self.states.add(agent.id)
 		s.wake.set()
@@ -450,18 +484,30 @@ class AgentHost:
 	async def stop(self, *, drain: bool = True) -> HostReport:
 		"""Stop taking agents, end the host, and report.
 
-		With ``drain``, every agent live or waiting runs to its end first.
-		Without, each live agent ends as ``cancelled``, as when ``run`` is
-		cancelled, and each waiting one never starts: its future resolves to a
-		``cancelled`` result with no start time, ``on_done`` does not receive
-		it, and ``outcomes`` counts it as ``cancelled``. ``stop(drain=False)``
-		while a ``stop()`` drains cancels what is left; both return the same
-		report. Cancelling ``stop`` ends the host as cancelling ``run`` does."""
+		With ``drain``, every agent live or waiting runs to its end first; the
+		host's own agents may still submit meanwhile. Without, each live agent
+		ends as ``cancelled``, as when ``run`` is cancelled, and each waiting
+		one never starts: its future resolves to a ``cancelled`` result with no
+		start time, ``on_done`` does not receive it, and ``outcomes`` counts
+		it as ``cancelled``. ``stop(drain=False)`` while a ``stop()`` drains
+		cancels what is left; both return the same report. Cancelling ``stop``
+		ends the host as cancelling ``run`` does.
+
+		``stop`` ends what ``start`` began: while ``run`` or ``run_indexed``
+		runs, it raises ``RuntimeError``, as it does in one of the host's own
+		agents, which would wait for its own end."""
 		s = self._session
 		if s is None:
 			raise RuntimeError("this host is not running")
-		if asyncio.current_task() in s.tasks:
-			# It would wait for its own end.
+		if s.mode != _SERVED:
+			raise RuntimeError(
+				"this host runs a fixed set of agents: run returns once they have "
+				"ended, and cancelling it cancels them"
+			)
+		agent = _agents.agent_of(s.owner)
+		if agent is not None and not agent.finished:
+			# In one of its agents, or a task one started: it would wait for
+			# the agent's end, and the agent, maybe, for it.
 			raise RuntimeError("an agent cannot stop the host it runs in")
 		if s.stopping:
 			if not drain:
@@ -501,6 +547,8 @@ class AgentHost:
 
 	async def _close(self, s: _Session, drain: bool) -> HostReport:
 		s.stopping = s.closed = True
+		# Only while the host's own task runs, to start what its agents submit.
+		s.draining = drain and s.mode == _SERVED and s.dispatching
 		s.wake.set()
 		if not drain:
 			self._cancel_all(s)
@@ -526,7 +574,8 @@ class AgentHost:
 		try:
 			while True:
 				while len(s.tasks) >= cap or not s.waiting():
-					if s.closed and not s.waiting():
+					# While a stop drains, a live agent may still submit one.
+					if s.closed and not s.waiting() and not (s.draining and s.tasks):
 						return
 					s.wake.clear()
 					await s.wake.wait()
@@ -541,13 +590,10 @@ class AgentHost:
 					agent = next(s.source)
 					entry = context = None
 				else:
-					entry = s.queue.popleft()
-					if entry.agent is None:  # withdrawn
-						continue
+					_, entry = s.queue.popitem(last=False)
 					if entry.future.cancelled():  # its callback has not run yet
 						self._withdraw(s, entry)
 						continue
-					s.queued -= 1
 					agent, context = entry.agent, entry.context
 					entry.context = None
 				result = AgentResult(agent.id)
@@ -576,8 +622,20 @@ class AgentHost:
 			self._fail(s, exc)
 
 	def _dispatched(self, s: _Session, _task: asyncio.Task) -> None:
-		"""The host's own task has ended: no agent will start any more."""
+		"""The host's own task has ended: no agent will start any more. If it
+		ended early, as when cancelled from outside, the host closes and
+		withdraws the waiting agents, so that their futures end; the live ones
+		run on to their ends."""
 		s.dispatching = False
+		s.draining = False
+		if not s.ended and (not s.closed or s.waiting()):
+			log.warning(
+				"the agent host's own task ended before the host was stopped: "
+				"it starts no more agents"
+			)
+			s.closed = True
+			s.left = 0
+			self._withdraw_waiting(s)
 		if not s.tasks and not s.finished.done():
 			s.finished.set_result(None)
 
@@ -634,22 +692,27 @@ class AgentHost:
 		"""Cancel the live agents and withdraw the waiting ones. Agents of
 		``run`` not started yet stay pending, as when ``run`` is cancelled."""
 		s.closed = True
+		s.draining = False
 		s.left = 0
 		if s.dispatcher is not None:
 			s.dispatcher.cancel()
-		while s.queue:
-			entry = s.queue.popleft()
-			if entry.agent is not None:
-				self._withdraw(s, entry)
+		self._withdraw_waiting(s)
 		for task in s.tasks:
 			task.cancel()
 		s.wake.set()
 
+	def _withdraw_waiting(self, s: _Session) -> None:
+		while s.queue:
+			_, entry = s.queue.popitem(last=False)
+			self._withdraw(s, entry)
+
 	def _withdraw(self, s: _Session, entry: _Submitted) -> None:
-		"""End a submitted agent that never started, as ``cancelled``."""
+		"""End a submitted agent that never started, as ``cancelled``: it
+		leaves the queue at once, with its future and its context."""
 		agent = entry.agent
 		entry.agent = entry.context = None
-		s.queued -= 1
+		if s.queue.get(agent.id) is entry:
+			del s.queue[agent.id]
 		s.ids.discard(agent.id)
 		self.states.enter(agent.id, AgentState.DONE)
 		self.states._retire(agent.id)
@@ -712,7 +775,7 @@ class AgentHost:
 		result: AgentResult,
 	) -> Any:  # noqa: ANN401  # the agent's output, whatever its framework returns
 		"""Run one agent to its end; its output. ``_collect`` counts it."""
-		_agents.set_current_agent(agent.id, self.states)
+		_agents.set_current_agent(agent.id, self.states, s.owner)
 		states = self.states
 		result.t_start = time.time()
 		states.enter(agent.id, AgentState.WORKING)

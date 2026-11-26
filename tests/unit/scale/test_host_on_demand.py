@@ -6,7 +6,9 @@ loop and LangGraph's graphs."""
 import asyncio
 import contextvars
 import gc
+import logging
 import random
+import sys
 import threading
 import time
 
@@ -28,6 +30,7 @@ from flowgentic.host import (
     register_pending,
 )
 from flowgentic.host import _freeze_owners
+from flowgentic.host._probes import _collector
 
 FAST = Stagger(batch=50, interval_s=0.0)
 LIVE = (AgentState.WORKING, AgentState.TOOL_CALL, AgentState.MODEL_QUEUED,
@@ -408,19 +411,23 @@ async def test_a_host_serves_runs_and_serves_again():
     assert host.states.counts()[AgentState.DONE] == 1  # each period counts afresh
 
 
-async def test_stop_drains_a_run_and_returns_its_report():
-    """``stop`` while ``run`` runs: with drain, the run's report once it ends;
-    without, it cancels the live agents, and the ones not started stay pending."""
-    runner = Runner(sleep=10)
+async def test_stop_is_refused_while_a_run_runs():
+    """``stop`` ends what ``start`` began; a run ends when its agents have, or
+    when it is cancelled, and runs on, unchanged, after the refusal."""
+    runner = Runner(sleep=0.02)
     host = make_host(runner, max_live_agents=2)
     run = asyncio.create_task(host.run([Agent(f"a{i}", None) for i in range(5)]))
-    await asyncio.sleep(0.02)
-    report = await host.stop(drain=False)
-    assert await run is report
-    assert report.outcomes == {"cancelled": 2}
-    assert [r.status for r in report.agents] == ["cancelled", "cancelled"]
-    counts = host.states.counts()
-    assert counts[AgentState.DONE] == 2 and counts[AgentState.PENDING] == 3
+    await asyncio.sleep(0.01)
+    for drain in (True, False):
+        with pytest.raises(RuntimeError, match="fixed set of agents"):
+            await host.stop(drain=drain)
+    report = await run
+    assert report.finished == 5
+    indexed = asyncio.create_task(host.run_indexed(range(3), lambda i: None))
+    await asyncio.sleep(0.005)
+    with pytest.raises(RuntimeError, match="fixed set of agents"):
+        await host.stop()
+    assert (await indexed).outcomes == {"done": 3}
 
 
 # --- cancelling one agent ----------------------------------------------------------------
@@ -702,6 +709,323 @@ async def test_graph_runner_agents_submitted_over_time_suspend_and_resume():
     assert all('{"y": 3.0}' in o["messages"][-1].content for _, o in results)
     assert len(out["messages"]) == 4  # human, call, result, answer: no earlier turn
     assert RUNS == {"simulate": 31}
+
+
+# --- delegation while a stop drains, and a host left unstopped -------------------------------
+
+
+async def test_agents_still_delegate_while_stop_drains():
+    """A boss agent that submits a helper while the host drains ends as it
+    would have, and so does an ``on_done`` that submits a follow-up. Code that
+    is not one of the host's agents is refused, an agent of another host
+    included."""
+
+    class Boss(Runner):
+        async def start(self, agent):
+            if "/" in agent.id:  # a helper or a follow-up
+                return Finished(agent.id)
+            await asyncio.sleep(0.03)  # the host drains by now
+            _, output = await self.host.submit(Agent(f"{agent.id}/helper", None))
+            return Finished(output)
+
+    class Stranger(Runner):
+        async def start(self, agent):
+            await asyncio.sleep(0.01)
+            host.submit(Agent("from-another-host", None))
+
+    follow_ups = []
+
+    def on_done(result, _out):
+        if "/" not in result.id:
+            follow_ups.append(host.submit(Agent(f"{result.id}/next", None)))
+
+    host = make_host(Boss(), max_live_agents=4, on_done=on_done)
+    other = make_host(Stranger())
+    await host.start()
+    await other.start()
+    bosses = [host.submit(Agent(f"boss{i}", None)) for i in range(3)]
+    stranger = other.submit(Agent("stranger", None))
+    stopping = asyncio.create_task(host.stop())
+    await asyncio.sleep(0)
+    with pytest.raises(RuntimeError, match="stopping"):
+        host.submit(Agent("outsider", None))
+    report = await stopping
+    stranger_result, _ = await stranger
+    await other.stop()
+
+    assert [f.result()[1] for f in bosses] == [f"boss{i}/helper" for i in range(3)]
+    assert [f.result()[1] for f in follow_ups] == [f"boss{i}/next" for i in range(3)]
+    assert report.outcomes == {"done": 9}
+    assert stranger_result.status == "failed"
+    assert stranger_result.error == "RuntimeError: this host is stopping"
+    with pytest.raises(RuntimeError, match="not running"):
+        host.submit(Agent("late", None))
+
+
+async def test_on_done_may_submit_a_follow_up_before_and_while_stop_drains():
+    follow_ups = []
+
+    def on_done(result, _out):
+        if result.id.count("/") < 3:
+            follow_ups.append(host.submit(Agent(f"{result.id}/next", None)))
+
+    host = make_host(Runner(sleep=0.01), on_done=on_done)
+    await host.start()
+    await host.submit(Agent("a", None))  # its on_done has run: a/next is waiting or live
+    assert len(follow_ups) == 1
+    report = await host.stop()  # the rest of the chain runs while it drains
+    assert [f.result()[0].id for f in follow_ups] == ["a/next", "a/next/next", "a/next/next/next"]
+    assert report.outcomes == {"done": 4}
+
+
+async def test_stop_without_drain_cancels_a_chain_that_a_drain_let_grow():
+    class Boss(Runner):
+        async def start(self, agent):
+            if "/" in agent.id:
+                await asyncio.sleep(10)
+                return Finished(None)
+            await asyncio.sleep(0.01)
+            result, _ = await self.host.submit(Agent(f"{agent.id}/helper", None))
+            return Finished(result.status)
+
+    host = make_host(Boss(), max_live_agents=2)
+    await host.start()
+    boss = host.submit(Agent("boss", None))
+    draining = asyncio.create_task(host.stop())
+    await asyncio.sleep(0.05)
+    assert host.states.counts()[AgentState.WORKING] == 2  # the boss and its helper
+    report = await host.stop(drain=False)
+    assert await draining is report
+    assert report.outcomes == {"cancelled": 2}
+    assert boss.result()[0].status == "cancelled"
+
+
+async def test_a_task_an_agent_starts_cannot_stop_the_host_while_the_agent_runs():
+    """It would wait for the agent's end, and the agent for it. Once the agent
+    has ended, as in a task its on_done starts, ``stop`` works."""
+
+    class Stops(Runner):
+        async def start(self, agent):
+            if agent.id == "child":
+                await asyncio.create_task(self.host.stop())
+            return Finished(None)
+
+    stops = []
+
+    def on_done(result, _out):
+        if result.id == "last":
+            stops.append(asyncio.ensure_future(host.stop()))
+
+    host = make_host(Stops(), on_done=on_done)
+    await host.start()
+    result, _ = await host.submit(Agent("child", None))
+    assert result.status == "failed"
+    assert result.error == "RuntimeError: an agent cannot stop the host it runs in"
+    await host.submit(Agent("last", None))
+    report = await stops[0]
+    assert report.outcomes == {"failed": 1, "done": 1}
+    assert host._session is None
+
+
+async def test_cancelled_waiting_agents_leave_the_queue_at_once():
+    """100,000 submit-and-cancel calls while the only slot is held: each
+    withdrawn agent leaves the queue, with its future and its context, one
+    loop turn after its cancel, so the queue does not grow."""
+    host = make_host(Runner(sleep=10), max_live_agents=1)
+    await host.start()
+    live = host.submit(Agent("live", None))
+    await asyncio.sleep(0.01)
+    session = host._session
+    most = 0
+    for burst in range(1_000):
+        for i in range(100):
+            host.submit(Agent(f"w{i}", None)).cancel()  # ids used again each burst
+        most = max(most, len(session.queue))
+        await asyncio.sleep(0)
+        assert not session.queue
+    assert most == 100
+    assert session.ids == {"live"} and set(host.states._state) == {"live"}
+    live.cancel()
+    report = await host.stop()
+    assert report.outcomes == {"cancelled": 100_001}
+
+
+async def test_a_cancelled_waiting_agents_id_and_place_free_one_loop_turn_later():
+    host = make_host(Runner(sleep=10), max_live_agents=1, max_queued=1)
+    await host.start()
+    host.submit(Agent("live", None))
+    waiting = host.submit(Agent("w", None))
+    await asyncio.sleep(0.01)
+    waiting.cancel()
+    with pytest.raises(ValueError, match="live or waiting"):
+        host.submit(Agent("w", None))  # the host learns of the cancel next turn
+    with pytest.raises(QueueFull):
+        host.submit(Agent("other", None))
+    await asyncio.sleep(0)
+    again = host.submit(Agent("w", None))
+    report = await host.stop(drain=False)
+    assert again.result()[0].status == "cancelled"
+    assert report.outcomes == {"cancelled": 3}
+
+
+async def test_async_with_starts_the_host_and_stops_it_at_the_end():
+    host = make_host(Runner(sleep=0.01), max_live_agents=2)
+    async with host as same:
+        assert same is host
+        futures = [host.submit(Agent(f"a{i}", None)) for i in range(5)]
+    assert [f.result()[0].status for f in futures] == ["done"] * 5
+    with pytest.raises(RuntimeError, match="not running"):
+        host.submit(Agent("b", None))
+    async with host:  # stopped inside: the block's end has nothing left to stop
+        host.submit(Agent("b", None))
+        report = await host.stop()
+    assert report.outcomes == {"done": 1}
+
+
+async def test_an_error_in_async_with_cancels_the_agents_and_restores_the_process():
+    """The collector's threshold, the frozen objects, the collector's probe and
+    the count of host runs are as before, and the host starts again."""
+    before = (gc.get_threshold(), _agents._host_runs)
+    runner = Runner(sleep=10)
+    seen = []
+    host = make_host(
+        runner,
+        max_live_agents=2,
+        collector=Collector(),
+        on_done=lambda r, _out: seen.append(r.status),
+    )
+    futures = []
+    with pytest.raises(ZeroDivisionError):
+        async with host:
+            futures = [host.submit(Agent(f"a{i}", None)) for i in range(4)]
+            await asyncio.sleep(0.02)
+            assert host._session.freeze["frozen"] > 0  # the first wave has started
+            assert gc.get_threshold()[0] == 100_000 and _collector.callback in gc.callbacks
+            assert _agents._host_runs == before[1] + 1
+            1 / 0  # noqa: B018
+    assert [f.result()[0].status for f in futures] == ["cancelled"] * 4
+    assert seen == ["cancelled", "cancelled"]  # the two live ones; two never started
+    assert (gc.get_threshold(), _agents._host_runs) == before
+    assert _collector.callback not in gc.callbacks
+    assert not _freeze_owners and nothing_left_frozen()
+    async with host:
+        assert (await host.submit(Agent("b", 0.0)))[0].status == "done"
+
+
+async def test_a_host_whose_own_task_dies_ends_its_waiting_agents(caplog):
+    """Cancelled from outside, as by code that cancels every task: the host
+    withdraws the waiting agents, refuses new ones, and lets the live ones end;
+    ``stop`` still reports."""
+
+    class Delegates(Runner):
+        async def start(self, agent):
+            await asyncio.sleep(0.05)
+            if agent.id == "a0":  # while stop drains, with the host's task gone
+                return Finished(self.host.submit(Agent("a0/helper", None)))
+            return Finished(None)
+
+    host = make_host(Delegates(), max_live_agents=2)
+    await host.start()
+    futures = [host.submit(Agent(f"a{i}", None)) for i in range(5)]
+    await asyncio.sleep(0.01)
+    with caplog.at_level(logging.WARNING, logger="flowgentic.host"):
+        host._session.dispatcher.cancel()
+        await asyncio.wait(futures[2:])
+    assert [f.result()[0].status for f in futures[2:]] == ["cancelled"] * 3
+    assert "own task ended before the host was stopped" in caplog.text
+    with pytest.raises(RuntimeError, match="own task has ended"):
+        host.submit(Agent("late", None))
+    report = await host.stop()  # nothing starts a delegated agent any more
+    assert [f.result()[0].status for f in futures] == ["failed"] + ["done"] + ["cancelled"] * 3
+    assert futures[0].result()[0].error == "RuntimeError: this host is stopping"
+    assert report.outcomes == {"failed": 1, "done": 1, "cancelled": 3}
+
+
+def test_an_abandoned_host_ends_its_agents_futures_when_its_loop_ends():
+    """A host started and never stopped, in an event loop that ends:
+    ``asyncio.run`` cancels the host's task and its agents, and every future
+    ends rather than hang. Only ``stop`` ends the host's period, which is why
+    ``async with`` exists."""
+    hosts, futures = [], []
+    runs = _agents._host_runs
+
+    async def main():
+        host = make_host(Runner(sleep=10), max_live_agents=2)
+        hosts.append(host)
+        await host.start()
+        futures.extend(host.submit(Agent(f"a{i}", None)) for i in range(4))
+        await asyncio.sleep(0.01)  # and returns without stopping it
+
+    asyncio.run(main())
+    host = hosts[0]
+    try:
+        assert all(f.done() for f in futures)
+        assert [f.result()[0].status for f in futures] == ["cancelled"] * 4
+        assert _agents._host_runs == runs + 1  # the period never ended
+    finally:
+        host._end(host._session)  # what stop would have done
+    assert _agents._host_runs == runs and _collector.callback not in gc.callbacks
+
+
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="eager tasks came in Python 3.12")
+async def test_a_host_runs_under_an_eager_task_factory():
+    """An eager task runs its first step inside ``create_task``, before the
+    host has recorded it: an agent that ends there, submits there, or calls
+    ``stop`` there (which the host refuses) behaves as under lazy tasks."""
+
+    class Eager(Runner):
+        async def start(self, agent):
+            if agent.id == "stops":
+                await self.host.stop()
+            if agent.id == "boss":
+                _, output = await self.host.submit(Agent("aide", None))
+                return Finished(output)
+            if agent.id.startswith("sync"):
+                return Finished(agent.id)
+            return await super().start(agent)
+
+    loop = asyncio.get_running_loop()
+    loop.set_task_factory(asyncio.eager_task_factory)
+    try:
+        host = make_host(Eager(sleep=0.0), max_live_agents=3)
+        async with host:
+            ids = ("sync0", "stops", "boss", "a0", "sync1")
+            results = await asyncio.gather(*(host.submit(Agent(i, None)) for i in ids))
+        assert [r.status for r, _ in results] == ["done", "failed", "done", "done", "done"]
+        assert results[1][0].error == "RuntimeError: an agent cannot stop the host it runs in"
+        assert results[2][1] == {"agent": "aide"}
+        assert (await host.run([Agent("sync2", None), Agent("a1", None)])).finished == 2
+        report = await host.run_indexed(range(3), lambda i: None, id_prefix="sync")
+        assert report.outcomes == {"done": 3}
+    finally:
+        loop.set_task_factory(None)
+
+
+async def test_submit_from_a_thread_goes_through_the_hosts_event_loop():
+    """From a plain thread, ``submit`` raises and takes nothing;
+    ``run_coroutine_threadsafe`` brings the call to the host's loop."""
+    host = make_host(Runner(sleep=0.0))
+    await host.start()
+    loop = asyncio.get_running_loop()
+    seen = {}
+
+    def worker():
+        try:
+            host.submit(Agent("direct", None))
+        except RuntimeError as exc:
+            seen["direct"] = str(exc)
+
+        async def through_the_loop():
+            return await host.submit(Agent("via-loop", None))
+
+        seen["via-loop"] = asyncio.run_coroutine_threadsafe(through_the_loop(), loop).result(5)
+
+    await asyncio.to_thread(worker)
+    report = await host.stop()
+    assert seen["direct"] == "no running event loop"
+    result, output = seen["via-loop"]
+    assert result.status == "done" and output == {"agent": "via-loop"}
+    assert report.outcomes == {"done": 1}
 
 
 # --- at scale, and under stress -------------------------------------------------------------

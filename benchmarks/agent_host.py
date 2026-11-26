@@ -26,7 +26,6 @@ class Immediate:
 async def submit(host: AgentHost, indices: range, make_input, live: int) -> HostReport:
     """Submit the agents to a started host, as requests that each wait for
     their agent's end, with at most ``live`` waiting for a slot."""
-    await host.start()
     open_requests, room = 0, asyncio.Event()
 
     def answered(_future: asyncio.Future) -> None:
@@ -34,13 +33,14 @@ async def submit(host: AgentHost, indices: range, make_input, live: int) -> Host
         open_requests -= 1
         room.set()
 
-    for i in indices:
-        while open_requests >= 2 * live:
-            room.clear()
-            await room.wait()
-        host.submit(Agent(str(i), make_input(i))).add_done_callback(answered)
-        open_requests += 1
-    return await host.stop()
+    async with host:
+        for i in indices:
+            while open_requests >= 2 * live:
+                room.clear()
+                await room.wait()
+            host.submit(Agent(str(i), make_input(i))).add_done_callback(answered)
+            open_requests += 1
+        return await host.stop()
 
 
 async def main() -> None:

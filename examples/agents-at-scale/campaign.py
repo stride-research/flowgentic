@@ -507,18 +507,17 @@ async def on_demand(
     """Agents arrive one at a time, ``rate`` a second on average, as messages
     reach a server; the host, started once, takes each as it comes."""
     arrival = random.Random(0)
-    await host.start()
-    try:
+    # The block starts the host and stops it at its end; on an error, it
+    # cancels what is live and drops what waits.
+    async with host:
         handlers = []
         for i in indices:
             await asyncio.sleep(arrival.expovariate(rate))  # the next message
             agent = Agent(f"agent-{i}", input_for(i))
             handlers.append(asyncio.create_task(handle(host, agent)))
         replies = Counter(await asyncio.gather(*handlers))
-    except BaseException:
-        await host.stop(drain=False)  # cancel what is live, drop what waits
-        raise
-    return await host.stop(), dict(replies)
+        report = await host.stop()  # waits for the live and waiting agents
+    return report, dict(replies)
 
 
 async def handle(host: AgentHost, agent: Agent) -> str:

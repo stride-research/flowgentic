@@ -189,16 +189,19 @@ agent's end:
 --8<-- "examples/agents-at-scale/campaign.py:on-demand"
 ```
 
-- `start()` begins the host's period: the collector's settings, the probes and
-  the accounting, as `run` does.
+- `async with host:` starts the host's period, with the collector's settings,
+  the probes and the accounting, as `run` does, and stops the host at the
+  block's end: cancelling its agents, if the block raised, so that an error
+  never leaves the collector tuned.
 - `submit(agent)` never blocks. It returns a future of `(result, output)`, what
   `on_done` receives; the agent starts as soon as a slot is free, after the
   agents submitted before it. An agent's error is in its result, never raised.
 - With `max_queued`, `submit` raises `QueueFull` once that many agents wait
   for a slot, and the handler answers "busy, retry later" rather than pile
   the work up.
-- `stop()` refuses new agents, waits for the live and waiting ones, and
-  returns the `HostReport`; `stop(drain=False)` cancels them instead.
+- `stop()` refuses new agents, except those the host's own agents submit,
+  waits for the live and waiting ones, and returns the `HostReport`;
+  `stop(drain=False)` cancels them instead.
 
 An agent's id is free again once it has ended, so a server can run one
 logical agent once per message under one id. The rest, cancelling one agent,
