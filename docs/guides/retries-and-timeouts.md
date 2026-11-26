@@ -11,7 +11,7 @@ that failed:
 | A tool in an agent loop | `ToolRetryMiddleware`, or the application around the tool call | The tool |
 | A graph node | LangGraph: `add_node(..., retry_policy=RetryPolicy(...))` | LangGraph: `add_node(..., timeout=...)`, from LangGraph 1.2 |
 | An AsyncFlow task | The application: AsyncFlow 0.7 has no per-task retry | The application: AsyncFlow 0.7 has no per-task timeout |
-| A task tool's task whose worker died | The application, through `task_tool(fn, retries=..., retry_on=...)`: `retry_on` says which errors mean a lost worker ([A lost worker](../features/tools.md#a-lost-worker)) | The task |
+| A task tool's task whose worker died | The application, through `task_tool(fn, retries=..., retry_on=...)`: `retry_on` says which errors mean a lost worker, and `fn` must be safe to run again with the same arguments ([A lost worker](../features/tools.md#a-lost-worker)) | The task |
 
 `ToolNode(handle_tool_errors=...)` does not retry a tool. It returns the error
 to the model as a `ToolMessage`, and the model decides whether to call the

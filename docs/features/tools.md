@@ -285,27 +285,49 @@ def lost_worker(error: Exception) -> bool:
 simulate_tool = task_tool(simulate, retries=2, retry_on=lost_worker)
 ```
 
-`retry_on(error)` says whether a task's error means its worker was lost, and
-`retries` how many times, at most, the task runs again. Only the application
-can tell a lost worker by its backend's error, so Flowgentic recognises none
-itself, and runs nothing again without `retry_on`. An error that `retry_on`
-does not take, such as the function's own, fails the task at once: a
-deterministic error would only fail again. A `TaskCancelled` task never runs
-again. The runtime asks `retry_on` once for each run that fails, before it
-counts the task's runs, so a `retry_on` that keeps a count can also cap the
-runs again of many tasks together, such as all of a population's: once it
-says no, the run's error fails the task, and the run's record says `error`.
+This `retry_on` reads RHAPSODY's error text, which may change with a
+RHAPSODY release, until its backends raise a typed error for a lost worker.
+
+`retry_on(error)` says only whether a run's error means its worker was lost,
+and `retries` how many times, at most, the task runs again. Only the
+application can tell a lost worker by its backend's error, so Flowgentic
+recognises none itself, and runs nothing again without `retry_on`. The
+runtime asks `retry_on` once for each run that fails and decides alone
+whether the run runs again, so `retry_on` must be a test and no more:
+synchronous, as it runs on the agents' event loop, fast, and free of counts or
+budgets. A tool with an `async` one is refused when it is made. An error that
+`retry_on` does not take, such as the function's own, fails the task at once:
+a deterministic error would only fail again. A `TaskCancelled` task never
+runs again.
 
 The task runs again under the call's same future, so its agent, whether it
-waits in memory or is suspended, sees only the last run's outcome, and its
-order's admission holds for every run. Each run is a new task in RHAPSODY or
-AsyncFlow, with its own uid (`ToolRuntime.uid(key, attempt)` on a session),
-and its own record: a run whose worker was lost ends `lost`, and the next run
-has the next `attempt`. A task that loses its worker on its last run ends
-`lost`, and its agent reads that run's error. The function must be safe to run
-again with the same arguments: its value the same, its side effects written
-again, not added to.
+waits in memory or is suspended, sees only the last run's outcome. Each run
+is a new task in RHAPSODY or AsyncFlow, with its own uid
+(`ToolRuntime.uid(key, attempt)` on a session), and its own record: a run
+whose worker was lost ends `lost`, and the next run has the next `attempt`.
+On an AsyncFlow engine, a lost run is also a failed task among the engine's.
+A task that loses its worker on its last run ends `lost`, and its agent reads
+that run's error, so `lost` records count every lost worker that `retry_on`
+recognised.
 
+A run again is submitted at once, with no backoff. It is placed again
+(`ToolRuntime(place=...)`), and `place` sees which run it is
+(`info.attempt`), where the run before had its worker (`info.lost_on`, the
+fields it ran with, such as its GPU) and its error (`info.lost_error`), so it
+can move the run elsewhere. The order admits the task once, for all its runs:
+a budget is charged once.
+
+A task whose agent has ended, as when its host stopped, and for which no call
+waits any more, does not run again: its lost run ends it.
+
+The function must be safe to run again with the same arguments: its value the
+same, its side effects written again, not added to. `prepare` runs once per
+call, so every run gets the same keyword arguments, an output path or a seed
+among them, and a run again may find what the lost run left there, such as a
+partial file. A worker that the backend reports lost may also still be
+running, so the function can run twice at once.
+
+## The decision record
 ## The decision record
 
 Each task ends in a `TaskRecord`, which `runtime.add_listener(listener)` hands
@@ -318,8 +340,8 @@ call (`record.info.call_id`), and says where the task ran and when:
 | `uid` | The task's uid in AsyncFlow or RHAPSODY; `None` if it was never submitted |
 | `backend` | The backend it was for: the tool's, else the runtime's, else, on an engine, the engine's default, and on a session the one the session sent it to |
 | `t_commit` | When the agent committed to the call: when the model reply that made the call reached the agent, for a model run through a [fleet](fleet.md), or through the [agent loop](agent-loop.md)'s transport, in an agent the [host](agent-host.md) runs; otherwise `t_submit` |
-| `t_submit` | When the runtime got the call |
-| `t_admit` | When its order admitted it and the runtime submitted it; `None` if it never was |
+| `t_submit` | When the runtime got the call: the same for each run of a task |
+| `t_admit` | When its order admitted it and the runtime submitted it; for a run again after a lost worker, when the runtime submitted that run; `None` if it never was |
 | `t_start` | When the backend reported it running: AsyncFlow's `TaskStarted` event, from the telemetry the runtime was given |
 | `t_finish` | When it ended: when the agent's process saw AsyncFlow resolve the task |
 | `t_end` | When the runtime saw it end, just before its agent is told |
@@ -363,14 +385,15 @@ process pools report it when they hand the task to their pool, which runs it
 once a worker is free.
 
 From one agent's records: the time from a decision to its task's
-submission is `t_admit - t_commit`, the framework's way from the model's reply
-to the tool call and then the order's wait; the backend holds the task for
-`t_finish - t_start`, which on RHAPSODY's pools includes its wait for a free
-worker; and the runtime hands its result over `t_end - t_finish` after it
-ends. The time an agent takes to
-decide again, once a task's result has reached it, is the next record's
-`t_commit` minus this one's `t_end`, less the host's resume when the agent
-suspended.
+submission is `t_admit - t_commit` of its first run (`attempt` 1), the
+framework's way from the model's reply to the tool call and then the order's
+wait; the backend holds each run for `t_finish - t_start`, which on RHAPSODY's
+pools includes its wait for a free worker; and the runtime hands its result
+over `t_end - t_finish` after it ends. A run again keeps its call's
+`t_commit` and `t_submit`, so for it `t_admit - t_commit` also holds the runs
+before. The time an agent takes to decide again, once a task's result has
+reached it, is the record of its next call's `t_commit` minus the `t_end` of
+this call's last run, less the host's resume when the agent suspended.
 
 ## What it reports
 
@@ -382,7 +405,11 @@ suspended.
 - Each task or service call is an `execute_tool` span, inside its agent's
   trace, with `gen_ai.tool.name`, `gen_ai.tool.call.id`,
   `flowgentic.tool.kind` (`task` or `service`, and `inline` for an inline
-  tool on the [agent loop](agent-loop.md)) and `flowgentic.tool.outcome`.
+  tool on the [agent loop](agent-loop.md)) and `flowgentic.tool.outcome`. A
+  task tool with `retry_on` adds how many times its task ran
+  (`flowgentic.tool.attempts`), and each run again a `flowgentic.tool.retry`
+  event, with the lost run's `flowgentic.tool.attempt` and `error.type`, and
+  a log line at INFO.
 - `flowgentic.tool.duration` is a histogram of the time from a call's
   submission to its result, by tool, kind and outcome: one value per call,
   however many times its task ran.

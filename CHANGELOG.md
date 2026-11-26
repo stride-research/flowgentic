@@ -24,14 +24,24 @@ predate this changelog, so their changes are not listed here.
   `ToolSetupError`, which fails its agent, as a tool set up wrong does: the
   model never reads it.
 - A task whose worker was lost can run again: `task_tool(fn, retries=...,
-  retry_on=...)`, where `retry_on(error)` is the application's test of a
-  task's error for a lost worker; Flowgentic matches no error itself. The
-  task runs again under its call's same future, so its agent, suspended or
-  not, sees only the last run's outcome. Each run has its own uid
-  (`ToolRuntime.uid(key, attempt)` on a session) and its own `TaskRecord`,
-  with the new `attempt` field; a run whose worker was lost ends with the new
-  outcome `lost`. `runtime.stats()` counts `lost` runs and `retries`, and the
-  metric `flowgentic.tool.retries` counts the runs again.
+  retry_on=...)`, where `retry_on(error)`, synchronous, is the application's
+  test of a run's error for a lost worker; Flowgentic matches no error
+  itself, and alone decides whether a lost run runs again, up to `retries`.
+  `fn` must be safe to run again with the same arguments: `prepare` runs once
+  per call, and a worker reported lost may still be running. The task runs
+  again at once, under its call's same future, so its agent, suspended or
+  not, sees only the last run's outcome, and its order admits it once. A task
+  whose agent has ended and that no call waits for does not run again. Each
+  run has its own uid (`ToolRuntime.uid(key, attempt)` on a session) and its
+  own `TaskRecord`, with the new `attempt` field; a run whose worker was lost
+  ends with the new outcome `lost`, and on an AsyncFlow engine is also a
+  failed task among the engine's. Each run again is placed again, and
+  `TaskInfo` gains `attempt`, `lost_on` and `lost_error`, so a placement can
+  avoid where the worker was lost. `runtime.stats()` gains the keys `lost`
+  and `retries`, which a comparison with the whole dict sees. The metric
+  `flowgentic.tool.retries` counts the runs again, and the call's
+  `execute_tool` span gains `flowgentic.tool.attempts` and a
+  `flowgentic.tool.retry` event per run again.
 
 ### Changed
 

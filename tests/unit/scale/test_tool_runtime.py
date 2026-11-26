@@ -547,33 +547,26 @@ async def test_a_task_that_keeps_losing_its_worker_fails_after_its_retries():
     assert (stats["failed"], stats["lost"], stats["retries"]) == (1, 3, 2)
 
 
-async def test_a_retry_on_that_counts_can_cap_the_runs_again_of_many_tasks():
-    """retry_on is asked once for each run that fails, the last one too, so a
-    count kept in it can stop the runs again of several tasks together; the run
-    it stops ends as an error."""
+async def test_retry_on_only_tells_a_lost_worker_and_the_runtime_counts_the_runs():
+    """retry_on is asked once for each run that fails and says only whether its
+    worker was lost; the runtime alone decides whether it runs again. So every
+    lost run is recorded lost, the last one too, and counted as such."""
     asked = []
 
-    def at_most_two_again(error: Exception) -> bool:
+    def tells(error: Exception) -> bool:
         asked.append(error)
-        return lost_worker(error) and len(asked) <= 2
+        return lost_worker(error)
 
-    tool = task_tool(simulate, retries=5, retry_on=at_most_two_again)
-    runtime = ToolRuntime(LosingSession({1.0: 9, 2.0: 9}))
+    tool = task_tool(simulate, retries=1, retry_on=tells)
+    runtime = ToolRuntime(LosingSession({1.0: 9}))
     records = []
     runtime.add_listener(records.append)
-    one = runtime.submit(tool, "a", "c1", {"x": 1.0})
-    await asyncio.wait([one])
-    two = runtime.submit(tool, "a", "c2", {"x": 2.0})
-    await asyncio.wait([two])
-    assert len(asked) == 4  # c1: lost, lost, stopped; c2: stopped
-    assert [(r.info.call_id, r.outcome, r.attempt) for r in records] == [
-        ("c1", "lost", 1),
-        ("c1", "lost", 2),
-        ("c1", "error", 3),
-        ("c2", "error", 1),
-    ]
-    assert isinstance(one.exception(), WorkerLost) and isinstance(two.exception(), WorkerLost)
-    assert runtime.stats()["retries"] == 2
+    job = runtime.submit(tool, "a", "c1", {"x": 1.0})
+    await asyncio.wait([job])
+    assert len(asked) == 2 and isinstance(job.exception(), WorkerLost)
+    assert [(r.outcome, r.attempt) for r in records] == [("lost", 1), ("lost", 2)]
+    stats = runtime.stats()
+    assert (stats["failed"], stats["lost"], stats["retries"]) == (1, 2, 1)
 
 
 @pytest.mark.parametrize(
@@ -615,18 +608,143 @@ def test_retries_need_a_retry_on_and_are_not_negative():
     assert task_tool(simulate, retries=3, retry_on=lost_worker).retries == 3
 
 
-async def test_each_run_is_placed_and_ends_in_a_record():
-    """A run again is placed again, so a placement by load counts it."""
+async def test_each_run_is_placed_and_a_run_again_can_avoid_where_its_worker_was_lost():
+    """A run again is placed again, with its attempt and where the run before
+    lost its worker, so a placement can move it to another GPU; a placement
+    by load counts each run."""
     placement = LeastLoaded({gpu: on_fake_gpu(gpu) for gpu in (0, 1)})
-    placed = []
+    seen = []
 
-    def place(info):
-        fields = placement(info)
-        placed.append(fields["task_backend_specific_kwargs"]["gpu"])
-        return fields
+    def place(info: TaskInfo):
+        seen.append((info.attempt, info.lost_on, info.lost_error))
+        if info.lost_on is not None:  # not where the worker was lost
+            lost_on = info.lost_on["task_backend_specific_kwargs"]["gpu"]
+            placement.running[lost_on] += 1_000
+            try:
+                return placement(info)
+            finally:
+                placement.running[lost_on] -= 1_000
+        return placement(info)
 
-    runtime = ToolRuntime(LosingSession({1.0: 1}), place=place)
+    session = LosingSession({1.0: 1})
+    runtime = ToolRuntime(session, place=place)
     runtime.add_listener(placement.ended)
     tool = task_tool(simulate, retries=1, retry_on=lost_worker)
     assert await runtime.submit(tool, "a", "c1", {"x": 1.0}) == {"y": 2.0}
-    assert placed == [0, 0] and placement.running == {0: 0, 1: 0}
+    assert [attempt for attempt, _, _ in seen] == [1, 2]
+    assert seen[0][1:] == (None, None)
+    assert seen[1][1] == {"task_backend_specific_kwargs": {"gpu": 0}}
+    assert seen[1][2].startswith("WorkerLost: worker 0 exited with code -9")
+    assert placement.running == {0: 0, 1: 0} and placement.on == {}
+    assert runtime.stats()["retries"] == 1
+
+
+async def test_a_run_again_that_cannot_be_placed_is_not_counted():
+    """Placed wrong, the run again never starts: the task fails with
+    ``ToolSetupError``, and the runtime counts no run again."""
+
+    def place(info: TaskInfo):
+        if info.attempt > 1:
+            raise RuntimeError("no GPU left")
+
+    runtime = ToolRuntime(LosingSession({1.0: 1}), place=place)
+    records = []
+    runtime.add_listener(records.append)
+    job = runtime.submit(task_tool(simulate, retries=1, retry_on=lost_worker), "a", "c1", {"x": 1.0})
+    await asyncio.wait([job])
+    assert isinstance(job.exception(), ToolSetupError) and "no GPU left" in str(job.exception())
+    assert [(r.outcome, r.attempt) for r in records] == [("lost", 1), ("error", 2)]
+    stats = runtime.stats()
+    assert (stats["lost"], stats["retries"], stats["failed"]) == (1, 0, 1)
+
+
+async def is_lost(error: Exception) -> bool:
+    return True
+
+
+class AsyncTest:
+    async def __call__(self, error: Exception) -> bool:
+        return True
+
+
+@pytest.mark.parametrize("retry_on", [is_lost, AsyncTest()], ids=["async-def", "async-call"])
+def test_retry_on_must_be_synchronous(retry_on):
+    with pytest.raises(ValueError, match="retry_on must be synchronous"):
+        task_tool(simulate, retries=1, retry_on=retry_on)
+
+
+async def test_a_retry_on_that_returns_an_awaitable_says_no(caplog):
+    tool = task_tool(simulate, retries=1, retry_on=lambda error: is_lost(error))
+    runtime = ToolRuntime(LosingSession({1.0: 1}))
+    with caplog.at_level(logging.WARNING, logger="flowgentic.tools"):
+        job = runtime.submit(tool, "a", "c1", {"x": 1.0})
+        await asyncio.wait([job])
+    assert isinstance(job.exception(), WorkerLost) and runtime.stats()["retries"] == 0
+    assert "returned an awaitable, not a bool" in caplog.text
+
+
+@pytest.mark.parametrize("when", ["during-the-first-run", "between-runs"])
+async def test_a_lost_task_whose_agent_has_ended_does_not_run_again(when):
+    """Once its agent has ended and no call waits for it, as when its host was
+    stopped, a task whose worker is lost does not run again: no one would read
+    its outcome. Its last run is recorded lost, and the task fails."""
+    session = HangingSession()
+    tool = task_tool(simulate, retries=3, retry_on=lost_worker)
+    runtime = ToolRuntime(session)
+    records = []
+    runtime.add_listener(records.append)
+    runner = LoopRunner(ScriptedTransport(simulate_times(1)), [tool], runtime=runtime)
+    host = asyncio.ensure_future(AgentHost(runner, stagger=FAST).run(inputs(1)))
+    while not session.futures:
+        await asyncio.sleep(0)
+    if when == "between-runs":  # the first run is lost while the agent waits: it runs again
+        session.futures[0].set_exception(WorkerLost("worker 3 exited with code -9"))
+        while len(session.futures) < 2:
+            await asyncio.sleep(0)
+    (job,) = runtime._jobs.values()
+    host.cancel()  # the host stops, and with it the agent
+    await asyncio.wait([host])
+    assert not job.done()  # started: RHAPSODY does not stop it
+    session.futures[-1].set_exception(WorkerLost("worker 4 exited with code -9"))
+    await asyncio.wait([job], timeout=5)  # a run again here would never end
+    runs = 1 if when == "during-the-first-run" else 2
+    assert job.done(), f"{len(session.futures)} runs"
+    assert len(session.futures) == runs and isinstance(job.exception(), WorkerLost)
+    assert [(r.outcome, r.attempt) for r in records] == [("lost", n) for n in range(1, runs + 1)]
+    assert runtime.stats()["retries"] == runs - 1
+
+
+async def test_a_task_cancelled_between_its_runs_ends_cancelled():
+    """Cancelled while its run again is being submitted, the task ends
+    cancelled: the lost run's record, then the cancelled one's."""
+    started = asyncio.Event()
+
+    class SlowToSubmit(LosingSession):
+        async def submit_tasks(self, tasks):
+            if len(self.uids) == 1:  # the run again
+                started.set()
+                await asyncio.sleep(10)
+            return await super().submit_tasks(tasks)
+
+    runtime = ToolRuntime(SlowToSubmit({1.0: 1}))
+    records = []
+    runtime.add_listener(records.append)
+    job = runtime.submit(task_tool(simulate, retries=1, retry_on=lost_worker), "a", "c1", {"x": 1.0})
+    await started.wait()
+    job.cancel()
+    await asyncio.wait([job])
+    assert job.cancelled() and "simulate" not in RUNS
+    assert [(r.outcome, r.attempt) for r in records] == [("lost", 1), ("cancelled", 2)]
+    assert runtime.stats()["retries"] == 1
+
+
+async def test_a_run_again_is_an_event_on_the_calls_span(span_exporter):
+    tool = task_tool(simulate, retries=2, retry_on=lost_worker)
+    runtime = ToolRuntime(LosingSession({1.0: 1}))
+    assert await runtime.submit(tool, "a", "c1", {"x": 1.0}) == {"y": 2.0}
+    (span,) = [s for s in span_exporter.get_finished_spans() if s.name == "execute_tool simulate"]
+    assert span.attributes["flowgentic.tool.attempts"] == 2
+    assert span.attributes["flowgentic.tool.outcome"] == "ok"
+    (event,) = span.events
+    assert event.name == "flowgentic.tool.retry"
+    assert dict(event.attributes) == {"flowgentic.tool.attempt": 1, "error.type": "WorkerLost"}

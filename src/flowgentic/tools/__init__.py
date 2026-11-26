@@ -46,6 +46,8 @@ processes' side of the tool service need no extra.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
+import inspect
 import logging
 import re
 import time
@@ -136,12 +138,13 @@ def _done(kept: Any, loop: asyncio.AbstractEventLoop) -> asyncio.Future:
 
 
 def _lost(tool: TaskTool, error: Exception) -> bool:
-	"""Whether ``error`` means its task's worker was lost, as the tool's
-	``retry_on`` says. A ``retry_on`` that raises says no, with a warning."""
+	"""Whether ``error`` means its run's worker was lost, as the tool's
+	``retry_on`` says. A ``retry_on`` that raises, or that returns an awaitable,
+	as an ``async`` callable does, says no, with a warning."""
 	if tool.retry_on is None:
 		return False
 	try:
-		return bool(tool.retry_on(error))
+		lost = tool.retry_on(error)
 	except Exception:
 		log.warning(
 			"retry_on of task tool %s failed on %s; the task is not run again",
@@ -150,6 +153,16 @@ def _lost(tool: TaskTool, error: Exception) -> bool:
 			exc_info=True,
 		)
 		return False
+	if inspect.isawaitable(lost):
+		if inspect.iscoroutine(lost):
+			lost.close()  # never awaited: no warning of its own
+		log.warning(
+			"retry_on of task tool %s returned an awaitable, not a bool; it must "
+			"be synchronous, so the task is not run again",
+			tool.name,
+		)
+		return False
+	return bool(lost)
 
 
 def _over(fields: dict[str, Any], placed: Mapping[str, Any]) -> dict[str, Any]:
@@ -200,14 +213,16 @@ class TaskTool:
 	into what the model reads.
 
 	A task whose worker was lost, such as one the kernel killed for its memory,
-	can run again: ``retry_on(error)`` says whether a task's error means that,
+	can run again: ``retry_on(error)`` says whether a run's error means that,
 	and ``retries`` how many times the task runs again, at most. Only the
 	application can tell a lost worker by its backend's error, so Flowgentic
-	recognises none itself. The task runs again under the call's same future,
-	so its agent, suspended or waiting, sees only the last run's outcome. The
-	function must be safe to run again with the same arguments. ``retry_on`` is
-	asked once for each run that fails, before the runs are counted, so one
-	that keeps a count can also cap the runs again of many tasks together.
+	recognises none itself. ``retry_on`` only tells: it must be synchronous
+	and fast, as it runs on the agents' event loop, and the runtime alone
+	decides whether a lost run runs again. The task runs again under the
+	call's same future, so its agent, suspended or waiting, sees only the
+	last run's outcome. Each run gets the same keyword arguments, as
+	``prepare`` made them once, so ``fn`` must be safe to run again with them:
+	a lost worker may have left a partial output, or may still be running.
 	"""
 
 	fn: Callable[..., Any]
@@ -230,6 +245,14 @@ class TaskTool:
 			raise ValueError(
 				f"task tool {self.name}: retries needs retry_on, which says which "
 				"errors mean a lost worker"
+			)
+		if self.retry_on is not None and (
+			inspect.iscoroutinefunction(self.retry_on)
+			or inspect.iscoroutinefunction(getattr(self.retry_on, "__call__", None))
+		):
+			raise ValueError(
+				f"task tool {self.name}: retry_on must be synchronous, a test of "
+				"an error for a lost worker, not async"
 			)
 
 	def suspends(self, agent_id: str, args: dict[str, Any]) -> bool:
@@ -307,8 +330,15 @@ def mcp_tool(
 
 @dataclass(frozen=True, slots=True)
 class TaskInfo:
-	"""What an order policy knows about a task waiting to be submitted: the
-	model's arguments, and the keyword arguments ``fn`` will be called with."""
+	"""What an order policy, or a placement, knows about a task: the model's
+	arguments, and the keyword arguments ``fn`` will be called with.
+
+	For a placement (``ToolRuntime(place=...)``), which places each run of a
+	task: ``attempt``, which run this is, from 1, and for a run again after a
+	lost worker (``TaskTool.retries``), the run before's fields, as placed
+	(``lost_on``: its ``backend`` and ``task_backend_specific_kwargs``, such
+	as its GPU), and its error (``lost_error``), so that a placement can avoid
+	where the worker was lost. An order policy sees the first run's."""
 
 	key: str
 	agent_id: str
@@ -316,6 +346,9 @@ class TaskInfo:
 	tool: str
 	args: dict[str, Any]
 	kwargs: dict[str, Any]
+	attempt: int = 1
+	lost_on: dict[str, Any] | None = None
+	lost_error: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,7 +361,8 @@ class TaskRecord:
 	a lost worker), ``refused`` (the order policy refused it) or ``cancelled``;
 	with the task's value or error. A task that runs again after a lost worker
 	has one record for each run, the same ``info``, and its run's ``attempt``,
-	from 1: each run's own ``uid``, admission, start, finish and end.
+	from 1: each run's own ``uid``, admission, start, finish and end, and the
+	call's ``t_commit`` and ``t_submit``.
 
 	Times are ``time.time()``, in the agent's process, in this order.
 	``t_commit``: when the agent committed to the call: when the model reply
@@ -339,7 +373,8 @@ class TaskRecord:
 	call id, each such call is dated by the latest of them. ``t_submit``: when
 	the runtime got the call. ``t_admit``: when
 	the order policy admitted the task and the runtime submitted it to RHAPSODY
-	or AsyncFlow; ``None`` if it never was. ``t_start``: on an engine, when
+	or AsyncFlow, and for a run again, when the runtime submitted that run;
+	``None`` if it never was. ``t_start``: on an engine, when
 	the backend reported the task running, as AsyncFlow's ``TaskStarted``
 	event in the telemetry the runtime was given says, if the event arrived
 	before the task's record was made; otherwise ``None``, as on a session.
@@ -765,14 +800,24 @@ class ToolRuntime:
 				t_admit = time.time()
 				_agents.withdrawable(asyncio.current_task(), None)
 				try:
+					run = info  # what each run's placement knows
 					while True:  # once, and again for each run whose worker was lost
 						if self.place is not None:
-							fields, on_engine = self._place(tool, info)
+							fields, on_engine = self._place(tool, run)
 							backend = fields.get("backend")
 							if on_engine is not None:
 								backend = backend or _asyncflow.default_backend(
 									self.engine
 								)
+						if attempt > 1:  # placed, so this run will be submitted
+							self.retries += 1
+							_telemetry.TOOL_RETRIES.add(
+								1,
+								{
+									_telemetry.GEN_AI_TOOL_NAME: tool.name,
+									_telemetry.TOOL_KIND: "task",
+								},
+							)
 						try:
 							if on_engine is None:
 								named = self.uid(info.key, attempt)
@@ -807,34 +852,50 @@ class ToolRuntime:
 						except Exception as exc:
 							if not _lost(tool, exc):
 								raise
-							if attempt > tool.retries:
-								outcome = "lost"
+							outcome = "lost"
+							# Its last run, or no one wants its outcome any more:
+							# its agent has ended and no call waits for it.
+							if attempt > tool.retries or _agents.unwanted(
+								asyncio.current_task()
+							):
 								raise
 							# This run's worker was lost: its record, then a new run,
 							# still under the agent's future and the order's admission.
 							self.lost += 1
-							self.retries += 1
+							error = f"{type(exc).__name__}: {exc}"
 							self._tell(
 								self._record(
 									info,
 									(t_submit, t_admit, committed),
 									"lost",
 									None,
-									f"{type(exc).__name__}: {exc}",
+									error,
 									uid,
 									backend,
 									finish,
 									attempt,
 								)
 							)
-							_telemetry.TOOL_RETRIES.add(
-								1,
+							span.add_event(
+								_telemetry.TOOL_RETRY_EVENT,
 								{
-									_telemetry.GEN_AI_TOOL_NAME: tool.name,
-									_telemetry.TOOL_KIND: "task",
+									_telemetry.TOOL_ATTEMPT: attempt,
+									_telemetry.ERROR_TYPE: type(exc).__qualname__,
 								},
 							)
+							log.info(
+								"task %s lost its worker on run %d of %d (%s): "
+								"running it again",
+								info.key,
+								attempt,
+								tool.retries + 1,
+								error,
+							)
 							attempt += 1
+							run = dataclasses.replace(
+								info, attempt=attempt, lost_on=fields, lost_error=error
+							)
+							outcome, error = "error", None
 							uid = finish = None
 							t_admit = time.time()
 				finally:
@@ -868,6 +929,8 @@ class ToolRuntime:
 				# frame, in its traceback, for as long as the runtime keeps it.
 				_agents.withdrawable(asyncio.current_task(), None)
 				span.set_attribute(_telemetry.TOOL_OUTCOME, outcome)
+				if tool.retry_on is not None:
+					span.set_attribute(_telemetry.TOOL_ATTEMPTS, attempt)
 				if t_admit is not None or outcome != "cancelled":
 					self._end(info.key, asyncio.current_task(), kept)
 				self._tell(

@@ -501,6 +501,14 @@ def withdrawable(future: asyncio.Future, withdraw: Callable[[], None] | None) ->
 		_withdraw[future] = withdraw
 
 
+def unwanted(future: asyncio.Future) -> bool:
+	"""Whether no one wants ``future``'s outcome any more: the agent of the
+	current context, which asked for it, has ended, and no wait (``wait``) is
+	on it. Always ``False`` outside an agent, whose caller may hold it."""
+	agent = _current.get()
+	return agent is not None and agent.finished and future not in _waits
+
+
 async def wait(futures: Iterable[asyncio.Future]) -> None:
 	"""Wait for ``futures`` to end, without raising their exceptions: read each
 	one's outcome from it afterwards.

@@ -52,7 +52,10 @@ the task suspends its agent), and Flowgentic's, with the same
 (`flowgentic.tool.outcome`, which tells a refused or cancelled task from a
 failed one), and the call's whole duration, from submission through the order
 policy's wait and the agent's suspension to the result, with the spans of the
-task's function under it.
+task's function under it. A task tool with `retry_on` adds how many times its
+task ran (`flowgentic.tool.attempts`), and a `flowgentic.tool.retry` event for
+each run again after a lost worker, with the lost run's
+`flowgentic.tool.attempt` and `error.type`.
 
 ### The agent host's spans
 

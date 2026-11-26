@@ -202,6 +202,11 @@ def emit_suspend(agent_id: str, waits: int) -> None:
 
 TOOL_KIND = "flowgentic.tool.kind"
 TOOL_OUTCOME = "flowgentic.tool.outcome"
+# How many times a task tool's task ran, on its span; and on the event each run
+# again adds, which run lost its worker.
+TOOL_ATTEMPTS = "flowgentic.tool.attempts"
+TOOL_ATTEMPT = "flowgentic.tool.attempt"
+TOOL_RETRY_EVENT = "flowgentic.tool.retry"
 
 TOOL_DURATION = meter.create_histogram(
 	"flowgentic.tool.duration",
