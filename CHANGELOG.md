@@ -26,7 +26,7 @@ predate this changelog, so their changes are not listed here.
 - A task whose worker was lost can run again: `task_tool(fn, retries=...,
   retry_on=...)`, where `retry_on(error)`, synchronous, is the application's
   test of a run's error for a lost worker; Flowgentic matches no error
-  itself, and alone decides whether a lost run runs again, up to `retries`.
+  itself, and decides whether a lost run runs again, up to `retries`.
   `fn` must be safe to run again with the same arguments: `prepare` runs once
   per call, and a worker reported lost may still be running. The task runs
   again at once, under its call's same future, so its agent, suspended or
@@ -35,13 +35,16 @@ predate this changelog, so their changes are not listed here.
   run has its own uid (`ToolRuntime.uid(key, attempt)` on a session) and its
   own `TaskRecord`, with the new `attempt` field; a run whose worker was lost
   ends with the new outcome `lost`, and on an AsyncFlow engine is also a
-  failed task among the engine's. Each run again is placed again, and
-  `TaskInfo` gains `attempt`, `lost_on` and `lost_error`, so a placement can
-  avoid where the worker was lost. `runtime.stats()` gains the keys `lost`
-  and `retries`, which a comparison with the whole dict sees. The metric
-  `flowgentic.tool.retries` counts the runs again, and the call's
-  `execute_tool` span gains `flowgentic.tool.attempts` and a
-  `flowgentic.tool.retry` event per run again.
+  failed task among the engine's. A `TaskOrder` may refuse a run again with
+  an optional, synchronous `again(info)`, as a budget shared by many tasks
+  does: the refused run stays `lost`, and orders without `again` are
+  unchanged. Each run again is placed again, and `TaskInfo` gains `attempt`,
+  `lost_on` and `lost_error`, so a placement can avoid where the worker was
+  lost. `runtime.stats()` gains the keys `lost` and `retries`, which a
+  comparison with the whole dict sees. The metric `flowgentic.tool.retries`
+  counts the runs again, and the call's `execute_tool` span gains
+  `flowgentic.tool.attempts` and a `flowgentic.tool.retry` event per run
+  again.
 
 ### Changed
 

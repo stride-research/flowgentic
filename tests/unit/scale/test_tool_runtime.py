@@ -13,7 +13,7 @@ from _basics import FAST, RUNS, ScriptedTransport, broken, inputs, reply, simula
 from flowgentic.host import AgentHost
 from flowgentic.loop import LoopRunner
 from flowgentic.store import MemoryStore
-from flowgentic.tools import TaskCancelled, TaskInfo, TaskRecord, ToolRuntime, ToolSetupError, task_tool
+from flowgentic.tools import Immediate, TaskCancelled, TaskInfo, TaskRecord, ToolRuntime, ToolSetupError, task_tool
 
 
 @pytest.fixture(autouse=True)
@@ -567,6 +567,109 @@ async def test_retry_on_only_tells_a_lost_worker_and_the_runtime_counts_the_runs
     assert [(r.outcome, r.attempt) for r in records] == [("lost", 1), ("lost", 2)]
     stats = runtime.stats()
     assert (stats["failed"], stats["lost"], stats["retries"]) == (1, 2, 1)
+
+
+# --8<-- [start:run-again-at-most]
+class RunAgainAtMost(Immediate):
+    """Let the tasks this order admits run again after a lost worker ``n``
+    times in all: a budget shared by many tasks, such as a population's."""
+
+    def __init__(self, n: int) -> None:
+        self.left = n
+
+    def again(self, info: TaskInfo) -> bool:
+        if self.left == 0:
+            return False
+        self.left -= 1
+        return True
+
+
+# --8<-- [end:run-again-at-most]
+
+
+async def test_an_order_can_refuse_a_run_again_and_the_run_stays_lost():
+    """The order is asked before each run again that the tool's retries allow,
+    with that run's info; a run it refuses ends the task, recorded lost."""
+    order = RunAgainAtMost(2)
+    asked = []
+    allows = order.again
+
+    def again(info: TaskInfo) -> bool:
+        asked.append((info.call_id, info.attempt, info.lost_error.split(":")[0]))
+        return allows(info)
+
+    order.again = again
+    tool = task_tool(simulate, retries=5, retry_on=lost_worker)
+    runtime = ToolRuntime(LosingSession({1.0: 9, 2.0: 9, 3.0: 9}), order=order)
+    records = []
+    runtime.add_listener(records.append)
+    jobs = []
+    for call, x in (("c1", 1.0), ("c2", 2.0)):
+        jobs.append(runtime.submit(tool, "a", call, {"x": x}))
+        await asyncio.wait(jobs[-1:])
+    spent = runtime.submit(task_tool(simulate, retries=1, retry_on=lost_worker), "a", "c3", {"x": 3.0})
+    await asyncio.wait([spent])
+    assert asked == [("c1", 2, "WorkerLost"), ("c1", 3, "WorkerLost"), ("c1", 4, "WorkerLost"), ("c2", 2, "WorkerLost"), ("c3", 2, "WorkerLost")]
+    assert [(r.info.call_id, r.outcome, r.attempt) for r in records] == [
+        ("c1", "lost", 1),
+        ("c1", "lost", 2),
+        ("c1", "lost", 3),  # refused
+        ("c2", "lost", 1),  # refused
+        ("c3", "lost", 1),  # refused: the budget is spent
+    ]
+    assert all(isinstance(job.exception(), WorkerLost) for job in (*jobs, spent))
+    stats = runtime.stats()
+    assert (stats["lost"], stats["retries"], stats["failed"]) == (5, 2, 3)
+
+
+async def test_again_is_not_asked_once_the_tools_retries_are_spent_or_for_its_own_error():
+    order = RunAgainAtMost(10)
+    tool = task_tool(simulate, retries=1, retry_on=lost_worker)
+    runtime = ToolRuntime(LosingSession({1.0: 9}), order=order)
+    lost = runtime.submit(tool, "a", "c1", {"x": 1.0})
+    await asyncio.wait([lost])
+    own = runtime.submit(task_tool(broken, retries=1, retry_on=lost_worker), "a", "c2", {"x": 2.0})
+    await asyncio.wait([own])
+    assert order.left == 9  # asked once: before c1's second run
+    assert isinstance(lost.exception(), WorkerLost) and isinstance(own.exception(), ValueError)
+
+
+async def async_again(info):
+    return True
+
+
+class Raising(Immediate):
+    def again(self, info: TaskInfo) -> bool:
+        raise RuntimeError("no budget here")
+
+
+class Awaiting(Immediate):
+    def again(self, info: TaskInfo):
+        return async_again(info)
+
+
+@pytest.mark.parametrize(
+    "order, warning",
+    [(Raising(), "the task order's again failed on a/c1"), (Awaiting(), "returned an awaitable, not a bool")],
+    ids=["raises", "async"],
+)
+async def test_an_again_that_fails_refuses_the_run_again(order, warning, caplog):
+    tool = task_tool(simulate, retries=1, retry_on=lost_worker)
+    runtime = ToolRuntime(LosingSession({1.0: 1}), order=order)
+    with caplog.at_level(logging.WARNING, logger="flowgentic.tools"):
+        job = runtime.submit(tool, "a", "c1", {"x": 1.0})
+        await asyncio.wait([job])
+    assert isinstance(job.exception(), WorkerLost) and runtime.stats()["retries"] == 0
+    assert warning in caplog.text
+
+
+async def test_an_order_without_again_lets_every_run_again_go_ahead():
+    """Orders written before ``again`` existed are unchanged."""
+    order = RefuseNegativeTwo()  # admit and done only
+    tool = task_tool(simulate, retries=2, retry_on=lost_worker)
+    runtime = ToolRuntime(LosingSession({1.0: 2}), order=order)
+    assert await runtime.submit(tool, "a", "c1", {"x": 1.0}) == {"y": 2.0}
+    assert runtime.stats()["retries"] == 2 and order.ended == ["a/c1"]
 
 
 @pytest.mark.parametrize(

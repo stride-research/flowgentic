@@ -217,8 +217,9 @@ class TaskTool:
 	and ``retries`` how many times the task runs again, at most. Only the
 	application can tell a lost worker by its backend's error, so Flowgentic
 	recognises none itself. ``retry_on`` only tells: it must be synchronous
-	and fast, as it runs on the agents' event loop, and the runtime alone
-	decides whether a lost run runs again. The task runs again under the
+	and fast, as it runs on the agents' event loop, and the runtime decides
+	whether a lost run runs again, which the task's order may refuse
+	(``TaskOrder``'s ``again``). The task runs again under the
 	call's same future, so its agent, suspended or waiting, sees only the
 	last run's outcome. Each run gets the same keyword arguments, as
 	``prepare`` made them once, so ``fn`` must be safe to run again with them:
@@ -338,7 +339,8 @@ class TaskInfo:
 	lost worker (``TaskTool.retries``), the run before's fields, as placed
 	(``lost_on``: its ``backend`` and ``task_backend_specific_kwargs``, such
 	as its GPU), and its error (``lost_error``), so that a placement can avoid
-	where the worker was lost. An order policy sees the first run's."""
+	where the worker was lost. An order's ``admit`` and ``done`` see the first
+	run's; its ``again``, if it has one, the run's it is asked about."""
 
 	key: str
 	agent_id: str
@@ -414,7 +416,18 @@ class TaskRecord:
 
 
 class TaskOrder(Protocol):
-	"""When, and whether, tasks reach RHAPSODY or AsyncFlow."""
+	"""When, and whether, tasks reach RHAPSODY or AsyncFlow.
+
+	An order may also have ``again(info) -> bool``, synchronous, asked before
+	each run again of a task whose worker was lost (``TaskTool.retries``), with
+	that run's ``TaskInfo`` (its ``attempt``, ``lost_on`` and ``lost_error``).
+	It returns ``False`` to refuse the run, as a budget shared by many tasks
+	does, such as a population's: the task then ends with the lost run's
+	error, and that run's record says ``lost``. It is not asked for a task's
+	first run, which ``admit`` decides, nor once the tool's ``retries`` are
+	spent. Without it, every run again the tool's ``retries`` allows goes
+	ahead. One that raises, or returns an awaitable, refuses, with a warning.
+	"""
 
 	async def admit(self, info: TaskInfo) -> None:
 		"""Return when the task may be submitted, or raise to refuse it: the
@@ -859,10 +872,18 @@ class ToolRuntime:
 								asyncio.current_task()
 							):
 								raise
+							error = f"{type(exc).__name__}: {exc}"
+							next_run = dataclasses.replace(
+								info,
+								attempt=attempt + 1,
+								lost_on=fields,
+								lost_error=error,
+							)
+							if not self._again(next_run):  # its order refuses
+								raise
 							# This run's worker was lost: its record, then a new run,
 							# still under the agent's future and the order's admission.
 							self.lost += 1
-							error = f"{type(exc).__name__}: {exc}"
 							self._tell(
 								self._record(
 									info,
@@ -891,10 +912,7 @@ class ToolRuntime:
 								tool.retries + 1,
 								error,
 							)
-							attempt += 1
-							run = dataclasses.replace(
-								info, attempt=attempt, lost_on=fields, lost_error=error
-							)
+							attempt, run = attempt + 1, next_run
 							outcome, error = "error", None
 							uid = finish = None
 							t_admit = time.time()
@@ -954,6 +972,38 @@ class ToolRuntime:
 						_telemetry.TOOL_OUTCOME: outcome,
 					},
 				)
+
+	def _again(self, run: TaskInfo) -> bool:
+		"""Whether the order lets a lost task run again (``TaskOrder.again``):
+		yes for an order without ``again``."""
+		again = getattr(self.order, "again", None)
+		if again is None:
+			return True
+		try:
+			yes = again(run)
+		except Exception:
+			log.warning(
+				"the task order's again failed on %s; the task is not run again",
+				run.key,
+				exc_info=True,
+			)
+			return False
+		if inspect.isawaitable(yes):
+			if inspect.iscoroutine(yes):
+				yes.close()  # never awaited: no warning of its own
+			log.warning(
+				"the task order's again returned an awaitable, not a bool; it must "
+				"be synchronous, so task %s is not run again",
+				run.key,
+			)
+			return False
+		if not yes:
+			log.info(
+				"task %s lost its worker on run %d: its order refuses a run again",
+				run.key,
+				run.attempt - 1,
+			)
+		return bool(yes)
 
 	def _record(
 		self,

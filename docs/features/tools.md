@@ -208,6 +208,8 @@ when a task may be submitted, or raises to refuse it, and `done(info)` is
 called when an admitted task ends. `Immediate()`, the default, submits every
 task at once. A policy can hold tasks and release them in an order of its
 choosing, such as a campaign's priorities, or refuse them, as a budget does.
+It can also refuse a task's run again after a lost worker, with an optional
+`again(info)` ([A lost worker](#a-lost-worker)).
 
 ## Where each task runs
 
@@ -293,13 +295,14 @@ and `retries` how many times, at most, the task runs again. Only the
 application can tell a lost worker by its backend's error, so Flowgentic
 recognises none itself, and runs nothing again without `retry_on`. The
 runtime asks `retry_on` once for each run that fails, its last too, and
-decides alone whether the run runs again, so every lost worker that
-`retry_on` recognises is recorded `lost`. `retry_on` must be synchronous, as it
+decides whether the run runs again, with the task's order, below, so every
+lost worker that `retry_on` recognises is recorded `lost`. `retry_on` must be synchronous, as it
 runs on the agents' event loop, and fast. A tool with an `async` one is
-refused when it is made. A `retry_on` that also says no for another reason,
-such as a budget shared by many tasks, makes the run it stops end `error`, not
-`lost`. An error that `retry_on` does not take, such as the function's own,
-fails the task at once: a deterministic error would only fail again. A
+refused when it is made. A budget belongs in the task's order, below, not in
+`retry_on`: a `retry_on` that says no for another reason makes the run it
+stops end `error`, not `lost`. An error that `retry_on` does not take, such as
+the function's own, fails the task at once: a deterministic error would only
+fail again. A
 `TaskCancelled` task never runs again.
 
 The task runs again under the call's same future, so its agent, whether it
@@ -316,8 +319,18 @@ A run again is submitted at once, with no backoff. It is placed again
 (`ToolRuntime(place=...)`), and `place` sees which run it is
 (`info.attempt`), where the run before had its worker (`info.lost_on`, the
 fields it ran with, such as its GPU) and its error (`info.lost_error`), so it
-can move the run elsewhere. The order admits the task once, for all its runs:
-a budget is charged once.
+can move the run elsewhere.
+
+The order admits the task once, for all its runs. An order may also refuse a
+run again, with an optional `again(info)`, synchronous, asked before each run
+again that the tool's `retries` allow, with that run's `TaskInfo`. A budget
+shared by many tasks, such as a population's, returns `False` once it is
+spent: the task then ends with the lost run's error, and that run's record
+says `lost`. Orders without `again` let every run again go ahead.
+
+```python
+--8<-- "tests/unit/scale/test_tool_runtime.py:run-again-at-most"
+```
 
 A task whose agent has ended, as when its host stopped, and for which no call
 waits any more, does not run again: its lost run ends it.
