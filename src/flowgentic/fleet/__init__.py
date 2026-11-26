@@ -24,11 +24,13 @@ fleet decides, for each call, which replica takes it and when:
   the same hash. It is a static split. With ``process=(index, processes)``
   instead, the processes split each replica's caps exactly, so that their
   parts add up to the cap; a process may hold none of a replica, and then
-  sends it nothing. By default each process takes its part from every
-  replica; with ``pack=True``, from as few replicas as hold it, in order, so
-  that it holds whole caps where the numbers allow and keeps connections to
-  a few servers. A process routes each agent to one of the replicas it holds
-  a part of, in proportion to its parts.
+  sends it nothing. With ``layout="spread"``, the default, each process takes
+  its part from every replica; with ``layout="pack"``, from as few replicas as
+  hold it, in order, so that it holds whole caps where the numbers allow and
+  keeps connections to a few servers. A process routes each agent to one of
+  the replicas it holds a part of, in proportion to its parts. Every process
+  must be given the same replicas, in the same order, and the same
+  admission, ``processes`` and ``layout``: nothing checks it.
 - **Recovery.** With ``Recovery``, a call whose server went away (a connection
   error, a timeout, a 5xx, a 401 after a new key) releases its place, waits for
   the replica to come back, and is sent again; ``outage_s`` after its first
@@ -108,7 +110,7 @@ from collections import Counter, OrderedDict, deque
 from collections.abc import Awaitable, Callable, Iterator, Sequence
 from dataclasses import dataclass
 from itertools import accumulate
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
 from opentelemetry.trace import INVALID_SPAN, SpanKind, Status, StatusCode
@@ -372,12 +374,13 @@ class _Open:
 
 class _Unused:
 	"""A replica this process holds none of (``Fleet(process=...)``): the
-	fleet sends it nothing."""
+	fleet sends it nothing. Its stats have the keys of the process's other
+	gates, with caps and counts of 0."""
 
-	__slots__ = ("cap_tokens",)
+	__slots__ = ("_stats",)
 
-	def __init__(self, counts_tokens: bool) -> None:
-		self.cap_tokens = 0 if counts_tokens else None
+	def __init__(self, stats: dict) -> None:
+		self._stats = stats
 
 	async def acquire(self, n: int, agent_id: str) -> None:
 		raise RuntimeError("this process holds none of this replica's caps")
@@ -392,45 +395,55 @@ class _Unused:
 		return ReplicaLoad(0, 0, 0)
 
 	def stats(self) -> dict:
-		return {"cap_tokens": self.cap_tokens, "cap_requests": 0}
+		return dict(self._stats)
 
 
 class Share(float):
 	"""A process's share of one replica's caps, as ``Admission.gate`` gets it
-	from a fleet made with ``process=(index, processes)``.
+	from a fleet made with ``process=(index, processes)``. The fleet makes
+	shares; code makes none of its own.
 
-	The fleet cuts each replica's caps into ``units`` equal parts, and this
-	process holds those from ``start`` to ``stop``. As a float, a share is the
-	fraction of the caps it holds, which is what ``Fleet(share=...)`` gives
-	``gate``. ``part(cap)`` is its exact part of a cap: the parts of the
+	As a float, a share is the fraction of the replica's caps the process
+	holds, as ``Fleet(share=...)`` gives ``gate`` a fraction, and it prints,
+	compares and hashes as that float: two processes' shares of a replica are
+	equal when their fractions are, whichever part of the replica each holds.
+	``part(cap)`` is the process's exact part of a cap: the parts of the
 	processes that use a replica add up to the cap, and none is above it."""
 
-	__slots__ = ("start", "stop", "units")
+	__slots__ = ("_start", "_stop", "_units")
 
-	start: int
-	stop: int
-	units: int
+	_start: int
+	_stop: int
+	_units: int
 
-	def __new__(cls, start: int, stop: int, units: int) -> Share:
-		start, stop, units = (operator.index(x) for x in (start, stop, units))
-		if not 0 <= start <= stop <= units or units < 1:
-			raise ValueError(
-				"a share needs 0 <= start <= stop <= units, and units >= 1"
-			)
-		share = super().__new__(cls, (stop - start) / units)
-		share.start, share.stop, share.units = start, stop, units
-		return share
+	def __new__(cls, *args: object, **kwargs: object) -> Share:
+		raise TypeError("a Share is made by Fleet(process=...), not by hand")
 
 	def part(self, cap: int) -> int:
 		"""This process's part of ``cap``, cut where the other processes' parts
 		are cut."""
-		return self.stop * cap // self.units - self.start * cap // self.units
+		return self._stop * cap // self._units - self._start * cap // self._units
+
+	__str__ = float.__repr__
 
 	def __repr__(self) -> str:
-		return f"Share(start={self.start}, stop={self.stop}, units={self.units})"
+		return (
+			f"Share({float.__repr__(self)}, units {self._start}:{self._stop} "
+			f"of {self._units})"
+		)
 
 	def __reduce__(self) -> tuple:
-		return (Share, (self.start, self.stop, self.units))
+		return (_share_of, (self._start, self._stop, self._units))
+
+
+def _share_of(start: int, stop: int, units: int) -> Share:
+	"""The share of a replica cut into ``units``, from unit ``start`` to
+	``stop``."""
+	if not 0 <= start <= stop <= units or units < 1:
+		raise ValueError("a share needs 0 <= start <= stop <= units, and units >= 1")
+	share = float.__new__(Share, (stop - start) / units)
+	share._start, share._stop, share._units = start, stop, units
+	return share
 
 
 class Admission(Protocol):
@@ -442,8 +455,10 @@ class Admission(Protocol):
 	``Fleet(share=...)``, or, from a fleet made with ``process=...``, a
 	``Share``, whose ``part(cap)`` gives the process its exact part of a cap.
 	Such a fleet cuts each replica into as many units as the admission's
-	``requests`` says, if it has that attribute, or else one unit per process,
-	and makes a gate only for the replicas this process holds a part of."""
+	request cap, its ``requests`` if it has one (an integer of at least 1),
+	so that each process holds whole requests, or else into one unit per
+	process; and it makes a gate only for the replicas this process holds a
+	part of."""
 
 	counts_tokens: bool
 
@@ -470,15 +485,7 @@ class TokenAdmission:
 	counts_tokens = True
 
 	def gate(self, share: float) -> AdmissionGate:
-		tokens = _share(self.tokens, share)
-		requests = _share(self.requests, share)
-		if tokens < 1 and requests >= 1:
-			raise ValueError(
-				f"a token cap of {self.tokens} leaves this process none of it at a "
-				f"replica where it holds {requests} of {self.requests} requests: "
-				"make the token cap at least the request cap"
-			)
-		return AdmissionGate(tokens, requests)
+		return AdmissionGate(_share(self.tokens, share), _share(self.requests, share))
 
 
 @dataclass(frozen=True, slots=True)
@@ -492,8 +499,28 @@ class RequestAdmission:
 		return AdmissionGate(None, _share(self.requests, share))
 
 
+_LAYOUTS = ("spread", "pack")
+
+
+def _units(admission: Admission | None, processes: int) -> int:
+	"""How many units ``Fleet(process=...)`` cuts each replica into: the
+	admission's request cap, or one per process (see ``Admission``). A token
+	cap below the request cap would leave some units no token, so it is
+	refused, in every process alike."""
+	requests = getattr(admission, "requests", None)
+	if isinstance(requests, bool) or not isinstance(requests, int) or requests < 1:
+		return processes
+	if isinstance(admission, TokenAdmission) and admission.tokens < requests:
+		raise ValueError(
+			f"with process=, the token cap ({admission.tokens}) must be at least "
+			f"the request cap ({requests}): each request a process holds comes "
+			"with its part of the token cap"
+		)
+	return requests
+
+
 def _parts(
-	index: int, processes: int, replicas: int, units: int, pack: bool
+	index: int, processes: int, replicas: int, units: int, layout: str
 ) -> dict[int, Share]:
 	"""Process ``index``'s shares of the replicas it uses, by replica.
 
@@ -513,16 +540,18 @@ def _parts(
 	lo = index * total // processes
 	hi = (index + 1) * total // processes
 	parts: dict[int, Share] = {}
-	if pack:
+	if layout == "pack":
 		for r in range(lo // units, (hi - 1) // units + 1):
 			base = r * units
-			parts[r] = Share(max(lo, base) - base, min(hi, base + units) - base, units)
+			parts[r] = _share_of(
+				max(lo, base) - base, min(hi, base + units) - base, units
+			)
 		return parts
 	for r in range(replicas):
 		# Replica r's units are the fleet's r, r + replicas, r + 2 replicas, ...
 		start, stop = -((r - lo) // replicas), -((r - hi) // replicas)
 		if stop > start:
-			parts[r] = Share(start, stop, units)
+			parts[r] = _share_of(start, stop, units)
 	return parts
 
 
@@ -547,18 +576,14 @@ class _Loads(Sequence):
 	"""The replicas' loads for one call, each read from its gate once, when
 	first asked for, and this process's weights for them."""
 
-	__slots__ = ("_gates", "_read", "weights", "_cum")
+	__slots__ = ("_gates", "_read", "weights")
 
 	def __init__(
-		self,
-		gates: list[Gate],
-		weights: tuple[int, ...] | None = None,
-		cum: tuple[int, ...] | None = None,
+		self, gates: list[Gate], weights: tuple[int, ...] | None = None
 	) -> None:
 		self._gates = gates
 		self._read: list[ReplicaLoad | None] = [None] * len(gates)
 		self.weights = weights
-		self._cum = cum  # the weights' running sums
 
 	def __len__(self) -> int:
 		return len(self._gates)
@@ -583,11 +608,20 @@ class AgentAffinity:
 	"""Each agent always to the same replica, by a stable hash of its id; in
 	proportion to the process's parts of the replicas where they differ."""
 
+	def __init__(self) -> None:
+		# The last weights seen, and their running sums: a fleet passes the
+		# same weights to every call.
+		self._sums: tuple[object, tuple[int, ...]] = (None, ())
+
 	def choose(self, agent_id: str, loads: Sequence[ReplicaLoad]) -> int:
-		cum = getattr(loads, "_cum", None)
-		if cum is None:
+		weights = getattr(loads, "weights", None)
+		if weights is None:
 			return _stable_hash(agent_id) % len(loads)
-		return bisect.bisect_right(cum, _stable_hash(agent_id) % cum[-1])
+		seen, sums = self._sums
+		if seen is not weights:
+			sums = tuple(accumulate(weights))
+			self._sums = (weights, sums)
+		return bisect.bisect_right(sums, _stable_hash(agent_id) % sums[-1])
 
 
 class RoundRobin:
@@ -1065,6 +1099,14 @@ class _Agent:
 		self.prev_prompt: int | None = None
 
 
+def _unused_stats(admission: Admission | None, used: Gate) -> dict:
+	"""The stats of a replica this process sends nothing to: the keys of a
+	gate it uses, with caps and counts of 0."""
+	if admission is None:
+		return {"cap_tokens": None, "cap_requests": 0}
+	return {k: None if v is None else 0 for k, v in used.stats().items()}
+
+
 class _Core:
 	"""What every view of one fleet shares."""
 
@@ -1075,7 +1117,7 @@ class _Core:
 		routing: Routing,
 		share: float | None,
 		process: tuple[int, int] | None,
-		pack: bool,
+		layout: str,
 		reply_reserve: int,
 		recovery: Recovery | None,
 		tracked_agents: int,
@@ -1087,39 +1129,29 @@ class _Core:
 		self.counts_tokens = bool(admission is not None and admission.counts_tokens)
 		self.process = process
 		shares: dict[int, float]
+		parts: dict[int, Share] = {}
 		if process is None:
 			shares = dict.fromkeys(range(len(replicas)), share)
 		else:
-			units = getattr(admission, "requests", None)
-			if not isinstance(units, int) or units < 1:
-				units = process[1]  # one unit of each replica per process
-			shares = _parts(*process, len(replicas), units, pack)
-		self.gates: list[Gate] = []
-		warn_oversize = _OversizeWarning(name)
-		for i in range(len(replicas)):
-			if i not in shares:
-				self.gates.append(_Unused(self.counts_tokens))
-				continue
-			gate = admission.gate(shares[i]) if admission is not None else _Open()
-			if not isinstance(gate, Gate):
-				raise TypeError(
-					f"{type(admission).__name__}.gate() made a "
-					f"{type(gate).__name__}, which is not a Gate: a gate needs "
-					"acquire, release, agent_done, load and stats"
-				)
-			if isinstance(gate, AdmissionGate):
-				gate._warn_oversize = warn_oversize
-			self.gates.append(gate)
-		# The replicas this process sends to, which the routing chooses among,
-		# and its parts of them, where they differ.
+			units = _units(admission, process[1])
+			shares = parts = _parts(*process, len(replicas), units, layout)
+		# The replicas this process sends to, which the routing chooses among.
 		self.used = sorted(shares)
+		warn_oversize = _OversizeWarning(name)
+		built = {i: self._gate(shares[i], warn_oversize) for i in self.used}
+		self.gates: list[Gate] = []
+		unused: Gate | None = None
+		for i in range(len(replicas)):
+			gate = built.get(i)
+			if gate is None:
+				if unused is None:
+					unused = _Unused(_unused_stats(admission, built[self.used[0]]))
+				gate = unused
+			self.gates.append(gate)
 		self.routed = [self.gates[i] for i in self.used]
-		self.weights: tuple[int, ...] | None = None
-		self.cum: tuple[int, ...] | None = None
-		if process is not None:
-			weights = tuple(shares[i].stop - shares[i].start for i in self.used)
-			if len(set(weights)) > 1:
-				self.weights, self.cum = weights, tuple(accumulate(weights))
+		# This process's parts of the replicas it sends to, where they differ.
+		weights = tuple(parts[i]._stop - parts[i]._start for i in parts)
+		self.weights = weights if len(set(weights)) > 1 else None
 		self.routing = routing
 		self.share = share
 		self.reply_reserve = reply_reserve
@@ -1152,10 +1184,23 @@ class _Core:
 		for i in self.used:
 			self.tokens[i] = _tokens.setdefault((name, i), [0, 0])
 
+	def _gate(self, share: float, warn_oversize: _OversizeWarning) -> Gate:
+		admission = self.admission
+		gate = admission.gate(share) if admission is not None else _Open()
+		if not isinstance(gate, Gate):
+			raise TypeError(
+				f"{type(admission).__name__}.gate() made a "
+				f"{type(gate).__name__}, which is not a Gate: a gate needs "
+				"acquire, release, agent_done, load and stats"
+			)
+		if isinstance(gate, AdmissionGate):
+			gate._warn_oversize = warn_oversize
+		return gate
+
 	def route(self, agent_id: str) -> int:
 		"""The replica for an agent's call: the routing's choice among those
 		this process sends to."""
-		loads = _Loads(self.routed, self.weights, self.cum)
+		loads = _Loads(self.routed, self.weights)
 		return self.used[self.routing.choose(agent_id, loads)]
 
 	def agent(self, agent_id: str) -> _Agent:
@@ -1223,9 +1268,12 @@ class Fleet:
 	``share`` is this process's share of every replica's caps, rounded down,
 	as in 0.6.0. ``process=(index, processes)`` says instead which of the
 	agent processes that use the replicas this one is: the processes then
-	split each replica's caps exactly. ``pack=True``, with ``process``, gives
-	each process its part from as few replicas as hold it, rather than from
-	every replica."""
+	split each replica's caps exactly. ``layout``, with ``process``, says
+	where each process takes its part from: ``"spread"``, the default, from
+	every replica; ``"pack"``, from as few replicas as hold it. Every process
+	must be given the same replicas, in the same order, and the same
+	admission, ``processes`` and ``layout``, and each index once: nothing
+	checks it, and a process given other ones holds other parts."""
 
 	def __init__(
 		self,
@@ -1235,7 +1283,7 @@ class Fleet:
 		routing: Routing | None = None,
 		share: float | None = None,
 		process: tuple[int, int] | None = None,
-		pack: bool = False,
+		layout: Literal["spread", "pack"] = "spread",
 		reply_reserve: int = 64,
 		recovery: Recovery | None = None,
 		tracked_agents: int = 50_000,
@@ -1248,10 +1296,12 @@ class Fleet:
 				"give share or process, not both: with process, the processes "
 				"split each replica's caps exactly"
 			)
+		if layout not in _LAYOUTS:
+			raise ValueError(f"layout must be 'spread' or 'pack', not {layout!r}")
 		if process is not None:
 			process = _process(process)
-		elif pack:
-			raise ValueError("pack needs process=(index, processes)")
+		elif layout != "spread":
+			raise ValueError(f"layout={layout!r} needs process=(index, processes)")
 		elif share is None:
 			share = 1.0
 		if share is not None and not 0 < share <= 1:
@@ -1264,7 +1314,7 @@ class Fleet:
 			routing or AgentAffinity(),
 			share,
 			process,
-			pack,
+			layout,
 			reply_reserve,
 			recovery,
 			tracked_agents,
@@ -1545,7 +1595,13 @@ class Fleet:
 		return FleetChatModel(fleet=self)
 
 	def stats(self) -> dict:
-		"""The fleet's counters, with its gates' and its recovery's."""
+		"""The fleet's counters, with its gates' and its recovery's.
+
+		``share`` is the one given, and ``None`` with ``process``, whose parts
+		are each gate's caps; ``process`` is ``[index, processes]`` or
+		``None``. ``replicas_used`` lists the replicas this process sends to.
+		A gate of a replica it sends nothing to has the keys of the others,
+		with caps and counts of 0."""
 		core = self._core
 		base, ratio = core.first_call_line()
 		return {

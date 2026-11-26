@@ -359,17 +359,20 @@ _UNSET: Any = object()
 """A keyword not given."""
 
 
-_ssl: Any = None
+_ssl: dict[tuple[str | None, str | None], Any] = {}
 
 
 def _ssl_context(httpx: Any) -> Any:  # noqa: ANN401  # an ssl.SSLContext
 	"""One SSL context for every transport the process makes: each would
 	otherwise build its own, about 3 ms and 0.7 MiB, and a process may hold
-	hundreds of replicas."""
-	global _ssl
-	if _ssl is None:
-		_ssl = httpx.create_ssl_context()
-	return _ssl
+	hundreds of replicas. httpx builds it from ``SSL_CERT_FILE`` or
+	``SSL_CERT_DIR`` when either is set, so a transport made after they
+	change gets a context of the new ones."""
+	key = (os.environ.get("SSL_CERT_FILE"), os.environ.get("SSL_CERT_DIR"))
+	context = _ssl.get(key)
+	if context is None:
+		context = _ssl[key] = httpx.create_ssl_context()
+	return context
 
 
 def _timeout(httpx: Any, value: object) -> Any:  # noqa: ANN401  # httpx's Timeout
@@ -443,8 +446,9 @@ class HTTPTransport:
 	calls in flight, 8 per pool cost 0.8 ms of CPU per call, 64 per pool
 	1.5 ms; at 512, 0.8 and 1.4 ms, and one pool 29 ms. ``pools`` fixes the
 	number of clients instead. A pool's connections are not capped, and all
-	the pools, of every transport in the process, share one SSL context. A
-	pool connects to its server on its first call. ``aclose()`` closes them
+	the pools, of every transport in the process, share one SSL context,
+	built from ``SSL_CERT_FILE`` or ``SSL_CERT_DIR`` as they are when the
+	transport is made. A pool connects to its server on its first call. ``aclose()`` closes them
 	once their calls have ended; the fleet closes a transport that
 	``Recovery`` replaces.
 

@@ -1,9 +1,11 @@
 """Exact admission caps per process (``Fleet(process=...)``), and processes
-that send to a slice of the replicas (``pack=True``), with fake model
+that send to a slice of the replicas (``layout="pack"``), with fake model
 servers that count the requests they hold at once."""
 
 import asyncio
+import copy
 import math
+import pickle
 
 import pytest
 
@@ -18,6 +20,7 @@ from flowgentic.fleet import (
     TokenAdmission,
     Usage,
 )
+from flowgentic.fleet import _share_of as share_of
 
 TOKENS, REQUESTS = 235_000, 256
 
@@ -85,22 +88,28 @@ HI = [{"role": "user", "content": "hi"}]
 # --- the arithmetic -----------------------------------------------------------------
 
 
-@pytest.mark.parametrize("pack", [False, True])
+@pytest.mark.parametrize("layout", ["spread", "pack"])
 @pytest.mark.parametrize("replicas", [1, 4, 5])
-@pytest.mark.parametrize("processes", [1, 2, 3, 7, 100, 255, 300, 1024])
-def test_each_replicas_caps_add_up_exactly_over_the_processes(processes, replicas, pack):
+@pytest.mark.parametrize("processes", [1, 2, 3, 7, 60, 100, 255, 300, 1024])
+def test_each_replicas_caps_add_up_exactly_over_the_processes(processes, replicas, layout):
     admission = TokenAdmission(tokens=TOKENS, requests=REQUESTS)
     if replicas * REQUESTS < processes:
         with pytest.raises(ValueError, match="at least one request"):
-            fleets(processes, servers(replicas), admission, pack=pack)
+            fleets(processes, servers(replicas), admission, layout=layout)
         return
-    parts = [caps(f) for f in fleets(processes, servers(replicas), admission, pack=pack)]
+    parts = [caps(f) for f in fleets(processes, servers(replicas), admission, layout=layout)]
+    fewest = max(1, REQUESTS // processes)  # what share=1/processes gave
     for r in range(replicas):
         assert sum(p[r][1] for p in parts) == REQUESTS
         assert sum(p[r][0] for p in parts) == TOKENS
         for tokens, requests in (p[r] for p in parts):
             assert 0 <= requests <= REQUESTS and 0 <= tokens <= TOKENS
             assert (tokens == 0) == (requests == 0)  # no tokens where no request
+            if requests:
+                # Never fewer requests than share gave, and a request's worth
+                # of tokens for each request held, rounded down.
+                assert requests >= fewest
+                assert tokens >= requests * TOKENS // REQUESTS
     # Each process holds an equal part of the fleet, to one request.
     totals = [sum(c[1] for c in p) for p in parts]
     assert min(totals) >= 1 and max(totals) - min(totals) <= 1
@@ -131,12 +140,22 @@ def test_300_processes_never_get_more_requests_than_a_cap_that_shares_passed():
 
 
 @pytest.mark.parametrize("processes", [1, 2, 4, 8, 64, 256])
-async def test_the_default_matches_shares_where_their_numbers_were_exact(processes):
-    admission = TokenAdmission(tokens=262_144, requests=256)
+async def test_the_default_matches_shares_where_processes_divide_the_request_cap(
+    processes,
+):
+    """The same requests at every replica, and the same replica for every
+    agent; the same tokens too where the processes also divide the token cap
+    (235,000: 1, 2, 4 and 8), and otherwise one token apart at most."""
+    admission = TokenAdmission(tokens=TOKENS, requests=REQUESTS)
     for k in range(processes):
         exact = Fleet(replicas(4), admission=admission, process=(k, processes))
         shared = Fleet(replicas(4), admission=admission, share=1 / processes)
-        assert caps(exact) == caps(shared)
+        assert [c[1] for c in caps(exact)] == [c[1] for c in caps(shared)]
+        tokens = [(a[0], b[0]) for a, b in zip(caps(exact), caps(shared))]
+        if TOKENS % processes == 0:
+            assert all(a == b for a, b in tokens)
+        else:
+            assert all(0 <= a - b <= 1 for a, b in tokens)
         assert exact.stats()["replicas_used"] == [0, 1, 2, 3]
     # And the same replica for each agent.
     exact = Fleet([Client(s, 0) for s in servers(4, 0)], process=(0, processes))
@@ -151,12 +170,40 @@ async def test_the_default_matches_shares_where_their_numbers_were_exact(process
     assert chosen["exact"] == chosen["shared"]
 
 
+def test_the_smallest_token_part_is_a_requests_worth_times_the_fewest_requests():
+    """A process's part of a token cap follows its requests: token cap ÷
+    request cap for each. With caps that processes do not divide, some parts
+    are smaller than share's token cap ÷ processes."""
+    admission = TokenAdmission(tokens=TOKENS, requests=REQUESTS)
+
+    def parts(processes, replicas, admission, **kwargs):
+        return sorted(
+            c for f in fleets(processes, servers(replicas), admission, **kwargs)
+            for c in caps(f) if c[1]
+        )
+
+    # 100 processes over 4 replicas: 2 or 3 requests at each, so 1,835 tokens
+    # at the least, where share=1/100 gave every process 2,350 and 2.
+    assert parts(100, 4, admission)[0] == (1835, 2)
+    assert caps(Fleet(replicas(4), admission=admission, share=1 / 100))[0] == (2350, 2)
+    # Packed, the parts here are 10 or 11 requests, all whole runs.
+    assert parts(100, 4, admission, layout="pack")[0] == (9179, 10)
+    # 60 processes over one replica of 96 requests: 24 hold one request,
+    # 2,447 or 2,448 tokens, and 36 hold two; share gave each 3,916 and 1.
+    small = TokenAdmission(tokens=TOKENS, requests=96)
+    held = parts(60, 1, small)
+    assert sum(1 for c in held if c[1] == 1) == 24
+    assert {c[0] for c in held if c[1] == 1} == {2447, 2448}
+    assert {c[0] for c in held if c[1] == 2} == {4895, 4896}
+    assert caps(Fleet(replicas(1), admission=small, share=1 / 60)) == [(3916, 1)]
+
+
 @pytest.mark.parametrize("processes", [1, 2, 4, 8])
 def test_packed_processes_hold_whole_caps_on_replicas_of_their_own(processes):
     admission = TokenAdmission(tokens=TOKENS, requests=REQUESTS)
     each = 8 // processes
     used = []
-    for k, fleet in enumerate(fleets(processes, servers(8), admission, pack=True)):
+    for k, fleet in enumerate(fleets(processes, servers(8), admission, layout="pack")):
         mine = list(range(k * each, (k + 1) * each))
         assert fleet.stats()["replicas_used"] == mine
         assert [c for i, c in enumerate(caps(fleet)) if i in mine] == [(TOKENS, REQUESTS)] * each
@@ -172,7 +219,7 @@ def test_packed_processes_hold_whole_caps_on_replicas_of_their_own(processes):
 def test_packed_slices_cover_every_replica_from_few_replicas_each(processes, replicas):
     admission = RequestAdmission(REQUESTS)
     users = [0] * replicas
-    for fleet in fleets(processes, [None] * replicas, admission, pack=True):
+    for fleet in fleets(processes, [None] * replicas, admission, layout="pack"):
         used = fleet.stats()["replicas_used"]
         assert used == list(range(used[0], used[-1] + 1))  # next to each other
         assert len(used) <= math.ceil(replicas / processes) + 1
@@ -187,7 +234,9 @@ def test_packed_slices_cover_every_replica_from_few_replicas_each(processes, rep
 def test_a_packed_process_sends_its_agents_in_proportion_to_its_part_of_each_replica():
     # Three processes over four replicas: the first holds replica 0 whole and
     # a third of replica 1.
-    fleet = Fleet(replicas(4), admission=RequestAdmission(REQUESTS), process=(0, 3), pack=True)
+    fleet = Fleet(
+        replicas(4), admission=RequestAdmission(REQUESTS), process=(0, 3), layout="pack"
+    )
     assert caps(fleet)[:2] == [(None, 256), (None, 85)]
     counts = [0, 0]
     for i in range(34_100):
@@ -196,7 +245,9 @@ def test_a_packed_process_sends_its_agents_in_proportion_to_its_part_of_each_rep
 
 
 def test_an_agent_stays_on_its_replica_in_its_process():
-    fleet = Fleet(replicas(4), admission=RequestAdmission(REQUESTS), process=(0, 3), pack=True)
+    fleet = Fleet(
+        replicas(4), admission=RequestAdmission(REQUESTS), process=(0, 3), layout="pack"
+    )
     first = [fleet._core.route(f"agent-{i}") for i in range(100)]
     assert [fleet._core.route(f"agent-{i}") for i in range(100)] == first
     assert set(first) == {0, 1}
@@ -205,14 +256,14 @@ def test_an_agent_stays_on_its_replica_in_its_process():
 # --- with fake servers --------------------------------------------------------------
 
 
-@pytest.mark.parametrize("pack", [False, True])
+@pytest.mark.parametrize("layout", ["spread", "pack"])
 @pytest.mark.parametrize("processes", [100, 300])
-async def test_fake_servers_hold_their_whole_cap_and_never_more(processes, pack):
+async def test_fake_servers_hold_their_whole_cap_and_never_more(processes, layout):
     """Every process's agents call at once, more than the caps admit: each
     server holds exactly its cap of requests at its busiest, never more."""
     fleet_servers = servers(4)
     admission = TokenAdmission(tokens=TOKENS, requests=REQUESTS)
-    processes_fleets = fleets(processes, fleet_servers, admission, pack=pack)
+    processes_fleets = fleets(processes, fleet_servers, admission, layout=layout)
 
     async def agent(fleet, agent_id):
         for _ in range(2):
@@ -229,7 +280,7 @@ async def test_fake_servers_hold_their_whole_cap_and_never_more(processes, pack)
     assert sum(s.served for s in fleet_servers) == processes * 48 * 2
     for fleet in processes_fleets:
         assert all(g["oversize"] == 0 for g in fleet.stats()["gates"] if g["cap_requests"])
-    if pack:  # each process keeps to its own few servers
+    if layout == "pack":  # each process keeps to its own few servers
         assert sum(len(s.processes) for s in fleet_servers) <= processes + 3
     else:
         assert [len(s.processes) for s in fleet_servers] == [min(processes, REQUESTS)] * 4
@@ -241,7 +292,7 @@ async def test_a_replica_a_process_does_not_use_has_no_load_and_no_metrics():
         [Client(s, 0) for s in fleet_servers],
         admission=RequestAdmission(REQUESTS),
         process=(0, 2),
-        pack=True,
+        layout="pack",
         name="parts-unused",
     )
     for i in range(20):
@@ -251,31 +302,81 @@ async def test_a_replica_a_process_does_not_use_has_no_load_and_no_metrics():
     stats = fleet.stats()
     assert stats["process"] == [0, 2] and stats["share"] is None
     assert stats["calls_per_replica"][2:] == [0, 0]
-    assert stats["gates"][2] == {"cap_tokens": None, "cap_requests": 0}
     assert {i for (name, i) in fleet_module._loads("requests") if name == "parts-unused"} == {0, 1}
     assert {i for (name, i) in fleet_module._tokens if name == "parts-unused"} == {0, 1}
     fleet.agent_done("agent-1")  # every gate hears it, the unused ones too
+
+
+@pytest.mark.parametrize(
+    "admission", [TokenAdmission(TOKENS, REQUESTS), RequestAdmission(REQUESTS), None]
+)
+def test_every_gates_stats_have_the_same_keys(admission):
+    """A replica a process sends nothing to reports the keys of the others,
+    with caps and counts of 0, so that code can sum any key over the gates."""
+    gates = Fleet(replicas(4), admission=admission, process=(0, 4), layout="pack").stats()[
+        "gates"
+    ]
+    assert all(g.keys() == gates[0].keys() for g in gates)
+    assert gates[1]["cap_requests"] == 0
+    assert gates[1]["cap_tokens"] == (0 if isinstance(admission, TokenAdmission) else None)
+    if admission is not None:
+        assert sum(g["oversize"] for g in gates) == 0
+        assert all(v in (0, None) for v in gates[1].values())
+
+
+def test_every_process_fails_alike_on_a_token_cap_below_the_request_cap():
+    """A token cap below the request cap would leave some requests no token:
+    every process refuses it, whichever its index, or a launcher would get a
+    half-started campaign."""
+    for processes in (2, 200):
+        for k in range(processes):
+            with pytest.raises(ValueError, match="token cap"):
+                Fleet(
+                    replicas(1),
+                    admission=TokenAdmission(tokens=100, requests=REQUESTS),
+                    process=(k, processes),
+                )
+    # With share, as in 0.6.0, the caps stay as given.
+    Fleet(replicas(1), admission=TokenAdmission(tokens=100, requests=REQUESTS), share=0.5)
 
 
 # --- shares ---------------------------------------------------------------------------
 
 
 def test_a_share_is_a_float_with_an_exact_part():
-    share = Share(64, 128, 256)
+    share = share_of(64, 128, 256)
     assert isinstance(share, float) and share == 0.25
     assert share.part(256) == 64 and share.part(235_000) == 58_750
-    assert repr(share) == "Share(start=64, stop=128, units=256)"
     # The parts of the shares that tile a replica add up to any cap.
-    tiles = [Share(a, b, 7) for a, b in [(0, 2), (2, 3), (3, 7)]]
+    tiles = [share_of(a, b, 7) for a, b in [(0, 2), (2, 3), (3, 7)]]
     assert sum(s.part(1000) for s in tiles) == 1000
     with pytest.raises(ValueError):
-        Share(3, 2, 7)
+        share_of(3, 2, 7)
+
+
+def test_a_share_prints_compares_and_hashes_as_its_float():
+    share = share_of(1, 3, 6)
+    assert str(share) == f"{share}" == "0.3333333333333333" == str(1 / 3)
+    assert f"{share:.2f}" == "0.33"
+    assert repr(share) == "Share(0.3333333333333333, units 1:3 of 6)"
+    # Two parts of a replica as large are equal, whichever units they hold.
+    assert share == share_of(2, 4, 6) and hash(share) == hash(share_of(2, 4, 6))
+    assert len({share, share_of(2, 4, 6), 1 / 3}) == 1
+
+
+def test_the_fleet_makes_shares_and_they_survive_pickling():
+    with pytest.raises(TypeError, match="Fleet"):
+        Share(0, 1, 2)
+    for share in (share_of(64, 128, 256), copy.copy(share_of(0, 1, 2))):
+        again = pickle.loads(pickle.dumps(share))
+        assert type(again) is Share and again == share
+        assert again.part(1000) == share.part(1000)
 
 
 def test_admissions_split_their_caps_exactly_by_a_share():
-    gate = TokenAdmission(tokens=1000, requests=10).gate(Share(0, 3, 10))
+    gate = TokenAdmission(tokens=1000, requests=10).gate(share_of(0, 3, 10))
     assert (gate.cap_tokens, gate.cap_requests) == (300, 3)
-    assert RequestAdmission(10).gate(Share(3, 10, 10)).cap_requests == 7
+    assert RequestAdmission(10).gate(share_of(3, 10, 10)).cap_requests == 7
     # A plain float is a 0.6.0 share, floored as before.
     assert TokenAdmission(tokens=1000, requests=10).gate(1 / 3).cap_requests == 3
 
@@ -298,6 +399,7 @@ def test_an_admission_of_ones_own_gets_floats_it_can_read_as_before():
     Fleet(replicas(2), admission=admission, process=(1, 4))
     assert [float(s) for s in admission.shares] == [0.25, 0.25]
     assert all(isinstance(s, Share) for s in admission.shares)
+    assert [f"{s}" for s in admission.shares] == ["0.25", "0.25"]
 
 
 # --- what is refused ------------------------------------------------------------------
@@ -314,9 +416,16 @@ def test_a_share_and_a_process_together_are_refused():
         Fleet(replicas(1), share=0.5, process=(0, 2))
 
 
-def test_pack_without_a_process_is_refused():
-    with pytest.raises(ValueError, match="pack"):
-        Fleet(replicas(1), pack=True)
+def test_a_packed_layout_without_a_process_is_refused():
+    with pytest.raises(ValueError, match="needs process"):
+        Fleet(replicas(1), layout="pack")
+    Fleet(replicas(1), layout="spread")  # the default, which share= uses too
+
+
+@pytest.mark.parametrize("layout", ["packed", "", None, True])
+def test_a_layout_of_another_name_is_refused(layout):
+    with pytest.raises(ValueError, match="layout"):
+        Fleet(replicas(1), process=(0, 1), layout=layout)
 
 
 def test_more_processes_than_requests_in_the_fleet_are_refused():
@@ -325,15 +434,13 @@ def test_more_processes_than_requests_in_the_fleet_are_refused():
     Fleet(replicas(4), admission=RequestAdmission(2), process=(0, 8))
 
 
-def test_a_token_cap_too_small_to_split_is_refused():
-    with pytest.raises(ValueError, match="token"):
-        fleets(200, servers(1), TokenAdmission(tokens=100, requests=REQUESTS))
-
-
 def test_without_admission_a_packed_process_still_sends_to_its_slice():
-    fleet = Fleet(replicas(6), process=(1, 3), pack=True)
+    fleet = Fleet(replicas(6), process=(1, 3), layout="pack")
     assert fleet.stats()["replicas_used"] == [2, 3]
     assert Fleet(replicas(6), process=(1, 3)).stats()["replicas_used"] == list(range(6))
+
+
+# --- routing --------------------------------------------------------------------------
 
 
 def test_agent_affinity_without_weights_is_as_before():
@@ -341,10 +448,45 @@ def test_agent_affinity_without_weights_is_as_before():
     assert AgentAffinity().choose("mat-000001", loads) == fleet_module._stable_hash("mat-000001") % 4
 
 
-def test_every_http_transport_in_a_process_shares_one_ssl_context():
+class Weighted(list):
+    """Loads with weights, as any routing sees them."""
+
+    def __init__(self, weights):
+        super().__init__([ReplicaLoad(0, 0, 0)] * len(weights))
+        self.weights = weights
+
+
+def test_agent_affinity_reads_only_the_loads_weights():
+    affinity = AgentAffinity()
+    heavy = Weighted((3, 1))
+    counts = [0, 0]
+    for i in range(4000):
+        counts[affinity.choose(f"agent-{i}", heavy)] += 1
+    assert counts[0] / counts[1] == pytest.approx(3, rel=0.15)
+    # Other weights, other choices, from the same routing.
+    assert {affinity.choose(f"agent-{i}", Weighted((0, 1))) for i in range(50)} == {1}
+
+
+# --- transports -----------------------------------------------------------------------
+
+
+def test_every_http_transport_in_a_process_shares_one_ssl_context(monkeypatch):
     """A packed process holds hundreds of replicas it never calls: they must
-    cost it little to build. Each SSL context costs about 3 ms and 0.7 MiB."""
+    cost it little to build. Each SSL context costs about 3 ms and 0.7 MiB.
+    A transport made after the certificates' variables change gets theirs."""
+    import certifi
+
     from flowgentic.fleet import HTTPTransport
 
-    transports = [HTTPTransport("m", base_url=f"https://node-{i}:8443/v1", pools=2) for i in range(3)]
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.delenv("SSL_CERT_DIR", raising=False)
+
+    def make():
+        return HTTPTransport("m", base_url="https://node-0:8443/v1", pools=2)
+
+    transports = [make() for _ in range(3)]
     assert len({id(t._ssl) for t in transports}) == 1
+    monkeypatch.setenv("SSL_CERT_FILE", certifi.where())
+    other = make()
+    assert other._ssl is not transports[0]._ssl
+    assert make()._ssl is other._ssl
