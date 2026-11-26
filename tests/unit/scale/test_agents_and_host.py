@@ -486,6 +486,7 @@ def test_the_host_exports_the_names_its_docs_present():
         "Finished",
         "HostReport",
         "Interrupted",
+        "QueueFull",
         "Runner",
         "Stagger",
         "Suspended",
