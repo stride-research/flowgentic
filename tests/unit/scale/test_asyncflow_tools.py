@@ -272,7 +272,9 @@ async def test_the_same_agent_and_call_get_the_first_task():
         again = runtime.submit(task_tool(simulate), "a", "c1", {"x": 1.0})
         assert first is again
         assert await first == {"y": 2.0}
-        assert runtime.submit(task_tool(simulate), "a", "c1", {"x": 1.0}) is first
+        # Once the task has ended, the runtime keeps its value, not the task.
+        later = runtime.submit(task_tool(simulate), "a", "c1", {"x": 1.0})
+        assert later is not first and later.done() and later.result() == {"y": 2.0}
         other = await runtime.submit(task_tool(simulate), "b", "c1", {"x": 1.0})
     finally:
         await _asyncflow.close_engine(flow)
@@ -301,9 +303,10 @@ async def test_suspended_planners_resume_and_each_action_runs_once():
     assert RUNS == {"simulate": 20}  # each ran once per agent
     assert runtime.stats()["repeats"] == 20  # the resume found the task
     assert outputs["planner-0"]["messages"][-1].content == '{"y": 3.0}'
-    # the host holds no task of an agent that has ended
-    assert len(runtime._jobs) == 20
-    assert all(_agents.pending(key) is None for key in runtime._jobs)
+    # the host holds no task of an agent that has ended, and the runtime keeps
+    # each one's outcome, not the task
+    assert runtime._jobs == {} and runtime.stats()["retained"] == 20
+    assert all(_agents.pending(key) is None for key in runtime._ended)
 
 
 async def test_a_task_asked_for_in_an_agent_is_registered_for_the_host():
@@ -810,7 +813,7 @@ async def test_an_agents_reply_times_go_when_the_agent_ends():
     finally:
         await _asyncflow.close_engine(flow)
     assert report.finished == 3 and all(r.t_commit == noted for r in records)
-    assert len(runtime._jobs) == 3 and len(agents) == 3
+    assert runtime.stats()["retained"] == 3 and len(agents) == 3
     assert all(agent.replies == {} for agent in agents)
 
 

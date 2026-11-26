@@ -125,10 +125,23 @@ same key, as a framework does when it resumes an agent, gets the first call's
 result and runs nothing: LangGraph gives a task the same id when it runs again.
 A later turn that reuses a call id, as a model server that numbers its tool
 calls per message does, runs in a new task, so it makes a new call. Outside a
-LangGraph run the key is `agent/call`. The runtime keeps the last `retained`
-ended tasks (100,000 by default), and an agent in a host finds the tasks it
-asked for until it ends, however many have ended since. The tool service keeps
-its own answers, by the same key.
+LangGraph run the key is `agent/call`. The runtime keeps the outcomes of the
+last `retained` ended tasks (100,000 by default): each one's value, its
+exception, or that it was cancelled, but not the asyncio task. A call made
+again after its task ended gets a new future, already done, with that
+outcome. An outcome with a small value costs the runtime a few hundred
+bytes, the value included: about 170 on CPython 3.12 and 400 on 3.11 in one
+probe. A failed task's costs more. Its exception keeps its traceback, and each
+frame there keeps its locals, the call's arguments among them: about 5 KB
+with small arguments, but as much as the arguments with large ones, so
+100,000 kept failures with 1 MB arguments hold 100 GB. If many calls may
+fail with large arguments, pass the inputs by path, or lower `retained`. The
+runtime does not clear the frames' locals: on CPython 3.11 and 3.12 that
+closes any coroutine still running whose frame the traceback passed through,
+such as a backend's own loop. A call made again gets the same exception,
+raised with the traceback the task ended with. An agent in a host finds the
+tasks it asked for until it ends, however many have ended since. The tool
+service keeps its own answers, by the same key.
 
 The task tells turns apart only when each turn's tools run in a LangGraph task
 of their own, as they do in a `ToolNode` node, with `route_tool_calls`, or in a

@@ -99,10 +99,10 @@ def _output(value: Any) -> str:
 async def _settled(job: asyncio.Future) -> None:
 	"""Wait for a task to end without raising its exception here.
 
-	The runtime keeps an ended task, and RHAPSODY's session its failure, so the
-	task's exception lives on. Raised here, it would keep this tool's frames in
-	its traceback, and on CPython 3.12 those of the LangGraph run that called
-	the tool, with the agent's whole state.
+	The runtime keeps an ended task's outcome, and RHAPSODY's session its
+	failure, so the task's exception lives on. Raised here, it would keep this
+	tool's frames in its traceback, and on CPython 3.12 those of the LangGraph
+	run that called the tool, with the agent's whole state.
 
 	Cancelling the wait leaves a started task running. The task belongs to
 	every call with its key, such as the same call made again once its agent
