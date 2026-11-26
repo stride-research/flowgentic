@@ -113,10 +113,11 @@ open another client, with its own pool, whenever each one holds
 replica with 512 calls in flight then has 64 clients of `HTTPTransport`, one
 with a few calls has one. `pools=N` fixes the number of clients instead.
 All the pools of all the `HTTPTransport`s in a process share one SSL
-context, so 400 replicas cost a process 0.1 s and a few MB to set up, where
-each with its own cost 1.5 s and 300 MB; a pool connects on its first
-call. `aclose()`, on both
-transports, refuses new calls at once and returns, and the clients the
+context, built from `SSL_CERT_FILE` or `SSL_CERT_DIR` as they are when the
+transport is made. With 400 replicas, a process sets up in 0.1 s and a few
+MB, where a context per transport took 1.5 s and 300 MB. A pool connects to
+its server on its first call. `aclose()`, on both transports, refuses new
+calls at once and returns, and the clients the
 transport made close as soon as their calls in flight end; the fleet closes a
 transport that `Recovery` replaces. A `client` given (an `httpx.AsyncClient`;
 for `OpenAITransport`, an `AsyncOpenAI`) is the only one, and the transport
@@ -175,8 +176,9 @@ unchanged, and the reply's `raw` is the model's own `AIMessage`.
   process is in flight at that replica; one such call takes the replica past
   its cap while the other processes use their parts. Each gate counts such
   calls (`oversize` in `fleet.stats()["gates"]`), and the fleet logs the
-  first as a warning, once for all its replicas. Choose the caps and the
-  processes so that the largest context fits in one part.
+  first as a warning, once for all its replicas. Choose the caps so that the
+  largest context fits in the smallest part (see
+  [The smallest part](#the-smallest-part)).
 - **It waits out a server that went away.** With `Recovery(check)`, a call
   that fails because its server is down, restarting, overloaded or busy (a
   connection error, a timeout, a 5xx, a busy server's 408, 409 or 429, or a
@@ -244,48 +246,98 @@ fleet = Fleet(replicas, admission=admission, process=(index, processes))
 ```
 
 - **The parts are exact.** The processes split each replica's caps so that
-  their parts add up to the cap and none is above it. Over a campaign, each
-  process holds an equal part of the fleet's requests, to one request. Over
-  4 replicas with a cap of 256 requests, 100 processes hold 2 or 3 of every
-  replica's each; 300 processes hold one request at 3 or 4 replicas each, and
-  none at the others.
+  their parts add up to the cap and none is above it. Each process holds an
+  equal part of the fleet's requests, to one request. Over 4 replicas with a
+  cap of 256 requests, 100 processes each hold 2 or 3 requests at every
+  replica; 300 processes each hold one request at 3 or 4 replicas, and none
+  at the others.
 - **A process sends only where it holds a part.** It routes each agent to
   one of those replicas, by the agent's hash, in proportion to its parts of
-  them. A replica it holds none of gets no call from it, keeps a load of 0
-  in `fleet.load()`, caps of 0 in `fleet.stats()["gates"]`, and no metrics.
-  `fleet.stats()["replicas_used"]` lists the ones it sends to.
-- **Spread or packed.** By default a process takes its part from every
-  replica, as far as its part allows. With `pack=True` it takes it from as
-  few replicas as hold it, in their order: with as many replicas as
-  processes or more, a process holds whole caps (all of them when the
-  processes divide the replicas evenly), and it keeps connections to a few
-  servers only, since a transport connects on its first call. With 400
-  replicas and 100 processes, each holds 4 whole replicas; with 3 replicas
-  and 2 processes, the first holds replica 0 and half of replica 1.
+  them. A replica it holds none of gets no call from it and no metrics, and
+  keeps a load of 0 in `fleet.load()`; its gate in `fleet.stats()["gates"]`
+  has the keys of the others, with caps and counts of 0. In
+  `fleet.stats()`, `replicas_used` lists the replicas the process sends to,
+  `process` is `[index, processes]`, and `share` is `None`.
+- **Spread or packed.** With `layout="spread"`, the default, a process takes
+  its part from every replica, or from as many as its part allows. With
+  `layout="pack"`, it takes it from as few replicas as hold it, in their
+  order: it holds the whole caps of the replicas inside its run of them, and
+  part of the caps of the one or two where its run starts and ends, unless
+  the run starts and ends at a replica's edge. When the processes divide the
+  replicas evenly, every part is whole. A process connects only to the
+  servers it sends to, since a transport connects on its first call. With
+  400 replicas and 100 processes, each holds 4 whole replicas; with 4
+  replicas and 3 processes, the first holds replica 0 and a third of
+  replica 1.
 - **Packed, a process's replicas can be on its node.** The fleet does not
-  know where the servers run. List the replicas in the order of their nodes,
-  and number the processes in the order of theirs: when each node has as
-  many replicas per process as the fleet has, each process's replicas are
-  on its own node. With 8 replicas and 2 processes per node, process `2k`
-  holds the first four of node `k`'s replicas, and `2k + 1` the other four.
+  know where the servers run. List the replicas in the order of their
+  nodes, and number the processes in the order of theirs. When every node
+  has the same number of replicas and the same number of agent processes,
+  each process's replicas are on its own node. With 8 replicas and 2
+  processes per node, process `2k` holds the first four of node `k`'s
+  replicas, and process `2k + 1` the other four.
 
 ```python
-fleet = Fleet(replicas, admission=admission, process=(index, processes), pack=True)
+fleet = Fleet(replicas, admission=admission, process=(index, processes), layout="pack")
 ```
 
-The fleet cuts each replica into as many units as the admission has
-requests, and gives each process a run of units, so a process always holds
-whole requests, and its part of the token cap follows its requests. If the
-fleet has fewer requests in all than there are processes, a process would
-hold none, and `Fleet` raises `ValueError`. It does too when a token cap
-smaller than the request cap would leave a process requests but no tokens
-at a replica.
+### Every process needs the same inputs
 
-`share`, 0.6.0's way, still works: each process holds `share` of every
-replica's caps, rounded down, and at least 1. With 100 processes and a cap of
-256, `share=1 / 100` gives each 2 requests, so the replicas run at 200, and
+The processes agree on their parts without talking to each other: each
+works out its own from the same numbers. So every process must be given the
+same replicas, in the same order, the same admission, and the same
+`processes` and `layout`, and each index from 0 to `processes - 1` must be
+used once. Nothing checks this: a process given other inputs holds other
+parts, and the replicas may get more calls than their caps, or fewer. For
+the same reason, the parts are fixed while the processes run:
+
+- Adding or removing a replica changes every process's parts, so every
+  process must be restarted with the new list.
+- All the replicas share one admission. Replicas with different caps, such
+  as servers on GPUs of two kinds, cannot each have caps of their own: give
+  the fleet the caps of the smallest.
+
+### The smallest part
+
+The fleet cuts each replica's caps into as many units as the admission's
+request cap, and gives each process a run of units, so a process always
+holds whole requests. Its part of a replica's token cap follows its
+requests: the token cap ÷ the request cap for each request, rounded down or
+up by one token. At each replica it sends to, a process holds at least as
+many requests as `share=1 / processes` gave it: the request cap ÷ the
+processes, rounded down, and at least 1.
+
+A context larger than a process's part of a replica's token cap is
+admitted alone, above the part (an `oversize` call), so the largest context
+should fit in the smallest part: the token cap ÷ the request cap × the
+fewest requests a process holds. A request cap of at most the token cap ÷
+the largest context makes every part fit.
+
+The smallest part can be smaller than the token cap ÷ the processes, which
+`share` gave every process. Over 4 replicas with caps of 235,000 tokens and
+256 requests, 100 processes each hold 2 or 3 requests at a replica, so
+1,835 tokens at the least, where `share=1 / 100` gave each process 2,350.
+With 60 processes over one replica of 96 requests, 24 processes hold one
+request and 2,447 tokens, where `share=1 / 60` gave each 3,916.
+
+`Fleet` raises `ValueError`, in every process alike, when the fleet has
+fewer requests in all than there are processes, since a process would hold
+none, and when the token cap is below the request cap, since some requests
+would come with no token.
+
+### `share`, as in 0.6.0
+
+`share` still works: each process holds `share` of every replica's caps,
+rounded down, and at least 1. With 100 processes and a cap of 256,
+`share=1 / 100` gives each 2 requests, so the replicas run at 200 of 256;
 with 300 processes, 1 each, so a replica may get 300 requests against its
 256. Give `share` or `process`, not both.
+
+Where the processes divide the request cap, `process=` with the default
+layout gives each process the same requests at every replica as
+`share=1 / processes`, and sends each agent to the same replica. Its token
+parts are the same where the processes also divide the token cap, and
+otherwise one token larger at most.
 
 ## Settings per call
 
@@ -362,12 +414,21 @@ LangGraph version does.
 `admission=` takes any `Admission`: an object with `counts_tokens` and a
 `gate(share)` method that makes one gate per replica, for this process's
 `share` of the replica's caps. `share` is a float, the fraction of the caps.
-With `process=`, it is a `Share`, which is also a float: `share.part(cap)`
-gives the process its exact part of any cap, and the parts of the processes
-add up to the cap, as `TokenAdmission` and `RequestAdmission` use it. The
-fleet cuts each replica into as many units as the admission's `requests`
-attribute says, if it has one, or else into one unit per process, and calls
-`gate` only for the replicas the process holds a part of. A gate follows the
+With `process=`, it is a `flowgentic.fleet.Share`, which the fleet makes. As
+a float, it is the fraction of the replica's caps this process holds, and it
+prints, compares and hashes as that float: two processes' shares of a
+replica are equal when their fractions are, whichever units each holds.
+`share.part(cap)` gives the process its exact part of any cap, and the
+parts of the processes add up to the cap, as `TokenAdmission` and
+`RequestAdmission` use it.
+
+The fleet cuts each replica into as many units as the admission's
+`requests` attribute, its request cap, if it has one (an integer of at
+least 1), so that each process holds whole requests. An admission without
+one is cut into one unit per process, and a cap smaller than the processes
+can then leave a process a part of 0 at a replica it sends to: give a
+policy with a request cap that cap as `requests`. The fleet calls `gate`
+only for the replicas the process holds a part of. A gate follows the
 `Gate` protocol:
 
 ```python

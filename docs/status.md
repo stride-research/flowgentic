@@ -162,17 +162,31 @@ Agents at scale:
       have ended, leaves some of its part unused. With `Fleet(share=...)`, as
       in 0.6.0, the parts are also rounded down, to at least 1, so many
       processes may use less than a replica's caps, or more.
+    - With `Fleet(process=...)`, the processes agree on their parts without
+      talking to each other, so every process must be given the same
+      replicas, in the same order, the same admission, and the same
+      `processes` and `layout`, and each index once. Nothing checks it. A
+      replica added or removed means restarting every process with the new
+      list, and replicas with different caps cannot each have their own: one
+      admission holds for all.
     - The fleet does not know where the model servers run. A process's
-      replicas are on its node only when the replicas and the processes are
-      listed in the order of their nodes, with `pack=True`. Finding the
-      servers again after their job is requeued is the application's work.
+      replicas are on its node only with `layout="pack"`, the replicas and
+      the processes listed in the order of their nodes, and as many
+      replicas and processes on every node. Finding the servers again after
+      their job is requeued is the application's work.
     - A call whose context is larger than a process's part of a replica's
       token cap is still admitted, alone, once nothing else from that process
       is in flight at that replica. One such call takes the replica past its
-      cap while the other processes use their parts. Choose the caps and the
-      processes so that the largest context fits in one part. Each gate
-      counts such calls (`oversize` in `fleet.stats()["gates"]`), and the
-      fleet logs the first as a warning.
+      cap while the other processes use their parts. With `process=`, a
+      process's token part follows its requests, the token cap ÷ the request
+      cap for each, so the smallest part can be below the token cap ÷ the
+      processes that `share` gave: 1,835 of 235,000 tokens, where `share`
+      gave 2,350, for 100 processes over 4 replicas of 256 requests. The
+      largest context must fit in the smallest part; a request cap of at
+      most the token cap ÷ the largest context makes every part fit (see
+      [Fleet](features/fleet.md#the-smallest-part)). Each gate counts such
+      calls (`oversize` in `fleet.stats()["gates"]`), and the fleet logs the
+      first as a warning.
 - The OpenTelemetry SDK costs the agent processes CPU: with 5,000 agents on the
   loop in one process, metrics add 6 to 8 %, and every span about 50 %, or 17 %
   with the configuration that

@@ -230,8 +230,8 @@ on Dragon's resources:
   queue.
 - **The agent processes.** Each runs one host on a disjoint range of agents
   (`run_indexed`), and a fleet with `process=(index, processes)` over the
-  model servers' replicas: with `pack=True`, each process sends to a few of
-  them.
+  model servers' replicas: with `layout="pack"`, each process sends to a few
+  of them.
 - **The model servers** run on the allocation's GPUs, and each replica is an
   `HTTPTransport` of one server.
 
