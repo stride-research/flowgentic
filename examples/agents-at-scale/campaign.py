@@ -381,8 +381,8 @@ async def run_agents(
     if telemetry is not None:
         await session.start_telemetry(**telemetry.rhapsody_options())
     runtime = ToolRuntime(session, client)
-    # Every process routes by the same hash, so each takes an equal share of
-    # every replica's caps. On an allocation, one per model server:
+    # The processes split every replica's caps exactly: this one holds its
+    # part. On an allocation, one replica per model server:
     # [HTTPTransport("Qwen3-8B", base_url=url) for url in servers]
     replicas = (
         [ScriptedModel(latency_s), ScriptedModel(latency_s)]
@@ -392,7 +392,7 @@ async def run_agents(
     fleet = Fleet(
         replicas,
         admission=TokenAdmission(tokens=40_000, requests=64),
-        share=1 / processes,
+        process=(index, processes),
     )
     # The agents' state: RaDEX on Dragon, this process's memory on a laptop.
     store = RadexStore.attach(descriptor) if dragon else MemoryStore()
