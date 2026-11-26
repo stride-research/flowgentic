@@ -9,6 +9,18 @@ predate this changelog, so their changes are not listed here.
 
 ## [Unreleased]
 
+### Added
+
+- `ToolRuntime(place=...)` chooses where each task runs: `place(info)` gets
+  each task's `TaskInfo` once its order admits it, and returns fields to add
+  to the tool's, such as a `backend`, or the backend's own fields
+  (`task_backend_specific_kwargs`), which go over the tool's key by key. So
+  the agents of `LoopRunner`, which share one tool list, can spread their
+  calls over a process's GPUs, by load or otherwise. Each placed task ends in
+  one record, which a placement by load counts. A `place` that raises, or
+  fields its session or engine cannot take, fail the task, and its agent
+  reads the error.
+
 ### Changed
 
 - `ToolRuntime` keeps the outcomes of its last `retained` ended tasks, not

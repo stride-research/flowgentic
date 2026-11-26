@@ -1,13 +1,15 @@
-"""The tool runtime on its own: what it keeps of ended tasks."""
+"""The tool runtime on its own: what it keeps of ended tasks, and where each
+task runs."""
 
 import asyncio
-import gc
 import weakref
 
 import pytest
-from _basics import RUNS, broken, simulate
+from _basics import FAST, RUNS, ScriptedTransport, broken, inputs, reply, simulate, tool_results
 
-from flowgentic.tools import TaskInfo, ToolRuntime, task_tool
+from flowgentic.host import AgentHost
+from flowgentic.loop import LoopRunner
+from flowgentic.tools import TaskInfo, TaskRecord, ToolRuntime, task_tool
 
 
 @pytest.fixture(autouse=True)
@@ -102,3 +104,143 @@ async def test_a_call_made_again_gets_each_kind_of_outcome_kept():
     await asyncio.wait([job])
     assert runtime.submit(task_tool(simulate), "a", "c1", {"x": 1.0}).cancelled()
     assert runtime.stats()["retained"] == 1
+
+
+# --- where each task runs ----------------------------------------------------------
+
+
+# --8<-- [start:least-loaded]
+class LeastLoaded:
+    """Place each task where the fewest of the runtime's tasks run: counted
+    when it is placed, and again when its record arrives. ``places`` maps each
+    place, such as a GPU, to the fields a task there gets."""
+
+    def __init__(self, places: dict) -> None:
+        self.places = places
+        self.running = dict.fromkeys(places, 0)
+        self.on: dict[str, object] = {}  # each running task's place, by its key
+
+    def __call__(self, info: TaskInfo) -> dict:
+        where = min(self.running, key=self.running.__getitem__)
+        self.running[where] += 1
+        self.on[info.key] = where
+        return self.places[where]
+
+    def ended(self, record: TaskRecord) -> None:
+        if record.info.key in self.on:  # not a refused task: those are never placed
+            self.running[self.on.pop(record.info.key)] -= 1
+
+
+# --8<-- [end:least-loaded]
+
+
+def on_fake_gpu(gpu: int) -> dict:
+    return {"task_backend_specific_kwargs": {"gpu": gpu}}
+
+
+class GpuSession(InstantSession):
+    """A session whose tasks take as long as their GPU makes them, and which
+    notes the fields each task reached it with."""
+
+    def __init__(self, seconds: dict) -> None:
+        self.seconds = seconds
+        self.seen: list[dict] = []
+
+    async def submit_tasks(self, tasks):
+        out = []
+        for task in tasks:
+            self.seen.append(dict(task.get("task_backend_specific_kwargs") or {}))
+            out.append(asyncio.ensure_future(self._run(task)))
+        return out
+
+    async def _run(self, task):
+        gpu = (task.get("task_backend_specific_kwargs") or {}).get("gpu")
+        await asyncio.sleep(self.seconds.get(gpu, 0.0))
+        return {"state": "DONE", "return_value": task["function"](*task["args"])}
+
+
+def simulate_times(n: int):
+    """A model that calls simulate ``n`` times, one call per turn, then answers."""
+
+    def script(messages):
+        done = len(tool_results(messages))
+        if done < n:
+            return reply(calls=[(f"call-{done}", "simulate", {"x": float(done)})])
+        return reply("done")
+
+    return script
+
+
+async def test_loop_agents_spread_over_two_gpus_by_load():
+    """Tool-calling agents share one tool list, so a placement of the runtime
+    chooses each call's GPU. GPU 0 is ten times slower: placed by load, most
+    calls go to GPU 1, where round robin would split them evenly."""
+    session = GpuSession({0: 0.1, 1: 0.01})
+    placement = LeastLoaded({gpu: on_fake_gpu(gpu) for gpu in (0, 1)})
+    runtime = ToolRuntime(session, place=placement)
+    runtime.add_listener(placement.ended)
+    runner = LoopRunner(ScriptedTransport(simulate_times(4)), [task_tool(simulate)], runtime=runtime)
+    report = await AgentHost(runner, stagger=FAST).run(inputs(20))
+
+    assert report.finished == 20 and RUNS == {"simulate": 80}
+    assert [sorted(seen) for seen in session.seen] == [["gpu"]] * 80  # one GPU each
+    on = [seen["gpu"] for seen in session.seen]
+    assert on.count(0) + on.count(1) == 80 and on.count(1) > 2 * on.count(0) > 0
+    assert placement.running == {0: 0, 1: 0} and placement.on == {}  # every record came
+
+
+async def test_a_placement_goes_over_the_tools_fields_once_per_task():
+    session = GpuSession({})
+    placed = []
+
+    def place(info: TaskInfo):
+        placed.append(info.key)
+        return None if info.args["x"] < 0 else {"task_backend_specific_kwargs": {"gpu": 1, "extra": True}}
+
+    runtime = ToolRuntime(session, place=place, order=RefuseNegativeTwo())
+    tool = task_tool(simulate, task_backend_specific_kwargs={"gpu": 9, "cpus": 2})
+    assert await runtime.submit(tool, "a", "c1", {"x": 1.0}) == {"y": 2.0}
+    assert await runtime.submit(tool, "a", "c1", {"x": 1.0}) == {"y": 2.0}  # a repeat: not placed
+    assert await runtime.submit(tool, "a", "c2", {"x": -1.0}) == {"y": -2.0}  # None: the tool's own
+    refused = runtime.submit(tool, "a", "c3", {"x": -2.0})  # refused: never placed
+    await asyncio.wait([refused])
+    assert session.seen == [{"gpu": 1, "cpus": 2, "extra": True}, {"gpu": 9, "cpus": 2}]
+    assert placed == ["a/c1", "a/c2"]
+
+
+class RefuseNegativeTwo:
+    """An order that refuses the calls with x = -2, and notes each task that
+    gives its place back."""
+
+    def __init__(self) -> None:
+        self.ended: list[str] = []
+
+    async def admit(self, info: TaskInfo) -> None:
+        if info.args["x"] == -2.0:
+            raise RuntimeError("over budget")
+
+    def done(self, info: TaskInfo) -> None:
+        self.ended.append(info.key)
+
+
+@pytest.mark.parametrize(
+    "place, error",
+    [
+        (lambda info: {"backend": "gpus"}, "as placed: the RHAPSODY session has no backend 'gpus'"),
+        (lambda info: ["gpu", 1], "as placed: a placement gives a task's fields: a dict, not list"),
+        (lambda info: 1 / 0, "division by zero"),
+    ],
+    ids=["unknown-backend", "not-a-dict", "raises"],
+)
+async def test_a_placement_that_fails_fails_its_task(place, error):
+    """The agent reads the error, as it reads a failed task's: the order's
+    place is given back, and nothing runs."""
+    order = RefuseNegativeTwo()
+    runtime = ToolRuntime(GpuSession({}), place=place, order=order)
+    records = []
+    runtime.add_listener(records.append)
+    job = runtime.submit(task_tool(simulate), "a", "c1", {"x": 1.0})
+    await asyncio.wait([job])
+    assert error in str(job.exception()) and "simulate" not in RUNS
+    assert [(r.outcome, r.t_admit is not None) for r in records] == [("error", True)]
+    assert runtime.stats()["failed"] == 1 and order.ended == ["a/c1"]

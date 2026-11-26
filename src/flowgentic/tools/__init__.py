@@ -31,7 +31,8 @@ while the task runs, and the agent host resumes it when the task ends.
 When tasks reach RHAPSODY or AsyncFlow is a policy: ``TaskOrder``.
 ``Immediate()`` submits each task at once. Another policy can hold tasks and
 release them in an order of its choosing, such as a campaign's priorities, or
-refuse them, as a budget does.
+refuse them, as a budget does. Where each one runs, such as on which GPU, the
+runtime's ``place`` may choose, task by task.
 
 Each task ends in a ``TaskRecord``, its decision record: the agent and the tool
 call that asked for it, its uid in RHAPSODY or AsyncFlow, and when the agent
@@ -49,7 +50,7 @@ import logging
 import re
 import time
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -127,6 +128,24 @@ def _done(kept: Any) -> asyncio.Future:
 	else:
 		future.set_result(kept)
 	return future
+
+
+def _over(fields: dict[str, Any], placed: Mapping[str, Any]) -> dict[str, Any]:
+	"""A tool's task fields with a placement's over them: the backend's own
+	fields key by key, any other field whole."""
+	if not isinstance(placed, Mapping):
+		raise ValueError(
+			f"a placement gives a task's fields: a dict, not {type(placed).__name__}"
+		)
+	out = {**fields, **placed}
+	specific = placed.get("task_backend_specific_kwargs")
+	if isinstance(specific, Mapping):
+		own = fields.get("task_backend_specific_kwargs")
+		out["task_backend_specific_kwargs"] = {
+			**(own if isinstance(own, Mapping) else {}),
+			**specific,
+		}
+	return out
 
 
 def _key_part(value: str) -> str:
@@ -344,9 +363,20 @@ class ToolRuntime:
 	telemetry ``engine.start_telemetry()`` returned, from which each task's
 	record takes its start. ``service``: a started
 	``flowgentic.tools.service.ToolServiceClient``, for MCP tools. ``order``:
-	when tasks are submitted, ``Immediate()`` by default. ``retained``: of how
-	many ended tasks the outcome is kept, for repeat safety: the value, the
-	exception, or that the task was cancelled, not the asyncio task.
+	when tasks are submitted, ``Immediate()`` by default. ``place``: where
+	each task runs, below. ``retained``: of how many ended tasks the outcome is
+	kept, for repeat safety: the value, the exception, or that the task was
+	cancelled, not the asyncio task.
+
+	``place(info)`` is called with each task's ``TaskInfo`` once its order has
+	admitted it, just before the runtime submits it, and returns fields to add
+	to the tool's own, or ``None``: a ``backend``, or the backend's own fields
+	in ``task_backend_specific_kwargs``, which go over the tool's key by key,
+	such as the GPU a call runs on. The fields are checked as a tool's are. A
+	``place`` that raises, or fields the session or engine cannot take, fail
+	the task, and its agent reads the error. Each task it places ends in one
+	record (``add_listener``), so a placement by load can count a task when it
+	places it, and again when the task's record arrives.
 
 	On an engine, AsyncFlow 0.7.0 keeps each task, with its value, or its exception
 	and the frames it passed through, until the engine shuts down; a task
@@ -372,6 +402,7 @@ class ToolRuntime:
 		backend: str | None = None,
 		telemetry: Any = None,
 		order: TaskOrder | None = None,
+		place: Callable[[TaskInfo], Mapping[str, Any] | None] | None = None,
 		retained: int = 100_000,
 	) -> None:
 		if retained < 1:
@@ -404,6 +435,7 @@ class ToolRuntime:
 		self.backend = backend
 		self.telemetry = telemetry
 		self.order = order or Immediate()
+		self.place = place
 		self.retained = retained
 		self._on_engine: dict[tuple[Callable[..., Any], str | None], Callable] = {}
 		# The tasks still running; then, once each has ended, its outcome: the
@@ -540,15 +572,17 @@ class ToolRuntime:
 		self._placed(tool)
 
 	def _placed(
-		self, tool: TaskTool
+		self, tool: TaskTool, placed: Mapping[str, Any] | None = None
 	) -> tuple[
 		dict[str, Any],
 		Callable[..., asyncio.Future] | None,
 	]:
-		"""The fields of ``tool``'s tasks, the runtime's backend included, and on
-		an engine how to submit them: ``tool``'s function, registered once per
-		backend. ``ValueError`` as ``check`` says."""
+		"""The fields of ``tool``'s tasks, with those ``placed`` gives one task
+		and the runtime's backend, and on an engine how to submit them: ``tool``'s
+		function, registered once per backend. ``ValueError`` as ``check`` says."""
 		fields = dict(tool.task)
+		if placed:
+			fields = _over(fields, placed)
 		own = fields.pop("backend", None)  # None names no backend
 		backend = own if own is not None else self.backend
 		if backend is not None:
@@ -578,6 +612,16 @@ class ToolRuntime:
 			submit = _asyncflow.function_task(self.engine, tool.fn, backend=backend)
 			self._on_engine[(tool.fn, backend)] = submit
 		return fields, submit
+
+	def _place(
+		self, tool: TaskTool, info: TaskInfo
+	) -> tuple[dict[str, Any], Callable[..., asyncio.Future] | None]:
+		"""``_placed`` for one task, with the fields ``place`` gives it."""
+		placed = self.place(info)
+		try:
+			return self._placed(tool, placed)
+		except ValueError as exc:
+			raise ValueError(f"task tool {tool.name}, as placed: {exc}") from exc
 
 	def _forget(self, key: str, job: asyncio.Future, *, cancel: bool = False) -> None:
 		"""Forget a task that never reached RHAPSODY, so that the call made
@@ -631,6 +675,11 @@ class ToolRuntime:
 				t_admit = time.time()
 				_agents.withdrawable(asyncio.current_task(), None)
 				try:
+					if self.place is not None:
+						fields, on_engine = self._place(tool, info)
+						backend = fields.get("backend")
+						if on_engine is not None:
+							backend = backend or _asyncflow.default_backend(self.engine)
 					if on_engine is None:
 						named = self.uid(info.key)
 

@@ -201,6 +201,47 @@ called when an admitted task ends. `Immediate()`, the default, submits every
 task at once. A policy can hold tasks and release them in an order of its
 choosing, such as a campaign's priorities, or refuse them, as a budget does.
 
+## Where each task runs
+
+A tool's task fields are the same for every call. `ToolRuntime(place=...)`
+chooses them per call: `place(info)` gets each task's `TaskInfo` once its
+order admits it, just before the runtime submits it, and returns fields to
+add to the tool's own, or `None` for the tool's own. A `backend` it returns
+replaces the tool's; the backend's own fields, `task_backend_specific_kwargs`,
+go over the tool's key by key. They are checked as a tool's are. A `place`
+that raises, or fields that the session or engine cannot take, fail the task,
+and its agent reads the error.
+
+Where a task runs belongs to the process, not to the tool: one tool list
+serves processes that have different GPUs, and the agents of an
+[agent loop](agent-loop.md), which share one tool list, spread their calls
+over a process's GPUs. `info.tool` names the tool, for a placement that moves
+only some tools' tasks.
+
+Each task `place` places ends in one [decision record](#the-decision-record),
+so a placement by load counts a task when it places it, and again when the
+task's record arrives:
+
+```python
+--8<-- "tests/unit/scale/test_tool_runtime.py:least-loaded"
+```
+
+Under Dragon, RHAPSODY's native backend runs a function task on a pool worker
+pinned to a GPU when the task's `process_template` holds only a policy that
+names the node and the GPU:
+
+```python
+from dragon.infrastructure.policy import Policy
+
+def on_gpu(gpu: int) -> dict:
+    policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=node, gpu_affinity=[gpu])
+    return {"task_backend_specific_kwargs": {"process_template": {"policy": policy}}}
+
+placement = LeastLoaded({gpu: on_gpu(gpu) for gpu in gpus})
+runtime = ToolRuntime(session, place=placement)
+runtime.add_listener(placement.ended)
+```
+
 ## The decision record
 
 Each task ends in a `TaskRecord`, which `runtime.add_listener(listener)` hands
