@@ -237,8 +237,8 @@ async def test_mcp_tools_go_through_the_service_keyed_by_agent_and_turn():
     runner = LoopRunner(transport(("lookup", {"material": "x"})), [lookup], runtime=ToolRuntime(service=service))
     report = await AgentHost(runner, stagger=FAST, on_done=collect(outputs)).run(inputs(1))
     assert report.finished == 1
-    ((key, *call),) = service.calls  # agent/turn/call, the turn with the runner's own token
-    assert re.fullmatch(r"agent-0/[0-9a-f]{8}-1/call-0", key)
+    ((key, *call),) = service.calls  # agent/turn/call: the runner's token, the run, the model call
+    assert re.fullmatch(r"agent-0/[0-9a-f]{8}-0-1/call-0", key)
     assert call == ["lookup", {"material": "x"}, True]
     assert '"score": 0.5' in outputs["agent-0"].messages[-1]["content"]
 

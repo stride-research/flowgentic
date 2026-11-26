@@ -228,11 +228,26 @@ def process_agent_seconds() -> dict[AgentState, float]:
 class _Agent:
 	"""The context variable's value: one live agent, with its open activities."""
 
-	__slots__ = ("id", "states", "_open", "registered", "finished", "at_end", "replies")
+	__slots__ = (
+		"id",
+		"states",
+		"host",
+		"_open",
+		"registered",
+		"finished",
+		"at_end",
+		"replies",
+	)
 
-	def __init__(self, agent_id: str, states: AgentStates) -> None:
+	def __init__(
+		self, agent_id: str, states: AgentStates, host: object | None = None
+	) -> None:
 		self.id = agent_id
 		self.states = states
+		# A token of the host's period that runs the agent: a host tells its own
+		# agents by it, never the host itself, which a task kept after the agent
+		# would keep alive.
+		self.host = host
 		self.finished = False
 		self.replies: dict[str, float] = {}
 		self._open = [0] * _N
@@ -260,10 +275,19 @@ class _Agent:
 _current: ContextVar[_Agent | None] = ContextVar("flowgentic_agent", default=None)
 
 
-def set_current_agent(agent_id: str, states: AgentStates) -> None:
+def set_current_agent(
+	agent_id: str, states: AgentStates, host: object | None = None
+) -> None:
 	"""Make ``agent_id`` the current task's agent. The host calls it in each
-	agent's own task, so it reaches that agent's nodes and tools only."""
-	_current.set(_Agent(agent_id, states))
+	agent's own task, so it reaches that agent's nodes and tools only; ``host``
+	is the token of the host's period that runs it."""
+	_current.set(_Agent(agent_id, states, host))
+
+
+def agent_of(host: object) -> _Agent | None:
+	"""The current agent, if the host's period ``host`` runs it, ended or not."""
+	agent = _current.get()
+	return agent if agent is not None and agent.host is host else None
 
 
 def current_agent() -> str | None:

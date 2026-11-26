@@ -93,14 +93,15 @@ on a laptop.
   whose size is fixed, needs. An agent that never suspends never touches the
   store.
 - **It never runs a call twice.** A task or MCP call is keyed by the agent, the
-  turn (a token of the runner's own and the number of the model call that
-  made it) and the call's id. When the agent resumes, its task is found, not
-  run again. A later turn that reuses a call id, as a model server that
-  numbers its calls per reply does, makes a new call, and so does another
-  runner in the process whose agents have the same ids, through its own
-  runtime or a shared one. The token is saved with a suspended agent's state,
-  so a runner that resumes an agent another runner suspended, through a
-  shared runtime and store, finds the agent's task too.
+  turn (a token of the runner's own, the number of the agent's run on it, and
+  the number of the model call that made it) and the call's id. When the
+  agent resumes, its task is found, not run again. A later turn that reuses a
+  call id, as a model server that numbers its calls per reply does, makes a
+  new call; so does another runner in the process whose agents have the same
+  ids, through its own runtime or a shared one, and so does a later run of the
+  same agent id, as a server's for its next message. The token is saved with
+  a suspended agent's state, so a runner that resumes an agent another runner
+  suspended, through a shared runtime and store, finds the agent's task too.
 - **Runners that share a store share its keys.** A suspended agent's state is
   under `key_prefix` and its id, so two runners on one store whose agents can
   have the same ids, as two populations numbered from `agent-0`, must each

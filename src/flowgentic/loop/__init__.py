@@ -78,6 +78,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import inspect
+import itertools
 import json
 import logging
 import os
@@ -260,10 +261,12 @@ class LoopRunner:
 			else dict(model_kwargs or {})
 		)
 		self.key_prefix = key_prefix
-		# In each task's turn, so that two runners in one process, whose agents
-		# may share ids and call ids, never share a task, through a runtime or
-		# the host's registrations.
+		# In each task's turn, with the number of the agent's run, so that two
+		# runners in one process, whose agents may share ids and call ids, never
+		# share a task, through a runtime or the host's registrations; nor two
+		# runs of one agent id, as a server's for two messages.
 		self._token = uuid.uuid4().hex[:8]
+		self._runs = itertools.count()
 		self._system = (
 			None
 			if system_prompt is None
@@ -331,7 +334,8 @@ class LoopRunner:
 	async def start(self, agent: Agent) -> Step:
 		"""Run the agent from its input until it ends, suspends or stops."""
 		messages = _answer_skipped(_messages(agent.input))
-		return await self._run(agent.id, messages, 0, self._token)
+		token = f"{self._token}-{next(self._runs)}"
+		return await self._run(agent.id, messages, 0, token)
 
 	async def resume(self, agent: Agent, done: dict[str, Any]) -> Step:
 		"""Read the agent's state back and run it on; its tasks have ended."""
