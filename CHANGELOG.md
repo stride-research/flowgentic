@@ -25,10 +25,18 @@ predate this changelog, so their changes are not listed here.
   submit meanwhile; `stop(drain=False)` cancels the live ones and withdraws
   the waiting ones. `async with host:` starts the host and stops it at the
   block's end, with `stop(drain=False)` if the block raised. `run` and
-  `run_indexed` run on the same parts, and behave as before.
+  `run_indexed` run on the same parts, and behave as before. A started host
+  freezes the collector's objects in `start()`, after the full collection it
+  runs anyway, so that no request waits for the freeze; `run` and
+  `run_indexed` still freeze once their first wave has started.
 - The agents-at-scale example's `--arrivals RATE`: its agents arrive one at a
   time, and each process's host takes them as they come. The host
   benchmark's `--submit` measures the same path.
+- `benchmarks/agent_host.py` prints the collector's passes in each
+  generation during the run, beside the CPU time. Its host runs with
+  `collector=None`, so the CPU time follows where CPython's full passes fall:
+  an A/B should compare runs with the same number of full passes, or try more
+  than one `--live`.
 - **Exact admission caps across agent processes.**
   `Fleet(process=(index, processes))` says which of the processes that use
   the replicas this one is, and the processes split each replica's caps so
@@ -97,6 +105,13 @@ predate this changelog, so their changes are not listed here.
 
 ### Changed
 
+- **The host's probes keep running values,** not every sample, so their
+  memory stays the same however long a host runs: about 33 KB, where they
+  kept 8 bytes for each 100 ms lag sample and 9 for each collection. Every
+  figure of `HostReport.loop_lag` and `HostReport.collector` is still exact,
+  but the lag's `time_weighted_p99_ms`, which comes from a histogram of fixed
+  size: it is within 1 % of the exact value, or 0.1 ms, whichever is larger,
+  for a p99 under a day, before it is rounded to 0.1 ms.
 - **Every `HTTPTransport` in a process shares one SSL context,** as its pools
   did, one for each value of `SSL_CERT_FILE` and `SSL_CERT_DIR`. Each built
   its own before, about 3 ms and 0.7 MiB: 400 replicas cost a process 1.5 s
@@ -127,6 +142,11 @@ predate this changelog, so their changes are not listed here.
   numbers its calls per reply, a later run found the earlier run's tasks, and
   the tool service its calls, and got their results. The turn part of a
   call's key, and so of its RHAPSODY task's uid, now carries the run's number.
+- A host that finds the collector frozen by another host, as a `run` that
+  overlaps another does, freezes nothing, and its `collector["freeze"]` now
+  says so: `call_s` 0, and `frozen` the same as `frozen_before`, what it
+  found frozen. It gave the other host's `frozen_before` before, so its
+  report looked like a freeze of its own.
 
 ## [0.6.0] - 2026-11-22
 

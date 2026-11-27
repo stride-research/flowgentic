@@ -11,7 +11,8 @@ what makes thousands of agents in one Python process work:
 - **The collector.** CPython's cyclic collector, at its default settings,
   spends most of a busy agent process's time scanning the agents' live
   objects. The host raises its first threshold while it runs, and freezes the
-  objects that exist once agents have started, so later collections skip them.
+  objects that exist once its first agents have started, or, when it takes
+  agents with ``submit``, as it starts, so later collections skip them.
   It restores the threshold when ``run`` returns or ``stop`` ends the host, and
   unfreezes when the last host that froze ends.
 - **A cap on live agents.** At most ``max_live_agents`` agents are live at
@@ -151,8 +152,9 @@ class Collector:
 	"""The cyclic collector's settings while a host runs.
 
 	The first threshold rises to ``threshold`` (CPython's default is 700), and
-	with ``freeze`` the objects alive once agents have started are moved out of
-	the collector's reach. When the last host that froze ends, every frozen
+	with ``freeze`` the objects alive once the first agents have started, or
+	when a host that takes agents with ``submit`` starts, are moved out of the
+	collector's reach. When the last host that froze ends, every frozen
 	object is moved back, those frozen before it included (CPython 3.12 parks
 	some of its own objects there): CPython cannot thaw only part of them, and
 	reference cycles left frozen would never be freed. An application that
@@ -400,11 +402,13 @@ class AgentHost:
 		"""Start taking agents one at a time, with ``submit``, until ``stop``.
 
 		The host tunes the collector, starts its probes, and begins its
-		accounting period, as ``run`` does. It runs one period at a time:
-		``start``, ``run`` or ``run_indexed`` while it runs raise
-		``RuntimeError``. ``async with host:`` starts it and stops it at the
-		block's end, so an error between the two cannot leave the collector
-		tuned."""
+		accounting period, as ``run`` does. It freezes the objects alive now,
+		after the full collection it starts with, so that no agent's request
+		waits for the freeze; ``run`` freezes once its first wave has started.
+		It runs one period at a time: ``start``, ``run`` or ``run_indexed``
+		while it runs raise ``RuntimeError``. ``async with host:`` starts it and
+		stops it at the block's end, so an error between the two cannot leave
+		the collector tuned."""
 		self._open(_SERVED, None, 0)
 
 	async def __aenter__(self) -> AgentHost:
@@ -534,7 +538,9 @@ class AgentHost:
 		_agents.begin_host_run()
 		s = _Session(loop, mode, source, count)
 		s.collect = partial(self._collect, s)
-		s.token = self._collector_start()
+		# A server freezes now, before its first request, not inside it. What
+		# its first agents create later is not frozen; the threshold holds.
+		s.token, s.freeze = self._collector_start(freeze=mode == _SERVED)
 		s.lag.start()
 		s.pauses.start()
 		s.t0 = time.monotonic()
@@ -567,7 +573,8 @@ class AgentHost:
 
 	async def _dispatch(self, s: _Session) -> None:
 		"""Start the agents in the order they came, as slots free; stagger the
-		first wave, and freeze once it has started."""
+		first wave, and, for ``run`` and ``run_indexed``, freeze once it has
+		started (a started host froze in ``start``)."""
 		cap = self.max_live_agents
 		batch, interval = self.stagger.batch, self.stagger.interval_s
 		loop = s.loop
@@ -872,10 +879,15 @@ class AgentHost:
 
 	# --- the collector -----------------------------------------------------------
 
-	def _collector_start(self) -> object | None:
+	def _collector_start(self, *, freeze: bool) -> tuple[object | None, dict | None]:
+		"""Raise the threshold, after a full collection: the host's token. With
+		``freeze``, also freeze then, under the same hold of the lock, so that
+		no host that ends meanwhile can thaw its dead objects back in between;
+		the freeze's report (``at_s`` 0), or ``None`` when the first wave is
+		to freeze."""
 		global _original_thresholds
 		if self.collector is None:
-			return None
+			return None, {} if freeze else None
 		with _collector_lock:
 			if not _thresholds:
 				_original_thresholds = gc.get_threshold()
@@ -883,20 +895,41 @@ class AgentHost:
 			gc.set_threshold(self.collector.threshold, *_original_thresholds[1:])
 			token = object()
 			_thresholds[token] = self.collector.threshold
-			return token
+			if not freeze:
+				return token, None
+			return token, self._collector_started(
+				token, time.monotonic(), collect=False
+			)
 
-	def _collector_started(self, token: object | None, t0: float) -> dict:
+	def _collector_started(
+		self, token: object | None, t0: float, *, collect: bool = True
+	) -> dict:
+		"""Freeze what is alive, after a full collection unless the caller
+		has just run one under the lock it holds (``collect=False``); what the
+		report's ``freeze`` shows. While another host holds the freeze, this
+		one freezes nothing, and its report says so: ``call_s`` 0, and
+		``frozen`` the same as ``frozen_before``."""
 		global _frozen_before
 		if self.collector is None or not self.collector.freeze or token is None:
 			return {}
 		with _collector_lock:
+			if _freeze_owners:
+				_freeze_owners.add(token)
+				at_s = round(time.monotonic() - t0, 3)
+				count = gc.get_freeze_count()  # walks the frozen objects
+				return {
+					"at_s": at_s,
+					"call_s": 0.0,
+					"frozen_before": count,
+					"frozen": count,
+				}
 			t = time.perf_counter()
-			if not _freeze_owners:
-				# Freezing adds to what is frozen already, such as the objects
-				# CPython 3.12 moves there at each full collection.
-				_frozen_before = gc.get_freeze_count()
+			# Freezing adds to what is frozen already, such as the objects
+			# CPython 3.12 moves there at each full collection.
+			_frozen_before = gc.get_freeze_count()
+			if collect:
 				gc.collect()
-				gc.freeze()
+			gc.freeze()
 			_freeze_owners.add(token)
 			return {
 				"at_s": round(time.monotonic() - t0, 3),
