@@ -311,7 +311,7 @@ serving two agent processes over Dragon's queues, and the worked example
 adapted to Dragon, with 1,000 agents in two processes, on the loop and with
 `--runner graph`, every suspension resumed from RaDEX, and with 200 agents
 arriving one at a time (`--arrivals`). They passed under
-Dragon 0.15.0 on Python 3.12, with RHAPSODY at commit `2523ead`, whose native
+Dragon 0.15.0 on Python 3.12, with RHAPSODY at commit `9e103fd`, whose native
 Dragon backend is not in a release yet, and RaDEX at commit `9f9b0df`.
 See [Project status](../status.md#known-limitations).
 

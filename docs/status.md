@@ -27,6 +27,7 @@ back and checks after a run ([Telemetry](features/telemetry.md)), or which
 `flowgentic.otlp`, with the `otlp` extra, streams to an OpenTelemetry collector
 while it runs, for the live dashboard in `examples/live-dashboard/` ([Live
 dashboard](features/live-dashboard.md)).
+
 0.7.0 lets a host take agents one at a time, as a server's messages arrive,
 and answer each with a future ([Agents on
 demand](features/agent-host.md#agents-on-demand)); splits each model server's
@@ -36,6 +37,7 @@ places task tools call by call ([Where each task
 runs](features/tools.md#where-each-task-runs)); and runs a task again when its
 worker is lost ([A lost worker](features/tools.md#a-lost-worker)). It only
 adds to 0.6.0: an application on 0.6.0 needs no change.
+
 [Agents at scale](guides/agents-at-scale.md) shows the parts together, in an
 example that runs on a laptop, with or without LangGraph. Their interfaces
 may still change before 1.0, as the changelog will say.
@@ -140,7 +142,7 @@ Agents at scale:
   0.7.0 the example ran on the agent loop and, with `--runner graph`, as
   LangGraph graphs, and, with 200 agents arriving one at a time, on hosts that
   took them as they came. They passed under Dragon 0.15.0 on Python 3.12, with
-  RHAPSODY at commit `2523ead`, whose native Dragon backend is not in a
+  RHAPSODY at commit `9e103fd`, whose native Dragon backend is not in a
   release yet, and RaDEX at commit `9f9b0df`. The tests marked `dragon` make
   these checks, the last one with the example's `--dragon` flag on the loop;
   the contributing guide says how to run them.

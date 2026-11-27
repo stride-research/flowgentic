@@ -50,7 +50,11 @@ The new public API, detailed under Added:
   `run_indexed` run on the same parts, and behave as before. A started host
   freezes the collector's objects in `start()`, after the full collection it
   runs anyway, so that no request waits for the freeze; `run` and
-  `run_indexed` still freeze once their first wave has started.
+  `run_indexed` still freeze once their first wave has started. A started
+  host's `collector["freeze"]` has `at_s` 0, and a `call_s` that covers the
+  freeze alone, since the collection belongs to `start()`. A `run` that
+  overlaps a started host freezes nothing of its own: the first host to
+  freeze freezes for all.
 - The agents-at-scale example's `--arrivals RATE`: its agents arrive one at a
   time, and each process's host takes them as they come. The host
   benchmark's `--submit` measures the same path.
@@ -69,10 +73,13 @@ The new public API, detailed under Added:
   routes each agent, by the agent's hash, to one of the replicas it holds a
   part of, in proportion to its parts. Every process must be given the same
   replicas, in the same order, and the same admission. `Fleet(share=...)`
-  works as before, and `Fleet` refuses both together. Over 4 replicas with
-  a cap of 256 requests, 100 processes with `share=1 / 100` used 200 of
-  each replica's 256, and 300 processes with `share=1 / 300` could send 300;
-  with `process=`, they use 256 in both.
+  works as before, and `Fleet` refuses both together. With `process=`,
+  `Fleet` refuses a token cap below the request cap, in every process alike,
+  before it builds any gate: each request a process holds comes with its
+  part of the token cap. Without `process=`, it takes such caps, as before.
+  Over 4 replicas with a cap of 256 requests, 100 processes with
+  `share=1 / 100` used 200 of each replica's 256, and 300 processes with
+  `share=1 / 300` could send 300; with `process=`, they use 256 in both.
 - **Each process to a few replicas.** `Fleet(process=..., layout="pack")`
   gives each process its part from as few replicas as hold it, in their
   order, rather than from every replica (`layout="spread"`, the default).
@@ -86,7 +93,8 @@ The new public API, detailed under Added:
   `part(cap)` is the process's exact part of a cap. The fleet makes shares.
   `fleet.stats()` gives `process` and `replicas_used`, and a routing's
   `loads` its `weights`, the process's parts of the replicas where they
-  differ.
+  differ. With `process=`, `fleet.stats()["share"]` is `None`: each gate's
+  caps are the process's parts.
 - The agents-at-scale example's processes split the caps with
   `process=(index, processes)`, and its guide says so. The example refuses
   more than 128 processes, 2 replicas × 64 requests.
