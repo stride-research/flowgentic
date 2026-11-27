@@ -39,12 +39,13 @@ host can also take agents one at a time, as they arrive, between `start` and
   or `stop` ends a started host, and also when either is cancelled.
   Overlapping runs share the collector tuning until the last user releases it,
   and the first to freeze freezes for them all: a `run` that starts while a
-  started host serves freezes nothing of its own. When the last host that
-  froze ends, it unfreezes every frozen object, those frozen before it
-  included (CPython 3.12 parks some of its own objects there): CPython cannot
-  unfreeze only part, and reference cycles left frozen would never be freed.
-  An application that keeps objects of its own frozen passes
-  `Collector(freeze=False)`; `collector=None` leaves the collector alone.
+  started host serves freezes nothing of its own, and its report says so
+  ([What it reports](#what-it-reports)). When the last host that froze ends,
+  it unfreezes every frozen object, those frozen before it included (CPython
+  3.12 parks some of its own objects there): CPython cannot unfreeze only
+  part, and reference cycles left frozen would never be freed. An application
+  that keeps objects of its own frozen passes `Collector(freeze=False)`;
+  `collector=None` leaves the collector alone.
 - **It caps the agents live at once.** At most `max_live_agents` (5,000 by
   default) are live, suspended ones included. More are accepted, and each
   starts as soon as a live one ends. The cap bounds how late the event loop
@@ -78,7 +79,9 @@ host can also take agents one at a time, as they arrive, between `start` and
 (time-weighted p99, maximum, share of time over 100 ms); and the collector's
 pauses by generation. Its `collector["freeze"]` gives when the host froze
 (`at_s`, 0 for a started host), how long the freeze took (`call_s`), and the
-objects frozen before (`frozen_before`) and after (`frozen`).
+objects frozen before (`frozen_before`) and after (`frozen`). A host that
+found the freeze held by another host froze nothing: its `call_s` is 0, and
+its `frozen` is its `frozen_before`, what it found frozen.
 
 The host keeps running values of the lag and the pauses, not every sample, so
 their memory stays the same however long it runs. Every figure is exact but
