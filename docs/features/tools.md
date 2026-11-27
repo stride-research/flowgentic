@@ -119,23 +119,27 @@ the agent's other tool calls do not run again either.
 
 ## Repeat safety
 
-A task or service call is keyed by its agent, the LangGraph task that runs
-the tool, and the tool call's id: `agent/task/call`. A call made again with the
+A task or service call is keyed by its agent, the LangGraph task that runs the
+tool, and the tool call's id: `agent/task/call`. A call made again with the
 same key, as a framework does when it resumes an agent, gets the first call's
-result and runs nothing: LangGraph gives a task the same id when it runs again.
-A later turn that reuses a call id, as a model server that numbers its tool
-calls per message does, runs in a new task, so it makes a new call. Outside a
-LangGraph run the key is `agent/call`. The runtime keeps the outcomes of the
-last `retained` ended tasks (100,000 by default): each one's value, its
-exception, or that it was cancelled, but not the asyncio task. A call made
-again after its task ended gets a new future, already done, with that
-outcome. An outcome with a small value costs the runtime a few hundred
-bytes, the value included: about 170 on CPython 3.12 and 400 on 3.11 in one
-probe. A failed task's costs more. Its exception keeps its traceback, and each
-frame there keeps its locals, the call's arguments among them: about 5 KB
-with small arguments, but as much as the arguments with large ones, so
-100,000 kept failures with 1 MB arguments hold 100 GB. If many calls may
-fail with large arguments, pass the inputs by path, or lower `retained`. The
+result and runs nothing: LangGraph gives a task the same id when it runs
+again. A later turn that reuses a call id, as a model server that numbers its
+tool calls per message does, runs in a new task, so it makes a new call.
+Outside a LangGraph run the key is `agent/call`. A part may hold a `/`, as an
+agent id such as `team/a1` does: the key writes each `/` in a part as `%2F`,
+and each `%` as `%25`, so a key always has three parts, or two, and two calls
+never share one. Agent `team/a1`'s key is `team%2Fa1/<task>/<call>`, and
+`urllib.parse.unquote` turns a part back into what it was. The runtime keeps
+the outcomes of the last `retained` ended tasks (100,000 by default): each
+one's value, its exception, or that it was cancelled, but not the asyncio
+task. A call made again after its task ended gets a new future, already done,
+with that outcome. An outcome with a small value costs the runtime a few
+hundred bytes, the value included: about 170 on CPython 3.12 and 400 on 3.11
+in one probe. A failed task's costs more. Its exception keeps its traceback,
+and each frame there keeps its locals, the call's arguments among them: about
+5 KB with small arguments, but as much as the arguments with large ones, so
+100,000 kept failures with 1 MB arguments hold 100 GB. If many calls may fail
+with large arguments, pass the inputs by path, or lower `retained`. The
 runtime does not clear the frames' locals: on CPython 3.11 and 3.12 that
 closes any coroutine still running whose frame the traceback passed through,
 such as a backend's own loop. A call made again gets the same exception,

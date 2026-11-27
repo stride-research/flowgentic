@@ -557,11 +557,64 @@ async def test_the_collector_is_tuned_while_the_host_serves_and_restored():
     await asyncio.sleep(0.05)
     await host.submit(Agent("later", None))
     report = await host.stop()
-    # The host froze once its first agent had started, and thawed at stop.
+    # The host froze when it started, and thawed at stop.
     assert seen == {"first": (100_000, True), "later": (100_000, True)}
     freeze = report.collector["freeze"]
     assert freeze["frozen"] > freeze["frozen_before"]
     assert report.collector["settings"] == {"threshold": 100_000, "freeze": True}
+    assert gc.get_threshold() == before and nothing_left_frozen()
+
+
+async def test_a_started_host_freezes_in_start_and_never_in_a_request(monkeypatch):
+    """A server's first request does not wait for a full collection and the
+    freeze: ``start()`` froze, after the collection it runs anyway. ``run`` and
+    ``run_indexed`` still freeze once their first wave has started."""
+    before = gc.get_threshold()
+    calls = []
+    collect, freeze = gc.collect, gc.freeze
+
+    def counted(name, call):
+        def wrapper(*args):
+            calls.append(name)
+            return call(*args)
+
+        return wrapper
+
+    class Probe(Runner):
+        async def start(self, agent):
+            frozen_at_first_step = bool(_freeze_owners)
+            await asyncio.sleep(0.01)
+            return Finished((frozen_at_first_step, bool(_freeze_owners)))
+
+    host = make_host(Probe(), collector=Collector(), max_live_agents=2)
+    await host.start()
+    assert _freeze_owners and gc.get_freeze_count() > 0
+    monkeypatch.setattr(gc, "collect", counted("collect", collect))
+    monkeypatch.setattr(gc, "freeze", counted("freeze", freeze))
+    outputs = [(await host.submit(Agent(f"a{i}", None)))[1] for i in range(3)]
+    assert calls == []  # no collection and no freeze while the agents ran
+    monkeypatch.undo()
+    report = await host.stop()
+    assert outputs == [(True, True)] * 3
+    freeze_record = report.collector["freeze"]
+    assert freeze_record["at_s"] < 0.05
+    assert freeze_record["frozen"] > freeze_record["frozen_before"]
+    assert gc.get_threshold() == before and nothing_left_frozen()
+
+    # run and run_indexed: not frozen at their first agents' first steps,
+    # frozen once the wave (2 agents, the cap) has started.
+    outputs = []
+    host = make_host(
+        Probe(),
+        collector=Collector(),
+        max_live_agents=2,
+        on_done=lambda _r, out: outputs.append(out),
+    )
+    await host.run([Agent(f"a{i}", None) for i in range(3)])
+    await host.run_indexed(range(3), lambda _i: None)
+    first_wave = [(False, True)] * 2
+    assert outputs[:2] == first_wave and outputs[3:5] == first_wave
+    assert outputs[2] == outputs[5] == (True, True)  # started after the freeze
     assert gc.get_threshold() == before and nothing_left_frozen()
 
 

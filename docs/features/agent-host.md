@@ -32,8 +32,10 @@ host can also take agents one at a time, as they arrive, between `start` and
   With thousands of agents in a process, each holding its conversation, that
   scanning takes most of the process's time. The host raises the collector's
   first threshold (`Collector(threshold=100_000)`; it must be at least 1,
-  since 0 would turn automatic collection off) and, once agents have started,
-  moves the objects then alive out of the collector's reach (`gc.freeze()`).
+  since 0 would turn automatic collection off) and moves the objects alive
+  out of the collector's reach (`gc.freeze()`): `run` once its first wave of
+  agents has started, and a started host in `start()`, before its first
+  agent ([Agents on demand](#agents-on-demand)).
   It restores both when `run` returns or `stop` ends a started host, and also
   when either is cancelled. Overlapping runs share the collector tuning until
   the last user releases it. When the last host that froze ends, it unfreezes
@@ -76,6 +78,12 @@ host can also take agents one at a time, as they arrive, between `start` and
 pauses by generation. Its `collector["freeze"]` gives when the host froze
 (`at_s`), how long the freeze took (`call_s`), and the objects frozen before
 (`frozen_before`) and after (`frozen`).
+
+The host keeps running values of the lag and the pauses, not every sample, so
+their memory stays the same however long it runs. Every figure is exact but
+the lag's time-weighted p99, which comes from a histogram of fixed size
+(buckets 1 % wide from 0.1 ms up): it is within 1 % of the exact value, or
+0.1 ms, whichever is larger, for a p99 under a day.
 
 `AgentStates` counts agents in seven states and three categories, the ones a
 campaign reports:
@@ -280,7 +288,7 @@ host = AgentHost(
 
 async def handle(message):  # one per message, on the host's event loop
     try:
-        future = host.submit(Agent(f"{message.agent}/{message.task}", message.input))
+        future = host.submit(Agent(f"{message.agent}:{message.task}", message.input))
     except QueueFull:
         return busy()  # "busy, retry later"
     result, output = await future  # what on_done receives
@@ -293,9 +301,11 @@ async with host:  # start(); on an error, stop(drain=False)
 ```
 
 - **`start()`** tunes the collector, starts the probes of the event loop and
-  the collector, and begins an accounting period, as `run` does. A host runs
-  one period at a time: `start`, `run` or `run_indexed` while it runs raises
-  `RuntimeError`. After `stop`, it can start again, or run a list.
+  the collector, and begins an accounting period, as `run` does. It also
+  freezes the objects alive then, after the full collection it runs anyway,
+  so that no request waits for the freeze ("The first wave", below). A host
+  runs one period at a time: `start`, `run` or `run_indexed` while it runs
+  raises `RuntimeError`. After `stop`, it can start again, or run a list.
 - **`async with host:`** starts the host, and stops it when the block ends:
   `stop()` if the block ended normally, `stop(drain=False)` if it raised.
   Until `stop`, the host keeps the collector's threshold raised, its objects
@@ -319,7 +329,9 @@ async with host:  # start(); on an error, stop(drain=False)
   is free again, by the time its future resolves, so a server can run one
   logical agent once per message under one id. `LoopRunner` keys each run's
   tool calls apart, and `GraphRunner` continues the agent's thread, or starts
-  a fresh one with `delete_finished=True`.
+  a fresh one with `delete_finished=True`. An id may hold any character:
+  task keys write a `/` in it as `%2F` ([Repeat
+  safety](tools.md#repeat-safety)).
 - **`max_queued`** bounds the agents that wait for a slot: `submit` raises
   `QueueFull` when the host holds `max_live_agents + max_queued` agents, live
   or waiting, so a server can refuse work rather than pile it up. With
@@ -334,11 +346,17 @@ async with host:  # start(); on an error, stop(drain=False)
   `Stagger(batch=100, interval_s=0.5)`, the last of a burst of 1,000 agents
   starts about 4.5 s after the first. A server whose messages come spread out
   gains nothing from it: `Stagger(batch=1, interval_s=0)` starts each agent as
-  soon as a slot is free. The host freezes the objects alive once its first
-  agents have started: when it has started `max_live_agents` agents, or every
-  agent submitted so far, whichever comes first. When messages are sparse,
-  that is after the first agent, and the objects of later agents are not
-  frozen; the raised threshold holds for them all.
+  soon as a slot is free. A started host does not freeze after its first
+  wave, as `run` does, but in `start()`: a freeze needs a full collection
+  first, which would run on the event loop inside the first agent's request,
+  and `start()` runs one anyway. With the agents-at-scale example's agent
+  process on CPython 3.12, a freeze inside the first request added 46 ms to
+  it with `LoopRunner` and 74 ms with `GraphRunner`; in `start()` it adds a
+  few microseconds. What the first agents create and keep, such as a
+  framework's lazily built caches, is not frozen: about a thousand objects
+  with `GraphRunner` and a few with `LoopRunner` in that process, and a full
+  collection there took 0.1 ms either way. The raised threshold holds for
+  every agent.
 - **Cancelling one agent.** Cancelling a future cancels its agent: one still
   waiting never starts, and one live ends as `cancelled`, which `on_done`
   receives. A handler that awaits the future and is itself cancelled, as when
@@ -394,9 +412,9 @@ async with host:  # start(); on an error, stop(drain=False)
   live agents run to their ends, and `stop` still ends the host and returns
   its report.
 
-A host that serves for days keeps, until `stop`, its event loop's lag
-samples, 8 bytes every 100 ms, about 7 MB a day; the collector's pauses, 9
-bytes a collection; and the task registrations made outside an agent that no
-agent took (`register_pending`, above). With `GraphRunner`, the checkpointer
-keeps each finished agent's last checkpoint, past `stop` too, unless
-`delete_finished=True`.
+A host that serves for days keeps, until `stop`, the task registrations made
+outside an agent that no agent took (`register_pending`, above). Its probes
+of the event loop and the collector keep running values and a histogram of
+fixed size, about 33 KB, however long it serves. With `GraphRunner`, the
+checkpointer keeps each finished agent's last checkpoint, past `stop` too,
+unless `delete_finished=True`.
