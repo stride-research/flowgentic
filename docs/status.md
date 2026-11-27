@@ -132,13 +132,14 @@ Agents at scale:
 - CI runs no part under Dragon: `RadexStore` is tested against a stand-in for
   RaDEX's client, task tools run on RHAPSODY's thread-pool backend, and the
   tool service's queues are the standard library's. For each release since
-  0.5.0, 0.6.0 included, the parts were tested under Dragon by hand: the
+  0.5.0, 0.7.0 included, the parts were tested under Dragon by hand: the
   store's contract on RaDEX, an agent suspended by one Dragon process and
   resumed by another, the tool service in a Dragon process serving two agent
   processes over Dragon's queues, and the worked example adapted to Dragon,
-  with 1,000 agents in two processes, every suspension resumed from RaDEX.
-  For 0.6.0 the example ran on the agent loop and, with `--runner graph`, as
-  LangGraph graphs. They passed under Dragon 0.15.0 on Python 3.12, with
+  with 1,000 agents in two processes, every suspension resumed from RaDEX. For
+  0.7.0 the example ran on the agent loop and, with `--runner graph`, as
+  LangGraph graphs, and, with 200 agents arriving one at a time, on hosts that
+  took them as they came. They passed under Dragon 0.15.0 on Python 3.12, with
   RHAPSODY at commit `2523ead`, whose native Dragon backend is not in a
   release yet, and RaDEX at commit `9f9b0df`. The tests marked `dragon` make
   these checks, the last one with the example's `--dragon` flag on the loop;
