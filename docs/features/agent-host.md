@@ -268,7 +268,11 @@ To measure host scheduling and peak process RSS on Linux or macOS, run
 `uv run --locked python benchmarks/agent_host.py --agents 100000`.
 Add `--full-report` for the ordinary host path, or `--submit` for agents given
 one at a time to a started host. The runner finishes immediately, uses
-generated inputs and performs no model, checkpoint or network calls.
+generated inputs and performs no model, checkpoint or network calls. The
+benchmark's host runs with `collector=None`, so its CPU time follows where
+CPython's full collections fall; it prints the collector's passes in each
+generation, and an A/B should compare runs with the same number of full
+passes, or try more than one `--live`.
 
 ## Agents on demand
 
