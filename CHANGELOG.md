@@ -53,8 +53,8 @@ The new public API, detailed under Added:
   `run_indexed` still freeze once their first wave has started. A started
   host's `collector["freeze"]` has `at_s` 0, and a `call_s` that covers the
   freeze alone, since the collection belongs to `start()`. A `run` that
-  overlaps a started host freezes nothing of its own: the first host to
-  freeze freezes for all.
+  overlaps a started host freezes nothing of its own, since the first host
+  to freeze freezes for all, and its report says so (under Fixed).
 - The agents-at-scale example's `--arrivals RATE`: its agents arrive one at a
   time, and each process's host takes them as they come. The host
   benchmark's `--submit` measures the same path.
