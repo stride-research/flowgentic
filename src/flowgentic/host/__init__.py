@@ -906,19 +906,30 @@ class AgentHost:
 	) -> dict:
 		"""Freeze what is alive, after a full collection unless the caller
 		has just run one under the lock it holds (``collect=False``); what the
-		report's ``freeze`` shows."""
+		report's ``freeze`` shows. While another host holds the freeze, this
+		one freezes nothing, and its report says so: ``call_s`` 0, and
+		``frozen`` the same as ``frozen_before``."""
 		global _frozen_before
 		if self.collector is None or not self.collector.freeze or token is None:
 			return {}
 		with _collector_lock:
+			if _freeze_owners:
+				_freeze_owners.add(token)
+				at_s = round(time.monotonic() - t0, 3)
+				count = gc.get_freeze_count()  # walks the frozen objects
+				return {
+					"at_s": at_s,
+					"call_s": 0.0,
+					"frozen_before": count,
+					"frozen": count,
+				}
 			t = time.perf_counter()
-			if not _freeze_owners:
-				# Freezing adds to what is frozen already, such as the objects
-				# CPython 3.12 moves there at each full collection.
-				_frozen_before = gc.get_freeze_count()
-				if collect:
-					gc.collect()
-				gc.freeze()
+			# Freezing adds to what is frozen already, such as the objects
+			# CPython 3.12 moves there at each full collection.
+			_frozen_before = gc.get_freeze_count()
+			if collect:
+				gc.collect()
+			gc.freeze()
 			_freeze_owners.add(token)
 			return {
 				"at_s": round(time.monotonic() - t0, 3),

@@ -565,6 +565,30 @@ async def test_the_collector_is_tuned_while_the_host_serves_and_restored():
     assert gc.get_threshold() == before and nothing_left_frozen()
 
 
+async def test_a_host_that_finds_the_collector_frozen_freezes_nothing_and_says_so():
+    """While another host holds the freeze, a started host or a run joins it:
+    it freezes nothing, and its report says so, with ``call_s`` 0 and
+    ``frozen`` the same as ``frozen_before``. The first host's report shows
+    its own freeze."""
+    first = make_host(Runner(), collector=Collector())
+    await first.start()
+    try:
+        second = make_host(Runner(), collector=Collector())
+        await second.start()
+        await second.submit(Agent("a", None))
+        joined = (await second.stop()).collector["freeze"]
+        third = make_host(Runner(), collector=Collector())
+        ran = (await third.run([Agent("b", None)])).collector["freeze"]
+    finally:
+        own = (await first.stop()).collector["freeze"]
+    assert own["frozen"] > own["frozen_before"], own
+    for freeze in (joined, ran):
+        assert freeze.keys() == own.keys()
+        assert freeze["call_s"] == 0 and freeze["frozen"] == freeze["frozen_before"], freeze
+    assert joined["at_s"] < 0.05  # 0 but for a slow runner
+    assert nothing_left_frozen()
+
+
 async def test_a_started_host_freezes_in_start_and_never_in_a_request(monkeypatch):
     """A server's first request does not wait for a full collection and the
     freeze: ``start()`` froze, after the collection it runs anyway. ``run`` and

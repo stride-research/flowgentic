@@ -117,7 +117,9 @@ class LoopLag:
 	_RATIO = 1.01  # each bucket's upper edge over its lower one
 	_LOG_RATIO = math.log(_RATIO)
 	# Bucket i > 0 holds [FLOOR * RATIO**(i-1), FLOOR * RATIO**i), and the last
-	# one every sample from its lower edge, over a day, up.
+	# one every sample from its lower edge, over a day, up. ``add`` finds the
+	# bucket with a log, so a sample within 1e-14 of an edge, relatively, can
+	# count in the bucket beside it, and the sums at that edge move as little.
 	_BUCKETS = math.ceil(math.log(86_400 / _FLOOR) / _LOG_RATIO) + 2
 
 	def __init__(self) -> None:

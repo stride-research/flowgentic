@@ -142,6 +142,11 @@ predate this changelog, so their changes are not listed here.
   numbers its calls per reply, a later run found the earlier run's tasks, and
   the tool service its calls, and got their results. The turn part of a
   call's key, and so of its RHAPSODY task's uid, now carries the run's number.
+- A host that finds the collector frozen by another host, as a `run` that
+  overlaps another does, freezes nothing, and its `collector["freeze"]` now
+  says so: `call_s` 0, and `frozen` the same as `frozen_before`, what it
+  found frozen. It gave the other host's `frozen_before` before, so its
+  report looked like a freeze of its own.
 
 ## [0.6.0] - 2026-11-22
 
