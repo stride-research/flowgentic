@@ -37,7 +37,7 @@ LangGraph execution adapter (`LangGraphIntegration`) is frozen. New
 applications can bind agents with `bind_agent`, or run LangGraph on AsyncFlow
 directly.
 
-0.6.0 requires Python 3.11 or later, and installs each path's dependencies as
+0.7.0 requires Python 3.11 or later, and installs each path's dependencies as
 an extra.
 
 | Path | Agent framework | Runs tasks on | Python |
@@ -59,7 +59,9 @@ Agents at scale (see [Agents at scale](https://stride-research.github.io/flowgen
   in the process elsewhere. It needs no LangGraph.
 - **`AgentHost`** (`flowgentic.host`) runs thousands of agents in one process:
   it tunes the collector, caps the agents live at once, staggers their starts,
-  resumes agents that wait on tasks, and counts agents by state.
+  resumes agents that wait on tasks, and counts agents by state. It runs a
+  list of agents, or takes them one at a time, as a server's messages arrive
+  (`start`, `submit`, `stop`).
 - **`GraphRunner` and `KeyValueSaver`** (`flowgentic.langgraph`), with the
   `langgraph` extra, run LangGraph graphs in the same host, their checkpoints
   in the same store.
@@ -121,7 +123,7 @@ use:
 ```bash
 uv build
 uv venv --python 3.11 flowgentic-env
-uv pip install --python flowgentic-env/bin/python "dist/flowgentic-0.6.0-py3-none-any.whl[agents]"
+uv pip install --python flowgentic-env/bin/python "dist/flowgentic-0.7.0-py3-none-any.whl[agents]"
 ```
 
 ## Run the examples
@@ -171,7 +173,7 @@ holds the metadata, and GitHub's "Cite this repository" menu turns it into APA
 or BibTeX:
 
 > Alsaadi, A., Amirghofran, Y., Barbero, C., Cordovez, D., Dominguez, J.,
-> Oliveros, D., & Turilli, M. (2026). *Flowgentic* (Version 0.6.0) [Computer
+> Oliveros, D., & Turilli, M. (2026). *Flowgentic* (Version 0.7.0) [Computer
 > software]. https://github.com/stride-research/flowgentic
 
 ## License

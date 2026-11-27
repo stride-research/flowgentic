@@ -7,7 +7,29 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
-## [Unreleased]
+## [0.7.0]
+
+Agents at scale can serve: a host takes agents one at a time, as a server's
+messages arrive, and answers each with a future of how its agent ended. The
+processes of a campaign split each model server's caps exactly, and each can
+send to a few servers only. Task tools are placed call by call, and run again
+when their worker is lost, and the tool runtime keeps its ended tasks'
+outcomes, not the tasks. Everything is added: nothing of 0.6.0's API is
+removed or renamed, and the dependency ranges are 0.6.0's. Changed lists what
+behaves differently.
+
+The new public API, detailed under Added:
+
+- **Agents on demand.** `AgentHost.start()`, `submit(agent)`, `stop(drain=)`
+  and `async with host:`; `AgentHost(max_queued=...)` and
+  `flowgentic.host.QueueFull`.
+- **Exact caps across agent processes.** `Fleet(process=(index, processes))`,
+  `Fleet(layout="spread" | "pack")` and `flowgentic.fleet.Share`.
+- **Placement call by call.** `ToolRuntime(place=...)`.
+- **Lost workers.** `task_tool(fn, retries=..., retry_on=...)`, an optional
+  `TaskOrder.again(info)`, the outcome `lost`, `TaskRecord.attempt`,
+  `TaskInfo.attempt`, `lost_on` and `lost_error`, `ToolRuntime.uid(key,
+  attempt)`, and the metric `flowgentic.tool.retries`.
 
 ### Added
 
@@ -1250,6 +1272,7 @@ on `main`.
   - Each test matrix job runs its own Python with the dev extra.
   - The bandit job runs again.
 
+[0.7.0]: https://github.com/stride-research/flowgentic/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/stride-research/flowgentic/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/stride-research/flowgentic/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/stride-research/flowgentic/compare/v0.4.0...v0.5.0
