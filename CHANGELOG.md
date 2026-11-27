@@ -103,10 +103,10 @@ predate this changelog, so their changes are not listed here.
 - **The host's probes keep running values,** not every sample, so their
   memory stays the same however long a host runs: about 33 KB, where they
   kept 8 bytes for each 100 ms lag sample and 9 for each collection. Every
-  figure of `HostReport.loop_lag` and `HostReport.collector` is the same,
-  exactly, but the lag's `time_weighted_p99_ms`, which comes from a histogram
-  of fixed size: it is within 1 % of the exact value, or 0.1 ms, whichever is
-  larger, for a p99 under a day.
+  figure of `HostReport.loop_lag` and `HostReport.collector` is still exact,
+  but the lag's `time_weighted_p99_ms`, which comes from a histogram of fixed
+  size: it is within 1 % of the exact value, or 0.1 ms, whichever is larger,
+  for a p99 under a day, before it is rounded to 0.1 ms.
 - **Every `HTTPTransport` in a process shares one SSL context,** as its pools
   did, one for each value of `SSL_CERT_FILE` and `SSL_CERT_DIR`. Each built
   its own before, about 3 ms and 0.7 MiB: 400 replicas cost a process 1.5 s

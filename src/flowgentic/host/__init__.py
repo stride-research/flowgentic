@@ -538,15 +538,12 @@ class AgentHost:
 		_agents.begin_host_run()
 		s = _Session(loop, mode, source, count)
 		s.collect = partial(self._collect, s)
-		s.token = self._collector_start()
+		# A server freezes now, before its first request, not inside it. What
+		# its first agents create later is not frozen; the threshold holds.
+		s.token, s.freeze = self._collector_start(freeze=mode == _SERVED)
 		s.lag.start()
 		s.pauses.start()
 		s.t0 = time.monotonic()
-		if mode == _SERVED:
-			# A server freezes before its first request, not inside it: the
-			# collection _collector_start has just run is the freeze's. What its
-			# first agents create later is not frozen; the threshold holds.
-			s.freeze = self._collector_started(s.token, s.t0, collect=False)
 		s.dispatcher = loop.create_task(self._dispatch(s), name="flowgentic-host")
 		# A callback, not the task's own finally: a task cancelled before its
 		# first step never runs its body.
@@ -882,10 +879,15 @@ class AgentHost:
 
 	# --- the collector -----------------------------------------------------------
 
-	def _collector_start(self) -> object | None:
+	def _collector_start(self, *, freeze: bool) -> tuple[object | None, dict | None]:
+		"""Raise the threshold, after a full collection: the host's token. With
+		``freeze``, also freeze then, under the same hold of the lock, so that
+		no host that ends meanwhile can thaw its dead objects back in between;
+		the freeze's report (``at_s`` 0), or ``None`` when the first wave is
+		to freeze."""
 		global _original_thresholds
 		if self.collector is None:
-			return None
+			return None, {} if freeze else None
 		with _collector_lock:
 			if not _thresholds:
 				_original_thresholds = gc.get_threshold()
@@ -893,13 +895,18 @@ class AgentHost:
 			gc.set_threshold(self.collector.threshold, *_original_thresholds[1:])
 			token = object()
 			_thresholds[token] = self.collector.threshold
-			return token
+			if not freeze:
+				return token, None
+			return token, self._collector_started(
+				token, time.monotonic(), collect=False
+			)
 
 	def _collector_started(
 		self, token: object | None, t0: float, *, collect: bool = True
 	) -> dict:
-		"""Freeze what is alive, after a full collection unless one has just
-		run (``collect=False``); what the report's ``freeze`` shows."""
+		"""Freeze what is alive, after a full collection unless the caller
+		has just run one under the lock it holds (``collect=False``); what the
+		report's ``freeze`` shows."""
 		global _frozen_before
 		if self.collector is None or not self.collector.freeze or token is None:
 			return {}

@@ -134,7 +134,7 @@ def test_the_lag_summary_keeps_its_fields_exact_but_for_the_p99(seed):
     "samples",
     [
         [0.0] * 100,  # never late
-        [0.0] * 98 + [0.5, 3.0],  # two blocks, at the edges of empty buckets
+        [0.0] * 98 + [0.5, 3.0],  # two blocks, with empty buckets between them
         [0.02] * 1000,  # every sample in one bucket
         [1e-4 * 1.01**k for k in range(2_000)],  # one sample per bucket
         [0.0] * 99 + [7_200.0],  # one two-hour block

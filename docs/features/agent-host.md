@@ -32,18 +32,19 @@ host can also take agents one at a time, as they arrive, between `start` and
   With thousands of agents in a process, each holding its conversation, that
   scanning takes most of the process's time. The host raises the collector's
   first threshold (`Collector(threshold=100_000)`; it must be at least 1,
-  since 0 would turn automatic collection off) and moves the objects alive
-  out of the collector's reach (`gc.freeze()`): `run` once its first wave of
-  agents has started, and a started host in `start()`, before its first
-  agent ([Agents on demand](#agents-on-demand)).
-  It restores both when `run` returns or `stop` ends a started host, and also
-  when either is cancelled. Overlapping runs share the collector tuning until
-  the last user releases it. When the last host that froze ends, it unfreezes
-  every frozen object, those frozen before it included (CPython 3.12 parks
-  some of its own objects there): CPython cannot unfreeze only part, and
-  reference cycles left frozen would never be freed. An application that keeps
-  objects of its own frozen passes `Collector(freeze=False)`; `collector=None`
-  leaves the collector alone.
+  since 0 would turn automatic collection off) and moves the objects alive out
+  of the collector's reach (`gc.freeze()`): `run` once its first wave of
+  agents has started, and a started host in `start()`, before its first agent
+  ([Agents on demand](#agents-on-demand)). It restores both when `run` returns
+  or `stop` ends a started host, and also when either is cancelled.
+  Overlapping runs share the collector tuning until the last user releases it,
+  and the first to freeze freezes for them all: a `run` that starts while a
+  started host serves freezes nothing of its own. When the last host that
+  froze ends, it unfreezes every frozen object, those frozen before it
+  included (CPython 3.12 parks some of its own objects there): CPython cannot
+  unfreeze only part, and reference cycles left frozen would never be freed.
+  An application that keeps objects of its own frozen passes
+  `Collector(freeze=False)`; `collector=None` leaves the collector alone.
 - **It caps the agents live at once.** At most `max_live_agents` (5,000 by
   default) are live, suspended ones included. More are accepted, and each
   starts as soon as a live one ends. The cap bounds how late the event loop
@@ -76,14 +77,15 @@ host can also take agents one at a time, as they arrive, between `start` and
 (`outcomes`); the agent-seconds spent in each state; the event loop's lag
 (time-weighted p99, maximum, share of time over 100 ms); and the collector's
 pauses by generation. Its `collector["freeze"]` gives when the host froze
-(`at_s`), how long the freeze took (`call_s`), and the objects frozen before
-(`frozen_before`) and after (`frozen`).
+(`at_s`, 0 for a started host), how long the freeze took (`call_s`), and the
+objects frozen before (`frozen_before`) and after (`frozen`).
 
 The host keeps running values of the lag and the pauses, not every sample, so
 their memory stays the same however long it runs. Every figure is exact but
 the lag's time-weighted p99, which comes from a histogram of fixed size
-(buckets 1 % wide from 0.1 ms up): it is within 1 % of the exact value, or
-0.1 ms, whichever is larger, for a p99 under a day.
+(buckets 1 % wide from 0.1 ms up): it is within 1 % of the exact value, or 0.1
+ms, whichever is larger, for a p99 under a day, before the report rounds it to
+0.1 ms.
 
 `AgentStates` counts agents in seven states and three categories, the ones a
 campaign reports:
@@ -337,7 +339,15 @@ async with host:  # start(); on an error, stop(drain=False)
   or waiting, so a server can refuse work rather than pile it up. With
   `max_queued=0`, an agent is taken only into a free slot. `None`, the
   default, accepts every agent. It does not bound `run` or `run_indexed`,
-  which take their agents as slots free.
+  which take their agents as slots free. With `None`, a burst can queue more
+  agents than the host starts before their callers give up, and a queued agent
+  whose caller timed out still runs when its turn comes, for no one, unless
+  its future was cancelled. `asyncio.wait_for` and `asyncio.timeout` cancel
+  it, so the agent never starts; `asyncio.wait` with a timeout,
+  `asyncio.shield`, or a server that drops a request without cancelling its
+  handler leave it queued. To bound that, set `max_queued` to about the agents
+  the host starts within a caller's timeout, so that `submit` refuses the rest
+  with `QueueFull`, and cancel the future when the caller gives up.
 - **Suspended agents keep their slots.** A suspended agent is live, as in
   `run`: while all slots hold agents, live or suspended, new agents wait, and
   each starts when an agent ends.
@@ -346,17 +356,17 @@ async with host:  # start(); on an error, stop(drain=False)
   `Stagger(batch=100, interval_s=0.5)`, the last of a burst of 1,000 agents
   starts about 4.5 s after the first. A server whose messages come spread out
   gains nothing from it: `Stagger(batch=1, interval_s=0)` starts each agent as
-  soon as a slot is free. A started host does not freeze after its first
-  wave, as `run` does, but in `start()`: a freeze needs a full collection
-  first, which would run on the event loop inside the first agent's request,
-  and `start()` runs one anyway. With the agents-at-scale example's agent
-  process on CPython 3.12, a freeze inside the first request added 46 ms to
-  it with `LoopRunner` and 74 ms with `GraphRunner`; in `start()` it adds a
-  few microseconds. What the first agents create and keep, such as a
-  framework's lazily built caches, is not frozen: about a thousand objects
-  with `GraphRunner` and a few with `LoopRunner` in that process, and a full
-  collection there took 0.1 ms either way. The raised threshold holds for
-  every agent.
+  soon as a slot is free. A started host does not freeze after its first wave,
+  as `run` does, but in `start()`: a freeze needs a full collection first,
+  which would run on the event loop inside the first agent's request, and
+  `start()` runs one anyway. With the agents-at-scale example's agent process
+  on CPython 3.12, the freeze held the event loop inside the first request for
+  46 ms with `LoopRunner` and 74 ms with `GraphRunner` (its `call_s`); in
+  `start()` it adds a few microseconds. What the first agents create and keep,
+  such as a framework's lazily built caches, is not frozen: about a thousand
+  objects with `GraphRunner` and a few with `LoopRunner` in that process, and
+  a full collection there took 0.1 ms either way. The raised threshold holds
+  for every agent.
 - **Cancelling one agent.** Cancelling a future cancels its agent: one still
   waiting never starts, and one live ends as `cancelled`, which `on_done`
   receives. A handler that awaits the future and is itself cancelled, as when
