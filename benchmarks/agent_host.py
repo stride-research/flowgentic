@@ -7,10 +7,19 @@ server does, ``--live`` at a time as slots free.
 ``--otel DIR`` configures the OpenTelemetry SDK into ``DIR``, as
 ``agent_loop.py --otel`` does, with the same options, so the CPU time can be
 compared with a run without.
+
+Beside the CPU time it prints how many passes CPython's collector made in
+each generation during the run. The host runs with ``collector=None``, so it
+leaves the collector as it is, and the CPU time follows where the full
+passes (generation 2) fall in the collector's cycle: a few thousand objects
+more or less on the heap can change their number, and the CPU time with it,
+by several per cent. An A/B should compare runs with the same number of full
+passes, or try more than one ``--live``.
 """
 
 import argparse
 import asyncio
+import gc
 import resource
 import sys
 import time
@@ -69,6 +78,7 @@ async def main() -> None:
     def make_input(i: int) -> bytes:
         return bytes(args.input_bytes)
 
+    passes = [stats["collections"] for stats in gc.get_stats()]
     start = time.perf_counter()
     cpu = time.process_time()
     if args.full_report:
@@ -81,13 +91,15 @@ async def main() -> None:
     if flush is not None:
         flush()
     cpu = time.process_time() - cpu
+    passes = [stats["collections"] - n for stats, n in zip(gc.get_stats(), passes)]
     if report.finished != args.agents:
         raise RuntimeError(f"finished {report.finished} of {args.agents}")
     rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     mib = rss / (1024**2 if sys.platform == "darwin" else 1024)
     print(
         f"{report.finished} finished in {elapsed:.3f} s, {cpu:.3f} s of CPU, "
-        f"peak process RSS {mib:.1f} MiB"
+        f"peak process RSS {mib:.1f} MiB; collector passes by generation "
+        + ", ".join(f"{g}: {n}" for g, n in enumerate(passes))
     )
 
 

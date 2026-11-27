@@ -32,6 +32,11 @@ predate this changelog, so their changes are not listed here.
 - The agents-at-scale example's `--arrivals RATE`: its agents arrive one at a
   time, and each process's host takes them as they come. The host
   benchmark's `--submit` measures the same path.
+- `benchmarks/agent_host.py` prints the collector's passes in each
+  generation during the run, beside the CPU time. Its host runs with
+  `collector=None`, so the CPU time follows where CPython's full passes fall:
+  an A/B should compare runs with the same number of full passes, or try more
+  than one `--live`.
 - **Exact admission caps across agent processes.**
   `Fleet(process=(index, processes))` says which of the processes that use
   the replicas this one is, and the processes split each replica's caps so
