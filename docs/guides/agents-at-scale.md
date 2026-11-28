@@ -75,8 +75,8 @@ so the same agent code runs on a laptop and on an allocation.
 - **[Agent host](../features/agent-host.md)** (`flowgentic.host`). Runs
   agents through a runner: `flowgentic.loop.LoopRunner`, or
   `flowgentic.langgraph.GraphRunner` for LangGraph. It tunes the cyclic
-  collector while it runs, caps the agents live at once, staggers the first
-  wave's starts, resumes agents that wait on tasks, and counts agents by
+  collector while it runs, caps the agents live at once, staggers a run's
+  first wave, resumes agents that wait on tasks, and counts agents by
   state. One agent's failure never stops the others.
 - **[Agent loop](../features/agent-loop.md)** (`flowgentic.loop`). Runs each
   agent as a tool-calling loop on OpenAI-format messages: the model replies,
@@ -170,9 +170,10 @@ the fleet's, the tools' and the loop's counters.
 A campaign knows its agents up front. A server does not: an agent starts when
 a message arrives, such as a request from another agent over a protocol like
 A2A, and the server answers the message when the agent ends. A host started
-once takes such agents one at a time, with everything `run` gives them: the
-cap, staggered starts, the collector's settings, suspension, the accounting
-and `on_done`.
+once takes such agents one at a time, with everything `run` gives them but
+the stagger: the cap, the collector's settings, suspension, the accounting
+and `on_done`. It starts each agent as it comes, unless it is given a
+stagger, as this example's host is.
 
 With `--arrivals RATE`, the example's agents arrive one at a time, `RATE` a
 second on average across the processes, and each process's host takes each
