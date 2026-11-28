@@ -22,7 +22,8 @@ The new public API, detailed under Added:
 
 - **Agents on demand.** `AgentHost.start()`, `submit(agent)`, `stop(drain=)`
   and `async with host:`; `AgentHost(max_queued=...)` and
-  `flowgentic.host.QueueFull`.
+  `flowgentic.host.QueueFull`; `AgentHost(stagger=None)`, and the default
+  `stagger="by_mode"` (under Changed).
 - **Exact caps across agent processes.** `Fleet(process=(index, processes))`,
   `Fleet(layout="spread" | "pack")` and `flowgentic.fleet.Share`.
 - **Placement call by call.** `ToolRuntime(place=...)`.
