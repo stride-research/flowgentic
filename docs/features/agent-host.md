@@ -52,10 +52,14 @@ host can also take agents one at a time, as they arrive, between `start` and
   runs and how long the collector pauses. Measure both for your own agents
   with `HostReport.loop_lag` and `HostReport.collector`, and set the cap from
   them.
-- **It staggers the first wave.** The first `max_live_agents` agents start
-  `Stagger(batch=100, interval_s=0.5)` at a time, so they do not all reach
-  their first model call, or their first suspension, at the same moment. Later
-  agents are not staggered: their starts follow the ends of live agents.
+- **It staggers a run's first wave.** In `run` and `run_indexed`, the first
+  `max_live_agents` agents start `Stagger(batch=100, interval_s=0.5)` at a
+  time, so they do not all reach their first model call, or their first
+  suspension, at the same moment. Later agents are not staggered: their
+  starts follow the ends of live agents. A started host starts each agent as
+  it comes ([The first wave](#agents-on-demand), below). `stagger=` takes a
+  `Stagger` for every mode, or `None` for none in any; its default,
+  `"by_mode"`, is what this says, and `host.stagger` holds what was given.
 - **It resumes agents that wait on tasks.** A runner reports a suspended agent
   with the keys of the tasks it waits on. The host holds only the agent's id
   and those tasks' futures, awaits the tasks, and resumes the agent; the
@@ -281,18 +285,13 @@ passes, or try more than one `--live`.
 
 A server's agents do not come as a list: each starts when a message arrives,
 and the server answers the message when its agent ends. A started host takes
-them one at a time, with everything `run` gives: the cap, staggered starts,
-the collector's settings, suspension, the accounting and `on_done`.
+them one at a time, with everything `run` gives but the stagger: the cap, the
+collector's settings, suspension, the accounting and `on_done`.
 
 ```python
-from flowgentic.host import Agent, AgentHost, QueueFull, Stagger
+from flowgentic.host import Agent, AgentHost, QueueFull
 
-host = AgentHost(
-    runner,
-    max_live_agents=5_000,
-    max_queued=20_000,
-    stagger=Stagger(batch=1, interval_s=0),  # start each agent as it comes
-)
+host = AgentHost(runner, max_live_agents=5_000, max_queued=20_000)
 
 
 async def handle(message):  # one per message, on the host's event loop
@@ -358,12 +357,20 @@ async with host:  # start(); on an error, stop(drain=False)
 - **Suspended agents keep their slots.** A suspended agent is live, as in
   `run`: while all slots hold agents, live or suspended, new agents wait, and
   each starts when an agent ends.
-- **The first wave.** The first `max_live_agents` agents the host starts are
-  staggered, as in `run`, even when slots are free: with the default
-  `Stagger(batch=100, interval_s=0.5)`, the last of a burst of 1,000 agents
-  starts about 4.5 s after the first. A server whose messages come spread out
-  gains nothing from it: `Stagger(batch=1, interval_s=0)` starts each agent as
-  soon as a slot is free. A started host does not freeze after its first wave,
+- **The first wave.** A started host starts each agent as soon as a slot is
+  free, with no stagger. A stagger would hold back only the first
+  `max_live_agents` agents since `start()`: with `run`'s
+  `Stagger(batch=100, interval_s=0.5)`, the last of a first burst of 1,000
+  agents would start about 4.5 s after the first, and no later burst would be
+  held back at all. What keeps a burst's model calls under the servers' caps
+  is the fleet's admission, `TokenAdmission` or `RequestAdmission` ([What the
+  fleet does](fleet.md#what-the-fleet-does)), which holds every burst's calls,
+  not only the first: a server that meets bursts should set it, since a fleet
+  admits every call at once without it. A `Stagger` given to the host still
+  staggers a started host's first wave, as in `run`. `Stagger(batch=1,
+  interval_s=0)` is not the same as none: it yields to the event loop once
+  for each agent of the first wave, and other work then runs between the
+  starts of a burst. A started host does not freeze after its first wave,
   as `run` does, but in `start()`: a freeze needs a full collection first,
   which would run on the event loop inside the first agent's request, and
   `start()` runs one anyway. With the agents-at-scale example's agent process

@@ -13,12 +13,13 @@ predate this changelog, so their changes are not listed here.
 
 - **Agents on demand.** A host takes agents one at a time, as messages reach
   a server, between `AgentHost.start()` and `AgentHost.stop()`, with the cap,
-  staggered starts, the collector's settings, suspension, `AgentStates` and
-  `on_done` that `run` gives. `submit(agent)` never blocks: it returns a
-  future of `(result, output)`, what `on_done` receives, and the agent starts
-  as soon as a slot is free, after the agents submitted before it. Cancelling
-  the future cancels the agent. An agent's id must be unique among the live
-  and waiting agents, and is free again once the agent has ended.
+  the collector's settings, suspension, `AgentStates` and `on_done` that
+  `run` gives, and no stagger unless it is given one (under Changed).
+  `submit(agent)` never blocks: it returns a future of `(result, output)`,
+  what `on_done` receives, and the agent starts as soon as a slot is free,
+  after the agents submitted before it. Cancelling the future cancels the
+  agent. An agent's id must be unique among the live and waiting agents, and
+  is free again once the agent has ended.
   `AgentHost(max_queued=...)` bounds the agents waiting for a slot; beyond it,
   `submit` raises the new `flowgentic.host.QueueFull`. `stop()` waits for the
   live and waiting agents, and still takes the agents the host's own agents
@@ -105,6 +106,17 @@ predate this changelog, so their changes are not listed here.
 
 ### Changed
 
+- **`AgentHost`'s stagger depends on the mode by default.** `stagger=`
+  defaults to `"by_mode"`: `run` and `run_indexed` stagger their first wave
+  with `Stagger()`, `Stagger(batch=100, interval_s=0.5)`, as before, and a
+  started host starts each agent as it comes, with no sleep. A stagger would
+  hold back only a started host's first `max_live_agents` agents, its first
+  burst: the fleet's admission is what keeps every burst's model calls under
+  the servers' caps, and a server that meets bursts should set it. A
+  `Stagger` given applies in every mode, as before, and `stagger=None` starts
+  every agent as it comes in every mode. `host.stagger` holds what was
+  given: `"by_mode"` for a host built without one, where 0.6.0 gave
+  `Stagger()`.
 - **The host's probes keep running values,** not every sample, so their
   memory stays the same however long a host runs: about 33 KB, where they
   kept 8 bytes for each 100 ms lag sample and 9 for each collection. Every

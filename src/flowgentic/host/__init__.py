@@ -20,9 +20,12 @@ what makes thousands of agents in one Python process work:
   a live one ends, in the order they came. The cap bounds the event loop's lag
   and the collector's pauses. ``max_queued`` bounds the agents ``submit``
   accepts beyond it.
-- **Staggered starts.** The first wave, up to the cap, starts in batches, so
-  its agents do not all reach their first model call or their first suspension
-  at the same moment. Later agents are not staggered.
+- **Staggered starts.** ``run`` and ``run_indexed`` start their first wave,
+  up to the cap, in batches, so its agents do not all reach their first model
+  call or their first suspension at the same moment. Later agents are not
+  staggered. A started host starts each agent as it comes, unless it is given
+  a ``Stagger``: a server's messages come when they come, and the fleet's
+  admission, set, keeps every burst's model calls under the servers' caps.
 - **Suspension.** When an agent's runner reports that the agent waits on tasks,
   the host holds no state of the agent's, only its id and the tasks' futures:
   the framework keeps the state in its checkpoint. The host awaits the tasks and
@@ -53,7 +56,7 @@ from collections import Counter, OrderedDict
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from functools import partial
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from opentelemetry.trace import Status, StatusCode
 
@@ -175,7 +178,8 @@ class Collector:
 @dataclass(frozen=True, slots=True)
 class Stagger:
 	"""Start the first wave of agents, up to the host's cap, ``batch`` at a
-	time, ``interval_s`` seconds apart."""
+	time, ``interval_s`` seconds apart. ``run`` and ``run_indexed`` use
+	``Stagger()`` unless the host is given another stagger, or ``None``."""
 
 	batch: int = 100
 	interval_s: float = 0.5
@@ -247,6 +251,9 @@ class _Submitted:
 
 # Where a period's agents come from: run's list, run_indexed's range, submit.
 _RUN, _INDEXED, _SERVED = "run", "indexed", "served"
+# AgentHost's default stagger: Stagger() for run and run_indexed, none for a
+# started host.
+_BY_MODE = "by_mode"
 
 
 class _Session:
@@ -276,6 +283,7 @@ class _Session:
 		"report",
 		"results",
 		"source",
+		"stagger",
 		"stopping",
 		"t0",
 		"tasks",
@@ -292,6 +300,7 @@ class _Session:
 	) -> None:
 		self.loop = loop
 		self.mode = mode
+		self.stagger: Stagger | None = None  # the host's, for this mode
 		# run's and run_indexed's agents, taken as slots free, and how many are left
 		self.source = source
 		self.left = count
@@ -342,14 +351,21 @@ _frozen_before = 0  # the permanent generation's size when the first owner froze
 
 
 class AgentHost:
-	"""Runs agents through ``runner``; see the module's docstring."""
+	"""Runs agents through ``runner``; see the module's docstring.
+
+	``stagger`` is ``"by_mode"`` by default: ``run`` and ``run_indexed``
+	stagger their first wave with ``Stagger()``, and a started host starts
+	each agent as it comes. A ``Stagger`` given applies in every mode, and
+	``None`` starts every agent as it comes in every mode. ``host.stagger``
+	holds what was given; each run, or each ``start``, reads it as it begins.
+	"""
 
 	def __init__(
 		self,
 		runner: Runner,
 		*,
 		max_live_agents: int = 5_000,
-		stagger: Stagger = Stagger(),
+		stagger: Stagger | Literal["by_mode"] | None = "by_mode",
 		collector: Collector | None = Collector(),
 		on_done: Callable[[AgentResult, Any], None] | None = None,
 		states: AgentStates | None = None,
@@ -362,6 +378,7 @@ class AgentHost:
 		self.runner = runner
 		self.max_live_agents = max_live_agents
 		self.stagger = stagger
+		self._stagger_for(_RUN)  # refuses anything but a Stagger, "by_mode" or None
 		self.collector = collector
 		self.on_done = on_done
 		# the application may pass its own, to sample it while agents run
@@ -530,6 +547,7 @@ class AgentHost:
 	) -> _Session:
 		if self._session is not None:
 			raise RuntimeError("this host is running already")
+		stagger = self._stagger_for(mode)
 		loop = asyncio.get_running_loop()
 		if mode == _INDEXED:
 			self.states._begin_run((), pending=count)
@@ -537,6 +555,7 @@ class AgentHost:
 			self.states._begin_run(ids)
 		_agents.begin_host_run()
 		s = _Session(loop, mode, source, count)
+		s.stagger = stagger
 		s.collect = partial(self._collect, s)
 		# A server freezes now, before its first request, not inside it. What
 		# its first agents create later is not frozen; the threshold holds.
@@ -550,6 +569,17 @@ class AgentHost:
 		s.dispatcher.add_done_callback(partial(self._dispatched, s))
 		self._session = s
 		return s
+
+	def _stagger_for(self, mode: str) -> Stagger | None:
+		"""The stagger a period in ``mode`` starts its first wave with."""
+		stagger = self.stagger
+		if isinstance(stagger, Stagger) or stagger is None:
+			return stagger
+		if stagger == _BY_MODE:
+			return None if mode == _SERVED else Stagger()
+		raise TypeError(
+			f'stagger must be a Stagger, "by_mode" or None, not {stagger!r}'
+		)
 
 	async def _close(self, s: _Session, drain: bool) -> HostReport:
 		s.stopping = s.closed = True
@@ -573,10 +603,13 @@ class AgentHost:
 
 	async def _dispatch(self, s: _Session) -> None:
 		"""Start the agents in the order they came, as slots free; stagger the
-		first wave, and, for ``run`` and ``run_indexed``, freeze once it has
-		started (a started host froze in ``start``)."""
+		first wave, if the period has a stagger, and, for ``run`` and
+		``run_indexed``, freeze once it has started (a started host froze in
+		``start``)."""
 		cap = self.max_live_agents
-		batch, interval = self.stagger.batch, self.stagger.interval_s
+		# Without a stagger, no batch boundary: no sleep, not even sleep(0).
+		batch = s.stagger.batch if s.stagger is not None else 0
+		interval = s.stagger.interval_s if s.stagger is not None else 0.0
 		loop = s.loop
 		try:
 			while True:
@@ -587,7 +620,7 @@ class AgentHost:
 					s.wake.clear()
 					await s.wake.wait()
 				i = s.admitted
-				if i and i < cap and i % batch == 0:
+				if batch and i and i < cap and i % batch == 0:
 					# The first wave starts batch at a time, interval_s apart.
 					await asyncio.sleep(max(0.0, s.last_admit + interval - loop.time()))
 					if not s.waiting():
