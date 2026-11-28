@@ -369,8 +369,8 @@ async with host:  # start(); on an error, stop(drain=False)
   admits every call at once without it. A `Stagger` given to the host still
   staggers a started host's first wave, as in `run`. `Stagger(batch=1,
   interval_s=0)` is not the same as none: it yields to the event loop once
-  for each agent it starts, and other work then runs between the starts of a
-  burst. A started host does not freeze after its first wave,
+  for each agent of the first wave, and other work then runs between the
+  starts of a burst. A started host does not freeze after its first wave,
   as `run` does, but in `start()`: a freeze needs a full collection first,
   which would run on the event loop inside the first agent's request, and
   `start()` runs one anyway. With the agents-at-scale example's agent process

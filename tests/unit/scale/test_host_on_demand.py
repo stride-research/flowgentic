@@ -1,7 +1,7 @@
 """Agents on demand: a started host takes agents one at a time with ``submit``
-and ends with ``stop``, keeping the cap, staggered starts, the collector,
-suspension, the accounting and ``on_done``; with a fake runner, Flowgentic's
-loop and LangGraph's graphs."""
+and ends with ``stop``, keeping the cap, the collector, suspension, the
+accounting and ``on_done``, and a stagger if given one; with a fake runner,
+Flowgentic's loop and LangGraph's graphs."""
 
 import asyncio
 import contextvars
@@ -598,8 +598,8 @@ async def test_without_a_stagger_every_agent_starts_as_it_comes(mode, stagger):
         host = AgentHost(runner, collector=None, **kwargs)
         runner.host = host
         await _run_in(mode, host, 250)
-    assert host.stagger == ("by_mode" if stagger == "default" else None)
     assert len(passes.starts) == 250 and len(set(passes.starts)) == 1, sorted(set(passes.starts))
+    assert host.stagger == ("by_mode" if stagger == "default" else None)
 
 
 @pytest.mark.parametrize("mode", ["run", "indexed"])
@@ -612,9 +612,9 @@ async def test_run_and_run_indexed_stagger_their_first_wave_by_default(mode):
         runner.host = host
         await _run_in(mode, host, 101)
     t = runner.starts
-    assert host.stagger == "by_mode"
     assert len(set(passes.starts[:100])) == 1
     assert t[100] - t[99] > 0.4
+    assert host.stagger == "by_mode"
 
 
 async def test_a_stagger_that_is_not_one_is_refused():

@@ -25,7 +25,7 @@ what makes thousands of agents in one Python process work:
   call or their first suspension at the same moment. Later agents are not
   staggered. A started host starts each agent as it comes, unless it is given
   a ``Stagger``: a server's messages come when they come, and the fleet's
-  admission keeps a burst's model calls under the servers' caps.
+  admission, set, keeps every burst's model calls under the servers' caps.
 - **Suspension.** When an agent's runner reports that the agent waits on tasks,
   the host holds no state of the agent's, only its id and the tasks' futures:
   the framework keeps the state in its checkpoint. The host awaits the tasks and
@@ -365,7 +365,7 @@ class AgentHost:
 		runner: Runner,
 		*,
 		max_live_agents: int = 5_000,
-		stagger: Stagger | Literal["by_mode"] | None = _BY_MODE,
+		stagger: Stagger | Literal["by_mode"] | None = "by_mode",
 		collector: Collector | None = Collector(),
 		on_done: Callable[[AgentResult, Any], None] | None = None,
 		states: AgentStates | None = None,

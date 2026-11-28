@@ -15,11 +15,11 @@ predate this changelog, so their changes are not listed here.
   a server, between `AgentHost.start()` and `AgentHost.stop()`, with the cap,
   the collector's settings, suspension, `AgentStates` and `on_done` that
   `run` gives, and no stagger unless it is given one (under Changed).
-  `submit(agent)` never blocks: it returns a
-  future of `(result, output)`, what `on_done` receives, and the agent starts
-  as soon as a slot is free, after the agents submitted before it. Cancelling
-  the future cancels the agent. An agent's id must be unique among the live
-  and waiting agents, and is free again once the agent has ended.
+  `submit(agent)` never blocks: it returns a future of `(result, output)`,
+  what `on_done` receives, and the agent starts as soon as a slot is free,
+  after the agents submitted before it. Cancelling the future cancels the
+  agent. An agent's id must be unique among the live and waiting agents, and
+  is free again once the agent has ended.
   `AgentHost(max_queued=...)` bounds the agents waiting for a slot; beyond it,
   `submit` raises the new `flowgentic.host.QueueFull`. `stop()` waits for the
   live and waiting agents, and still takes the agents the host's own agents
