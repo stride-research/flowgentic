@@ -526,7 +526,8 @@ async def test_the_states_count_waiting_live_and_ended_agents():
     assert report.states["agent_seconds"]["pending"] > 0
 
 
-async def test_the_first_wave_of_submissions_is_staggered():
+async def test_a_stagger_given_staggers_a_started_hosts_first_wave():
+    """A started host has no stagger by default, but one given applies."""
     runner = Runner(sleep=0.3)
     host = make_host(runner, max_live_agents=6, stagger=Stagger(batch=2, interval_s=0.1))
     await host.start()
@@ -538,6 +539,96 @@ async def test_the_first_wave_of_submissions_is_staggered():
     assert t[2] - t[1] > 0.08 and t[4] - t[3] > 0.08  # batches apart
     # a6 and a7 come after the first wave: each starts as a slot frees.
     assert t[7] - t[6] < 0.05
+
+
+class Passes:
+    """Counts the event loop's passes, with a callback that schedules itself
+    for the next one, and notes the pass each agent starts in."""
+
+    def __init__(self) -> None:
+        self.n = 0
+        self.starts: list[int] = []
+        self._handle: asyncio.Handle | None = None
+
+    def __enter__(self) -> "Passes":
+        loop = asyncio.get_running_loop()
+
+        def tick() -> None:
+            self.n += 1
+            self._handle = loop.call_soon(tick)
+
+        self._handle = loop.call_soon(tick)
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        self._handle.cancel()
+
+
+class Noted(Runner):
+    def __init__(self, passes: Passes, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.passes = passes
+
+    async def start(self, agent):
+        self.passes.starts.append(self.passes.n)
+        return await super().start(agent)
+
+
+async def _run_in(mode: str, host: AgentHost, n: int) -> None:
+    if mode == "served":
+        async with host:
+            await asyncio.gather(*(host.submit(Agent(f"a{i}", None)) for i in range(n)))
+    elif mode == "run":
+        await host.run(Agent(f"a{i}", None) for i in range(n))
+    else:
+        await host.run_indexed(range(n), lambda i: None)
+
+
+@pytest.mark.parametrize(
+    "mode, stagger",
+    [("served", "default"), ("served", None), ("run", None), ("indexed", None)],
+)
+async def test_without_a_stagger_every_agent_starts_as_it_comes(mode, stagger):
+    """A started host's default, and ``stagger=None`` in every mode: 250
+    agents, more than ``Stagger()``'s batch, all start in one pass of the event
+    loop, so the host neither sleeps nor yields between them."""
+    with Passes() as passes:
+        runner = Noted(passes)
+        kwargs = {} if stagger == "default" else {"stagger": stagger}
+        host = AgentHost(runner, collector=None, **kwargs)
+        runner.host = host
+        await _run_in(mode, host, 250)
+    assert host.stagger == ("by_mode" if stagger == "default" else None)
+    assert len(passes.starts) == 250 and len(set(passes.starts)) == 1, sorted(set(passes.starts))
+
+
+@pytest.mark.parametrize("mode", ["run", "indexed"])
+async def test_run_and_run_indexed_stagger_their_first_wave_by_default(mode):
+    """``run`` and ``run_indexed`` keep ``Stagger(batch=100, interval_s=0.5)``:
+    the first 100 agents start together, the 101st half a second later."""
+    with Passes() as passes:
+        runner = Noted(passes, sleep=0.0)
+        host = AgentHost(runner, collector=None)
+        runner.host = host
+        await _run_in(mode, host, 101)
+    t = runner.starts
+    assert host.stagger == "by_mode"
+    assert len(set(passes.starts[:100])) == 1
+    assert t[100] - t[99] > 0.4
+
+
+async def test_a_stagger_that_is_not_one_is_refused():
+    """In the constructor, and at ``start`` if set afterwards: the host is
+    left as it was, not running."""
+    with pytest.raises(TypeError, match="stagger"):
+        AgentHost(Runner(), stagger="sometimes")
+    host = make_host(Runner())
+    host.stagger = Stagger  # the class, not a stagger
+    with pytest.raises(TypeError, match="stagger"):
+        await host.start()
+    host.stagger = FAST
+    report = await host.run([Agent("a", None)])
+    assert report.finished == 1
 
 
 async def test_the_collector_is_tuned_while_the_host_serves_and_restored():
