@@ -347,7 +347,6 @@ partial file. A worker that the backend reports lost may also still be
 running, so the function can run twice at once.
 
 ## The decision record
-## The decision record
 
 Each task ends in a `TaskRecord`, which `runtime.add_listener(listener)` hands
 to each listener before the task's agent is told. It ties the task to the

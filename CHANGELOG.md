@@ -7,7 +7,30 @@ All notable changes to Flowgentic are recorded here. The format follows
 Tags `v0.1.0` (`3e43c13c`, 23 Sep 2025) and `0.2.0` (`72e972d4`, 2 Oct 2025)
 predate this changelog, so their changes are not listed here.
 
-## [Unreleased]
+## [0.7.0]
+
+Agents at scale can serve: a host takes agents one at a time, as a server's
+messages arrive, and answers each with a future of how its agent ended. The
+processes of a campaign split each model server's caps exactly, and each can
+send to a few servers only. Task tools are placed call by call, and run again
+when their worker is lost, and the tool runtime keeps its ended tasks'
+outcomes, not the tasks. Everything is added: nothing of 0.6.0's API is
+removed or renamed, and the dependency ranges are 0.6.0's. Changed lists what
+behaves differently.
+
+The new public API, detailed under Added:
+
+- **Agents on demand.** `AgentHost.start()`, `submit(agent)`, `stop(drain=)`
+  and `async with host:`; `AgentHost(max_queued=...)` and
+  `flowgentic.host.QueueFull`; `AgentHost(stagger=None)`, and the default
+  `stagger="by_mode"` (under Changed).
+- **Exact caps across agent processes.** `Fleet(process=(index, processes))`,
+  `Fleet(layout="spread" | "pack")` and `flowgentic.fleet.Share`.
+- **Placement call by call.** `ToolRuntime(place=...)`.
+- **Lost workers.** `task_tool(fn, retries=..., retry_on=...)`, an optional
+  `TaskOrder.again(info)`, the outcome `lost`, `TaskRecord.attempt`,
+  `TaskInfo.attempt`, `lost_on` and `lost_error`, `ToolRuntime.uid(key,
+  attempt)`, and the metric `flowgentic.tool.retries`.
 
 ### Added
 
@@ -29,7 +52,11 @@ predate this changelog, so their changes are not listed here.
   `run_indexed` run on the same parts, and behave as before. A started host
   freezes the collector's objects in `start()`, after the full collection it
   runs anyway, so that no request waits for the freeze; `run` and
-  `run_indexed` still freeze once their first wave has started.
+  `run_indexed` still freeze once their first wave has started. A started
+  host's `collector["freeze"]` has `at_s` 0, and a `call_s` that covers the
+  freeze alone, since the collection belongs to `start()`. A `run` that
+  overlaps a started host freezes nothing of its own, since the first host
+  to freeze freezes for all, and its report says so (under Fixed).
 - The agents-at-scale example's `--arrivals RATE`: its agents arrive one at a
   time, and each process's host takes them as they come. The host
   benchmark's `--submit` measures the same path.
@@ -48,10 +75,13 @@ predate this changelog, so their changes are not listed here.
   routes each agent, by the agent's hash, to one of the replicas it holds a
   part of, in proportion to its parts. Every process must be given the same
   replicas, in the same order, and the same admission. `Fleet(share=...)`
-  works as before, and `Fleet` refuses both together. Over 4 replicas with
-  a cap of 256 requests, 100 processes with `share=1 / 100` used 200 of
-  each replica's 256, and 300 processes with `share=1 / 300` could send 300;
-  with `process=`, they use 256 in both.
+  works as before, and `Fleet` refuses both together. With `process=`,
+  `Fleet` refuses a token cap below the request cap, in every process alike,
+  before it builds any gate: each request a process holds comes with its
+  part of the token cap. Without `process=`, it takes such caps, as before.
+  Over 4 replicas with a cap of 256 requests, 100 processes with
+  `share=1 / 100` used 200 of each replica's 256, and 300 processes with
+  `share=1 / 300` could send 300; with `process=`, they use 256 in both.
 - **Each process to a few replicas.** `Fleet(process=..., layout="pack")`
   gives each process its part from as few replicas as hold it, in their
   order, rather than from every replica (`layout="spread"`, the default).
@@ -65,7 +95,8 @@ predate this changelog, so their changes are not listed here.
   `part(cap)` is the process's exact part of a cap. The fleet makes shares.
   `fleet.stats()` gives `process` and `replicas_used`, and a routing's
   `loads` its `weights`, the process's parts of the replicas where they
-  differ.
+  differ. With `process=`, `fleet.stats()["share"]` is `None`: each gate's
+  caps are the process's parts.
 - The agents-at-scale example's processes split the caps with
   `process=(index, processes)`, and its guide says so. The example refuses
   more than 128 processes, 2 replicas × 64 requests.
@@ -1272,6 +1303,7 @@ on `main`.
   - Each test matrix job runs its own Python with the dev extra.
   - The bandit job runs again.
 
+[0.7.0]: https://github.com/stride-research/flowgentic/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/stride-research/flowgentic/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/stride-research/flowgentic/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/stride-research/flowgentic/compare/v0.4.0...v0.5.0
